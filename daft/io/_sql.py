@@ -8,6 +8,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import PythonStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
+from daft.sql.sql_connection import SQLConnection
 from daft.sql.sql_scan import SQLScanOperator
 
 if TYPE_CHECKING:
@@ -79,9 +80,10 @@ def read_sql(
     io_config = context.get_context().daft_planning_config.default_io_config
     storage_config = StorageConfig.python(PythonStorageConfig(io_config))
 
+    sql_conn = SQLConnection.from_url(conn) if isinstance(conn, str) else SQLConnection.from_connection_factory(conn)
     sql_operator = SQLScanOperator(
         sql,
-        conn,
+        sql_conn,
         storage_config,
         partition_col=partition_col,
         num_partitions=num_partitions,

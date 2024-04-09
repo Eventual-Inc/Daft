@@ -7,11 +7,11 @@ from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
 from daft.io.scan import ScanOperator
+from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
-    from sqlalchemy.engine import Connection
 
 class ImageMode(Enum):
     """
@@ -233,10 +233,9 @@ class DatabaseSourceConfig:
     """
 
     sql: str
-    dialect: str
-    conn_factory: Callable[[], Connection] | None
+    conn: SQLConnection
 
-    def __init__(self, sql: str, dialect: str, conn_factory: Callable[[], Connection] | None): ...
+    def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
 class FileFormatConfig:
     """
@@ -612,7 +611,7 @@ class ScanTask:
         ...
     @staticmethod
     def sql_scan_task(
-        url: str,
+        path: str,
         file_format: FileFormatConfig,
         schema: PySchema,
         num_rows: int | None,

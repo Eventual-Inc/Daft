@@ -300,25 +300,18 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
-    pub dialect: String,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub conn_factory: PyObject,
+    pub conn: PyObject,
 }
 
 #[cfg(feature = "python")]
 impl PartialEq for DatabaseSourceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.sql == other.sql
-            && self.dialect == other.dialect
-            && Python::with_gil(|py| {
-                self.conn_factory
-                    .as_ref(py)
-                    .eq(other.conn_factory.as_ref(py))
-                    .unwrap()
-            })
+            && Python::with_gil(|py| self.conn.as_ref(py).eq(other.conn.as_ref(py)).unwrap())
     }
 }
 
@@ -329,8 +322,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
-        self.dialect.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.conn_factory.as_ref(py).hash());
+        let py_obj_hash = Python::with_gil(|py| self.conn.as_ref(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
             Err(_) => serde_json::to_vec(self).unwrap().hash(state),
@@ -340,12 +332,8 @@ impl Hash for DatabaseSourceConfig {
 
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
-    pub fn new_internal(sql: String, dialect: String, conn_factory: PyObject) -> Self {
-        Self {
-            sql,
-            dialect,
-            conn_factory,
-        }
+    pub fn new_internal(sql: String, conn: PyObject) -> Self {
+        Self { sql, conn }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -360,8 +348,8 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, dialect: &str, conn_factory: PyObject) -> Self {
-        Self::new_internal(sql.to_string(), dialect.to_string(), conn_factory)
+    fn new(sql: &str, conn: PyObject) -> Self {
+        Self::new_internal(sql.to_string(), conn)
     }
 }
 

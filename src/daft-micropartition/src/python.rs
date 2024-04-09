@@ -789,13 +789,10 @@ pub(crate) fn read_parquet_into_py_table(
         .extract()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_sql_into_py_table(
     py: Python,
     sql: &str,
-    dialect: &str,
-    url: &str,
-    conn_factory: &PyObject,
+    conn: &PyObject,
     predicate_expr: Option<PyExpr>,
     schema: PySchema,
     include_columns: Option<Vec<String>>,
@@ -825,15 +822,7 @@ pub(crate) fn read_sql_into_py_table(
         .call1((num_rows, include_columns))?;
     py.import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
-        .call1((
-            sql,
-            dialect,
-            url,
-            conn_factory,
-            py_schema,
-            sql_options,
-            read_options,
-        ))?
+        .call1((sql, conn, py_schema, sql_options, read_options))?
         .getattr(pyo3::intern!(py, "to_table"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?

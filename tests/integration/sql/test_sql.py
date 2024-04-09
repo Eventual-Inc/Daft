@@ -228,5 +228,5 @@ def test_sql_bad_url() -> None:
 
 @pytest.mark.integration()
 def test_sql_bad_connection_factory() -> None:
-    with pytest.raises(ValueError, match="Failed to create SQLScanOperator:"):
+    with pytest.raises(ValueError):
         daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", lambda: "bad_conn")

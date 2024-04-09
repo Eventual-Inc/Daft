@@ -311,8 +311,7 @@ fn materialize_scan_task(
                 })?,
                 FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
                     sql,
-                    dialect,
-                    conn_factory,
+                    conn,
                 }) => {
                     let predicate_expr = scan_task
                         .pushdowns
@@ -320,26 +319,22 @@ fn materialize_scan_task(
                         .as_ref()
                         .map(|p| (*p.as_ref()).clone().into());
                     Python::with_gil(|py| {
-                        urls.map(|url| {
-                            crate::python::read_sql_into_py_table(
-                                py,
-                                sql,
-                                dialect,
-                                url,
-                                conn_factory,
-                                predicate_expr.clone(),
-                                scan_task.schema.clone().into(),
-                                scan_task
-                                    .pushdowns
-                                    .columns
-                                    .as_ref()
-                                    .map(|cols| cols.as_ref().clone()),
-                                scan_task.pushdowns.limit,
-                            )
-                            .map(|t| t.into())
-                            .context(PyIOSnafu)
-                        })
-                        .collect::<crate::Result<Vec<_>>>()
+                        let table = crate::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate_expr.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)?;
+                        Ok(vec![table])
                     })?
                 }
             }

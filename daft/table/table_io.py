@@ -42,7 +42,7 @@ from daft.runners.partitioning import (
     TableReadSQLOptions,
 )
 from daft.series import Series
-from daft.sql.sql_reader import SQLReader
+from daft.sql.sql_connection import SQLConnection
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -50,7 +50,6 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
-    from sqlalchemy.engine import Connection
 
 
 @contextlib.contextmanager
@@ -220,9 +219,7 @@ def read_parquet(
 
 def read_sql(
     sql: str,
-    dialect: str,
-    url: str,
-    conn_factory: Callable[[], Connection] | None,
+    conn: SQLConnection,
     schema: Schema,
     sql_options: TableReadSQLOptions = TableReadSQLOptions(),
     read_options: TableReadOptions = TableReadOptions(),
@@ -242,20 +239,19 @@ def read_sql(
 
     if sql_options.predicate_expression is not None:
         # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-        predicate_sql = sql_options.predicate_expression._to_sql(dialect)
+        predicate_sql = sql_options.predicate_expression._to_sql(conn.dialect)
         apply_pushdowns_to_sql = predicate_sql is not None
     else:
         # If we don't have a predicate, we can still apply the limit and projection to the SQL query
         predicate_sql = None
         apply_pushdowns_to_sql = True
 
-    pa_table = SQLReader(
+    pa_table = conn.read(
         sql,
-        conn_factory if conn_factory is not None else url,
-        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
         projection=read_options.column_names if apply_pushdowns_to_sql else None,
         predicate=predicate_sql,
-    ).read()
+        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
+    )
     mp = MicroPartition.from_arrow(pa_table)
 
     if len(mp) != 0 and apply_pushdowns_to_sql is False:
