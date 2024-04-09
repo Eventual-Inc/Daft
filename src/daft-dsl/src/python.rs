@@ -237,13 +237,8 @@ impl PyExpr {
         Ok(self.expr.sum().into())
     }
 
-    pub fn sketch_quantile(&self, q: &Self) -> PyResult<Self> {
-        use functions::sketch::sketch_quantile;
-        Ok(sketch_quantile(&self.expr, &q.expr).into())
-    }
-
-    pub fn approx_sketch(&self) -> PyResult<Self> {
-        Ok(self.expr.approx_sketch().into())
+    pub fn approx_percentile(&self, q: &Self) -> PyResult<Self> {
+        Ok(self.expr.approx_percentile(&q.expr).into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {

@@ -82,6 +82,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
                 ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
+                ApproxPercentile(e, q) => ApproxPercentile(Alias(e, name.clone()).into(), q),
                 MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),
@@ -114,6 +115,7 @@ fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
         Count(e, _)
         | Sum(e)
         | ApproxSketch(e)
+        | ApproxPercentile(e, _)
         | MergeSketch(e)
         | Mean(e)
         | Min(e)

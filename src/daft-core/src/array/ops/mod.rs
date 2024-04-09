@@ -1,5 +1,6 @@
 mod abs;
 mod apply;
+mod approx_percentile;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -50,7 +51,7 @@ pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 use common_error::DaftResult;
 
-use crate::count_mode::CountMode;
+use crate::{count_mode::CountMode, Series};
 
 pub trait DaftCompare<Rhs> {
     type Output;
@@ -131,6 +132,12 @@ pub trait DaftApproxSketchAggable {
     type Output;
     fn approx_sketch(&self) -> Self::Output;
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftApproxPercentileAggable {
+    type Output;
+    fn approx_percentile(&self, q: &Series) -> Self::Output;
+    fn grouped_approx_percentile(&self, q: &Series, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMergeSketchAggable {

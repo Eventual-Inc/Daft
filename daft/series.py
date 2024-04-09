@@ -475,14 +475,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
-    def sketch_quantile(self, q: Series) -> Series:
+    def approx_percentile(self, q: Series) -> Series:
         if not isinstance(q, Series):
             raise TypeError(f"expected another Series but got {type(q)}")
-        return Series._from_pyseries(self._series.sketch_quantile(q._series))
-
-    def approx_sketch(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.approx_sketch())
+        return Series._from_pyseries(self._series.approx_percentile(q._series))
 
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):

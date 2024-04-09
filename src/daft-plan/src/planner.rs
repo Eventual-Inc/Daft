@@ -336,6 +336,27 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                     ));
                                 final_exprs.push(Column(approx_id.clone()).alias(output_name));
                             }
+                            ApproxPercentile(e, q) => {
+                                let sketch_id = agg_expr.semantic_id(&schema).id;
+                                let approx_id = ApproxSketch(Column(sketch_id.clone()).into())
+                                    .semantic_id(&schema)
+                                    .id;
+                                first_stage_aggs
+                                    .entry(sketch_id.clone())
+                                    .or_insert(ApproxSketch(
+                                        e.alias(sketch_id.clone()).clone().into(),
+                                    ));
+                                second_stage_aggs
+                                    .entry(approx_id.clone())
+                                    .or_insert(MergeSketch(
+                                        Column(sketch_id.clone()).alias(approx_id.clone()).into(),
+                                    ));
+                                final_exprs.push(
+                                    Column(approx_id.clone())
+                                        .sketch_quantile(q)
+                                        .alias(output_name),
+                                );
+                            }
                             MergeSketch(e) => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
                                 let merge_id = MergeSketch(Column(sketch_id.clone()).into())

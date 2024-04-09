@@ -19,6 +19,7 @@ impl TreeNode for Expr {
                     Count(expr, ..)
                     | Sum(expr)
                     | ApproxSketch(expr)
+                    | ApproxPercentile(expr, _)
                     | MergeSketch(expr)
                     | Mean(expr)
                     | Min(expr)
@@ -66,6 +67,9 @@ impl TreeNode for Expr {
                     Count(expr, mode) => transform(expr.as_ref().clone())?.count(mode),
                     Sum(expr) => transform(expr.as_ref().clone())?.sum(),
                     ApproxSketch(expr) => transform(expr.as_ref().clone())?.approx_sketch(),
+                    ApproxPercentile(expr, q) => {
+                        transform(expr.as_ref().clone())?.approx_percentile(q.as_ref())
+                    }
                     MergeSketch(expr) => transform(expr.as_ref().clone())?.merge_sketch(),
                     Mean(expr) => transform(expr.as_ref().clone())?.mean(),
                     Min(expr) => transform(expr.as_ref().clone())?.min(),
