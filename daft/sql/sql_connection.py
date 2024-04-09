@@ -35,6 +35,8 @@ class SQLConnection:
     def from_connection_factory(cls, conn_factory: Callable[[], Connection]) -> SQLConnection:
         try:
             with conn_factory() as connection:
+                if not hasattr(connection, "engine"):
+                    raise ValueError("The connection factory must return a SQLAlchemy connection object.")
                 dialect = connection.engine.dialect.name
                 driver = connection.engine.driver
             return SQLConnection(conn_factory, driver, dialect)
