@@ -220,7 +220,7 @@ impl AggExpr {
                         | DataType::UInt32
                         | DataType::UInt64
                         | DataType::Float32
-                        | DataType::Float64 => DataType::Binary,
+                        | DataType::Float64 => DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
                         other => {
                             return Err(DaftError::TypeError(format!(
                                 "Expected input to approx_sketch() to be numeric but received dtype {} for column \"{}\"",
@@ -259,7 +259,7 @@ impl AggExpr {
                 Ok(Field::new(
                   field.name.as_str(),
                   match &field.dtype {
-                      DataType::Binary => DataType::Binary,
+                      DataType::Struct(fields) => DataType::Struct(fields.clone()),
                       other => {
                           return Err(DaftError::TypeError(format!(
                               "Expected input to merge_sketch() to be binary but received dtype {} for column \"{}\"",

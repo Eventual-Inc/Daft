@@ -3,6 +3,7 @@ arrow2 = {workspace = true}
 bincode = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
+serde_arrow = {workspace = true}
 serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
 

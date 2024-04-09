@@ -1,14 +1,16 @@
 use super::as_arrow::AsArrow;
+use super::from_arrow::FromArrow;
 use super::DaftApproxSketchAggable;
 use crate::array::ops::GroupIndices;
-use crate::utils::sketch::Sketch;
-use crate::{array::DataArray, datatypes::*};
+use crate::{array::DataArray, array::StructArray, datatypes::*};
 use arrow2;
 use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_sketch;
+use sketches_ddsketch::{Config, DDSketch};
 
 impl DaftApproxSketchAggable for &DataArray<Float64Type> {
-    type Output = DaftResult<DataArray<BinaryType>>;
+    type Output = DaftResult<StructArray>;
 
     fn approx_sketch(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
@@ -18,7 +20,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 .fold(None, |acc, value| match (acc, value) {
                     (acc, None) => acc,
                     (None, Some(v)) => {
-                        let mut sketch = Sketch::new();
+                        let mut sketch = DDSketch::new(Config::defaults());
                         sketch.add(*v);
                         Some(sketch)
                     }
@@ -27,26 +29,26 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         Some(acc)
                     }
                 });
-            let binary = match sketch {
-                Some(s) => Some(s.to_binary()?),
-                None => None,
-            };
 
-            Box::new(arrow2::array::BinaryArray::<i64>::from([binary]))
+            daft_sketch::into_arrow2(vec![sketch])
         } else {
-            let sketch = primitive_arr
-                .values_iter()
-                .fold(Sketch::new(), |mut acc, value| {
+            let sketch = primitive_arr.values_iter().fold(
+                DDSketch::new(Config::defaults()),
+                |mut acc, value| {
                     acc.add(*value);
                     acc
-                });
-            let binary = sketch.to_binary()?;
+                },
+            );
 
-            Box::new(arrow2::array::BinaryArray::<i64>::from_slice([binary]))
+            daft_sketch::into_arrow2(vec![Some(sketch)])
         };
 
-        DataArray::new(
-            Field::new(&self.field.name, DataType::Binary).into(),
+        StructArray::from_arrow(
+            Field::new(
+                &self.field.name,
+                DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
+            )
+            .into(),
             arrow_array,
         )
     }
@@ -54,15 +56,15 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
         let sketch_per_group = if arrow_array.null_count() > 0 {
-            let sketches: Vec<Option<Vec<u8>>> = groups
+            let sketches: Vec<Option<DDSketch>> = groups
                 .iter()
                 .map(|g| {
-                    let sketch = g.iter().fold(None, |acc, index| {
+                    g.iter().fold(None, |acc, index| {
                         let idx = *index as usize;
                         match (acc, arrow_array.is_null(idx)) {
                             (acc, true) => acc,
                             (None, false) => {
-                                let mut sketch = Sketch::new();
+                                let mut sketch = DDSketch::new(Config::defaults());
                                 sketch.add(arrow_array.value(idx));
                                 Some(sketch)
                             }
@@ -71,41 +73,35 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                                 Some(acc)
                             }
                         }
-                    });
-
-                    match sketch {
-                        Some(s) => Ok(Some(s.to_binary()?)),
-                        None => Ok(None),
-                    }
+                    })
                 })
-                .collect::<DaftResult<Vec<_>>>()?;
+                .collect();
 
-            Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
-                sketches.into_iter(),
-            ))
+            daft_sketch::into_arrow2(sketches)
         } else {
-            let sketches: Vec<Vec<u8>> = groups
+            let sketches = groups
                 .iter()
                 .map(|g| {
-                    let sketch = g.iter().fold(Sketch::new(), |mut acc, index| {
-                        let idx = *index as usize;
-                        acc.add(arrow_array.value(idx));
-                        acc
-                    });
-
-                    sketch.to_binary()
+                    Some(
+                        g.iter()
+                            .fold(DDSketch::new(Config::defaults()), |mut acc, index| {
+                                let idx = *index as usize;
+                                acc.add(arrow_array.value(idx));
+                                acc
+                            }),
+                    )
                 })
-                .collect::<DaftResult<Vec<_>>>()?;
+                .collect();
 
-            Box::new(
-                arrow2::array::BinaryArray::<i64>::from_trusted_len_values_iter(
-                    sketches.into_iter(),
-                ),
-            )
+            daft_sketch::into_arrow2(sketches)
         };
 
-        DataArray::new(
-            Field::new(&self.field.name, DataType::Binary).into(),
+        StructArray::from_arrow(
+            Field::new(
+                &self.field.name,
+                DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
+            )
+            .into(),
             sketch_per_group,
         )
     }

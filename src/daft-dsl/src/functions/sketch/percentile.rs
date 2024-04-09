@@ -25,9 +25,9 @@ impl FunctionEvaluator for PercentileEvaluator {
                 }
 
                 match input_field.dtype {
-                    DataType::Binary => Ok(Field::new(input_field.name, DataType::Float64)),
+                    DataType::Struct(_) => Ok(Field::new(input_field.name, DataType::Float64)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a binary type, received: {}",
+                        "Expected input to be a struct type, received: {}",
                         input_field.dtype
                     ))),
                 }

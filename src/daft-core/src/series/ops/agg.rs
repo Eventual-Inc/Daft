@@ -132,19 +132,14 @@ impl Series {
 
         // Upcast all numeric types to float64 and compute merge_sketch.
         match self.data_type() {
-            Binary => {
-                let casted = self.cast(&Binary)?;
-                match groups {
-                    Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
-                        &casted.binary()?,
-                        groups,
-                    )?
-                    .into_series()),
-                    None => {
-                        Ok(DaftMergeSketchAggable::merge_sketch(&casted.binary()?)?.into_series())
-                    }
-                }
-            }
+            Struct(_) => match groups {
+                Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
+                    &self.struct_()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(DaftMergeSketchAggable::merge_sketch(&self.struct_()?)?.into_series()),
+            },
             other => Err(DaftError::TypeError(format!(
                 "Merge sketch is not implemented for type {}",
                 other

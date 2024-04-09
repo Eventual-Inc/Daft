@@ -949,6 +949,7 @@ dependencies = [
  "bincode",
  "pyo3",
  "regex",
+ "serde_arrow",
  "serde_json",
  "sketches-ddsketch",
 ]
@@ -1188,6 +1189,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "common-error",
+ "daft-sketch",
  "dyn-clone",
  "fnv",
  "html-escape",
@@ -1277,6 +1279,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-io",
+ "daft-sketch",
  "indexmap 2.1.0",
  "pyo3",
  "pyo3-log",
