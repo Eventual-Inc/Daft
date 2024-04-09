@@ -38,7 +38,7 @@ mod repr;
 mod round;
 mod search_sorted;
 mod sign;
-mod sketch_quantile;
+mod sketch_percentile;
 mod sort;
 mod struct_;
 mod sum;

@@ -1,5 +1,3 @@
-use common_error::DaftError;
-
 use crate::datatypes::DataType;
 use crate::datatypes::Field;
 use crate::utils::sketch::Sketch;
@@ -14,14 +12,10 @@ impl<T: DaftArrowBackedType> DataArray<T>
 where
     T: DaftArrowBackedType,
 {
-    pub fn sketch_quantile(&self, q: &Float64Array) -> DaftResult<Float64Array> {
-        if q.len() != 1 || q.get(0).is_none() {
-            return Err(DaftError::ValueError(String::from(
-                "q parameter of sketch_quantile must be defined",
-            )));
-        }
-
-        let quantile = q.get(0).unwrap();
+    pub fn sketch_percentile(&self, q: &Float64Array) -> DaftResult<Float64Array> {
+        let quantile = q
+            .get(0)
+            .expect("q parameter of sketch_percentile must have one non-null element");
         let primitive_arr: &BinaryArray<i64> = self.data().as_any().downcast_ref().unwrap();
         let quantiles_arr = if primitive_arr.null_count() > 0 {
             primitive_arr

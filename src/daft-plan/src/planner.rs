@@ -353,7 +353,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                     ));
                                 final_exprs.push(
                                     Column(approx_id.clone())
-                                        .sketch_quantile(q)
+                                        .sketch_percentile(q)
                                         .alias(output_name),
                                 );
                             }

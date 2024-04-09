@@ -1,6 +1,6 @@
-mod quantile;
+mod percentile;
 
-use quantile::QuantileEvaluator;
+use percentile::PercentileEvaluator;
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SketchExpr {
-    Quantile,
+    Percentile,
 }
 
 impl SketchExpr {
@@ -18,14 +18,14 @@ impl SketchExpr {
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use SketchExpr::*;
         match self {
-            Quantile => &QuantileEvaluator {},
+            Percentile => &PercentileEvaluator {},
         }
     }
 }
 
-pub fn sketch_quantile(input: &Expr, q: &Expr) -> Expr {
+pub fn sketch_percentile(input: &Expr, q: &Expr) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Sketch(SketchExpr::Quantile),
+        func: super::FunctionExpr::Sketch(SketchExpr::Percentile),
         inputs: vec![input.clone(), q.clone()],
     }
 }

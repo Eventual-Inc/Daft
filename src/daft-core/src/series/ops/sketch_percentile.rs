@@ -3,7 +3,7 @@ use common_error::DaftError;
 use common_error::DaftResult;
 
 impl Series {
-    pub fn sketch_quantile(&self, q: &Series) -> DaftResult<Series> {
+    pub fn sketch_percentile(&self, q: &Series) -> DaftResult<Series> {
         use crate::datatypes::DataType::*;
         use crate::series::IntoSeries;
 
@@ -13,11 +13,11 @@ impl Series {
                 Ok(casted
                     .binary()
                     .unwrap()
-                    .sketch_quantile(q.f64()?)?
+                    .sketch_percentile(q.f64()?)?
                     .into_series())
             }
             other => Err(DaftError::TypeError(format!(
-                "sketch_quantile is not implemented for type {}",
+                "sketch_percentile is not implemented for type {}",
                 other
             ))),
         }

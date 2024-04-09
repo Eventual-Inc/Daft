@@ -30,7 +30,7 @@ pub mod partitioning;
 pub mod round;
 pub mod search_sorted;
 pub mod sign;
-pub mod sketch_quantile;
+pub mod sketch_percentile;
 pub mod sort;
 pub mod struct_;
 pub mod take;
