@@ -63,6 +63,8 @@ fn is_valid_input_lengths(lengths: &[usize]) -> bool {
     }
 }
 
+/// Parse inputs for string operations.
+/// Returns a tuple of (is_full_null, expected_size).
 fn parse_inputs<T>(
     self_arr: &Utf8Array,
     other_arrs: &[&DataArray<T>],
@@ -390,12 +392,14 @@ impl Utf8Array {
             _ => Some(validity.into()),
         };
         let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
-        Ok(ListArray::new(
+        let result = ListArray::new(
             Field::new(self.name(), DataType::List(Box::new(DataType::Utf8))),
             flat_child,
             offsets,
             validity,
-        ))
+        );
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
@@ -413,20 +417,22 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        match pattern.len() {
+        let result = match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
                 let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
-                regex_extract_first_match(self_iter, regex_iter, index, self.name())
+                regex_extract_first_match(self_iter, regex_iter, index, self.name())?
             }
             _ => {
                 let regex_iter = pattern
                     .as_arrow()
                     .iter()
                     .map(|pat| pat.map(regex::Regex::new));
-                regex_extract_first_match(self_iter, regex_iter, index, self.name())
+                regex_extract_first_match(self_iter, regex_iter, index, self.name())?
             }
-        }
+        };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn extract_all(&self, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
@@ -447,20 +453,22 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        match pattern.len() {
+        let result = match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
                 let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
-                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())
+                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())?
             }
             _ => {
                 let regex_iter = pattern
                     .as_arrow()
                     .iter()
                     .map(|pat| pat.map(regex::Regex::new));
-                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())
+                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())?
             }
-        }
+        };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn replace(
@@ -485,24 +493,26 @@ impl Utf8Array {
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let replacement_iter = create_broadcasted_str_iter(replacement, expected_size);
 
-        match (regex, pattern.len()) {
+        let result = match (regex, pattern.len()) {
             (true, 1) => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
                 let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
-                regex_replace(self_iter, regex_iter, replacement_iter, self.name())
+                regex_replace(self_iter, regex_iter, replacement_iter, self.name())?
             }
             (true, _) => {
                 let regex_iter = pattern
                     .as_arrow()
                     .iter()
                     .map(|pat| pat.map(regex::Regex::new));
-                regex_replace(self_iter, regex_iter, replacement_iter, self.name())
+                regex_replace(self_iter, regex_iter, replacement_iter, self.name())?
             }
             (false, _) => {
                 let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-                replace_on_literal(self_iter, pattern_iter, replacement_iter, self.name())
+                replace_on_literal(self_iter, pattern_iter, replacement_iter, self.name())?
             }
-        }
+        };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn length(&self) -> DaftResult<UInt64Array> {
@@ -580,7 +590,9 @@ impl Utf8Array {
             })
             .collect::<arrow2::array::Int64Array>();
 
-        Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+        let result = Int64Array::from((self.name(), Box::new(arrow_result)));
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn left<I>(&self, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
@@ -610,18 +622,20 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        match nchars.len() {
+        let result = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
-                    DaftError::ComputeError(format!("failed to cast rhs as usize {n}"))
+                    DaftError::ComputeError(format!(
+                        "Error in left: failed to cast rhs as usize {n}"
+                    ))
                 })?;
                 let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
                     .zip(nchars_iter)
                     .map(|(val, n)| Some(left_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
-                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let arrow_result = self_iter
@@ -630,7 +644,7 @@ impl Utf8Array {
                         (Some(val), Some(nchar)) => {
                             let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {nchar}"
+                                    "Error in left: failed to cast rhs as usize {nchar}"
                                 ))
                             })?;
                             Ok(Some(left_most_chars(val, nchar)))
@@ -639,9 +653,11 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
-        }
+        };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     pub fn right<I>(&self, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
@@ -672,18 +688,20 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        match nchars.len() {
+        let result = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
-                    DaftError::ComputeError(format!("failed to cast rhs as usize {n}"))
+                    DaftError::ComputeError(format!(
+                        "Error in right: failed to cast rhs as usize {n}"
+                    ))
                 })?;
                 let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
                     .zip(nchars_iter)
                     .map(|(val, n)| Some(right_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
-                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let arrow_result = self_iter
@@ -692,7 +710,7 @@ impl Utf8Array {
                         (Some(val), Some(nchar)) => {
                             let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {nchar}"
+                                    "Error in right: failed to cast rhs as usize {nchar}"
                                 ))
                             })?;
                             Ok(Some(right_most_chars(val, nchar)))
@@ -701,9 +719,11 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
-        }
+        };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     fn binary_broadcasted_compare<ScalarKernel>(
@@ -738,7 +758,9 @@ impl Utf8Array {
             })
             .collect::<DaftResult<arrow2::array::BooleanArray>>();
 
-        Ok(BooleanArray::from((self.name(), arrow_result?)))
+        let result = BooleanArray::from((self.name(), arrow_result?));
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>
