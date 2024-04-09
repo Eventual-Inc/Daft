@@ -72,8 +72,6 @@ fn parse_inputs<T>(
 where
     T: DaftPhysicalType,
 {
-    assert!(!other_arrs.is_empty());
-
     let lengths = std::iter::once(self_arr.len())
         .chain(other_arrs.iter().map(|arr| arr.len()))
         .collect::<Vec<_>>();
