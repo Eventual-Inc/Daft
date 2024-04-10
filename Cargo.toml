@@ -97,7 +97,7 @@ async-compat = "0.2.3"
 async-compression = {version = "0.4.7", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.4.0"
-chrono = "0.4.26"
+chrono = "0.4.37"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.0"
 futures = "0.3.28"
