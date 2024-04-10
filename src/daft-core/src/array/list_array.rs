@@ -151,28 +151,6 @@ impl ListArray {
         ))
     }
 
-    pub fn iter(&self) -> Box<dyn Iterator<Item = Option<Series>> + '_> {
-        if let Some(validity) = self.validity() {
-            Box::new((0..self.len()).map(|i| {
-                if validity.get_bit(i) {
-                    let start = *self.offsets().get(i).unwrap() as usize;
-                    let end = *self.offsets().get(i + 1).unwrap() as usize;
-
-                    Some(self.flat_child.slice(start, end).unwrap())
-                } else {
-                    None
-                }
-            }))
-        } else {
-            Box::new(self.offsets().windows(2).map(|w| {
-                let start = w[0] as usize;
-                let end = w[1] as usize;
-
-                Some(self.flat_child.slice(start, end).unwrap())
-            }))
-        }
-    }
-
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(arrow2::array::ListArray::new(
@@ -198,5 +176,44 @@ impl ListArray {
             self.offsets.clone(),
             validity,
         ))
+    }
+}
+
+impl<'a> IntoIterator for &'a ListArray {
+    type Item = Option<Series>;
+
+    type IntoIter = ListArrayIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+pub struct ListArrayIter<'a> {
+    array: &'a ListArray,
+    idx: usize,
+}
+
+impl Iterator for ListArrayIter<'_> {
+    type Item = Option<Series>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.array.len() {
+            if let Some(validity) = self.array.validity() && !validity.get_bit(self.idx) {
+                self.idx += 1;
+                Some(None)
+            } else {
+                let start = *self.array.offsets().get(self.idx).unwrap() as usize;
+                let end = *self.array.offsets().get(self.idx + 1).unwrap() as usize;
+
+                self.idx += 1;
+                Some(Some(self.array.flat_child.slice(start, end).unwrap()))
+            }
+        } else {
+            None
+        }
     }
 }

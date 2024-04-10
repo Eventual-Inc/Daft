@@ -343,9 +343,11 @@ macro_rules! impl_aggs_list_array {
             where
                 T: Fn(&Series) -> DaftResult<Series>,
             {
+                // TODO(Kevin): Currently this requires full materialization of one Series for every list. We could avoid this by implementing either sorted aggregation or an array builder
+
                 // Assumes `op`` returns a null Series given an empty Series
                 let aggs = self
-                    .iter()
+                    .into_iter()
                     .map(|s| s.unwrap_or(Series::empty("", self.child_data_type())))
                     .map(|s| op(&s))
                     .collect::<DaftResult<Vec<_>>>()?;

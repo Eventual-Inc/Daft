@@ -1,3 +1,4 @@
+mod agg_ops;
 mod binary_ops;
 mod dtype;
 mod field;
@@ -8,11 +9,12 @@ mod time_unit;
 
 pub use crate::array::{DataArray, FixedSizeListArray};
 use crate::array::{ListArray, StructArray};
+pub use agg_ops::{try_mean_supertype, try_sum_supertype};
 use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
-pub use binary_ops::{try_mean_supertype, try_physical_supertype, try_sum_supertype};
+pub use binary_ops::try_physical_supertype;
 pub use dtype::DataType;
 pub use field::Field;
 pub use field::FieldID;
