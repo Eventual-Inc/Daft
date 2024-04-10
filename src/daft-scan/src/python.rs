@@ -322,7 +322,7 @@ pub mod pylib {
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
         pub fn sql_scan_task(
-            path: String,
+            url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
             storage_config: PyStorageConfig,
@@ -335,7 +335,7 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
             let data_source = DataFileSource::DatabaseDataSource {
-                path,
+                path: url,
                 chunk_spec: None,
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),

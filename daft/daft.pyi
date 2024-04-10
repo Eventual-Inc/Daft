@@ -611,7 +611,7 @@ class ScanTask:
         ...
     @staticmethod
     def sql_scan_task(
-        path: str,
+        url: str,
         file_format: FileFormatConfig,
         schema: PySchema,
         num_rows: int | None,

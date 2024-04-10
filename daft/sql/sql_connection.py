@@ -2,22 +2,21 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 from urllib.parse import urlparse
 
 import pyarrow as pa
-
-if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection
 
 logger = logging.getLogger(__name__)
 
 
 class SQLConnection:
-    def __init__(self, conn: str | Callable[[], Connection], driver: str, dialect: str) -> None:
+    def __init__(self, conn: str | Callable[[], Connection], driver: str, dialect: str, url: str) -> None:
         self.conn = conn
         self.dialect = dialect
         self.driver = driver
+        self.url = url
 
     def __repr__(self) -> str:
         return f"SQLConnection(conn={self.conn})"
@@ -29,17 +28,20 @@ class SQLConnection:
             dialect, driver = scheme.split("+")
         else:
             dialect, driver = scheme, ""
-        return SQLConnection(url, driver, dialect)
+        return cls(url, driver, dialect, url)
 
     @classmethod
     def from_connection_factory(cls, conn_factory: Callable[[], Connection]) -> SQLConnection:
         try:
             with conn_factory() as connection:
-                if not hasattr(connection, "engine"):
-                    raise ValueError("The connection factory must return a SQLAlchemy connection object.")
+                if not isinstance(connection, Connection):
+                    raise ValueError(
+                        f"Connection factory must return a SQLAlchemy connection object, got: {type(connection)}"
+                    )
                 dialect = connection.engine.dialect.name
                 driver = connection.engine.driver
-            return SQLConnection(conn_factory, driver, dialect)
+                url = connection.engine.url.render_as_string()
+            return cls(conn_factory, driver, dialect, url)
         except Exception as e:
             raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
 

@@ -86,7 +86,7 @@ class SQLScanOperator(ScanOperator):
 
             scan_tasks.append(
                 ScanTask.sql_scan_task(
-                    path=repr(self.conn),
+                    url=self.conn.url,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=None,
@@ -207,7 +207,7 @@ class SQLScanOperator(ScanOperator):
         return iter(
             [
                 ScanTask.sql_scan_task(
-                    path=repr(self.conn),
+                    url=self.conn.url,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=total_rows,

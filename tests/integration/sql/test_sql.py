@@ -13,18 +13,6 @@ from tests.conftest import assert_df_equals
 from tests.integration.sql.conftest import TEST_TABLE_NAME
 
 
-@pytest.fixture(scope="session", params=["url", "conn"])
-def db_conn(request, test_db):
-    if request.param == "url":
-        yield test_db
-    elif request.param == "conn":
-
-        def create_conn():
-            return sqlalchemy.create_engine(test_db).connect()
-
-        yield create_conn
-
-
 @pytest.fixture(scope="session")
 def pdf(test_db):
     return pd.read_sql_query(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
@@ -37,20 +25,20 @@ def test_sql_show(test_db) -> None:
 
 
 @pytest.mark.integration()
-def test_sql_create_dataframe_ok(db_conn, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn)
+def test_sql_create_dataframe_ok(test_db, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
 
     assert_df_equals(df.to_pandas(), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [2, 3, 4])
-def test_sql_partitioned_read(db_conn, num_partitions, pdf) -> None:
+def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
     row_size_bytes = daft.from_pandas(pdf).schema().estimate_row_size_bytes()
     num_rows_per_partition = len(pdf) / num_partitions
     set_execution_config(read_sql_partition_size_bytes=math.ceil(row_size_bytes * num_rows_per_partition))
 
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id")
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id")
     assert df.num_partitions() == num_partitions
     assert_df_equals(df.to_pandas(), pdf, sort_key="id")
 
@@ -59,10 +47,10 @@ def test_sql_partitioned_read(db_conn, num_partitions, pdf) -> None:
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
 @pytest.mark.parametrize("partition_col", ["id", "float_col", "date_col", "date_time_col"])
 def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
-    db_conn, num_partitions, partition_col, pdf
+    test_db, num_partitions, partition_col, pdf
 ) -> None:
     df = daft.read_sql(
-        f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col=partition_col, num_partitions=num_partitions
+        f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col=partition_col, num_partitions=num_partitions
     )
     assert df.num_partitions() == num_partitions
     assert_df_equals(df.to_pandas(), pdf, sort_key="id")
@@ -70,10 +58,10 @@ def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
-def test_sql_partitioned_read_with_non_uniformly_distributed_column(db_conn, num_partitions, pdf) -> None:
+def test_sql_partitioned_read_with_non_uniformly_distributed_column(test_db, num_partitions, pdf) -> None:
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
-        db_conn,
+        test_db,
         partition_col="non_uniformly_distributed_col",
         num_partitions=num_partitions,
     )
@@ -83,16 +71,16 @@ def test_sql_partitioned_read_with_non_uniformly_distributed_column(db_conn, num
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("partition_col", ["string_col", "time_col", "null_col"])
-def test_sql_partitioned_read_with_non_partionable_column(db_conn, partition_col) -> None:
+def test_sql_partitioned_read_with_non_partionable_column(test_db, partition_col) -> None:
     with pytest.raises(ValueError, match="Failed to get partition bounds"):
-        df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col=partition_col, num_partitions=2)
+        df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col=partition_col, num_partitions=2)
         df = df.collect()
 
 
 @pytest.mark.integration()
-def test_sql_read_with_partition_num_without_partition_col(db_conn) -> None:
+def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
     with pytest.raises(ValueError, match="Failed to execute sql"):
-        daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, num_partitions=2)
+        daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, num_partitions=2)
 
 
 @pytest.mark.integration()
@@ -112,8 +100,8 @@ def test_sql_read_with_partition_num_without_partition_col(db_conn) -> None:
     ],
 )
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_binary_filter_pushdowns(db_conn, column, operator, value, num_partitions, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_binary_filter_pushdowns(test_db, column, operator, value, num_partitions, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
 
     if operator == ">":
         df = df.where(df[column] > value)
@@ -139,8 +127,8 @@ def test_sql_read_with_binary_filter_pushdowns(db_conn, column, operator, value,
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_is_null_filter_pushdowns(db_conn, num_partitions, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_is_null_filter_pushdowns(test_db, num_partitions, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.where(df["null_col"].is_null())
 
     pdf = pdf[pdf["null_col"].isnull()]
@@ -150,8 +138,8 @@ def test_sql_read_with_is_null_filter_pushdowns(db_conn, num_partitions, pdf) ->
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_not_null_filter_pushdowns(db_conn, num_partitions, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_not_null_filter_pushdowns(test_db, num_partitions, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.where(df["null_col"].not_null())
 
     pdf = pdf[pdf["null_col"].notnull()]
@@ -161,8 +149,8 @@ def test_sql_read_with_not_null_filter_pushdowns(db_conn, num_partitions, pdf) -
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_if_else_filter_pushdown(db_conn, num_partitions, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_if_else_filter_pushdown(test_db, num_partitions, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.where((df["id"] > 100).if_else(df["float_col"] > 150, df["float_col"] < 50))
 
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]
@@ -172,8 +160,8 @@ def test_sql_read_with_if_else_filter_pushdown(db_conn, num_partitions, pdf) -> 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_is_in_filter_pushdown(db_conn, num_partitions, pdf) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_is_in_filter_pushdown(test_db, num_partitions, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.where(df["id"].is_in([1, 2, 3]))
 
     pdf = pdf[pdf["id"].isin([1, 2, 3])]
@@ -182,8 +170,8 @@ def test_sql_read_with_is_in_filter_pushdown(db_conn, num_partitions, pdf) -> No
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_all_pushdowns(db_conn, num_partitions) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_all_pushdowns(test_db, num_partitions) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.where(~(df["id"] < 1))
     df = df.where(df["string_col"].is_in([f"row_{i}" for i in range(10)]))
     df = df.select(df["id"], df["float_col"], df["string_col"])
@@ -201,8 +189,8 @@ def test_sql_read_with_all_pushdowns(db_conn, num_partitions) -> None:
 @pytest.mark.integration()
 @pytest.mark.parametrize("limit", [0, 1, 10, 100, 200])
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_limit_pushdown(db_conn, limit, num_partitions) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_limit_pushdown(test_db, limit, num_partitions) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.limit(limit)
 
     df = df.collect()
@@ -211,8 +199,8 @@ def test_sql_read_with_limit_pushdown(db_conn, limit, num_partitions) -> None:
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_projection_pushdown(db_conn, generated_data, num_partitions) -> None:
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", db_conn, partition_col="id", num_partitions=num_partitions)
+def test_sql_read_with_projection_pushdown(test_db, generated_data, num_partitions) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
     df = df.select(df["id"], df["string_col"])
 
     df = df.collect()
@@ -224,6 +212,15 @@ def test_sql_read_with_projection_pushdown(db_conn, generated_data, num_partitio
 def test_sql_bad_url() -> None:
     with pytest.raises(RuntimeError, match="Failed to execute sql"):
         daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", "bad_url://")
+
+
+@pytest.mark.integration()
+def test_sql_connection_factory_ok(test_db, pdf) -> None:
+    def create_conn():
+        return sqlalchemy.create_engine(test_db).connect()
+
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", create_conn)
+    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
