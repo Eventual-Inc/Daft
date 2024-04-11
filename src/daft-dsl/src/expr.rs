@@ -42,6 +42,7 @@ pub enum Expr {
     Not(ExprRef),
     IsNull(ExprRef),
     NotNull(ExprRef),
+    FillNull(ExprRef, ExprRef),
     IsIn(ExprRef, ExprRef),
     Literal(lit::LiteralValue),
     IfElse {
@@ -279,6 +280,10 @@ impl Expr {
         Expr::NotNull(self.clone().into())
     }
 
+    pub fn fill_null(&self, fill_value: &Self) -> Self {
+        Expr::FillNull(self.clone().into(), fill_value.clone().into())
+    }
+
     pub fn is_in(&self, items: &Self) -> Self {
         Expr::IsIn(self.clone().into(), items.clone().into())
     }
@@ -342,6 +347,11 @@ impl Expr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not_null()"))
             }
+            FillNull(expr, fill_value) => {
+                let child_id = expr.semantic_id(schema);
+                let fill_value_id = fill_value.semantic_id(schema);
+                FieldID::new(format!("{child_id}.fill_null({fill_value_id})"))
+            }
             IsIn(expr, items) => {
                 let child_id = expr.semantic_id(schema);
                 let items_id = items.semantic_id(schema);
@@ -400,6 +410,7 @@ impl Expr {
             } => {
                 vec![predicate.clone(), if_true.clone(), if_false.clone()]
             }
+            FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
         }
     }
 
@@ -421,6 +432,16 @@ impl Expr {
             }
             IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             NotNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
+            FillNull(expr, fill_value) => {
+                let expr_field = expr.to_field(schema)?;
+                let fill_value_field = fill_value.to_field(schema)?;
+                match try_get_supertype(&expr_field.dtype, &fill_value_field.dtype) {
+                    Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
+                    Err(_) => Err(DaftError::TypeError(format!(
+                        "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
+                    )))
+                }
+            }
             IsIn(left, right) => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
@@ -510,6 +531,7 @@ impl Expr {
             Not(expr) => expr.name(),
             IsNull(expr) => expr.name(),
             NotNull(expr) => expr.name(),
+            FillNull(expr, ..) => expr.name(),
             IsIn(expr, ..) => expr.name(),
             Literal(..) => Ok("literal"),
             Function { func, inputs } => match func {
@@ -598,12 +620,14 @@ impl Expr {
                     write!(buffer, " END")
                 }
                 // TODO: Implement SQL translations for these expressions if possible
-                Expr::Agg(..) | Expr::Cast(..) | Expr::IsIn(..) | Expr::Function { .. } => {
-                    Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Unsupported expression for SQL translation",
-                    ))
-                }
+                Expr::Agg(..)
+                | Expr::Cast(..)
+                | Expr::IsIn(..)
+                | Expr::Function { .. }
+                | Expr::FillNull(..) => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Unsupported expression for SQL translation",
+                )),
             }
         }
 
@@ -638,6 +662,7 @@ impl Display for Expr {
             Not(expr) => write!(f, "not({expr})"),
             IsNull(expr) => write!(f, "is_null({expr})"),
             NotNull(expr) => write!(f, "not_null({expr})"),
+            FillNull(expr, fill_value) => write!(f, "fill_null({expr}, {fill_value})"),
             IsIn(expr, items) => write!(f, "{expr} in {items}"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => function_display(f, func, inputs),

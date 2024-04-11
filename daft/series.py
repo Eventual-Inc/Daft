@@ -492,6 +492,12 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.not_null())
 
+    def fill_null(self, fill_value: object) -> Series:
+        if not isinstance(fill_value, Series):
+            raise ValueError(f"expected another Series but got {type(fill_value)}")
+        assert self._series is not None and fill_value._series is not None
+        return Series._from_pyseries(self._series.fill_null(fill_value._series))
+
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
 

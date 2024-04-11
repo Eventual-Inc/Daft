@@ -173,6 +173,17 @@ impl Project {
                 )?;
                 Ok(Expr::NotNull(newchild.into()))
             }
+            Expr::FillNull(child, fill_value) => {
+                let newchild = Self::translate_clustering_spec_expr(
+                    child.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                let newfill = Self::translate_clustering_spec_expr(
+                    fill_value.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                Ok(Expr::FillNull(newchild.into(), newfill.into()))
+            }
             Expr::IsIn(child, items) => {
                 let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),

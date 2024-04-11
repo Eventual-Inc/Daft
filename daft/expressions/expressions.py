@@ -485,6 +485,33 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
+    def fill_null(self, fill_value: Expression) -> Expression:
+        """Fills null values in the Expression with the provided fill_value
+
+        Example:
+            >>> df = daft.from_pydict({"data": [1, None, 3]})
+            >>> df = df.select(df["data"].fill_null(2))
+            >>> df.collect()
+            ╭───────╮
+            │ data  │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ╰───────╯
+
+        Returns:
+            Expression: Expression with null values filled with the provided fill_value
+        """
+
+        fill_value = Expression._to_expression(fill_value)
+        expr = self._expr.fill_null(fill_value._expr)
+        return Expression._from_pyexpr(expr)
+
     def is_in(self, other: Any) -> Expression:
         """Checks if values in the Expression are in the provided list
 

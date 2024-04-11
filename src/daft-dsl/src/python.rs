@@ -331,6 +331,10 @@ impl PyExpr {
         Ok(self.expr.not_null().into())
     }
 
+    pub fn fill_null(&self, fill_value: &Self) -> PyResult<Self> {
+        Ok(self.expr.fill_null(&fill_value.expr).into())
+    }
+
     pub fn is_in(&self, other: &Self) -> PyResult<Self> {
         Ok(self.expr.is_in(&other.expr).into())
     }
