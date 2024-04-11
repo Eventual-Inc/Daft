@@ -1,5 +1,6 @@
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
+use crate::CountMode;
 use common_error::DaftError;
 
 use common_error::DaftResult;
@@ -17,13 +18,13 @@ impl Series {
         }
     }
 
-    pub fn list_lengths(&self) -> DaftResult<UInt64Array> {
+    pub fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         use DataType::*;
 
         match self.data_type() {
-            List(_) => self.list()?.lengths(),
-            FixedSizeList(..) => self.fixed_size_list()?.lengths(),
-            Embedding(..) | FixedShapeImage(..) => self.as_physical()?.list_lengths(),
+            List(_) => self.list()?.count(mode),
+            FixedSizeList(..) => self.fixed_size_list()?.count(mode),
+            Embedding(..) | FixedShapeImage(..) => self.as_physical()?.list_count(mode),
             Image(..) => {
                 let struct_array = self.as_physical()?;
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
@@ -37,7 +38,7 @@ impl Series {
                 Ok(UInt64Array::from((self.name(), array)))
             }
             dt => Err(DaftError::TypeError(format!(
-                "lengths not implemented for {}",
+                "Count not implemented for {}",
                 dt
             ))),
         }
@@ -63,6 +64,50 @@ impl Series {
             DataType::FixedSizeList(..) => self.fixed_size_list()?.get_children(idx_arr, default),
             dt => Err(DaftError::TypeError(format!(
                 "Get not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_sum(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.sum(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.sum(),
+            dt => Err(DaftError::TypeError(format!(
+                "Sum not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_mean(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.mean(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.mean(),
+            dt => Err(DaftError::TypeError(format!(
+                "Mean not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_min(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.min(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.min(),
+            dt => Err(DaftError::TypeError(format!(
+                "Min not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_max(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.max(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
+            dt => Err(DaftError::TypeError(format!(
+                "Max not implemented for {}",
                 dt
             ))),
         }

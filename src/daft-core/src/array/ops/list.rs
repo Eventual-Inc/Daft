@@ -1,11 +1,14 @@
 use std::iter::repeat;
 
-use crate::array::{
-    growable::{make_growable, Growable},
-    FixedSizeListArray, ListArray,
+use crate::datatypes::{Int64Array, Utf8Array};
+use crate::{
+    array::{
+        growable::{make_growable, Growable},
+        FixedSizeListArray, ListArray,
+    },
+    datatypes::UInt64Array,
 };
-use crate::datatypes::{Int64Array, UInt64Array, Utf8Array};
-use crate::DataType;
+use crate::{CountMode, DataType};
 
 use crate::series::Series;
 
@@ -42,11 +45,34 @@ fn join_arrow_list_of_utf8s(
 }
 
 impl ListArray {
-    pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let lengths = self.offsets().lengths().map(|l| Some(l as u64));
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                self.offsets().lengths().map(|l| l as u64).collect()
+            }
+            (CountMode::Valid, Some(validity)) => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    (w[0]..w[1])
+                        .map(|i| validity.get_bit(i as usize) as u64)
+                        .sum()
+                })
+                .collect(),
+            (CountMode::Null, None) => repeat(0).take(self.offsets().len() - 1).collect(),
+            (CountMode::Null, Some(validity)) => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    (w[0]..w[1])
+                        .map(|i| !validity.get_bit(i as usize) as u64)
+                        .sum()
+                })
+                .collect(),
+        };
+
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_iter(lengths)
-                .with_validity(self.validity().cloned()),
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -172,27 +198,33 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
-    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        match self.validity() {
-            None => Ok(UInt64Array::from((
-                self.name(),
-                repeat(size as u64)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => {
-                let arrow_arr = arrow2::array::UInt64Array::from_iter(validity.iter().map(|v| {
-                    if v {
-                        Some(size as u64)
-                    } else {
-                        None
-                    }
-                }));
-                Ok(UInt64Array::from((self.name(), Box::new(arrow_arr))))
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                repeat(size as u64).take(self.len()).collect()
             }
-        }
+            (CountMode::Valid, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
+            (CountMode::Null, None) => repeat(0).take(self.len()).collect(),
+            (CountMode::Null, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| !validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
+        };
+
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
@@ -303,3 +335,46 @@ impl FixedSizeListArray {
         }
     }
 }
+
+macro_rules! impl_aggs_list_array {
+    ($la:ident) => {
+        impl $la {
+            fn agg_helper<T>(&self, op: T) -> DaftResult<Series>
+            where
+                T: Fn(&Series) -> DaftResult<Series>,
+            {
+                // TODO(Kevin): Currently this requires full materialization of one Series for every list. We could avoid this by implementing either sorted aggregation or an array builder
+
+                // Assumes `op`` returns a null Series given an empty Series
+                let aggs = self
+                    .into_iter()
+                    .map(|s| s.unwrap_or(Series::empty("", self.child_data_type())))
+                    .map(|s| op(&s))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let agg_refs: Vec<_> = aggs.iter().collect();
+
+                Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+            }
+
+            pub fn sum(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.sum(None))
+            }
+
+            pub fn mean(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.mean(None))
+            }
+
+            pub fn min(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.min(None))
+            }
+
+            pub fn max(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.max(None))
+            }
+        }
+    };
+}
+
+impl_aggs_list_array!(ListArray);
+impl_aggs_list_array!(FixedSizeListArray);

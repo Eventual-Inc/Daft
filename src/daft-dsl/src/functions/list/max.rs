@@ -1,34 +1,29 @@
 use crate::Expr;
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::{IntoSeries, Series},
-};
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
 
-pub(super) struct LengthsEvaluator {}
+pub(super) struct MaxEvaluator {}
 
-impl FunctionEvaluator for LengthsEvaluator {
+impl FunctionEvaluator for MaxEvaluator {
     fn fn_name(&self) -> &'static str {
-        "lengths"
+        "max"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let input_field = input.to_field(schema)?;
+                let field = input.to_field(schema)?.to_exploded_field()?;
 
-                match input_field.dtype {
-                    DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        Ok(Field::new(input.name()?, DataType::UInt64))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a list type, received: {}",
-                        input_field.dtype
-                    ))),
+                if field.dtype.is_numeric() {
+                    Ok(field)
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Expected input to be numeric, got {}",
+                        field.dtype
+                    )))
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
@@ -40,7 +35,7 @@ impl FunctionEvaluator for LengthsEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.list_lengths()?.into_series()),
+            [input] => Ok(input.list_max()?),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

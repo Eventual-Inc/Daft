@@ -1,7 +1,6 @@
 use daft_core::{
     count_mode::CountMode,
-    datatypes::DataType,
-    datatypes::{Field, FieldID},
+    datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
     schema::Schema,
     utils::supertype::try_get_supertype,
 };
@@ -163,47 +162,14 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    match &field.dtype {
-                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                            DataType::Int64
-                        }
-                        DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64 => DataType::UInt64,
-                        DataType::Float32 => DataType::Float32,
-                        DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Expected input to sum() to be numeric but received dtype {} for column \"{}\"",
-                                other, field.name,
-                            )))
-                        }
-                    },
+                    try_sum_supertype(&field.dtype)?,
                 ))
             }
             Mean(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    match &field.dtype {
-                        DataType::Int8
-                        | DataType::Int16
-                        | DataType::Int32
-                        | DataType::Int64
-                        | DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64
-                        | DataType::Float32
-                        | DataType::Float64 => DataType::Float64,
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Numeric mean is not implemented for column \"{}\" of type {}",
-                                field.name, other,
-                            )))
-                        }
-                    },
+                    try_mean_supertype(&field.dtype)?,
                 ))
             }
             Min(expr) | Max(expr) | AnyValue(expr, _) => {
