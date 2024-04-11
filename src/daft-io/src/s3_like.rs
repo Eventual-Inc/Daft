@@ -307,8 +307,15 @@ async fn build_s3_client(
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
-        Some(endpoint) => builder.endpoint_url(endpoint).force_path_style(true),
+        Some(endpoint) => builder.endpoint_url(endpoint),
     };
+
+    let builder = if config.endpoint_url.is_some() && !config.force_virtual_addressing {
+        builder.force_path_style(true)
+    } else {
+        builder.force_path_style(false)
+    };
+
     let builder = if let Some(region) = &config.region_name {
         builder.region(Region::new(region.to_owned()))
     } else {
