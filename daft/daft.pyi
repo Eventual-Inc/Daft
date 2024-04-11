@@ -426,6 +426,7 @@ class S3Config:
     verify_ssl: bool
     check_hostname_ssl: bool
     requester_pays: bool | None
+    force_virtual_addressing: bool | None
 
     def __init__(
         self,
@@ -445,6 +446,7 @@ class S3Config:
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
+        force_virtual_addressing: bool | None = None,
     ): ...
     def replace(
         self,
@@ -464,6 +466,7 @@ class S3Config:
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
+        force_virtual_addressing: bool | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config"""
         ...

@@ -25,6 +25,7 @@ use crate::config;
 ///     verify_ssl: Whether or not to verify ssl certificates, which will access S3 without checking if the certs are valid, defaults to True
 ///     check_hostname_ssl: Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
 ///     requester_pays: Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
+///     force_virtual_addressing: Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
 ///
 /// Example:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
@@ -186,6 +187,7 @@ impl S3Config {
         verify_ssl: Option<bool>,
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
+        force_virtual_addressing: Option<bool>,
     ) -> Self {
         let def = crate::S3Config::default();
         S3Config {
@@ -208,6 +210,8 @@ impl S3Config {
                 verify_ssl: verify_ssl.unwrap_or(def.verify_ssl),
                 check_hostname_ssl: check_hostname_ssl.unwrap_or(def.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(def.requester_pays),
+                force_virtual_addressing: force_virtual_addressing
+                    .unwrap_or(def.force_virtual_addressing),
             },
         }
     }
@@ -231,6 +235,7 @@ impl S3Config {
         verify_ssl: Option<bool>,
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
+        force_virtual_addressing: Option<bool>,
     ) -> Self {
         S3Config {
             config: crate::S3Config {
@@ -252,6 +257,8 @@ impl S3Config {
                 verify_ssl: verify_ssl.unwrap_or(self.config.verify_ssl),
                 check_hostname_ssl: check_hostname_ssl.unwrap_or(self.config.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(self.config.requester_pays),
+                force_virtual_addressing: force_virtual_addressing
+                    .unwrap_or(self.config.force_virtual_addressing),
             },
         }
     }
@@ -354,6 +361,12 @@ impl S3Config {
     #[getter]
     pub fn requester_pays(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.requester_pays))
+    }
+
+    /// AWS force virtual addressing
+    #[getter]
+    pub fn force_virtual_addressing(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.force_virtual_addressing))
     }
 }
 
