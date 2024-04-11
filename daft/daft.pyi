@@ -7,6 +7,7 @@ from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
 from daft.io.scan import ScanOperator
+from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
@@ -232,8 +233,9 @@ class DatabaseSourceConfig:
     """
 
     sql: str
+    conn: SQLConnection
 
-    def __init__(self, sql: str): ...
+    def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
 class FileFormatConfig:
     """

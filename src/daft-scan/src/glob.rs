@@ -203,6 +203,7 @@ impl GlobScanOperator {
                 io_client,
                 Some(io_stats),
             )?,
+            #[cfg(feature = "python")]
             FileFormatConfig::Database(_) => {
                 return Err(DaftError::ValueError(
                     "Cannot glob a database source".to_string(),

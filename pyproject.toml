@@ -37,7 +37,7 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-sql = ["connectorx", "sqlalchemy", "trino[sqlalchemy]"]
+sql = ["connectorx", "sqlalchemy"]
 viz = []
 
 [project.urls]

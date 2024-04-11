@@ -15,9 +15,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{
-    CsvSourceConfig, DatabaseSourceConfig, FileFormatConfig, ParquetSourceConfig,
-};
+use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
@@ -229,6 +227,7 @@ fn materialize_scan_task(
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
+                #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
                     return Err(common_error::DaftError::TypeError(
                         "Native reads for Database file format not implemented".to_string(),
@@ -310,31 +309,32 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
+                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                    sql,
+                    conn,
+                }) => {
                     let predicate_expr = scan_task
                         .pushdowns
                         .filters
                         .as_ref()
                         .map(|p| (*p.as_ref()).clone().into());
                     Python::with_gil(|py| {
-                        urls.map(|url| {
-                            crate::python::read_sql_into_py_table(
-                                py,
-                                sql,
-                                url,
-                                predicate_expr.clone(),
-                                scan_task.schema.clone().into(),
-                                scan_task
-                                    .pushdowns
-                                    .columns
-                                    .as_ref()
-                                    .map(|cols| cols.as_ref().clone()),
-                                scan_task.pushdowns.limit,
-                            )
-                            .map(|t| t.into())
-                            .context(PyIOSnafu)
-                        })
-                        .collect::<crate::Result<Vec<_>>>()
+                        let table = crate::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate_expr.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)?;
+                        Ok(vec![table])
                     })?
                 }
             }
