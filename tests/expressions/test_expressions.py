@@ -123,6 +123,23 @@ def test_repr_functions_round() -> None:
     assert repr_out == repr(copied)
 
 
+@pytest.mark.parametrize(
+    "fun",
+    [
+        "sin",
+        "cos",
+        "tan",
+    ],
+)
+def test_repr_functions_trigonometry(fun: str) -> None:
+    a = col("a")
+    y = getattr(a, fun)()
+    repr_out = repr(y)
+    assert repr_out == f"{fun}(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()

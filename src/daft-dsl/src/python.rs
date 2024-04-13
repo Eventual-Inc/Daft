@@ -225,6 +225,21 @@ impl PyExpr {
         Ok(round(&self.expr, decimal).into())
     }
 
+    pub fn sin(&self) -> PyResult<Self> {
+        use functions::numeric::sin;
+        Ok(sin(&self.expr).into())
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        use functions::numeric::cos;
+        Ok(cos(&self.expr).into())
+    }
+
+    pub fn tan(&self) -> PyResult<Self> {
+        use functions::numeric::tan;
+        Ok(tan(&self.expr).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }

@@ -18,6 +18,7 @@ use crate::{
 
 use super::datatype::PyDataType;
 use crate::array::ops::as_arrow::AsArrow;
+use crate::array::ops::trigonometry::TrigonometricFunction;
 
 #[pyclass]
 #[derive(Clone)]
@@ -127,6 +128,27 @@ impl PySeries {
             )));
         }
         Ok(self.series.round(decimal)?.into())
+    }
+
+    pub fn sin(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sin)?
+            .into())
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cos)?
+            .into())
+    }
+
+    pub fn tan(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Tan)?
+            .into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
