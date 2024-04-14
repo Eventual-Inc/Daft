@@ -82,3 +82,25 @@ def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceber
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[["idx_renamed"]]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_read_partition_column_identity(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_partitioned_by_identity")
+    df = daft.read_iceberg(tab)
+    df = df.select("ts")
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[["ts"]]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_read_partition_column_transformed(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_partitioned_by_bucket")
+    df = daft.read_iceberg(tab)
+    df = df.select("number")
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[["number"]]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

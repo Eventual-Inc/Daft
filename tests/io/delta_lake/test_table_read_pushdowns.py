@@ -126,9 +126,23 @@ def test_read_select_partition_key(deltalake_table):
     path, catalog_table, io_config, tables = deltalake_table
     df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
 
+    df = df.select("part_idx", "a")
+
+    assert df.schema().column_names() == ["part_idx", "a"]
+
+    assert_pyarrow_tables_equal(
+        df.to_arrow().sort_by("a"),
+        pa.concat_tables([table for table in tables]),
+    )
+
+
+def test_read_select_only_partition_key(deltalake_table):
+    path, catalog_table, io_config, tables = deltalake_table
+    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+
     df = df.select("part_idx")
 
-    assert df.schema().column_names == ["part_idx"]
+    assert df.schema().column_names() == ["part_idx"]
 
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
