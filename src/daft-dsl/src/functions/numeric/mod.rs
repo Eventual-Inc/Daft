@@ -14,8 +14,8 @@ use sign::SignEvaluator;
 
 use serde::{Deserialize, Serialize};
 
-use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::functions::numeric::exp::ExpEvaluator;
+use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::Expr;
 
 use super::FunctionEvaluator;
