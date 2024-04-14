@@ -367,6 +367,18 @@ class Series:
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
 
+    def sin(self) -> Series:
+        """The elementwise sine of a numeric series."""
+        return Series._from_pyseries(self._series.sin())
+
+    def cos(self) -> Series:
+        """The elementwise cosine of a numeric series."""
+        return Series._from_pyseries(self._series.cos())
+
+    def tan(self) -> Series:
+        """The elementwise tangent of a numeric series."""
+        return Series._from_pyseries(self._series.tan())
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")

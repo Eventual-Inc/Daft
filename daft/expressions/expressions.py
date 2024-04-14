@@ -357,6 +357,21 @@ class Expression:
         expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 
+    def sin(self) -> Expression:
+        """The elementwise sine of a numeric expression (``expr.sin()``)"""
+        expr = self._expr.sin()
+        return Expression._from_pyexpr(expr)
+
+    def cos(self) -> Expression:
+        """The elementwise cosine of a numeric expression (``expr.cos()``)"""
+        expr = self._expr.cos()
+        return Expression._from_pyexpr(expr)
+
+    def tan(self) -> Expression:
+        """The elementwise tangent of a numeric expression (``expr.tan()``)"""
+        expr = self._expr.tan()
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 

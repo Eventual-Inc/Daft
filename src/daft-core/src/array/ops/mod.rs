@@ -40,6 +40,7 @@ mod struct_;
 mod sum;
 mod take;
 pub(crate) mod tensor;
+pub mod trigonometry;
 mod truncate;
 mod utf8;
 

@@ -4,6 +4,7 @@ import itertools
 import math
 import operator as ops
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -237,6 +238,29 @@ def test_table_sign_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
         table.eval_expression_list([col("a").sign()])
+
+
+@pytest.mark.parametrize(
+    "fun",
+    [
+        "sin",
+        "cos",
+        "tan",
+    ],
+)
+def test_table_numeric_trigonometry(fun: str) -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = getattr(np, fun)(s)
+
+    trigonometry_table = table.eval_expression_list([getattr(col("a"), fun)()])
+    assert (
+        all(
+            x == y or (math.isnan(x) and math.isnan(y))
+            for x, y in zip(trigonometry_table.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
 
 
 def test_table_numeric_round() -> None:

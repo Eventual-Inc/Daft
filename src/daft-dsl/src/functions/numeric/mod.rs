@@ -3,6 +3,7 @@ mod ceil;
 mod floor;
 mod round;
 mod sign;
+mod trigonometry;
 
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
@@ -12,6 +13,7 @@ use sign::SignEvaluator;
 
 use serde::{Deserialize, Serialize};
 
+use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::Expr;
 
 use super::FunctionEvaluator;
@@ -23,6 +25,9 @@ pub enum NumericExpr {
     Floor,
     Sign,
     Round(i32),
+    Sin,
+    Cos,
+    Tan,
 }
 
 impl NumericExpr {
@@ -35,6 +40,9 @@ impl NumericExpr {
             Floor => &FloorEvaluator {},
             Sign => &SignEvaluator {},
             Round(_) => &RoundEvaluator {},
+            Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
+            Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
+            Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
         }
     }
 }
@@ -70,6 +78,27 @@ pub fn sign(input: &Expr) -> Expr {
 pub fn round(input: &Expr, decimal: i32) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Round(decimal)),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn sin(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Sin),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn cos(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Cos),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn tan(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Tan),
         inputs: vec![input.clone()],
     }
 }
