@@ -379,6 +379,10 @@ class Series:
         """The elementwise tangent of a numeric series."""
         return Series._from_pyseries(self._series.tan())
 
+    def exp(self) -> Series:
+        """The e^self of a numeric series"""
+        return Series._from_pyseries(self._series.exp())
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")

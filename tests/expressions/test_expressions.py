@@ -176,6 +176,15 @@ def test_repr_functions_day_of_week() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_exp() -> None:
+    a = col("a")
+    y = a.exp()
+    repr_out = repr(y)
+    assert repr_out == "exp(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_expr_structurally_equal() -> None:
     e1 = (col("a").max() == col("b").alias("moo") - 3).is_null()
     e2 = (col("a").max() == col("b").alias("moo") - 3).is_null()

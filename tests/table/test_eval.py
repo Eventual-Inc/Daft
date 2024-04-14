@@ -290,3 +290,9 @@ def test_table_round_bad_input() -> None:
 
     with pytest.raises(ValueError, match="decimal can not be negative: -2"):
         table.eval_expression_list([col("a").round(-2)])
+
+
+def test_table_exp() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None]})
+    exp_table = table.eval_expression_list([col("a").exp()])
+    assert [1.1051709180756477, 1.010050167084168, None] == exp_table.get_column("a").to_pylist()

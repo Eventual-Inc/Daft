@@ -53,6 +53,7 @@ Numeric
     Expression.sin
     Expression.cos
     Expression.tan
+    Expression.exp
 
 .. _api-comparison-expression:
 
