@@ -17,17 +17,16 @@ impl FunctionEvaluator for CountEvaluator {
         "count"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let input_field = input.to_field(schema)?;
 
                 match input_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => match expr {
-                        Expr::Function {
-                            func: FunctionExpr::List(ListExpr::Count(_)),
-                            inputs: _,
-                        } => Ok(Field::new(input.name()?, DataType::UInt64)),
+                        FunctionExpr::List(ListExpr::Count(_)) => {
+                            Ok(Field::new(input.name()?, DataType::UInt64))
+                        }
                         _ => panic!("Expected List Count Expr, got {expr}"),
                     },
                     _ => Err(DaftError::TypeError(format!(
@@ -43,14 +42,11 @@ impl FunctionEvaluator for CountEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => {
                 let mode = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::List(ListExpr::Count(mode)),
-                        inputs: _,
-                    } => mode,
+                    FunctionExpr::List(ListExpr::Count(mode)) => mode,
                     _ => panic!("Expected List Count Expr, got {expr}"),
                 };
 

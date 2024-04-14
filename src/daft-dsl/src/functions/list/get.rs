@@ -1,6 +1,7 @@
 use crate::Expr;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
+use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
@@ -12,7 +13,7 @@ impl FunctionEvaluator for GetEvaluator {
         "get"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input, idx, default] => {
                 let input_field = input.to_field(schema)?;
@@ -38,7 +39,7 @@ impl FunctionEvaluator for GetEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input, idx, default] => Ok(input.list_get(idx, default)?),
             _ => Err(DaftError::ValueError(format!(

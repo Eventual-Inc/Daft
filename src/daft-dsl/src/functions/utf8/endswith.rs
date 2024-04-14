@@ -4,6 +4,7 @@ use daft_core::{
     series::Series,
 };
 
+use crate::functions::FunctionExpr;
 use crate::Expr;
 use common_error::{DaftError, DaftResult};
 
@@ -16,7 +17,7 @@ impl FunctionEvaluator for EndswithEvaluator {
         "endswith"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
                 (Ok(data_field), Ok(pattern_field)) => {
@@ -38,7 +39,7 @@ impl FunctionEvaluator for EndswithEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_endswith(pattern),
             _ => Err(DaftError::ValueError(format!(

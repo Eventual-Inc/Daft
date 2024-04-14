@@ -1,6 +1,7 @@
 use crate::Expr;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
+use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
@@ -12,7 +13,7 @@ impl FunctionEvaluator for MinEvaluator {
         "min"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?.to_exploded_field()?;
@@ -33,7 +34,7 @@ impl FunctionEvaluator for MinEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_min()?),
             _ => Err(DaftError::ValueError(format!(

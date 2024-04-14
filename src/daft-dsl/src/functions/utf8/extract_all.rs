@@ -18,7 +18,7 @@ impl FunctionEvaluator for ExtractAllEvaluator {
         "extractall"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
                 (Ok(data_field), Ok(pattern_field)) => {
@@ -40,14 +40,11 @@ impl FunctionEvaluator for ExtractAllEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => {
                 let index = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
-                        inputs: _,
-                    } => index,
+                    FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)) => index,
                     _ => panic!("Expected Utf8 ExtractAll Expr, got {expr}"),
                 };
                 data.utf8_extract_all(pattern, *index)
