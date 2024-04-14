@@ -293,6 +293,7 @@ def test_table_round_bad_input() -> None:
 
 
 def test_table_exp() -> None:
-    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None]})
-    exp_table = table.eval_expression_list([col("a").exp()])
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
+    exp_table = table.eval_expression_list([col("a").exp(), col("b").exp()])
     assert [1.1051709180756477, 1.010050167084168, None] == exp_table.get_column("a").to_pylist()
+    assert [2.718281828459045, 22026.465794806718, None] == exp_table.get_column("b").to_pylist()
