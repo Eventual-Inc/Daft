@@ -71,7 +71,14 @@ def read_delta_lake(
                 aws_secret_access_key=s3_config.access_key,
                 aws_session_token=s3_config.session_token,
             )
-            glue_table = glue.get_table(DatabaseName=table.database_name, Name=table.table_name)
+            if table.catalog_id is not None:
+                # Allow cross account access, table.catalog_id should be the target account id
+                glue_table = glue.get_table(
+                    CatalogId=table.catalog_id, DatabaseName=table.database_name, Name=table.table_name
+                )
+            else:
+                glue_table = glue.get_table(DatabaseName=table.database_name, Name=table.table_name)
+
             # TODO(Clark): Fetch more than just the table URI from Glue Data Catalog.
             table_uri = glue_table["Table"]["StorageDescriptor"]["Location"]
         elif table.catalog == DataCatalogType.UNITY:
