@@ -32,7 +32,7 @@ def test_series_arrow_chunked_array_round_trip() -> None:
 
 
 @pytest.mark.parametrize("pyobj", ["allow", "disallow", "force"])
-def test_series_pylist_round_trip(pyobj) -> None:
+def test_series_pylist_round_trip_objects(pyobj) -> None:
     data = [1, 2, 3, 4, None]
     s = Series.from_pylist(data, pyobj=pyobj)
     back_to_list = s.to_pylist()

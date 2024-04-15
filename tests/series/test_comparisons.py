@@ -583,33 +583,6 @@ def test_comparisons_binary_right_scalar(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, True, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
-def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([None], type=r_dtype)
-    # lt, eq, gt, None, gt, None
-
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow)
-    lt = (left < right).to_pylist()
-    assert lt == [None, None, None, None, None, None]
-
-    le = (left <= right).to_pylist()
-    assert le == [None, None, None, None, None, None]
-
-    eq = (left == right).to_pylist()
-    assert eq == [None, None, None, None, None, None]
-
-    neq = (left != right).to_pylist()
-    assert neq == [None, None, None, None, None, None]
-
-    ge = (left >= right).to_pylist()
-    assert ge == [None, None, None, None, None, None]
-
-    gt = (left > right).to_pylist()
-    assert gt == [None, None, None, None, None, None]
-
-
 class CustomZero:
     def __eq__(self, other):
         if isinstance(other, CustomZero):

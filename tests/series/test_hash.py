@@ -161,7 +161,7 @@ def test_murmur3_32_hash_string():
     assert hashes.to_pylist() == [1210000089, None]
 
 
-def test_murmur3_32_hash_string():
+def test_murmur3_32_hash_bytes():
     arr = Series.from_pylist([b"\x00\x01\x02\x03", None])
     assert arr.datatype() == DataType.binary()
     hashes = arr.murmur3_32()
