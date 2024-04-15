@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 SHELL=/bin/bash
-VENV = venv
+VENV = .venv
 IS_M1 ?= 0
 
 # Hypothesis
@@ -35,11 +35,11 @@ hooks: venv
 
 .PHONY: build
 build: venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras=all
+	@unset CONDA_PREFIX && maturin develop --extras=all
 
 .PHONY: build-release
 build-release: venv  ## Compile and install a faster Daft binary
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
+	@unset CONDA_PREFIX && maturin develop --release
 
 .PHONY: test
 test: venv build  ## Run tests
@@ -47,4 +47,4 @@ test: venv build  ## Run tests
 
 .PHONY: clean
 clean:
-	rm -rf venv
+	rm -rf .venv
