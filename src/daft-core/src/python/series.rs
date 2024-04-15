@@ -151,6 +151,48 @@ impl PySeries {
             .into())
     }
 
+    pub fn cot(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cot)?
+            .into())
+    }
+
+    pub fn arcsin(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcSin)?
+            .into())
+    }
+
+    pub fn arccos(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcCos)?
+            .into())
+    }
+
+    pub fn arctan(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcTan)?
+            .into())
+    }
+
+    pub fn degrees(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Degrees)?
+            .into())
+    }
+
+    pub fn radians(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Radians)?
+            .into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
     }

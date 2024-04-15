@@ -120,6 +120,12 @@ def test_round(unary_data_fixture):
         "sin",
         "cos",
         "tan",
+        "cot",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "radians",
+        "degrees",
     ],
 )
 def test_trigonometry(fun: str, unary_data_fixture):

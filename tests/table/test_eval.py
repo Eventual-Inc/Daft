@@ -241,15 +241,23 @@ def test_table_sign_bad_input() -> None:
 
 
 @pytest.mark.parametrize(
-    "fun",
+    ("fun", "is_arc"),
     [
-        "sin",
-        "cos",
-        "tan",
+        ("sin", False),
+        ("cos", False),
+        ("tan", False),
+        ("arcsin", True),
+        ("arccos", True),
+        ("arctan", True),
+        ("radians", False),
+        ("degrees", False),
     ],
 )
-def test_table_numeric_trigonometry(fun: str) -> None:
-    table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+def test_table_numeric_trigonometry(fun: str, is_arc: bool) -> None:
+    if not is_arc:
+        table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+    else:
+        table = MicroPartition.from_pydict({"a": [0.0, 1, 0.5, math.nan]})
     s = table.to_pandas()["a"]
     np_result = getattr(np, fun)(s)
 
@@ -258,6 +266,26 @@ def test_table_numeric_trigonometry(fun: str) -> None:
         all(
             x == y or (math.isnan(x) and math.isnan(y))
             for x, y in zip(trigonometry_table.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_arc_trigonometry_oor() -> None:
+    table = MicroPartition.from_pydict({"a": [math.pi, 2]})
+    cot_table = table.eval_expression_list([col("a").arcsin(), col("a").arccos().alias("b")])
+    assert all(math.isnan(x) for x in cot_table.get_column("a").to_pylist())
+    assert all(math.isnan(x) for x in cot_table.get_column("b").to_pylist())
+
+
+def test_table_numeric_cot() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, None, math.nan]})
+    cot_table = table.eval_expression_list([col("a").cot()])
+    expected = [math.inf, None, math.nan]
+    assert (
+        all(
+            x == y or (math.isnan(x) and math.isnan(y)) or (math.isinf(x) and math.isinf(y))
+            for x, y in zip(cot_table.get_column("a").to_pylist(), expected)
         )
         is True
     )

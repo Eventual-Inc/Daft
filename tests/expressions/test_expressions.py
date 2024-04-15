@@ -129,6 +129,12 @@ def test_repr_functions_round() -> None:
         "sin",
         "cos",
         "tan",
+        "cot",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "radians",
+        "degrees",
     ],
 )
 def test_repr_functions_trigonometry(fun: str) -> None:
