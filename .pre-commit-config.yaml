@@ -33,7 +33,6 @@ repos:
   - id: check-merge-conflict
   - id: check-docstring-first
   - id: check-toml
-  - id: debug-statements
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
   rev: v2.6.0
