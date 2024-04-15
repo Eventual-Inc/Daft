@@ -1,12 +1,13 @@
 import builtins
 from enum import Enum
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
-from daft.runners.partitioning import PartitionCacheEntry
-from daft.execution import physical_plan
-from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
+
+from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
+from daft.plan_scheduler.physical_plan_scheduler import PartitionT
+from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
