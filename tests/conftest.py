@@ -9,6 +9,9 @@ import pytest
 import daft
 from daft.table import MicroPartition
 
+# import all conftest
+from tests.integration.io.conftest import *  # noqa: F403
+
 
 @pytest.fixture(scope="session", autouse=True)
 def set_execution_configs():
