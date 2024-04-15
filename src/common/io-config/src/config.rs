@@ -29,14 +29,6 @@ impl IOConfig {
         ));
         res
     }
-
-    pub fn from_env() -> Self {
-        Self {
-            s3: S3Config::from_env(),
-            azure: AzureConfig::from_env(),
-            gcs: GCSConfig::from_env(),
-        }
-    }
 }
 
 impl Display for IOConfig {

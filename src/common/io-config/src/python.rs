@@ -140,12 +140,6 @@ impl IOConfig {
     }
 
     #[staticmethod]
-    pub fn from_env() -> PyResult<Self> {
-        let config = config::IOConfig::from_env();
-        Ok(config.into())
-    }
-
-    #[staticmethod]
     pub fn from_json(input: &str) -> PyResult<Self> {
         let config: config::IOConfig = serde_json::from_str(input).map_err(DaftError::from)?;
         Ok(config.into())

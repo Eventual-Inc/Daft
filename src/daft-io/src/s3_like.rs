@@ -196,6 +196,34 @@ impl From<Error> for super::Error {
     }
 }
 
+/// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
+pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
+    let default_s3_config = S3Config::default();
+    let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
+    let (key_id, access_key, session_token) = match s3_conf
+        .credentials_cache()
+        .provide_cached_credentials()
+        .await
+    {
+        Ok(creds) => (
+            Some(creds.access_key_id().to_string()),
+            Some(creds.secret_access_key().to_string()),
+            creds.session_token().map(|t| t.to_string()),
+        ),
+        Err(_) => (None, None, None),
+    };
+    let region_name = s3_conf.region().map(|r| r.to_string());
+    Ok(S3Config {
+        endpoint_url: None, // TODO: might be able to derive this from an envvars: `AWS_ENDPOINT_URL` and `AWS_ENDPOINT_URL_S3`
+        region_name,
+        key_id,
+        session_token,
+        access_key,
+        anonymous,
+        ..default_s3_config
+    })
+}
+
 /// Helper to parse S3 URLs, returning (scheme, bucket, key)
 fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
     let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
@@ -247,13 +275,13 @@ fn handle_https_client_settings(
     Ok(builder)
 }
 
-async fn build_s3_client(
+async fn build_s3_conf(
     config: &S3Config,
     credentials_cache: Option<SharedCredentialsCache>,
-) -> super::Result<(bool, s3::Client)> {
-    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
-
+) -> super::Result<(bool, s3::Config)> {
     let mut anonymous = config.anonymous;
+
+    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let cached_creds = if let Some(credentials_cache) = credentials_cache {
         let creds = credentials_cache.provide_cached_credentials().await;
@@ -405,6 +433,15 @@ async fn build_s3_client(
     } else {
         s3_conf
     };
+
+    Ok((anonymous, s3_conf))
+}
+
+async fn build_s3_client(
+    config: &S3Config,
+    credentials_cache: Option<SharedCredentialsCache>,
+) -> super::Result<(bool, s3::Client)> {
+    let (anonymous, s3_conf) = build_s3_conf(config, credentials_cache).await?;
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 

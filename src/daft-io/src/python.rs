@@ -2,7 +2,7 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, parse_url, stats::IOStatsContext};
+    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
     use common_error::DaftResult;
     use futures::TryStreamExt;
     use pyo3::{
@@ -66,10 +66,29 @@ mod py {
         Ok(crate::set_io_pool_num_threads(num_threads as usize))
     }
 
+    #[pyfunction]
+    fn io_config_from_env(py: Python) -> PyResult<common_io_config::python::IOConfig> {
+        let io_config: DaftResult<common_io_config::IOConfig> = py.allow_threads(|| {
+            let runtime = get_runtime(false)?;
+            let runtime_handle = runtime.handle();
+            let _rt_guard = runtime_handle.enter();
+            runtime_handle.block_on(async {
+                Ok(common_io_config::IOConfig {
+                    s3: s3_like::s3_config_from_env().await?,
+                    // TODO(jay): Derive credentials for GCS and Azure
+                    gcs: common_io_config::GCSConfig::default(),
+                    azure: common_io_config::AzureConfig::default(),
+                })
+            })
+        });
+        Ok(io_config?.into())
+    }
+
     pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
         common_io_config::python::register_modules(py, parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(set_io_pool_num_threads, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_config_from_env, parent)?)?;
 
         Ok(())
     }
