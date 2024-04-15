@@ -20,7 +20,9 @@ use crate::{
     utils::display_table::display_time64,
     with_match_daft_logical_primitive_types,
 };
+use chrono::Timelike;
 use common_error::{DaftError, DaftResult};
+use std::{iter::repeat, sync::Arc};
 
 use arrow2::{
     array::{Array, PrimitiveArray},
@@ -395,16 +397,18 @@ impl TimeArray {
             .iter()
             .map(|ts| {
                 ts.map(|ts| {
-                     let naive_time = arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc).time();
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
                     naive_time.hour() as u32
                 })
             })
             .collect::<Vec<_>>();
 
-            UInt32Array::new(
-                std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
-                Box::new(PrimitiveArray::from(date_arrow)),
-            )
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
     }
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
