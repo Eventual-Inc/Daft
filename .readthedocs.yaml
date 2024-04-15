@@ -7,6 +7,7 @@ build:
     rust: '1.64'
   jobs:
     pre_build:
+    - export VIRTUAL_ENV=${READTHEDOCS_VIRTUALENV_PATH}
     - make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
 
 sphinx:
