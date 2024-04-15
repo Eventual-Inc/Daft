@@ -72,7 +72,7 @@ def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomTestObject(1)]
 
     with pytest.raises(pa.lib.ArrowInvalid):
-        s = Series.from_pylist(objects, pyobj="disallow")
+        Series.from_pylist(objects, pyobj="disallow")
 
 
 def test_series_pyobj_explicit_roundtrip() -> None:
