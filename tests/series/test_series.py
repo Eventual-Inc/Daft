@@ -88,7 +88,6 @@ def test_series_pyobj_explicit_roundtrip() -> None:
 
 
 def test_serialize_with_pyobjects() -> None:
-
     objects = [CustomTestObject(1), None]
 
     s = Series.from_pylist(objects)

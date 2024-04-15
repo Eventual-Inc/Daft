@@ -27,7 +27,6 @@ import daft
 ###
 @task()
 def produce_resized_image_dataset(limit: int) -> list[str]:
-
     # NOTE: Use Ray Runner:
     #
     #     1. If Ray connection has been set up already by Flyte, it will use the initialized Ray cluster connection

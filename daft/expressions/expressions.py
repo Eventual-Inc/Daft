@@ -1271,12 +1271,10 @@ class ExpressionsProjection(Iterable[Expression]):
         return iter(self._output_name_to_exprs.values())
 
     @overload
-    def __getitem__(self, idx: slice) -> list[Expression]:
-        ...
+    def __getitem__(self, idx: slice) -> list[Expression]: ...
 
     @overload
-    def __getitem__(self, idx: int) -> Expression:
-        ...
+    def __getitem__(self, idx: int) -> Expression: ...
 
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         # Relies on the fact that Python dictionaries are ordered

@@ -275,7 +275,6 @@ class FakeFive:
     ],
 )
 def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) -> None:
-
     fake_fives = Series.from_pylist([FakeFive(), FakeFive(), None])
     values = Series.from_pylist([2, None, None])
 

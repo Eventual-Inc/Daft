@@ -16,7 +16,6 @@ from tests.conftest import assert_df_equals
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
-
     tab = local_iceberg_catalog.load_table("default.test_partitioned_by_days")
     df = daft.read_iceberg(tab)
     df = df.where(df["ts"] < date(2023, 3, 6))

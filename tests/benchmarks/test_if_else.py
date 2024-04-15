@@ -10,6 +10,7 @@ from daft.table import MicroPartition
 
 NUM_ROWS = 1_000_000
 
+
 # Perform if/else against two int64 columns, selecting exactly half of the first and half of the second
 def generate_int64_params() -> tuple[dict, daft.Expression, list]:
     return (
