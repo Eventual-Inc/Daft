@@ -22,7 +22,7 @@ try:
     import ray
 except ImportError:
     logger.error(
-        f"Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+        "Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
     )
     raise
 
@@ -689,7 +689,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> None:
         super().__init__()
         if ray.is_initialized():
-            logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context.")
+            logger.warning("Ray has already been initialized, Daft will reuse the existing Ray context.")
         self.ray_context = ray.init(address=address, ignore_reinit_error=True)
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):

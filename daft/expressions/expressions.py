@@ -636,7 +636,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             elif on_error == "null":
                 raise_on_error = False
             else:
-                raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
@@ -1375,7 +1375,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         elif on_error == "null":
             raise_on_error = False
         else:
-            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
         return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error))
 

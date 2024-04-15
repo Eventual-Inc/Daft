@@ -360,7 +360,7 @@ def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
         elif azurite.status == "exited":
             output = azurite.logs()
             print(f"Azurite container exited without executing tests: {output}")
-            pytest.fail(f"Cannot start mock Azure Blob Storage server")
+            pytest.fail("Cannot start mock Azure Blob Storage server")
         time.sleep(0.1)
         azurite.reload()
     try:
