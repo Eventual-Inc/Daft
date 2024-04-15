@@ -86,9 +86,20 @@ mod py {
 
     pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
         common_io_config::python::register_modules(py, parent)?;
+
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(set_io_pool_num_threads, parent)?)?;
         parent.add_function(wrap_pyfunction!(io_config_from_env, parent)?)?;
+
+        // Patch the IOConfig Python class, which was registered with common_io_config::python::register_modules,
+        // to have a new `IOConfig.from_env` constructor
+        let io_config_from_env_pyfunc = parent
+            .getattr("io_config_from_env")
+            .expect("io_config_from_env should be registered");
+        parent
+            .getattr("IOConfig")
+            .expect("IOConfig class should be registered")
+            .setattr("from_env", io_config_from_env_pyfunc)?;
 
         Ok(())
     }
