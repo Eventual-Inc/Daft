@@ -1,3 +1,4 @@
+fix = true
 indent-width = 4
 line-length = 120
 target-version = "py37"
