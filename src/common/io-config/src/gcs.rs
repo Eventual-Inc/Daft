@@ -11,6 +11,11 @@ pub struct GCSConfig {
 }
 
 impl GCSConfig {
+    pub fn from_env() -> Self {
+        // TODO(jay): Derive GCS credentials from current environment
+        Self::default()
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(project_id) = &self.project_id {

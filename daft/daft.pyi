@@ -526,10 +526,17 @@ class IOConfig:
 
     def __init__(self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None): ...
     @staticmethod
+    def from_env() -> IOConfig:
+        """Creates an IOConfig, retrieving credentials and configurations from the current environtment"""
+        ...
+
+    @staticmethod
     def from_json(input: str) -> IOConfig:
         """
         Recreate an IOConfig from a JSON string.
         """
+        ...
+
     def replace(
         self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None
     ) -> IOConfig:

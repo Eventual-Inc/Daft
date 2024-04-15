@@ -26,6 +26,11 @@ impl Default for AzureConfig {
 }
 
 impl AzureConfig {
+    pub fn from_env() -> Self {
+        // TODO(jay): Derive Azure credentials from current environment
+        Self::default()
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(storage_account) = &self.storage_account {

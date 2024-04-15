@@ -26,6 +26,11 @@ pub struct S3Config {
 }
 
 impl S3Config {
+    pub fn from_env() -> Self {
+        // TODO(jay): Derive AWS credentials from current environment
+        Self::default()
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(region_name) = &self.region_name {
