@@ -1,0 +1,9 @@
+target-version = "py38"
+
+[lint]
+extend-select = [
+  "UP"  # pyupgrade
+]
+ignore = [
+  "E402"  # Module level import not at top of file [TODO(sammy): We want to fix this]
+]
