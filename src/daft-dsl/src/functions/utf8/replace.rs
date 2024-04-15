@@ -18,7 +18,7 @@ impl FunctionEvaluator for ReplaceEvaluator {
         "replace"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern, replacement] => match (
                 data.to_field(schema),
@@ -44,14 +44,11 @@ impl FunctionEvaluator for ReplaceEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [data, pattern, replacement] => {
                 let regex = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::Utf8(Utf8Expr::Replace(regex)),
-                        inputs: _,
-                    } => regex,
+                    FunctionExpr::Utf8(Utf8Expr::Replace(regex)) => regex,
                     _ => panic!("Expected Utf8 Replace Expr, got {expr}"),
                 };
                 data.utf8_replace(pattern, replacement, *regex)

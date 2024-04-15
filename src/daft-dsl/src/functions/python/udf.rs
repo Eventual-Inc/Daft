@@ -8,6 +8,7 @@ use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
 use super::PythonUDF;
+use crate::functions::FunctionExpr;
 use daft_core::python::PySeries;
 
 impl FunctionEvaluator for PythonUDF {
@@ -15,7 +16,7 @@ impl FunctionEvaluator for PythonUDF {
         "py_udf"
     }
 
-    fn to_field(&self, inputs: &[Expr], _schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], _schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
                 "Number of inputs required by UDF {} does not match number of inputs provided: {}",
@@ -31,7 +32,7 @@ impl FunctionEvaluator for PythonUDF {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         self.call_udf(inputs)
     }
 }

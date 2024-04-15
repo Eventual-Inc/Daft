@@ -17,7 +17,7 @@ impl FunctionEvaluator for DecodeEvaluator {
         "decode"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
@@ -36,15 +36,11 @@ impl FunctionEvaluator for DecodeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let raise_error_on_failure = match expr {
-            Expr::Function {
-                func:
-                    FunctionExpr::Image(ImageExpr::Decode {
-                        raise_error_on_failure,
-                    }),
-                inputs: _,
-            } => raise_error_on_failure,
+            FunctionExpr::Image(ImageExpr::Decode {
+                raise_error_on_failure,
+            }) => raise_error_on_failure,
             _ => panic!("DecodeEvaluator expects an Image::Decode expression"),
         };
         match inputs {

@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
+use crate::functions::FunctionExpr;
 use crate::Expr;
 
 use super::super::FunctionEvaluator;
@@ -12,7 +13,7 @@ impl FunctionEvaluator for CeilEvaluator {
         "ceil"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -29,7 +30,7 @@ impl FunctionEvaluator for CeilEvaluator {
         Ok(field)
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

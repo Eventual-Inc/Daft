@@ -17,7 +17,7 @@ impl FunctionEvaluator for GetEvaluator {
         "get"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let input_field = input.to_field(schema)?;
@@ -25,10 +25,7 @@ impl FunctionEvaluator for GetEvaluator {
                 match input_field.dtype {
                     DataType::Struct(fields) => {
                         let name = match expr {
-                            Expr::Function {
-                                func: FunctionExpr::Struct(StructExpr::Get(name)),
-                                inputs: _,
-                            } => name,
+                            FunctionExpr::Struct(StructExpr::Get(name)) => name,
                             _ => panic!("Expected Struct Get Expr, got {expr}"),
                         };
 
@@ -60,14 +57,11 @@ impl FunctionEvaluator for GetEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => {
                 let name = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::Struct(StructExpr::Get(name)),
-                        inputs: _,
-                    } => name,
+                    FunctionExpr::Struct(StructExpr::Get(name)) => name,
                     _ => panic!("Expected Struct Get Expr, got {expr}"),
                 };
 

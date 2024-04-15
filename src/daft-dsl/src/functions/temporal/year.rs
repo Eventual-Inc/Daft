@@ -6,6 +6,7 @@ use daft_core::{
 
 use crate::Expr;
 
+use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
@@ -17,7 +18,7 @@ impl FunctionEvaluator for YearEvaluator {
         "year"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => {
@@ -36,7 +37,7 @@ impl FunctionEvaluator for YearEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_year(),
             _ => Err(DaftError::ValueError(format!(

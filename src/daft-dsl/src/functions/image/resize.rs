@@ -17,7 +17,7 @@ impl FunctionEvaluator for ResizeEvaluator {
         "resize"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
@@ -26,10 +26,7 @@ impl FunctionEvaluator for ResizeEvaluator {
                     DataType::Image(mode) => match mode {
                         Some(mode) => {
                             let (w, h) = match expr {
-                                Expr::Function {
-                                    func: FunctionExpr::Image(ImageExpr::Resize { w, h }),
-                                    inputs: _,
-                                } => (w, h),
+                                FunctionExpr::Image(ImageExpr::Resize { w, h }) => (w, h),
                                 _ => panic!("Expected ImageResize Expr, got {expr}"),
                             };
                             Ok(Field::new(
@@ -53,12 +50,9 @@ impl FunctionEvaluator for ResizeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let (w, h) = match expr {
-            Expr::Function {
-                func: FunctionExpr::Image(ImageExpr::Resize { w, h }),
-                inputs: _,
-            } => (w, h),
+            FunctionExpr::Image(ImageExpr::Resize { w, h }) => (w, h),
             _ => panic!("Expected ImageResize Expr, got {expr}"),
         };
 
