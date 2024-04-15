@@ -15,7 +15,7 @@ else
 endif
 
 
-venv:  ## Set up virtual environment
+.venv:  ## Set up virtual environment
 	python3 -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 	## Hacks to deal with grpcio compile errors on m1 macs
@@ -30,19 +30,19 @@ else
 endif
 
 .PHONY: hooks
-hooks: venv
+hooks: .venv
 	source $(VENV_BIN)/activate && pre-commit install --install-hooks
 
 .PHONY: build
-build: venv  ## Compile and install Daft for development
+build: .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && maturin develop --extras=all
 
 .PHONY: build-release
-build-release: venv  ## Compile and install a faster Daft binary
+build-release: .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && maturin develop --release
 
 .PHONY: test
-test: venv build  ## Run tests
+test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
 .PHONY: clean
