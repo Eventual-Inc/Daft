@@ -3,9 +3,17 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING
 
-from daft.daft import CountMode, FileFormat, IOConfig, JoinStrategy, JoinType
+from daft.daft import (
+    CountMode,
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    PyDaftExecutionConfig,
+    ResourceRequest,
+    ScanOperatorHandle,
+)
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.daft import PyDaftExecutionConfig, ResourceRequest, ScanOperatorHandle
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry

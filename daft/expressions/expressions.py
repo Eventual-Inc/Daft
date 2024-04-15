@@ -46,7 +46,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
     # an instance; @sphinx_accessor is a @property that allows this.
     NS = TypeVar("NS")
 
-    class sphinx_accessor(property):  # noqa: D101
+    class sphinx_accessor(property):
         def __get__(  # type: ignore[override]
             self,
             instance: Any,
@@ -1301,12 +1301,10 @@ class ExpressionsProjection(Iterable[Expression]):
         return iter(self._output_name_to_exprs.values())
 
     @overload
-    def __getitem__(self, idx: slice) -> list[Expression]:
-        ...
+    def __getitem__(self, idx: slice) -> list[Expression]: ...
 
     @overload
-    def __getitem__(self, idx: int) -> Expression:
-        ...
+    def __getitem__(self, idx: int) -> Expression: ...
 
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         # Relies on the fact that Python dictionaries are ordered

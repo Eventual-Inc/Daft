@@ -215,7 +215,6 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
         return True
 
     for x, y in ((dt1, dt2), (dt2, dt1)):
-
         # --- Common types across hierarchies ---
         either_null = x == DataType.null()
         either_string_and_other_not_binary = x == DataType.string() and y != DataType.binary()

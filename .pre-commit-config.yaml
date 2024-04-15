@@ -33,7 +33,6 @@ repos:
   - id: check-merge-conflict
   - id: check-docstring-first
   - id: check-toml
-  - id: debug-statements
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
   rev: v2.6.0
@@ -43,36 +42,15 @@ repos:
   - id: pretty-format-yaml
     args: [--autofix]
 
-- repo: https://github.com/pycqa/isort
-  rev: 5.11.5
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  # Ruff version.
+  rev: v0.3.7
   hooks:
-  - id: isort
-    name: isort (python)
-    files: \.py$
-    args: [--profile, black, --filter-files, -a, from __future__ import annotations]
-  - id: isort
-    name: isort (cython)
-    files: \.pyx$
-    args: [--profile, black, --filter-files]
-
-
-- repo: https://github.com/asottile/pyupgrade
-  rev: v3.3.1
-  hooks:
-  - id: pyupgrade
-    args: [--py37-plus]
-    exclude: (daft/dataframe/dataframe.py|tests/expression_operators/test_udf.py)
-
-- repo: https://github.com/myint/autoflake
-  rev: v2.0.0
-  hooks:
-  - id: autoflake
-    args: [--in-place, --remove-all-unused-imports, --remove-unused-variable, --ignore-init-module-imports]
-
-- repo: https://github.com/psf/black
-  rev: 22.12.0
-  hooks:
-  - id: black
+    # Run the linter.
+  - id: ruff
+    args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+    # Run the formatter.
+  - id: ruff-format
 
 - repo: local
   hooks:

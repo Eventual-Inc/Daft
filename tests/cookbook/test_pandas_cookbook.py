@@ -1,6 +1,5 @@
 """This module tests examples from https://pandas.pydata.org/docs/user_guide/cookbook.html"""
 
-
 from __future__ import annotations
 
 import numpy as np

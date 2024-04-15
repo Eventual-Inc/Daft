@@ -610,6 +610,9 @@ def read_parquet_into_pyarrow_bulk(
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
     return [
-        pa.table([pa.chunked_array(c, type=f.type) for f, c in zip(fields, columns)], schema=pa.schema(fields, metadata=metadata))  # type: ignore
+        pa.table(
+            [pa.chunked_array(c, type=f.type) for f, c in zip(fields, columns)],
+            schema=pa.schema(fields, metadata=metadata),
+        )  # type: ignore
         for fields, metadata, columns in bulk_result
     ]

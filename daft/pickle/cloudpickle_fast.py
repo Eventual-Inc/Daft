@@ -12,6 +12,7 @@ Note that the C Pickler subclassing API is CPython-specific. Therefore, some
 guards present in cloudpickle.py that were written to handle PyPy specificities
 are not present in cloudpickle_fast.py
 """
+
 from __future__ import annotations
 
 import abc

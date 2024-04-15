@@ -54,7 +54,6 @@ def read_delta_lake(
     if isinstance(table, str):
         table_uri = table
     elif isinstance(table, DataCatalogTable):
-
         assert table.catalog == DataCatalogType.GLUE or table.catalog == DataCatalogType.UNITY
         if table.catalog == DataCatalogType.GLUE:
             # Use boto3 to get the table from AWS Glue Data Catalog.

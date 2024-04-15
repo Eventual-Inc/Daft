@@ -125,7 +125,6 @@ def test_iceberg_bucketing(input, n):
     assert buckets.datatype() == DataType.int32()
     seen = dict()
     for v, b in zip(input, buckets.to_pylist()):
-
         if v is None:
             assert b is None
         else:

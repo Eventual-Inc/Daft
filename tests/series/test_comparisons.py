@@ -474,7 +474,6 @@ def test_logical_ops_with_non_boolean() -> None:
 
 
 def test_comparisons_dates() -> None:
-
     from datetime import date
 
     left = Series.from_pylist([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3), None, date(2023, 1, 5), None])
@@ -619,7 +618,6 @@ class CustomZero:
     ],
 )
 def test_comparisons_pyobjects(op, reflected_op, expected, expected_self) -> None:
-
     custom_zeros = Series.from_pylist([CustomZero(), CustomZero(), CustomZero(), CustomZero(), None])
     values = Series.from_pylist([-1, 0, 1, None, None])
 

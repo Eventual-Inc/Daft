@@ -642,7 +642,6 @@ def test_grouped_pyobj_list_aggs() -> None:
 
 
 def test_list_aggs_empty() -> None:
-
     daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
         [col("col_A").cast(DataType.int32()).alias("list").agg_list()],
@@ -747,7 +746,6 @@ def test_grouped_concat_aggs_pyobj() -> None:
 
 
 def test_concat_aggs_empty() -> None:
-
     daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
         [col("col_A").cast(DataType.list(DataType.int32())).alias("concat").agg_concat()],

@@ -10,7 +10,7 @@ import daft
 from daft.table import MicroPartition
 
 # import all conftest
-from tests.integration.io.conftest import *  # noqa: F403
+from tests.integration.io.conftest import *
 
 
 def pytest_addoption(parser):

@@ -43,7 +43,9 @@ def _download(path: str | None, on_error: Literal["raise"] | Literal["null"]) ->
         if on_error == "raise":
             raise
         elif on_error == "null":
-            logger.error(f"Encountered error during download from URL {path} and falling back to Null\n\n{e}: {str(e)}")
+            logger.error(
+                "Encountered error during download from URL %s and falling back to Null\n\n%s: %s", path, e, str(e)
+            )
             return None
         else:
             raise NotImplementedError(f"Unimplemented on_error option: {on_error}.\n\nEncountered error: {e}")

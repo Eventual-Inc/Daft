@@ -707,8 +707,7 @@ class MergeJoin(SingleOutputInstruction):
         ]
 
 
-class ReduceInstruction(SingleOutputInstruction):
-    ...
+class ReduceInstruction(SingleOutputInstruction): ...
 
 
 @dataclass(frozen=True)
