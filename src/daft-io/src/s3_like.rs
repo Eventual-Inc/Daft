@@ -279,9 +279,9 @@ async fn build_s3_conf(
     config: &S3Config,
     credentials_cache: Option<SharedCredentialsCache>,
 ) -> super::Result<(bool, s3::Config)> {
-    let mut anonymous = config.anonymous;
-
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let mut anonymous = config.anonymous;
 
     let cached_creds = if let Some(credentials_cache) = credentials_cache {
         let creds = credentials_cache.provide_cached_credentials().await;
