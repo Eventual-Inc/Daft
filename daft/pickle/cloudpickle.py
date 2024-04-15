@@ -437,17 +437,7 @@ def cell_set(cell, value):
     test and checker libraries decide to parse the whole file.
     """
 
-    if sys.version_info[:2] >= (3, 7):  # pragma: no branch
-        cell.cell_contents = value
-    else:
-        _cell_set = types.FunctionType(
-            _cell_set_template_code,
-            {},
-            "_cell_set",
-            (),
-            (cell,),
-        )
-        _cell_set(value)
+    cell.cell_contents = value
 
 
 def _make_cell_set_template_code():
@@ -476,9 +466,6 @@ def _make_cell_set_template_code():
     )
     return _cell_set_template_code
 
-
-if sys.version_info[:2] < (3, 7):
-    _cell_set_template_code = _make_cell_set_template_code()
 
 # relevant opcodes
 STORE_GLOBAL = opcode.opmap["STORE_GLOBAL"]
@@ -536,39 +523,8 @@ def _extract_class_dict(cls):
     return clsdict
 
 
-if sys.version_info[:2] < (3, 7):  # pragma: no branch
-
-    def _is_parametrized_type_hint(obj):
-        # This is very cheap but might generate false positives. So try to
-        # narrow it down is good as possible.
-        type_module = getattr(type(obj), "__module__", None)
-        from_typing_extensions = type_module == "typing_extensions"
-        from_typing = type_module == "typing"
-
-        # general typing Constructs
-        is_typing = getattr(obj, "__origin__", None) is not None
-
-        # typing_extensions.Literal
-        is_literal = (getattr(obj, "__values__", None) is not None) and from_typing_extensions
-
-        # typing_extensions.Final
-        is_final = (getattr(obj, "__type__", None) is not None) and from_typing_extensions
-
-        # typing.ClassVar
-        is_classvar = (getattr(obj, "__type__", None) is not None) and from_typing
-
-        # typing.Union/Tuple for old Python 3.5
-        is_union = getattr(obj, "__union_params__", None) is not None
-        is_tuple = getattr(obj, "__tuple_params__", None) is not None
-        is_callable = getattr(obj, "__result__", None) is not None and getattr(obj, "__args__", None) is not None
-        return any((is_typing, is_literal, is_final, is_classvar, is_union, is_tuple, is_callable))
-
-    def _create_parametrized_type_hint(origin, args):
-        return origin[args]
-
-else:
-    _is_parametrized_type_hint = None
-    _create_parametrized_type_hint = None
+_is_parametrized_type_hint = None
+_create_parametrized_type_hint = None
 
 
 def parametrized_type_hint_getinitargs(obj):
