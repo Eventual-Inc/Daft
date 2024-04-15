@@ -240,6 +240,36 @@ impl PyExpr {
         Ok(tan(&self.expr).into())
     }
 
+    pub fn cot(&self) -> PyResult<Self> {
+        use functions::numeric::cot;
+        Ok(cot(&self.expr).into())
+    }
+
+    pub fn arcsin(&self) -> PyResult<Self> {
+        use functions::numeric::arcsin;
+        Ok(arcsin(&self.expr).into())
+    }
+
+    pub fn arccos(&self) -> PyResult<Self> {
+        use functions::numeric::arccos;
+        Ok(arccos(&self.expr).into())
+    }
+
+    pub fn arctan(&self) -> PyResult<Self> {
+        use functions::numeric::arctan;
+        Ok(arctan(&self.expr).into())
+    }
+
+    pub fn radians(&self) -> PyResult<Self> {
+        use functions::numeric::radians;
+        Ok(radians(&self.expr).into())
+    }
+
+    pub fn degrees(&self) -> PyResult<Self> {
+        use functions::numeric::degrees;
+        Ok(degrees(&self.expr).into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         use functions::numeric::exp;
         Ok(exp(&self.expr).into())

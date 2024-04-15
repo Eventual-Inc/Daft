@@ -372,6 +372,36 @@ class Expression:
         expr = self._expr.tan()
         return Expression._from_pyexpr(expr)
 
+    def cot(self) -> Expression:
+        """The elementwise cotangent of a numeric expression (``expr.cot()``)"""
+        expr = self._expr.cot()
+        return Expression._from_pyexpr(expr)
+
+    def arcsin(self) -> Expression:
+        """The elementwise arc sine of a numeric expression (``expr.arcsin()``)"""
+        expr = self._expr.arcsin()
+        return Expression._from_pyexpr(expr)
+
+    def arccos(self) -> Expression:
+        """The elementwise arc cosine of a numeric expression (``expr.arccos()``)"""
+        expr = self._expr.arccos()
+        return Expression._from_pyexpr(expr)
+
+    def arctan(self) -> Expression:
+        """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
+        expr = self._expr.arctan()
+        return Expression._from_pyexpr(expr)
+
+    def radians(self) -> Expression:
+        """The elementwise radians of a numeric expression (``expr.radians()``)"""
+        expr = self._expr.radians()
+        return Expression._from_pyexpr(expr)
+
+    def degrees(self) -> Expression:
+        """The elementwise degrees of a numeric expression (``expr.degrees()``)"""
+        expr = self._expr.degrees()
+        return Expression._from_pyexpr(expr)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression (``expr.exp()``)"""
         expr = self._expr.exp()

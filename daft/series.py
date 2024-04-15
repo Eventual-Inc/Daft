@@ -379,6 +379,30 @@ class Series:
         """The elementwise tangent of a numeric series."""
         return Series._from_pyseries(self._series.tan())
 
+    def cot(self) -> Series:
+        """The elementwise cotangent of a numeric series"""
+        return Series._from_pyseries(self._series.cot())
+
+    def arcsin(self) -> Series:
+        """The elementwise arc sine of a numeric series"""
+        return Series._from_pyseries(self._series.arcsin())
+
+    def arccos(self) -> Series:
+        """The elementwise arc cosine of a numeric series"""
+        return Series._from_pyseries(self._series.arccos())
+
+    def arctan(self) -> Series:
+        """The elementwise arc tangent of a numeric series"""
+        return Series._from_pyseries(self._series.arctan())
+
+    def radians(self) -> Series:
+        """The elementwise radians of a numeric series"""
+        return Series._from_pyseries(self._series.radians())
+
+    def degrees(self) -> Series:
+        """The elementwise degrees of a numeric series"""
+        return Series._from_pyseries(self._series.degrees())
+
     def exp(self) -> Series:
         """The e^self of a numeric series"""
         return Series._from_pyseries(self._series.exp())
