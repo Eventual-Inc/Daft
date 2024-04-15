@@ -200,7 +200,7 @@ def _whichmodule(obj, name):
     - Errors arising during module introspection are ignored, as those errors
       are considered unwanted side effects.
     """
-    if sys.version_info[:2] < (3, 7) and isinstance(obj, typing.TypeVar):  # pragma: no branch  # noqa
+    if sys.version_info[:2] < (3, 7) and isinstance(obj, typing.TypeVar):  # pragma: no branch
         # Workaround bug in old Python versions: prior to Python 3.7,
         # T.__module__ would always be set to "typing" even when the TypeVar T
         # would be defined in a different module.

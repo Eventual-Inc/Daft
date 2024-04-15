@@ -46,7 +46,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
     # an instance; @sphinx_accessor is a @property that allows this.
     NS = TypeVar("NS")
 
-    class sphinx_accessor(property):  # noqa: D101
+    class sphinx_accessor(property):
         def __get__(  # type: ignore[override]
             self,
             instance: Any,

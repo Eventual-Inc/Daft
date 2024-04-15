@@ -18,7 +18,8 @@ extend-select = [
   "UP",  # pyupgrade
   "LOG",  # flake8-logging
   "G",  # flake8-logging-format
-  "I"  # isort
+  "I",  # isort
+  "RUF100"  # unused-noqa
 ]
 ignore = [
   "E402"  # Module level import not at top of file [TODO(sammy): We want to fix this]
