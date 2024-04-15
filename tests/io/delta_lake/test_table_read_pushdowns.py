@@ -155,7 +155,10 @@ def test_read_select_partition_key_with_filter(deltalake_table):
     )
 
 
-@pytest.mark.skip(reason="Selecting just the partition key in a deltalake table is not yet supported.")
+@pytest.mark.skip(
+    reason="Selecting just the partition key in a deltalake table is not yet supported. "
+    "Issue: https://github.com/Eventual-Inc/Daft/issues/2129"
+)
 def test_read_select_only_partition_key(deltalake_table):
     path, catalog_table, io_config, tables = deltalake_table
     df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
