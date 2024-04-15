@@ -46,13 +46,6 @@ repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
 
-[tool.black]
-line-length = 120
-target-version = ['py38']
-
-[tool.isort]
-profile = "black"
-
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
