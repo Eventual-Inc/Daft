@@ -66,6 +66,8 @@ mod py {
         Ok(crate::set_io_pool_num_threads(num_threads as usize))
     }
 
+    /// Creates an IOConfig from the current environment, auto-discovering variables such as
+    /// credentials, regions and more.
     #[pyfunction]
     fn io_config_from_env(py: Python) -> PyResult<common_io_config::python::IOConfig> {
         let io_config: DaftResult<common_io_config::IOConfig> = py.allow_threads(|| {
