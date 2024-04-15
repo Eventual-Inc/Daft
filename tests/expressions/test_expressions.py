@@ -9,7 +9,7 @@ import pytz
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 
 

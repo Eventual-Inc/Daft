@@ -9,7 +9,7 @@ import pytz
 import xxhash
 
 from daft.datatype import DataType
-from daft.series import Series
+from daft.series.series import Series
 
 
 @pytest.mark.parametrize(

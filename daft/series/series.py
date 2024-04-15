@@ -3,15 +3,22 @@ from __future__ import annotations
 import sys
 from typing import Any, TypeVar
 
+from daft.series.date import SeriesDateNamespace
+from daft.series.float import SeriesFloatNamespace
+from daft.series.image import SeriesImageNamespace
+from daft.series.list import SeriesListNamespace
+from daft.series.partitioning import SeriesPartitioningNamespace
+from daft.series.string import SeriesStringNamespace
+
 if sys.version_info < (3, 8):
-    from typing_extensions import Literal
+    pass
 else:
-    from typing import Literal
+    pass
 
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, PySeries
+from daft.daft import CountMode, PySeries
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -609,187 +616,3 @@ class SeriesNamespace:
         ns = cls.__new__(cls)
         ns._series = series._series
         return ns
-
-
-class SeriesFloatNamespace(SeriesNamespace):
-    def is_nan(self) -> Series:
-        return Series._from_pyseries(self._series.is_nan())
-
-
-class SeriesStringNamespace(SeriesNamespace):
-    def endswith(self, suffix: Series) -> Series:
-        if not isinstance(suffix, Series):
-            raise ValueError(f"expected another Series but got {type(suffix)}")
-        assert self._series is not None and suffix._series is not None
-        return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
-
-    def startswith(self, prefix: Series) -> Series:
-        if not isinstance(prefix, Series):
-            raise ValueError(f"expected another Series but got {type(prefix)}")
-        assert self._series is not None and prefix._series is not None
-        return Series._from_pyseries(self._series.utf8_startswith(prefix._series))
-
-    def contains(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_contains(pattern._series))
-
-    def match(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_match(pattern._series))
-
-    def split(self, pattern: Series, regex: bool = False) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_split(pattern._series, regex))
-
-    def concat(self, other: Series) -> Series:
-        if not isinstance(other, Series):
-            raise ValueError(f"expected another Series but got {type(other)}")
-        assert self._series is not None and other._series is not None
-        return Series._from_pyseries(self._series) + other
-
-    def extract(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract(pattern._series, index))
-
-    def extract_all(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract_all(pattern._series, index))
-
-    def replace(self, pattern: Series, replacement: Series, regex: bool = False) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        if not isinstance(replacement, Series):
-            raise ValueError(f"expected another Series but got {type(replacement)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_replace(pattern._series, replacement._series, regex))
-
-    def length(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_length())
-
-    def lower(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_lower())
-
-    def upper(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_upper())
-
-    def lstrip(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_lstrip())
-
-    def rstrip(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_rstrip())
-
-    def reverse(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_reverse())
-
-    def capitalize(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_capitalize())
-
-    def left(self, nchars: Series) -> Series:
-        if not isinstance(nchars, Series):
-            raise ValueError(f"expected another Series but got {type(nchars)}")
-        assert self._series is not None and nchars._series is not None
-        return Series._from_pyseries(self._series.utf8_left(nchars._series))
-
-    def right(self, nchars: Series) -> Series:
-        if not isinstance(nchars, Series):
-            raise ValueError(f"expected another Series but got {type(nchars)}")
-        assert self._series is not None and nchars._series is not None
-        return Series._from_pyseries(self._series.utf8_right(nchars._series))
-
-    def find(self, substr: Series) -> Series:
-        if not isinstance(substr, Series):
-            raise ValueError(f"expected another Series but got {type(substr)}")
-        assert self._series is not None and substr._series is not None
-        return Series._from_pyseries(self._series.utf8_find(substr._series))
-
-
-class SeriesDateNamespace(SeriesNamespace):
-    def date(self) -> Series:
-        return Series._from_pyseries(self._series.dt_date())
-
-    def day(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day())
-
-    def hour(self) -> Series:
-        return Series._from_pyseries(self._series.dt_hour())
-
-    def month(self) -> Series:
-        return Series._from_pyseries(self._series.dt_month())
-
-    def year(self) -> Series:
-        return Series._from_pyseries(self._series.dt_year())
-
-    def day_of_week(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day_of_week())
-
-
-class SeriesPartitioningNamespace(SeriesNamespace):
-    def days(self) -> Series:
-        return Series._from_pyseries(self._series.partitioning_days())
-
-    def hours(self) -> Series:
-        return Series._from_pyseries(self._series.partitioning_hours())
-
-    def months(self) -> Series:
-        return Series._from_pyseries(self._series.partitioning_months())
-
-    def years(self) -> Series:
-        return Series._from_pyseries(self._series.partitioning_years())
-
-    def iceberg_bucket(self, n: int) -> Series:
-        return Series._from_pyseries(self._series.partitioning_iceberg_bucket(n))
-
-    def iceberg_truncate(self, w: int) -> Series:
-        return Series._from_pyseries(self._series.partitioning_iceberg_truncate(w))
-
-
-class SeriesListNamespace(SeriesNamespace):
-    def lengths(self) -> Series:
-        return Series._from_pyseries(self._series.list_count(CountMode.All))
-
-    def get(self, idx: Series, default: Series) -> Series:
-        return Series._from_pyseries(self._series.list_get(idx._series, default._series))
-
-
-class SeriesImageNamespace(SeriesNamespace):
-    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Series:
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error))
-
-    def encode(self, image_format: str | ImageFormat) -> Series:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format.upper())
-        if not isinstance(image_format, ImageFormat):
-            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Series._from_pyseries(self._series.image_encode(image_format))
-
-    def resize(self, w: int, h: int) -> Series:
-        if not isinstance(w, int):
-            raise TypeError(f"expected int for w but got {type(w)}")
-        if not isinstance(h, int):
-            raise TypeError(f"expected int for h but got {type(h)}")
-
-        return Series._from_pyseries(self._series.image_resize(w, h))

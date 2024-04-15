@@ -41,7 +41,7 @@ from daft.runners.partitioning import (
     TableReadOptions,
     TableReadSQLOptions,
 )
-from daft.series import Series
+from daft.series.series import Series
 from daft.sql.sql_connection import SQLConnection
 from daft.table import MicroPartition
 

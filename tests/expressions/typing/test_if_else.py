@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from daft.expressions import col
-from daft.series import Series
+from daft.series.series import Series
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     has_supertype,

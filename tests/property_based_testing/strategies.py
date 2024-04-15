@@ -18,7 +18,7 @@ from hypothesis.strategies import (
 )
 
 from daft.datatype import DataType
-from daft.series import Series
+from daft.series.series import Series
 
 ###
 # Various strategies for dtypes and their corresponding Daft type

@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 
 from daft import col
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 
 

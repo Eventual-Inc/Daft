@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageSequence
 
 from daft.datatype import DaftExtension, DataType
-from daft.series import Series
+from daft.series.series import Series
 
 MODE_TO_NP_DTYPE = {
     "L": np.uint8,

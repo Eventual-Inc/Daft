@@ -13,7 +13,7 @@ from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
-from daft.series import ARROW_VERSION
+from daft.series.series import ARROW_VERSION
 from daft.table import MicroPartition, schema_inference, table_io
 
 

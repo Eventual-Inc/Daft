@@ -7,7 +7,7 @@ from itertools import product
 import pytest
 
 from daft import DataType, TimeUnit
-from daft.series import Series
+from daft.series.series import Series
 
 
 @pytest.mark.parametrize(

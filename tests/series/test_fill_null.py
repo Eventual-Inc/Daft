@@ -3,7 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft.series import Series
+from daft.series.series import Series
 
 
 @pytest.mark.parametrize(

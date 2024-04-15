@@ -17,7 +17,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 
 ALL_DTYPES = [

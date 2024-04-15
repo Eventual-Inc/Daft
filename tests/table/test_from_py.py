@@ -11,7 +11,7 @@ import pytest
 
 from daft import DataType, TimeUnit
 from daft.context import get_context
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 

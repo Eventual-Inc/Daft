@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from daft import filesystem
 from daft.datatype import DataType
-from daft.series import Series
+from daft.series.series import Series
 from daft.udf import udf
 
 if sys.version_info < (3, 8):

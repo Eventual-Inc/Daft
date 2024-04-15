@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Callable, Union
 
 from daft.datatype import DataType
 from daft.expressions import Expression
-from daft.series import PySeries, Series
+from daft.series.series import PySeries, Series
 
 _NUMPY_AVAILABLE = True
 try:

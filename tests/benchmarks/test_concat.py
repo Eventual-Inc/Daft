@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from daft.series import Series
+from daft.series.series import Series
 
 
 def test_string_concat(benchmark) -> None:

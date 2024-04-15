@@ -7,7 +7,7 @@ import pyarrow as pa
 import pytest
 
 from daft.datatype import DaftExtension, DataType
-from daft.series import Series
+from daft.series.series import Series
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 from tests.utils import ANSI_ESCAPE

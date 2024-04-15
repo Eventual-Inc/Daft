@@ -8,7 +8,7 @@ from PIL import Image
 import daft
 from daft import col
 from daft.datatype import DataType
-from daft.series import Series
+from daft.series.series import Series
 from tests.cookbook.assets import ASSET_FOLDER
 
 

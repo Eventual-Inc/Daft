@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from daft.datatype import DaftExtension, DataType
-from daft.series import Series
+from daft.series.series import Series
 
 
 def test_embedding_arrow_round_trip():

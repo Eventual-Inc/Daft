@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType, ImageMode, TimeUnit
-from daft.series import Series
+from daft.series.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 

@@ -21,7 +21,7 @@ from daft.daft import ScanTask as _ScanTask
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.series import Series
+from daft.series.series import Series
 from daft.table.table import Table
 
 if TYPE_CHECKING:

@@ -8,7 +8,7 @@ from daft import utils
 from daft.daft import JoinType
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 
 daft_int_types = [

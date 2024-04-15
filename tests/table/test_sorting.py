@@ -9,7 +9,7 @@ import pytest
 from daft import col
 from daft.datatype import DataType
 from daft.logical.schema import Schema
-from daft.series import Series
+from daft.series.series import Series
 from daft.table import MicroPartition
 from tests.table import daft_numeric_types, daft_string_types
 

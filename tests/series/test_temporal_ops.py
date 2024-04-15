@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.datatype import DataType, TimeUnit
-from daft.series import Series
+from daft.series.series import Series
 
 
 def test_series_date_day_operation() -> None:

@@ -79,7 +79,7 @@ from daft.io import (
     read_parquet,
     read_sql,
 )
-from daft.series import Series
+from daft.series.series import Series
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
