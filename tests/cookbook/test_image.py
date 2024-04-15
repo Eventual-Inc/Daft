@@ -61,7 +61,7 @@ def test_image_resize_mixed_modes():
     resized_i = as_py[4]
     assert np.all(resized_i == 10)
 
-    assert as_py[-1] == None
+    assert as_py[-1] is None
 
 
 def test_image_decode() -> None:
