@@ -14,6 +14,7 @@ quote-style = "double"
 skip-magic-trailing-comma = false
 
 [lint]
+exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py"]
 extend-select = [
   "UP",  # pyupgrade
   "LOG",  # flake8-logging
@@ -29,7 +30,5 @@ ignore = [
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files
 "__init__.py" = ["E402", "F401", "I"]
-# ignore vendored cloudpickle old python code
-"daft/pickle/cloudpickle*" = ["UP036"]
 # Allow wild imports in conftest
 "tests/conftest.py" = ["F405", "E402", "F403"]

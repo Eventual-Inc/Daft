@@ -494,7 +494,7 @@ def _dynamic_class_reduce(obj):
 
 def _class_reduce(obj):
     """Select the reducer depending on the dynamic nature of the class obj"""
-    if obj is type(None):
+    if obj is type(None):  # noqa
         return type, (None,)
     elif obj is type(Ellipsis):
         return type, (Ellipsis,)
@@ -777,7 +777,7 @@ class CloudPickler(Pickler):
               reducers, such as Exceptions. See
               https://github.com/cloudpipe/cloudpickle/issues/248
             """
-            if sys.version_info[:2] < (3, 7) and _is_parametrized_type_hint(obj):  # pragma: no branch
+            if sys.version_info[:2] < (3, 7) and _is_parametrized_type_hint(obj):  # noqa  # pragma: no branch
                 return (_create_parametrized_type_hint, parametrized_type_hint_getinitargs(obj))
             t = type(obj)
             try:
@@ -827,7 +827,7 @@ class CloudPickler(Pickler):
             The name of this method is somewhat misleading: all types get
             dispatched here.
             """
-            if obj is type(None):
+            if obj is type(None):  # noqa
                 return self.save_reduce(type, (None,), obj=obj)
             elif obj is type(Ellipsis):
                 return self.save_reduce(type, (Ellipsis,), obj=obj)
@@ -836,7 +836,7 @@ class CloudPickler(Pickler):
             elif obj in _BUILTIN_TYPE_NAMES:
                 return self.save_reduce(_builtin_type, (_BUILTIN_TYPE_NAMES[obj],), obj=obj)
 
-            if sys.version_info[:2] < (3, 7) and _is_parametrized_type_hint(obj):  # pragma: no branch
+            if sys.version_info[:2] < (3, 7) and _is_parametrized_type_hint(obj):  # noqa  # pragma: no branch
                 # Parametrized typing constructs in Python < 3.7 are not
                 # compatible with type checks and ``isinstance`` semantics. For
                 # this reason, it is easier to detect them using a
