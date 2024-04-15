@@ -151,6 +151,10 @@ impl PySeries {
             .into())
     }
 
+    pub fn exp(&self) -> PyResult<Self> {
+        Ok(self.series.exp()?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }

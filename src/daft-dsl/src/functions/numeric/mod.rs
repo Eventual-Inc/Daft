@@ -1,5 +1,6 @@
 mod abs;
 mod ceil;
+mod exp;
 mod floor;
 mod round;
 mod sign;
@@ -13,6 +14,7 @@ use sign::SignEvaluator;
 
 use serde::{Deserialize, Serialize};
 
+use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::Expr;
 
@@ -28,6 +30,7 @@ pub enum NumericExpr {
     Sin,
     Cos,
     Tan,
+    Exp,
 }
 
 impl NumericExpr {
@@ -43,6 +46,7 @@ impl NumericExpr {
             Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
             Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
             Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
+            Exp => &ExpEvaluator {},
         }
     }
 }
@@ -99,6 +103,13 @@ pub fn cos(input: &Expr) -> Expr {
 pub fn tan(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Tan),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn exp(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Exp),
         inputs: vec![input.clone()],
     }
 }

@@ -13,6 +13,7 @@ pub mod comparison;
 pub mod concat;
 pub mod date;
 pub mod downcast;
+mod exp;
 pub mod filter;
 pub mod float;
 pub mod floor;

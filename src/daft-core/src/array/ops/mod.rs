@@ -13,6 +13,7 @@ mod concat;
 mod concat_agg;
 mod count;
 mod date;
+mod exp;
 mod filter;
 mod float;
 mod floor;

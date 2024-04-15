@@ -372,6 +372,11 @@ class Expression:
         expr = self._expr.tan()
         return Expression._from_pyexpr(expr)
 
+    def exp(self) -> Expression:
+        """The e^self of a numeric expression (``expr.exp()``)"""
+        expr = self._expr.exp()
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
