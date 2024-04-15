@@ -84,12 +84,23 @@ def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceber
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
+@pytest.mark.integration()
+def test_daft_iceberg_table_read_partition_column_identity(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_partitioned_by_identity")
+    df = daft.read_iceberg(tab)
+    df = df.select("ts", "number")
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[["ts", "number"]]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
 @pytest.mark.skip(
     reason="Selecting just the identity-transformed partition key in an iceberg table is not yet supported. "
     "Issue: https://github.com/Eventual-Inc/Daft/issues/2129"
 )
 @pytest.mark.integration()
-def test_daft_iceberg_table_read_partition_column_identity(local_iceberg_catalog):
+def test_daft_iceberg_table_read_partition_column_identity_only(local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.test_partitioned_by_identity")
     df = daft.read_iceberg(tab)
     df = df.select("ts")
