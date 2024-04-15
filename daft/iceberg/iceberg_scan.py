@@ -132,8 +132,10 @@ class IcebergScanOperator(ScanOperator):
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warn(
-                f"{self.display_name()} has Partitioning Keys: {self.partitioning_keys()} but no partition filter was specified. This will result in a full table scan."
+            logging.warning(
+                "%s has Partitioning Keys: %s but no partition filter was specified. This will result in a full table scan.",
+                self.display_name(),
+                self.partitioning_keys(),
             )
         scan_tasks = []
 

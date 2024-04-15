@@ -32,7 +32,7 @@ def profiler(filename: str) -> VizTracer:
         else:
             tracer = get_tracer()
             logger.warning(
-                f"profiler({filename}) not created. Another profiler({tracer.output_file}) is already active."
+                "profiler(%s) not created. Another profiler(%s) is already active.", filename, tracer.output_file
             )
 
     yield None
@@ -59,7 +59,7 @@ def timingcontext(name: str):
     finally:
         end = time.time()
 
-        logger.debug(f"log_event:{name}:{(end-start)*1000:.3f}ms")
+        logger.debug("log_event:%s:%sms", name, f"{(end-start)*1000:.3f}")
 
 
 def log_event(name: str):
