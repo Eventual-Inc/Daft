@@ -271,6 +271,13 @@ def test_table_numeric_trigonometry(fun: str, is_arc: bool) -> None:
     )
 
 
+def test_table_numeric_arc_trigonometry_oor() -> None:
+    table = MicroPartition.from_pydict({"a": [math.pi, 2]})
+    cot_table = table.eval_expression_list([col("a").arcsin(), col("a").arccos()])
+    assert all(math.isnan(x) for x in cot_table.get_column("a").to_pylist())
+    assert all(math.isnan(x) for x in cot_table.get_column("b").to_pylist())
+
+
 def test_table_numeric_cot() -> None:
     table = MicroPartition.from_pydict({"a": [0.0, None, math.nan]})
     cot_table = table.eval_expression_list([col("a").cot()])
