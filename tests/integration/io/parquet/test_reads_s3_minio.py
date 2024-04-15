@@ -14,8 +14,8 @@ def test_minio_parquet_bulk_readback(minio_io_config):
     bucket_name = "data-engineering-prod"
     with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
         target_paths = [
-            f"s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
-            f"s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
+            "s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            "s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)
@@ -43,9 +43,9 @@ def test_minio_parquet_ignore_marker_files(minio_io_config):
     bucket_name = "data-engineering-prod"
     with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
         target_paths = [
-            f"s3://data-engineering-prod/X/no_ext_parquet_metadata",
-            f"s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
-            f"s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
+            "s3://data-engineering-prod/X/no_ext_parquet_metadata",
+            "s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            "s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)

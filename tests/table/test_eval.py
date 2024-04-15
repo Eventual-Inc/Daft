@@ -119,7 +119,7 @@ def test_table_numeric_expressions(data_dtype, op) -> None:
 
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["result"]
-    pyresult = [op(l, r) for l, r in zip(a, b)]
+    pyresult = [op(left, right) for left, right in zip(a, b)]
     assert daft_table.get_column("result").to_pylist() == pyresult
 
 
@@ -135,7 +135,7 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
 
     assert len(daft_table) == 5
     assert daft_table.column_names() == ["result"]
-    pyresult = [op(l, r) for l, r in zip(a[:2], b[:2])]
+    pyresult = [op(left, right) for left, right in zip(a[:2], b[:2])]
     assert daft_table.get_column("result").to_pylist()[:2] == pyresult
 
     assert daft_table.get_column("result").to_pylist()[2:] == [None, None, None]

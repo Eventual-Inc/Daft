@@ -65,7 +65,7 @@ def read_csv(
             "blocker for your workflow!"
         )
     if isinstance(path, list) and len(path) == 0:
-        raise ValueError(f"Cannot read DataFrame from from empty list of CSV filepaths")
+        raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

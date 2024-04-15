@@ -9,6 +9,17 @@ import pytest
 import daft
 from daft.table import MicroPartition
 
+# import all conftest
+from tests.integration.io.conftest import *  # noqa: F403
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--credentials",
+        action="store_true",
+        help="Whether or not the current environment has access to remote storage credentials",
+    )
+
 
 @pytest.fixture(scope="session", autouse=True)
 def set_execution_configs():

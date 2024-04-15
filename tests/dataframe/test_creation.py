@@ -20,7 +20,7 @@ from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-from tests.conftest import *
+from tests.conftest import UuidType
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 

@@ -177,7 +177,7 @@ def run_all_benchmarks(
         logger.info(f"Writing CSV to: {csv_output_location}")
         metrics_builder.dump_csv(csv_output_location)
     else:
-        logger.info(f"No CSV location specified, skipping CSV write")
+        logger.info("No CSV location specified, skipping CSV write")
 
 
 def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: int) -> str:

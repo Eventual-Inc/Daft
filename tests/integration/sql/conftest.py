@@ -44,7 +44,7 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
         "time_col": [
             (datetime.combine(datetime.today(), time(0, 0)) + timedelta(minutes=x)).time() for x in range(200)
         ],
-        "null_col": [None if i % 2 == 1 else f"not_null" for i in range(num_rows)],
+        "null_col": [None if i % 2 == 1 else "not_null" for i in range(num_rows)],
         "non_uniformly_distributed_col": [1 for _ in range(num_rows)],
     }
     return pd.DataFrame(data)

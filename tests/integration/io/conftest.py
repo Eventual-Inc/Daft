@@ -19,14 +19,6 @@ T = TypeVar("T")
 YieldFixture = Generator[T, None, None]
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--credentials",
-        action="store_true",
-        help="Whether or not the current environment has access to remote storage credentials",
-    )
-
-
 ###
 # Config fixtures
 ###

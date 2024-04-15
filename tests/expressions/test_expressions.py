@@ -32,17 +32,17 @@ from daft.table import MicroPartition
     ],
 )
 def test_make_lit(data, expected_dtype) -> None:
-    l = lit(data)
-    assert l.name() == "literal"
+    literal = lit(data)
+    assert literal.name() == "literal"
     empty_table = MicroPartition.empty()
-    lit_table = empty_table.eval_expression_list([l])
+    lit_table = empty_table.eval_expression_list([literal])
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
-    repr_out = repr(l)
+    repr_out = repr(literal)
 
     assert repr_out.startswith("lit(")
     assert repr_out.endswith(")")
-    copied = copy.deepcopy(l)
+    copied = copy.deepcopy(literal)
     assert repr_out == repr(copied)
 
 

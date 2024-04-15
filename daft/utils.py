@@ -83,7 +83,8 @@ def map_operator_arrow_semantics_bool(
     right_pylist: list,
 ) -> list[bool | None]:
     return [
-        bool(operator(l, r)) if (l is not None and r is not None) else None for (l, r) in zip(left_pylist, right_pylist)
+        bool(operator(left, right)) if (left is not None and right is not None) else None
+        for (left, right) in zip(left_pylist, right_pylist)
     ]
 
 
@@ -103,7 +104,10 @@ def map_operator_arrow_semantics(
     left_pylist: list,
     right_pylist: list,
 ) -> list:
-    return [operator(l, r) if (l is not None and r is not None) else None for (l, r) in zip(left_pylist, right_pylist)]
+    return [
+        operator(left, right) if (left is not None and right is not None) else None
+        for (left, right) in zip(left_pylist, right_pylist)
+    ]
 
 
 def pyarrow_supports_fixed_shape_tensor() -> bool:

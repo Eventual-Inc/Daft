@@ -72,11 +72,11 @@ class DataFrame:
         if not isinstance(builder, LogicalPlanBuilder):
             if isinstance(builder, dict):
                 raise ValueError(
-                    f"DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
+                    "DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
                 )
             if isinstance(builder, list):
                 raise ValueError(
-                    f"DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
+                    "DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
                 )
             raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlanBuilder, received: {builder}")
 

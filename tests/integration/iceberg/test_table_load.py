@@ -64,7 +64,7 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    tab = local_iceberg_catalog.load_table("default.test_table_rename")
     df = daft.read_iceberg(tab)
     df = df.where(df["idx_renamed"] <= 1)
     daft_pandas = df.to_pandas()
@@ -75,7 +75,7 @@ def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catal
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    tab = local_iceberg_catalog.load_table("default.test_table_rename")
     df = daft.read_iceberg(tab)
     df = df.select("idx_renamed")
     daft_pandas = df.to_pandas()

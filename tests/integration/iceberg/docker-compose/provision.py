@@ -316,7 +316,7 @@ TBLPROPERTIES (
 )
 
 spark.sql(
-    f"""
+    """
 INSERT INTO default.test_table_sanitized_character
 VALUES
     ('123')

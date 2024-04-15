@@ -18,21 +18,34 @@ def test_series_float_sorting(dtype) -> None:
     s_sorted = s.sort()
     assert len(s_sorted) == len(s)
     assert s_sorted.datatype() == s.datatype()
-    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order)])
+    assert all(
+        [
+            (left == right) or (math.isnan(left) and math.isnan(right))
+            for left, right in zip(s_sorted.to_pylist(), sorted_order)
+        ]
+    )
 
     s_argsorted = s.argsort()
     assert len(s_argsorted) == len(s)
 
     taken = s.take(s_argsorted)
     assert len(taken) == len(s)
-    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order)])
+    assert all(
+        [
+            (left == right) or (math.isnan(left) and math.isnan(right))
+            for left, right in zip(taken.to_pylist(), sorted_order)
+        ]
+    )
 
     ## Descending
     s_sorted = s.sort(descending=True)
     assert len(s_sorted) == len(s)
     assert s_sorted.datatype() == s.datatype()
     assert all(
-        [(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(s_sorted.to_pylist(), sorted_order[::-1])]
+        [
+            (left == right) or (math.isnan(left) and math.isnan(right))
+            for left, right in zip(s_sorted.to_pylist(), sorted_order[::-1])
+        ]
     )
 
     s_argsorted = s.argsort(descending=True)
@@ -40,7 +53,12 @@ def test_series_float_sorting(dtype) -> None:
 
     taken = s.take(s_argsorted)
     assert len(taken) == len(s)
-    assert all([(l == r) or (math.isnan(l) and math.isnan(r)) for l, r in zip(taken.to_pylist(), sorted_order[::-1])])
+    assert all(
+        [
+            (left == right) or (math.isnan(left) and math.isnan(right))
+            for left, right in zip(taken.to_pylist(), sorted_order[::-1])
+        ]
+    )
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES)
