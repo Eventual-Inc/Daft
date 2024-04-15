@@ -378,7 +378,7 @@ def test_missing_file_path(minio_io_config, recursive):
         for name in files:
             fs.write_bytes(f"s3://{bucket_name}/{name}", b"")
         with pytest.raises(FileNotFoundError, match=f"s3://{bucket_name}/c/cc/ddd"):
-            daft_ls_result = io_glob(path, io_config=minio_io_config)
+            io_glob(path, io_config=minio_io_config)
 
 
 @pytest.mark.integration()
