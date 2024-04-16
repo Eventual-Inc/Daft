@@ -214,7 +214,9 @@ pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
     };
     let region_name = s3_conf.region().map(|r| r.to_string());
     Ok(S3Config {
-        endpoint_url: None, // TODO: might be able to derive this from an envvars: `AWS_ENDPOINT_URL` and `AWS_ENDPOINT_URL_S3`
+        endpoint_url: std::env::var("AWS_ENDPOINT_URL")
+            .or_else(|_| std::env::var("AWS_ENDPOINT_URL_S3"))
+            .ok(),
         region_name,
         key_id,
         session_token,
