@@ -32,17 +32,17 @@ from daft.table import MicroPartition
     ],
 )
 def test_make_lit(data, expected_dtype) -> None:
-    l = lit(data)
-    assert l.name() == "literal"
+    literal = lit(data)
+    assert literal.name() == "literal"
     empty_table = MicroPartition.empty()
-    lit_table = empty_table.eval_expression_list([l])
+    lit_table = empty_table.eval_expression_list([literal])
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
-    repr_out = repr(l)
+    repr_out = repr(literal)
 
     assert repr_out.startswith("lit(")
     assert repr_out.endswith(")")
-    copied = copy.deepcopy(l)
+    copied = copy.deepcopy(literal)
     assert repr_out == repr(copied)
 
 
@@ -123,6 +123,29 @@ def test_repr_functions_round() -> None:
     assert repr_out == repr(copied)
 
 
+@pytest.mark.parametrize(
+    "fun",
+    [
+        "sin",
+        "cos",
+        "tan",
+        "cot",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "radians",
+        "degrees",
+    ],
+)
+def test_repr_functions_trigonometry(fun: str) -> None:
+    a = col("a")
+    y = getattr(a, fun)()
+    repr_out = repr(y)
+    assert repr_out == f"{fun}(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()
@@ -155,6 +178,15 @@ def test_repr_functions_day_of_week() -> None:
     y = a.dt.day_of_week()
     repr_out = repr(y)
     assert repr_out == "day_of_week(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_exp() -> None:
+    a = col("a")
+    y = a.exp()
+    repr_out = repr(y)
+    assert repr_out == "exp(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 

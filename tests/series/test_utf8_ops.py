@@ -200,18 +200,20 @@ def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns"],
     [
-        # Empty data and pattern
-        ([[], [], []]),
+        # Empty data.
+        ([[], [","] * 4]),
+        # Empty patterns.
+        ([["foo"] * 4, []]),
     ],
 )
 @pytest.mark.parametrize("regex", [False, True])
-def test_series_utf8_split_empty_arrs(data, patterns, expected, regex) -> None:
+def test_series_utf8_split_empty_arrs(data, patterns, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
-    result = s.str.split(patterns)
-    assert result.to_pylist() == expected
+    with pytest.raises(ValueError):
+        s.str.split(patterns, regex=regex)
 
 
 @pytest.mark.parametrize(
@@ -437,6 +439,22 @@ def test_series_utf8_left(data, nchars, expected) -> None:
     assert result.to_pylist() == expected
 
 
+@pytest.mark.parametrize(
+    ["data", "nchars"],
+    [
+        # empty data
+        ([[], [0, 1]]),
+        # empty nchars
+        ([["foo"] * 4, []]),
+    ],
+)
+def test_series_utf8_left_empty_arrs(data, nchars) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
+
+
 def test_series_utf8_left_mismatch_len() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
@@ -486,6 +504,22 @@ def test_series_utf8_right(data, nchars, expected) -> None:
     nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
     result = s.str.right(nchars)
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "nchars"],
+    [
+        # empty data
+        ([[], [0, 1]]),
+        # empty nchars
+        ([["foo"] * 4, []]),
+    ],
+)
+def test_series_utf8_right_empty_arrs(data, nchars) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
 
 
 def test_series_utf8_right_mismatch_len() -> None:
@@ -639,6 +673,22 @@ def test_series_utf8_find(data, substrs, expected) -> None:
     substrs = Series.from_arrow(pa.array(substrs, type=pa.string()))
     result = s.str.find(substrs)
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "substrs"],
+    [
+        # Empty data.
+        ([[], ["foo", "bar"]]),
+        # Empty substrs
+        ([["foo"] * 4, []]),
+    ],
+)
+def test_series_utf8_find_empty_arrs(data, substrs) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    substrs = Series.from_arrow(pa.array(substrs, type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.find(substrs)
 
 
 def test_series_utf8_find_mismatch_len() -> None:

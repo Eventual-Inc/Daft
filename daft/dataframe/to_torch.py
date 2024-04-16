@@ -18,7 +18,7 @@ except ImportError:
         MAP_DATASET_CLASS = torch.utils.data.Dataset
         ITER_DATASET_CLASS = torch.utils.data.IterableDataset
     except ImportError:
-        logger.error(f"Error when importing Torch. To use PyTorch features, please install torch.")
+        logger.error("Error when importing Torch. To use PyTorch features, please install torch.")
         raise
 
 

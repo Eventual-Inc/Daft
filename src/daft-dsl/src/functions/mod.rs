@@ -10,7 +10,7 @@ pub mod temporal;
 pub mod uri;
 pub mod utf8;
 
-use std::fmt::{Formatter, Result};
+use std::fmt::{Display, Formatter, Result};
 
 use self::image::ImageExpr;
 use self::json::JsonExpr;
@@ -53,8 +53,8 @@ pub enum FunctionExpr {
 
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field>;
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series>;
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field>;
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series>;
 }
 
 impl FunctionExpr {
@@ -79,22 +79,28 @@ impl FunctionExpr {
     }
 }
 
+impl Display for FunctionExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.fn_name())
+    }
+}
+
 impl FunctionEvaluator for FunctionExpr {
     fn fn_name(&self) -> &'static str {
         self.get_evaluator().fn_name()
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
         self.get_evaluator().to_field(inputs, schema, expr)
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         self.get_evaluator().evaluate(inputs, expr)
     }
 }
 
 pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[Expr]) -> Result {
-    write!(f, "{}(", func.fn_name())?;
+    write!(f, "{}(", func)?;
     for (i, input) in inputs.iter().enumerate() {
         if i != 0 {
             write!(f, ", ")?;

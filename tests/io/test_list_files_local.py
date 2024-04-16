@@ -163,5 +163,5 @@ def test_missing_file_path(tmp_path, include_protocol):
     p = f"{d}/c/cc/ddd"
     if include_protocol:
         p = "file://" + p
-    with pytest.raises(FileNotFoundError, match=f"/c/cc/ddd not found"):
+    with pytest.raises(FileNotFoundError, match="/c/cc/ddd not found"):
         io_glob(p)

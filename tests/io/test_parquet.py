@@ -83,9 +83,6 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
             pa.timestamp(str(coerce_to)),
         ),
     }
-    schema = [
-        ("timestamp", DataType.timestamp(coerce_to)),
-    ]
 
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,

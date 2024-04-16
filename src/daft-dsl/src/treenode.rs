@@ -32,6 +32,7 @@ impl TreeNode for Expr {
             }
             BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
             IsIn(expr, items) => vec![expr.as_ref(), items.as_ref()],
+            FillNull(expr, fill_value) => vec![expr.as_ref(), fill_value.as_ref()],
             Column(_) | Literal(_) => vec![],
             Function { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
             IfElse {
@@ -91,6 +92,10 @@ impl TreeNode for Expr {
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
             IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
             NotNull(expr) => NotNull(transform(expr.as_ref().clone())?.into()),
+            FillNull(expr, fill_value) => FillNull(
+                transform(expr.as_ref().clone())?.into(),
+                transform(fill_value.as_ref().clone())?.into(),
+            ),
             IsIn(expr, items) => IsIn(
                 transform(expr.as_ref().clone())?.into(),
                 transform(items.as_ref().clone())?.into(),

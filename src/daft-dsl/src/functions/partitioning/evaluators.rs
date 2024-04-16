@@ -19,7 +19,12 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 stringify!($op)
             }
 
-            fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+            fn to_field(
+                &self,
+                inputs: &[Expr],
+                schema: &Schema,
+                _: &FunctionExpr,
+            ) -> DaftResult<Field> {
                 match inputs {
                     [input] => match input.to_field(schema) {
                         Ok(field) if field.dtype.is_temporal() => Ok(Field::new(
@@ -40,7 +45,7 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 }
             }
 
-            fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+            fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
                 match inputs {
                     [input] => input.$kernel(),
                     _ => Err(DaftError::ValueError(format!(
@@ -53,6 +58,7 @@ macro_rules! impl_func_evaluator_for_partitioning {
         }
     };
 }
+use crate::functions::FunctionExpr;
 use DataType::{Date, Int32};
 impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
 impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
@@ -66,7 +72,7 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
         "partitioning_iceberg_bucket"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match field.dtype {
@@ -96,14 +102,9 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
-        use crate::functions::FunctionExpr;
-
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let n = match expr {
-            Expr::Function {
-                func: FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
-                inputs: _,
-            } => n,
+            FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)) => n,
             _ => panic!("Expected PartitioningExpr::IcebergBucket Expr, got {expr}"),
         };
 
@@ -124,7 +125,7 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         "partitioning_iceberg_truncate"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {
@@ -145,14 +146,9 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
-        use crate::functions::FunctionExpr;
-
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let w = match expr {
-            Expr::Function {
-                func: FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)),
-                inputs: _,
-            } => w,
+            FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)) => w,
             _ => panic!("Expected PartitioningExpr::IcebergTruncate Expr, got {expr}"),
         };
 

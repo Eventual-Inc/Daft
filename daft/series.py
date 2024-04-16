@@ -367,6 +367,46 @@ class Series:
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
 
+    def sin(self) -> Series:
+        """The elementwise sine of a numeric series."""
+        return Series._from_pyseries(self._series.sin())
+
+    def cos(self) -> Series:
+        """The elementwise cosine of a numeric series."""
+        return Series._from_pyseries(self._series.cos())
+
+    def tan(self) -> Series:
+        """The elementwise tangent of a numeric series."""
+        return Series._from_pyseries(self._series.tan())
+
+    def cot(self) -> Series:
+        """The elementwise cotangent of a numeric series"""
+        return Series._from_pyseries(self._series.cot())
+
+    def arcsin(self) -> Series:
+        """The elementwise arc sine of a numeric series"""
+        return Series._from_pyseries(self._series.arcsin())
+
+    def arccos(self) -> Series:
+        """The elementwise arc cosine of a numeric series"""
+        return Series._from_pyseries(self._series.arccos())
+
+    def arctan(self) -> Series:
+        """The elementwise arc tangent of a numeric series"""
+        return Series._from_pyseries(self._series.arctan())
+
+    def radians(self) -> Series:
+        """The elementwise radians of a numeric series"""
+        return Series._from_pyseries(self._series.radians())
+
+    def degrees(self) -> Series:
+        """The elementwise degrees of a numeric series"""
+        return Series._from_pyseries(self._series.degrees())
+
+    def exp(self) -> Series:
+        """The e^self of a numeric series"""
+        return Series._from_pyseries(self._series.exp())
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
@@ -496,6 +536,12 @@ class Series:
     def not_null(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.not_null())
+
+    def fill_null(self, fill_value: object) -> Series:
+        if not isinstance(fill_value, Series):
+            raise ValueError(f"expected another Series but got {type(fill_value)}")
+        assert self._series is not None and fill_value._series is not None
+        return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
@@ -721,7 +767,7 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
-        return Series._from_pyseries(self._series.list_lengths())
+        return Series._from_pyseries(self._series.list_count(CountMode.All))
 
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))

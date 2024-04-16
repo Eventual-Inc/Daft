@@ -42,7 +42,7 @@ from daft.runners.partitioning import (
     TableReadSQLOptions,
 )
 from daft.series import Series
-from daft.sql.sql_reader import SQLReader, get_db_scheme_from_url
+from daft.sql.sql_connection import SQLConnection
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -219,7 +219,7 @@ def read_parquet(
 
 def read_sql(
     sql: str,
-    url: str,
+    conn: SQLConnection,
     schema: Schema,
     sql_options: TableReadSQLOptions = TableReadSQLOptions(),
     read_options: TableReadOptions = TableReadOptions(),
@@ -239,20 +239,19 @@ def read_sql(
 
     if sql_options.predicate_expression is not None:
         # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-        predicate_sql = sql_options.predicate_expression._to_sql(get_db_scheme_from_url(url))
+        predicate_sql = sql_options.predicate_expression._to_sql(conn.dialect)
         apply_pushdowns_to_sql = predicate_sql is not None
     else:
         # If we don't have a predicate, we can still apply the limit and projection to the SQL query
         predicate_sql = None
         apply_pushdowns_to_sql = True
 
-    pa_table = SQLReader(
+    pa_table = conn.read(
         sql,
-        url,
-        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
         projection=read_options.column_names if apply_pushdowns_to_sql else None,
         predicate=predicate_sql,
-    ).read()
+        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
+    )
     mp = MicroPartition.from_arrow(pa_table)
 
     if len(mp) != 0 and apply_pushdowns_to_sql is False:
@@ -361,9 +360,7 @@ def read_csv(
             parse_options=parse_options,
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
-                column_names=schema.column_names()
-                if csv_options.header_index is None
-                else None,
+                column_names=schema.column_names() if csv_options.header_index is None else None,
             ),
             convert_options=pacsv.ConvertOptions(
                 # Column pruning
@@ -413,7 +410,6 @@ def write_tabular(
     io_config: IOConfig | None = None,
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
-
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     if isinstance(path, pathlib.Path):
         path_str = str(path)
@@ -429,7 +425,6 @@ def write_tabular(
     part_keys_postfix_per_table: list[str | None]
     partition_values = None
     if partition_cols and len(partition_cols) > 0:
-
         default_part = Series.from_pylist([partition_null_fallback])
         split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
         assert len(split_tables) == len(partition_values)
@@ -564,7 +559,6 @@ def write_iceberg(
     spec_id: int | None,
     io_config: IOConfig | None = None,
 ):
-
     from pyiceberg.io.pyarrow import (
         compute_statistics_plan,
         fill_parquet_file_metadata,
@@ -587,7 +581,6 @@ def write_iceberg(
     data_files = []
 
     def file_visitor(written_file, protocol=protocol):
-
         file_path = f"{protocol}://{written_file.path}"
         size = written_file.size
         metadata = written_file.metadata

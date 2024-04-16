@@ -225,6 +225,56 @@ impl PyExpr {
         Ok(round(&self.expr, decimal).into())
     }
 
+    pub fn sin(&self) -> PyResult<Self> {
+        use functions::numeric::sin;
+        Ok(sin(&self.expr).into())
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        use functions::numeric::cos;
+        Ok(cos(&self.expr).into())
+    }
+
+    pub fn tan(&self) -> PyResult<Self> {
+        use functions::numeric::tan;
+        Ok(tan(&self.expr).into())
+    }
+
+    pub fn cot(&self) -> PyResult<Self> {
+        use functions::numeric::cot;
+        Ok(cot(&self.expr).into())
+    }
+
+    pub fn arcsin(&self) -> PyResult<Self> {
+        use functions::numeric::arcsin;
+        Ok(arcsin(&self.expr).into())
+    }
+
+    pub fn arccos(&self) -> PyResult<Self> {
+        use functions::numeric::arccos;
+        Ok(arccos(&self.expr).into())
+    }
+
+    pub fn arctan(&self) -> PyResult<Self> {
+        use functions::numeric::arctan;
+        Ok(arctan(&self.expr).into())
+    }
+
+    pub fn radians(&self) -> PyResult<Self> {
+        use functions::numeric::radians;
+        Ok(radians(&self.expr).into())
+    }
+
+    pub fn degrees(&self) -> PyResult<Self> {
+        use functions::numeric::degrees;
+        Ok(degrees(&self.expr).into())
+    }
+
+    pub fn exp(&self) -> PyResult<Self> {
+        use functions::numeric::exp;
+        Ok(exp(&self.expr).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }
@@ -333,6 +383,10 @@ impl PyExpr {
 
     pub fn not_null(&self) -> PyResult<Self> {
         Ok(self.expr.not_null().into())
+    }
+
+    pub fn fill_null(&self, fill_value: &Self) -> PyResult<Self> {
+        Ok(self.expr.fill_null(&fill_value.expr).into())
     }
 
     pub fn is_in(&self, other: &Self) -> PyResult<Self> {
@@ -521,14 +575,34 @@ impl PyExpr {
         Ok(join(&self.expr, &delimiter.expr).into())
     }
 
-    pub fn list_lengths(&self) -> PyResult<Self> {
-        use crate::functions::list::lengths;
-        Ok(lengths(&self.expr).into())
+    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
+        use crate::functions::list::count;
+        Ok(count(&self.expr, mode).into())
     }
 
     pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
         use crate::functions::list::get;
         Ok(get(&self.expr, &idx.expr, &default.expr).into())
+    }
+
+    pub fn list_sum(&self) -> PyResult<Self> {
+        use crate::functions::list::sum;
+        Ok(sum(&self.expr).into())
+    }
+
+    pub fn list_mean(&self) -> PyResult<Self> {
+        use crate::functions::list::mean;
+        Ok(mean(&self.expr).into())
+    }
+
+    pub fn list_min(&self) -> PyResult<Self> {
+        use crate::functions::list::min;
+        Ok(min(&self.expr).into())
+    }
+
+    pub fn list_max(&self) -> PyResult<Self> {
+        use crate::functions::list::max;
+        Ok(max(&self.expr).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {

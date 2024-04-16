@@ -13,6 +13,7 @@ pub mod comparison;
 pub mod concat;
 pub mod date;
 pub mod downcast;
+mod exp;
 pub mod filter;
 pub mod float;
 pub mod floor;
@@ -34,6 +35,7 @@ pub mod sketch_percentile;
 pub mod sort;
 pub mod struct_;
 pub mod take;
+mod trigonometry;
 pub mod utf8;
 
 fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {

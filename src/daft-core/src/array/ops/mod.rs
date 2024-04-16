@@ -15,6 +15,7 @@ mod concat;
 mod concat_agg;
 mod count;
 mod date;
+mod exp;
 mod filter;
 mod float;
 mod floor;
@@ -44,6 +45,7 @@ mod struct_;
 mod sum;
 mod take;
 pub(crate) mod tensor;
+pub mod trigonometry;
 mod truncate;
 mod utf8;
 

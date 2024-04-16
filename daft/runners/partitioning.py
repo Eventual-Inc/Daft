@@ -311,9 +311,9 @@ class PartitionCacheEntry:
 
 class PartitionSetCache:
     def __init__(self) -> None:
-        self.__uuid_to_partition_set: weakref.WeakValueDictionary[
-            str, PartitionCacheEntry
-        ] = weakref.WeakValueDictionary()
+        self.__uuid_to_partition_set: weakref.WeakValueDictionary[str, PartitionCacheEntry] = (
+            weakref.WeakValueDictionary()
+        )
         self._lock = threading.Lock()
 
     def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:

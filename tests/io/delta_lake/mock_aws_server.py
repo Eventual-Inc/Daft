@@ -30,7 +30,7 @@ def start_service(host: str, port: int, log_file: io.IOBase):
         output = process.poll()
         if output is not None:
             print(f"moto_server exited status {output}")
-            pytest.fail(f"Cannot start mock AWS server")
+            pytest.fail("Cannot start mock AWS server")
 
         try:
             # we need to bypass the proxies due to monkeypatches
@@ -43,7 +43,7 @@ def start_service(host: str, port: int, log_file: io.IOBase):
         time.sleep(0.1)
     else:
         stop_process(process)  # pytest.fail doesn't call stop_process
-        pytest.fail(f"Cannot start mock AWS server")
+        pytest.fail("Cannot start mock AWS server")
 
     return process
 

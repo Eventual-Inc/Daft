@@ -48,8 +48,9 @@ def test_schema_iter():
 
 
 def test_schema_eq():
-    t1, t2 = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}), MicroPartition.from_pydict(
-        {k: data for k, (data, _) in DATA.items()}
+    t1, t2 = (
+        MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}),
+        MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}),
     )
     s1, s2 = t1.schema(), t2.schema()
     assert s1 == s2
@@ -143,8 +144,9 @@ def test_field_pickling():
 
 
 def test_schema_pickling():
-    t1, t2 = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}), MicroPartition.from_pydict(
-        {k: data for k, (data, _) in DATA.items()}
+    t1, t2 = (
+        MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}),
+        MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}),
     )
 
     s1, s2 = t1.schema(), t2.schema()

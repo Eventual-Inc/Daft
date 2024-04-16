@@ -2,6 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
+use crate::functions::FunctionExpr;
 use crate::Expr;
 
 pub(super) struct SignEvaluator {}
@@ -11,7 +12,7 @@ impl FunctionEvaluator for SignEvaluator {
         "sign"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -28,7 +29,7 @@ impl FunctionEvaluator for SignEvaluator {
         Ok(field)
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",

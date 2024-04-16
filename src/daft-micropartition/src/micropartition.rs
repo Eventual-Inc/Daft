@@ -15,9 +15,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{
-    CsvSourceConfig, DatabaseSourceConfig, FileFormatConfig, ParquetSourceConfig,
-};
+use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
@@ -97,11 +95,14 @@ fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(Vec<Table>, SchemaRef)> {
-    let column_names = scan_task
+    let pushdown_columns = scan_task
         .pushdowns
         .columns
         .as_ref()
-        .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
+        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+    let file_column_names =
+        _get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
+
     let urls = scan_task.sources.iter().map(|s| s.get_path());
 
     let mut table_values = match scan_task.storage_config.as_ref() {
@@ -132,7 +133,7 @@ fn materialize_scan_task(
                     let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
-                        column_names.as_deref(),
+                        file_column_names.as_deref(),
                         None,
                         scan_task.pushdowns.limit,
                         row_groups,
@@ -165,7 +166,7 @@ fn materialize_scan_task(
                     };
                     let convert_options = CsvConvertOptions::new_internal(
                         scan_task.pushdowns.limit,
-                        column_names
+                        file_column_names
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
                         col_names
@@ -206,7 +207,7 @@ fn materialize_scan_task(
                 FileFormatConfig::Json(cfg) => {
                     let convert_options = JsonConvertOptions::new_internal(
                         scan_task.pushdowns.limit,
-                        column_names
+                        file_column_names
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
                         Some(scan_task.schema.clone()),
@@ -229,6 +230,7 @@ fn materialize_scan_task(
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
+                #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
                     return Err(common_error::DaftError::TypeError(
                         "Native reads for Database file format not implemented".to_string(),
@@ -310,31 +312,32 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
+                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                    sql,
+                    conn,
+                }) => {
                     let predicate_expr = scan_task
                         .pushdowns
                         .filters
                         .as_ref()
                         .map(|p| (*p.as_ref()).clone().into());
                     Python::with_gil(|py| {
-                        urls.map(|url| {
-                            crate::python::read_sql_into_py_table(
-                                py,
-                                sql,
-                                url,
-                                predicate_expr.clone(),
-                                scan_task.schema.clone().into(),
-                                scan_task
-                                    .pushdowns
-                                    .columns
-                                    .as_ref()
-                                    .map(|cols| cols.as_ref().clone()),
-                                scan_task.pushdowns.limit,
-                            )
-                            .map(|t| t.into())
-                            .context(PyIOSnafu)
-                        })
-                        .collect::<crate::Result<Vec<_>>>()
+                        let table = crate::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate_expr.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)?;
+                        Ok(vec![table])
                     })?
                 }
             }
@@ -757,6 +760,31 @@ pub(crate) fn read_json_into_micropartition(
     }
 }
 
+fn _get_file_column_names<'a>(
+    columns: Option<&'a [&'a str]>,
+    partition_spec: Option<&PartitionSpec>,
+) -> Option<Vec<&'a str>> {
+    match (columns, partition_spec.map(|ps| ps.to_fill_map())) {
+        (None, _) => None,
+        (Some(columns), None) => Some(columns.to_vec()),
+
+        // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
+        (Some(columns), Some(partition_fillmap)) => Some(
+            columns
+                .as_ref()
+                .iter()
+                .filter_map(|s| {
+                    if partition_fillmap.contains_key(s) {
+                        None
+                    } else {
+                        Some(*s)
+                    }
+                })
+                .collect::<Vec<&str>>(),
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn _read_parquet_into_loaded_micropartition(
     io_client: Arc<IOClient>,
@@ -774,9 +802,10 @@ fn _read_parquet_into_loaded_micropartition(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
+    let file_column_names = _get_file_column_names(columns, partition_spec);
     let all_tables = read_parquet_bulk(
         uris,
-        columns,
+        file_column_names.as_deref(),
         start_offset,
         num_rows,
         row_groups,

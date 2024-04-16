@@ -39,12 +39,12 @@ def nginx_http_url(nginx_config, tmpdir_factory):
 @pytest.mark.parametrize(
     "path",
     [
-        f"",
-        f"/",
-        f"/test_ls",
-        f"/test_ls/",
-        f"/test_ls//",
-        f"/test_ls/paginated-10-files/",
+        "",
+        "/",
+        "/test_ls",
+        "/test_ls/",
+        "/test_ls//",
+        "/test_ls/paginated-10-files/",
     ],
 )
 def test_http_flat_directory_listing(path, nginx_http_url):
@@ -122,7 +122,7 @@ def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
     tmpdir = Path(tmpdir)
     test_manifest_file = tmpdir / "index.html"
     test_manifest_file.write_text(
-        f"""
+        """
         <a href="/other.html">this is an absolute base path to a file</a>
         <a href="/dir/">this is an absolute base path to a dir</a>
     """

@@ -46,7 +46,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
     # an instance; @sphinx_accessor is a @property that allows this.
     NS = TypeVar("NS")
 
-    class sphinx_accessor(property):  # noqa: D101
+    class sphinx_accessor(property):
         def __get__(  # type: ignore[override]
             self,
             instance: Any,
@@ -357,6 +357,56 @@ class Expression:
         expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 
+    def sin(self) -> Expression:
+        """The elementwise sine of a numeric expression (``expr.sin()``)"""
+        expr = self._expr.sin()
+        return Expression._from_pyexpr(expr)
+
+    def cos(self) -> Expression:
+        """The elementwise cosine of a numeric expression (``expr.cos()``)"""
+        expr = self._expr.cos()
+        return Expression._from_pyexpr(expr)
+
+    def tan(self) -> Expression:
+        """The elementwise tangent of a numeric expression (``expr.tan()``)"""
+        expr = self._expr.tan()
+        return Expression._from_pyexpr(expr)
+
+    def cot(self) -> Expression:
+        """The elementwise cotangent of a numeric expression (``expr.cot()``)"""
+        expr = self._expr.cot()
+        return Expression._from_pyexpr(expr)
+
+    def arcsin(self) -> Expression:
+        """The elementwise arc sine of a numeric expression (``expr.arcsin()``)"""
+        expr = self._expr.arcsin()
+        return Expression._from_pyexpr(expr)
+
+    def arccos(self) -> Expression:
+        """The elementwise arc cosine of a numeric expression (``expr.arccos()``)"""
+        expr = self._expr.arccos()
+        return Expression._from_pyexpr(expr)
+
+    def arctan(self) -> Expression:
+        """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
+        expr = self._expr.arctan()
+        return Expression._from_pyexpr(expr)
+
+    def radians(self) -> Expression:
+        """The elementwise radians of a numeric expression (``expr.radians()``)"""
+        expr = self._expr.radians()
+        return Expression._from_pyexpr(expr)
+
+    def degrees(self) -> Expression:
+        """The elementwise degrees of a numeric expression (``expr.degrees()``)"""
+        expr = self._expr.degrees()
+        return Expression._from_pyexpr(expr)
+
+    def exp(self) -> Expression:
+        """The e^self of a numeric expression (``expr.exp()``)"""
+        expr = self._expr.exp()
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
@@ -487,6 +537,33 @@ class Expression:
             Expression: Boolean Expression indicating whether values are not missing
         """
         expr = self._expr.not_null()
+        return Expression._from_pyexpr(expr)
+
+    def fill_null(self, fill_value: Expression) -> Expression:
+        """Fills null values in the Expression with the provided fill_value
+
+        Example:
+            >>> df = daft.from_pydict({"data": [1, None, 3]})
+            >>> df = df.select(df["data"].fill_null(2))
+            >>> df.collect()
+            ╭───────╮
+            │ data  │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ╰───────╯
+
+        Returns:
+            Expression: Expression with null values filled with the provided fill_value
+        """
+
+        fill_value = Expression._to_expression(fill_value)
+        expr = self._expr.fill_null(fill_value._expr)
         return Expression._from_pyexpr(expr)
 
     def is_in(self, other: Any) -> Expression:
@@ -1120,13 +1197,24 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
 
+    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+        """Counts the number of elements in each list
+
+        Args:
+            mode: The mode to use for counting. Defaults to CountMode.Valid
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        return Expression._from_pyexpr(self._expr.list_count(mode))
+
     def lengths(self) -> Expression:
         """Gets the length of each list
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_lengths())
+        return Expression._from_pyexpr(self._expr.list_count(CountMode.All))
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list
@@ -1141,6 +1229,38 @@ class ExpressionListNamespace(ExpressionNamespace):
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
+
+    def sum(self) -> Expression:
+        """Sums each list. Empty lists and lists with all nulls yield null.
+
+        Returns:
+            Expression: an expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_sum())
+
+    def mean(self) -> Expression:
+        """Calculates the mean of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_mean())
+
+    def min(self) -> Expression:
+        """Calculates the minimum of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_min())
+
+    def max(self) -> Expression:
+        """Calculates the maximum of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_max())
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
@@ -1185,12 +1305,10 @@ class ExpressionsProjection(Iterable[Expression]):
         return iter(self._output_name_to_exprs.values())
 
     @overload
-    def __getitem__(self, idx: slice) -> list[Expression]:
-        ...
+    def __getitem__(self, idx: slice) -> list[Expression]: ...
 
     @overload
-    def __getitem__(self, idx: int) -> Expression:
-        ...
+    def __getitem__(self, idx: int) -> Expression: ...
 
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         # Relies on the fact that Python dictionaries are ordered

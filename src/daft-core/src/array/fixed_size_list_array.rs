@@ -166,6 +166,47 @@ impl FixedSizeListArray {
     }
 }
 
+impl<'a> IntoIterator for &'a FixedSizeListArray {
+    type Item = Option<Series>;
+
+    type IntoIter = FixedSizeListArrayIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FixedSizeListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+pub struct FixedSizeListArrayIter<'a> {
+    array: &'a FixedSizeListArray,
+    idx: usize,
+}
+
+impl Iterator for FixedSizeListArrayIter<'_> {
+    type Item = Option<Series>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.array.len() {
+            if let Some(validity) = self.array.validity() && !validity.get_bit(self.idx) {
+                self.idx += 1;
+                Some(None)
+            } else {
+                let step = self.array.fixed_element_len();
+
+                let start = self.idx * step;
+                let end = (self.idx + 1) * step;
+
+                self.idx += 1;
+                Some(Some(self.array.flat_child.slice(start, end).unwrap()))
+            }
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;

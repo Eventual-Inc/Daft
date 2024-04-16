@@ -39,14 +39,14 @@ from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
-    from ray.data.dataset import Dataset as RayDataset
-    from ray import ObjectRef as RayObjectRef
-    import torch.utils.data.Dataset as TorchDataset
-    import torch.utils.data.IterableDataset as TorchIterableDataset
+    import dask
     import pandas as pd
     import pyarrow as pa
-    import dask
+    import torch.utils.data.Dataset as TorchDataset
+    import torch.utils.data.IterableDataset as TorchIterableDataset
     from pyiceberg.table import Table as IcebergTable
+    from ray import ObjectRef as RayObjectRef
+    from ray.data.dataset import Dataset as RayDataset
 
 from daft.logical.schema import Schema
 
@@ -72,11 +72,11 @@ class DataFrame:
         if not isinstance(builder, LogicalPlanBuilder):
             if isinstance(builder, dict):
                 raise ValueError(
-                    f"DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
+                    "DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
                 )
             if isinstance(builder, list):
                 raise ValueError(
-                    f"DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
+                    "DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
                 )
             raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlanBuilder, received: {builder}")
 

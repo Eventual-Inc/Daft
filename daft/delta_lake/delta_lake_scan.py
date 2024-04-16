@@ -65,8 +65,10 @@ class DeltaLakeScanOperator(ScanOperator):
         add_actions: pa.RecordBatch = self._table.get_add_actions()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warn(
-                f"{self.display_name()} has partitioning keys = {self.partitioning_keys()}, but no partition filter was specified. This will result in a full table scan."
+            logging.warning(
+                "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
+                self.display_name(),
+                self.partitioning_keys(),
             )
 
         # TODO(Clark): Add support for deletion vectors.

@@ -1,0 +1,34 @@
+fix = true
+indent-width = 4
+line-length = 120
+target-version = "py37"
+
+[format]
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+[lint]
+exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py"]
+extend-select = [
+  "UP",  # pyupgrade
+  "LOG",  # flake8-logging
+  "G",  # flake8-logging-format
+  "I",  # isort
+  "RUF100",  # unused-noqa"
+  "T10"  # flake8-debugger
+]
+ignore = [
+  "E402"  # Module level import not at top of file [TODO(sammy): We want to fix this]
+]
+
+[lint.per-file-ignores]
+# Do not enforce usage and import order rules in init files
+"__init__.py" = ["E402", "F401", "I"]
+# Allow wild imports in conftest
+"tests/conftest.py" = ["F405", "E402", "F403"]

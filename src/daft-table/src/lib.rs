@@ -354,6 +354,10 @@ impl Table {
             Not(child) => !(self.eval_expression(child)?),
             IsNull(child) => self.eval_expression(child)?.is_null(),
             NotNull(child) => self.eval_expression(child)?.not_null(),
+            FillNull(child, fill_value) => {
+                let fill_value = self.eval_expression(fill_value)?;
+                self.eval_expression(child)?.fill_null(&fill_value)
+            }
             IsIn(child, items) => self
                 .eval_expression(child)?
                 .is_in(&self.eval_expression(items)?),
@@ -385,7 +389,7 @@ impl Table {
                     .iter()
                     .map(|e| self.eval_expression(e))
                     .collect::<DaftResult<Vec<_>>>()?;
-                func.evaluate(evaluated_inputs.as_slice(), expr)
+                func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
             IfElse {

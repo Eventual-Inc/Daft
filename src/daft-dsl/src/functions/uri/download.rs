@@ -17,7 +17,12 @@ impl FunctionEvaluator for DownloadEvaluator {
         "download"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _expr: &Expr) -> DaftResult<Field> {
+    fn to_field(
+        &self,
+        inputs: &[Expr],
+        schema: &Schema,
+        _expr: &FunctionExpr,
+    ) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
@@ -37,18 +42,14 @@ impl FunctionEvaluator for DownloadEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let (max_connections, raise_error_on_failure, multi_thread, config) = match expr {
-            Expr::Function {
-                func:
-                    FunctionExpr::Uri(UriExpr::Download {
-                        max_connections,
-                        raise_error_on_failure,
-                        multi_thread,
-                        config,
-                    }),
-                inputs: _,
-            } => (
+            FunctionExpr::Uri(UriExpr::Download {
+                max_connections,
+                raise_error_on_failure,
+                multi_thread,
+                config,
+            }) => (
                 max_connections,
                 raise_error_on_failure,
                 multi_thread,

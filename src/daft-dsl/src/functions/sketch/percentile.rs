@@ -2,6 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DataType, datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
+use crate::functions::FunctionExpr;
 use crate::Expr;
 
 pub(super) struct PercentileEvaluator {}
@@ -11,7 +12,7 @@ impl FunctionEvaluator for PercentileEvaluator {
         "get"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input, q] => {
                 let input_field = input.to_field(schema)?;
@@ -56,7 +57,7 @@ impl FunctionEvaluator for PercentileEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input, q] => input.sketch_percentile(q),
             _ => Err(DaftError::ValueError(format!(

@@ -50,6 +50,16 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.sin
+    Expression.cos
+    Expression.tan
+    Expression.cot
+    Expression.arcsin
+    Expression.arccos
+    Expression.arctan
+    Expression.radians
+    Expression.degrees
+    Expression.exp
 
 .. _api-comparison-expression:
 

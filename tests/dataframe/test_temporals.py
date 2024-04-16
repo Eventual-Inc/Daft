@@ -11,6 +11,9 @@ import daft
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
+# TODO(Colin): these tests were being skipped!
+# https://github.com/Eventual-Inc/Daft/issues/2098
+@pytest.mark.skip()
 def test_temporal_arithmetic() -> None:
     now = datetime.now()
     now_tz = datetime.now(timezone.utc)
@@ -151,7 +154,7 @@ def test_python_duration() -> None:
     "timezone",
     [None, "UTC"],
 )
-def test_temporal_arithmetic(timeunit, timezone) -> None:
+def test_temporal_arithmetic_parameterized(timeunit, timezone) -> None:
     pa_table = pa.Table.from_pydict(
         {
             "timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, timezone)),

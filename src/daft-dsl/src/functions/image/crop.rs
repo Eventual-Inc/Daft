@@ -3,6 +3,7 @@ use common_error::DaftError;
 use daft_core::datatypes::DataType;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
+use crate::functions::FunctionExpr;
 use common_error::DaftResult;
 
 use super::super::FunctionEvaluator;
@@ -14,7 +15,12 @@ impl FunctionEvaluator for CropEvaluator {
         "crop"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _expr: &Expr) -> DaftResult<Field> {
+    fn to_field(
+        &self,
+        inputs: &[Expr],
+        schema: &Schema,
+        _expr: &FunctionExpr,
+    ) -> DaftResult<Field> {
         match inputs {
             [input, bbox] => {
                 let input_field = input.to_field(schema)?;
@@ -61,7 +67,7 @@ impl FunctionEvaluator for CropEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input, bbox] => input.image_crop(bbox),
             _ => Err(DaftError::ValueError(format!(

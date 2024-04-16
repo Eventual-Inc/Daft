@@ -17,7 +17,7 @@ impl FunctionEvaluator for JsonQueryEvaluator {
         "JsonQuery"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let input_field = input.to_field(schema)?;
@@ -36,14 +36,11 @@ impl FunctionEvaluator for JsonQueryEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => {
                 let query = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::Json(JsonExpr::Query(query)),
-                        inputs: _,
-                    } => query,
+                    FunctionExpr::Json(JsonExpr::Query(query)) => query,
                     _ => panic!("Expected Json Query Expr, got {expr}"),
                 };
 
