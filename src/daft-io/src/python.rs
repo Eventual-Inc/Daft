@@ -66,7 +66,7 @@ mod py {
         Ok(crate::set_io_pool_num_threads(num_threads as usize))
     }
 
-    /// Creates an IOConfig from the current environment, auto-discovering variables such as
+    /// Creates an S3Config from the current environment, auto-discovering variables such as
     /// credentials, regions and more.
     #[pyfunction]
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {

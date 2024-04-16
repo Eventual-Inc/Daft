@@ -263,6 +263,8 @@ impl S3Config {
         }
     }
 
+    /// Creates an S3Config from the current environment, auto-discovering variables such as
+    /// credentials, regions and more.
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
