@@ -469,7 +469,7 @@ class S3Config:
         requester_pays: bool | None = None,
         force_virtual_addressing: bool | None = None,
     ) -> S3Config:
-        """Replaces values if provided, returning a new S3Config -- foo"""
+        """Replaces values if provided, returning a new S3Config -- foo2"""
         ...
 
     @staticmethod
