@@ -266,9 +266,9 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import("daft")?
-            .getattr("daft")?
-            .getattr("s3_config_from_env")?;
+            .import(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
             pyany
                 .extract()
