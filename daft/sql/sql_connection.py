@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import urlparse
 
@@ -49,38 +48,8 @@ class SQLConnection:
         except Exception as e:
             raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
 
-    def read(
-        self, sql: str, projection: list[str] | None = None, predicate: str | None = None, limit: int | None = None
-    ) -> pa.Table:
-        sql = self._construct_sql_query(sql, projection, predicate, limit)
-        try:
-            return self._execute_sql_query(sql)
-        except RuntimeError as e:
-            if limit is not None:
-                warnings.warn(
-                    f"Failed to execute the query with limit {limit}: {e}. Attempting to read the entire table."
-                )
-                return self._execute_sql_query(self._construct_sql_query(sql, projection, predicate))
-            raise
-
-    def _construct_sql_query(
-        self, sql: str, projection: list[str] | None = None, predicate: str | None = None, limit: int | None = None
-    ) -> str:
-        clauses = []
-        if projection is not None:
-            clauses.append(f"SELECT {', '.join(projection)}")
-        else:
-            clauses.append("SELECT *")
-
-        clauses.append(f"FROM ({sql}) AS subquery")
-
-        if predicate is not None:
-            clauses.append(f"WHERE {predicate}")
-
-        if limit is not None:
-            clauses.append(f"LIMIT {limit}")
-
-        return "\n".join(clauses)
+    def read(self, sql: str) -> pa.Table:
+        return self._execute_sql_query(sql)
 
     def _execute_sql_query(self, sql: str) -> pa.Table:
         # Supported DBs extracted from here https://github.com/sfu-db/connector-x/tree/7b3147436b7e20b96691348143d605e2249d6119?tab=readme-ov-file#sources

@@ -7,11 +7,14 @@ from collections.abc import Iterator
 from enum import Enum, auto
 from typing import Any
 
+import sqlglot
+
 from daft.context import get_context
 from daft.daft import (
     DatabaseSourceConfig,
     FileFormatConfig,
     Pushdowns,
+    PyTable,
     ScanTask,
     StorageConfig,
 )
@@ -35,6 +38,7 @@ class SQLScanOperator(ScanOperator):
         sql: str,
         conn: SQLConnection,
         storage_config: StorageConfig,
+        disable_pushdowns_to_sql: bool,
         partition_col: str | None = None,
         num_partitions: int | None = None,
     ) -> None:
@@ -42,6 +46,7 @@ class SQLScanOperator(ScanOperator):
         self.sql = sql
         self.conn = conn
         self.storage_config = storage_config
+        self._disable_pushdowns_to_sql = disable_pushdowns_to_sql
         self._partition_col = partition_col
         self._num_partitions = num_partitions
         self._schema = self._attempt_schema_read()
@@ -67,7 +72,7 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
-        partition_bounds_sql = [lit(bound)._to_sql(self.conn.dialect) for bound in partition_bounds]
+        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
@@ -80,22 +85,15 @@ class SQLScanOperator(ScanOperator):
             right_clause = (
                 f"{self._partition_col} {'<' if i < num_scan_tasks - 1 else '<='} {partition_bounds_sql[i + 1]}"
             )
-            sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
-            file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
-
-            scan_tasks.append(
-                ScanTask.sql_scan_task(
-                    url=self.conn.url,
-                    file_format=file_format_config,
-                    schema=self._schema._schema,
-                    num_rows=None,
-                    storage_config=self.storage_config,
-                    size_bytes=size_bytes,
-                    pushdowns=pushdowns,
-                    stats=stats._table,
-                )
+            scan_task = self._construct_scan_task(
+                pushdowns,
+                num_rows=None,
+                size_bytes=size_bytes,
+                partition_bounds=(left_clause, right_clause),
+                stats=stats._table,
             )
+            scan_tasks.append(scan_task)
 
         return iter(scan_tasks)
 
@@ -109,7 +107,8 @@ class SQLScanOperator(ScanOperator):
         return False
 
     def _attempt_schema_read(self) -> Schema:
-        pa_table = self.conn.read(self.sql, limit=1)
+        sql = self._construct_sql_query(limit=1)
+        pa_table = self.conn.read(sql)
         schema = Schema.from_pyarrow_schema(pa_table.schema)
         return schema
 
@@ -125,7 +124,8 @@ class SQLScanOperator(ScanOperator):
         return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:
-        pa_table = self.conn.read(self.sql, projection=["COUNT(*)"])
+        sql = self._construct_sql_query(projection=["COUNT(*)"])
+        pa_table = self.conn.read(sql)
 
         if pa_table.num_rows != 1:
             raise RuntimeError(
@@ -142,22 +142,23 @@ class SQLScanOperator(ScanOperator):
         try:
             # Try to get percentiles using percentile_cont
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
-            pa_table = self.conn.read(
-                self.sql,
+            sql = self._construct_sql_query(
                 projection=[
-                    f"percentile_cont({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
+                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
-                ],
+                ]
             )
+            pa_table = self.conn.read(sql)
             return pa_table, PartitionBoundStrategy.PERCENTILE
 
         except RuntimeError as e:
             # If percentiles fails, use the min and max of the partition column
             logger.info("Failed to get percentiles using percentile_cont, falling back to min and max. Error: %s", e)
 
-            pa_table = self.conn.read(
-                self.sql, projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"]
+            sql = self._construct_sql_query(
+                projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"]
             )
+            pa_table = self.conn.read(sql)
             return pa_table, PartitionBoundStrategy.MIN_MAX
 
     def _get_partition_bounds_and_strategy(self, num_scan_tasks: int) -> tuple[list[Any], PartitionBoundStrategy]:
@@ -203,18 +204,81 @@ class SQLScanOperator(ScanOperator):
         return bounds, strategy
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
-        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(self.sql, self.conn))
-        return iter(
-            [
-                ScanTask.sql_scan_task(
-                    url=self.conn.url,
-                    file_format=file_format_config,
-                    schema=self._schema._schema,
-                    num_rows=total_rows,
-                    storage_config=self.storage_config,
-                    size_bytes=math.ceil(total_size),
-                    pushdowns=pushdowns,
-                    stats=None,
-                )
-            ]
+        return iter([self._construct_scan_task(pushdowns, num_rows=total_rows, size_bytes=math.ceil(total_size))])
+
+    def _construct_scan_task(
+        self,
+        pushdowns: Pushdowns,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        partition_bounds: tuple[str, str] | None = None,
+        stats: PyTable | None = None,
+    ) -> ScanTask:
+        if pushdowns.filters is not None:
+            # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
+            predicate_sql = pushdowns.filters.to_sql()
+            apply_pushdowns_to_sql = predicate_sql is not None
+        else:
+            # If we don't have a predicate, we can still apply the limit and projection to the SQL query
+            predicate_sql = None
+            apply_pushdowns_to_sql = True
+
+        # If the user has disabled pushdowns, we don't apply any pushdowns to the SQL query
+        apply_pushdowns_to_sql = apply_pushdowns_to_sql and not self._disable_pushdowns_to_sql
+
+        if apply_pushdowns_to_sql:
+            sql = self._construct_sql_query(
+                projection=pushdowns.columns,
+                predicate=predicate_sql,
+                limit=pushdowns.limit,
+                partition_bounds=partition_bounds,
+            )
+        else:
+            sql = self._construct_sql_query(partition_bounds=partition_bounds)
+
+        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
+        return ScanTask.sql_scan_task(
+            url=self.conn.url,
+            file_format=file_format_config,
+            schema=self._schema._schema,
+            num_rows=num_rows,
+            storage_config=self.storage_config,
+            size_bytes=size_bytes,
+            pushdowns=pushdowns if not apply_pushdowns_to_sql else None,
+            stats=stats,
         )
+
+    def _construct_sql_query(
+        self,
+        projection: list[str] | None = None,
+        predicate: str | None = None,
+        limit: int | None = None,
+        partition_bounds: tuple[str, str] | None = None,
+    ) -> str:
+        target_dialect = self.conn.dialect
+        # sqlglot does not support "postgresql" dialect, it only supports "postgres"
+        if target_dialect == "postgresql":
+            target_dialect = "postgres"
+
+        if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
+            raise ValueError(
+                f"Unsupported dialect: {target_dialect}, please refer to the documentation for supported dialects."
+            )
+
+        query = sqlglot.subquery(self.sql, "subquery")
+
+        if projection is not None:
+            query = query.select(*projection)
+        else:
+            query = query.select("*")
+
+        if predicate is not None:
+            query = query.where(predicate)
+
+        if partition_bounds is not None:
+            query = query.where(partition_bounds[0]).where(partition_bounds[1])
+
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.sql(dialect=target_dialect)
