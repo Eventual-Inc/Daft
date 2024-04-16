@@ -14,7 +14,7 @@ on:
   # pull_request_target event is required for autolabeler to support PRs from forks
   pull_request_target:
     branches: [main]
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ jobs:
   # Check that at least one of the required labels was applied on this PR
   label:
     # Only run on non-main jobs (pending PRs), and after the auto-labeller completes (in `update_release_draft`)
-    if: github.ref != 'refs/heads/main'
+    if: github.event.pull_request.head.ref != 'refs/heads/main'
     needs: update_release_draft
     runs-on: ubuntu-latest
     permissions:
