@@ -1,0 +1,67 @@
+# Adapted from: https://github.com/release-drafter/release-drafter#readme
+
+name: PR Labeller
+
+on:
+  # pull_request event is required only for autolabeler
+  # pull_request:
+    # Only following types are handled by the action, but one can default to all as well
+    # types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+  # pull_request_target event is required for autolabeler to support PRs from forks
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+
+# write permission is required for autolabeler and commenting on the PR
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  run_auto_labeller:
+    runs-on: ubuntu-latest
+    steps:
+      # (Optional) GitHub Enterprise requires GHE_HOST variable set
+      #- name: Set GHE_HOST
+      #  run: |
+      #    echo "GHE_HOST=${GITHUB_SERVER_URL##https:\/\/}" >> $GITHUB_ENV
+
+      # Drafts your next Release notes as Pull Requests are merged into "master"
+    - uses: release-drafter/release-drafter@v6
+        # (Optional) specify config name to use, relative to .github/. Default: release-drafter.yml
+        # with:
+        #   config-name: my-config.yml
+        #   disable-autolabeler: true
+      with:
+        disable-releaser: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Check that at least one of the required labels was applied on this PR
+  label:
+    # Only run after the auto-labeller completes (in `run_auto_labeller`)
+    needs: run_auto_labeller
+    runs-on: ubuntu-latest
+    steps:
+    - uses: mheap/github-action-required-labels@v5
+      with:
+        mode: minimum
+        count: 1
+        labels: performance, enhancement, bug, chore, documentation, dependencies
+        add_comment: true
+        message: |
+          This PR is being prevented from merging because you need at least one of the required labels:
+
+          ```
+          enhancement | performance | bug | chore | documentation | dependencies
+          ```
+
+          The canonical and easiest way of adding them is to add the following prefixes to your PR title:
+
+          * [FEAT]: adds the `enhancement` label
+          * [PERF]: adds the `performance` label
+          * [BUG]: adds the `bug` label
+          * [CHORE]: adds the `chore` label
+          * [DOCS]: adds the `documentation` label
+
+          Thanks for helping us categorize and manage our PRs!
