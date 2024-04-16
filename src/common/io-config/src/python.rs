@@ -140,6 +140,19 @@ impl IOConfig {
     }
 
     #[staticmethod]
+    pub fn from_env(py: Python) -> PyResult<Self> {
+        let io_config_from_env_func = py
+            .import("daft")?
+            .getattr("daft")?
+            .getattr("io_config_from_env")?;
+        io_config_from_env_func.call0().map(|pyany| {
+            pyany
+                .extract()
+                .expect("io_config_from_env function must return IOConfig")
+        })
+    }
+
+    #[staticmethod]
     pub fn from_json(input: &str) -> PyResult<Self> {
         let config: config::IOConfig = serde_json::from_str(input).map_err(DaftError::from)?;
         Ok(config.into())
