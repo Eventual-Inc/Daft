@@ -45,8 +45,8 @@ jobs:
 
   # Check that at least one of the required labels was applied on this PR
   label:
-    # Only run on non-main jobs (pending PRs), and after the auto-labeller completes (in `update_release_draft`)
-    if: github.head_ref != 'main'
+    # Only run on non-main push jobs (pending PRs), and after the auto-labeller completes (in `update_release_draft`)
+    if: github.event_name != 'push'
     needs: update_release_draft
     runs-on: ubuntu-latest
     permissions:
