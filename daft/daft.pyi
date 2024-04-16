@@ -472,6 +472,11 @@ class S3Config:
         """Replaces values if provided, returning a new S3Config"""
         ...
 
+    @staticmethod
+    def from_env() -> S3Config:
+        """Creates an S3Config, retrieving credentials and configurations from the current environtment"""
+        ...
+
 class AzureConfig:
     """
     I/O configuration for accessing Azure Blob Storage.
@@ -525,11 +530,6 @@ class IOConfig:
     gcs: GCSConfig
 
     def __init__(self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None): ...
-    @staticmethod
-    def from_env() -> IOConfig:
-        """Creates an IOConfig, retrieving credentials and configurations from the current environtment"""
-        ...
-
     @staticmethod
     def from_json(input: str) -> IOConfig:
         """
