@@ -244,7 +244,7 @@ impl AggExpr {
                         | DataType::UInt32
                         | DataType::UInt64
                         | DataType::Float32
-                        | DataType::Float64 => DataType::Float64,
+                        | DataType::Float64 => DataType::List(Box::new(DataType::Float64)),
                         other => {
                             return Err(DaftError::TypeError(format!(
                                 "Expected input to approx_percentile() to be numeric but received dtype {} for column \"{}\"",

@@ -1,26 +1,27 @@
 use super::as_arrow::AsArrow;
 use super::DaftApproxPercentileAggable;
 use crate::array::ops::GroupIndices;
-use crate::utils::sketch::Sketch;
+use crate::array::ListArray;
+use crate::utils::approx_percentile::{compute_percentiles, convert_q_to_vec};
 use crate::Series;
 use crate::{array::DataArray, datatypes::*};
 use arrow2;
 use arrow2::array::Array;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
+use sketches_ddsketch::{Config, DDSketch};
 
 impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
-    type Output = DaftResult<DataArray<Float64Type>>;
+    type Output = DaftResult<ListArray>;
 
     fn approx_percentile(&self, q: &Series) -> Self::Output {
-        let percentiles = convert_q_to_vec(q)?;
         let primitive_arr = self.as_arrow();
-        let arrow_array = if primitive_arr.null_count() > 0 {
+        let percentiles = if primitive_arr.null_count() > 0 {
             let sketch = primitive_arr
                 .iter()
                 .fold(None, |acc, value| match (acc, value) {
                     (acc, None) => acc,
                     (None, Some(v)) => {
-                        let mut sketch = Sketch::new();
+                        let mut sketch = DDSketch::new(Config::defaults());
                         sketch.add(*v);
                         Some(sketch)
                     }
@@ -29,32 +30,28 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                         Some(acc)
                     }
                 });
-            let quantile = match sketch {
-                Some(s) => s.quantile(percentiles[0])?,
+            match sketch {
+                Some(s) => Some(compute_percentiles(&s, &convert_q_to_vec(q)?)?),
                 None => None,
-            };
-
-            Box::new(arrow2::array::PrimitiveArray::<f64>::from([quantile]))
+            }
         } else {
-            let sketch = primitive_arr
-                .values_iter()
-                .fold(Sketch::new(), |mut acc, value| {
+            let sketch = primitive_arr.values_iter().fold(
+                DDSketch::new(Config::defaults()),
+                |mut acc, value| {
                     acc.add(*value);
                     acc
-                });
-            let quantile = sketch.quantile(percentiles[0])?.unwrap();
-
-            Box::new(arrow2::array::PrimitiveArray::<f64>::from_slice([quantile]))
+                },
+            );
+            Some(compute_percentiles(&sketch, &convert_q_to_vec(q)?)?)
         };
 
-        DataArray::new(self.field.clone(), arrow_array)
+        ListArray::try_from((self.field.name.as_str(), [percentiles].as_slice()))
     }
 
     fn grouped_approx_percentile(&self, groups: &GroupIndices, q: &Series) -> Self::Output {
-        let percentiles = convert_q_to_vec(q)?;
         let arrow_array = self.as_arrow();
-        let sketch_per_group = if arrow_array.null_count() > 0 {
-            let quantiles: Vec<Option<f64>> = groups
+        let percentiles_per_group = if arrow_array.null_count() > 0 {
+            groups
                 .iter()
                 .map(|g| {
                     let sketch = g.iter().fold(None, |acc, index| {
@@ -62,7 +59,7 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                         match (acc, arrow_array.is_null(idx)) {
                             (acc, true) => acc,
                             (None, false) => {
-                                let mut sketch = Sketch::new();
+                                let mut sketch = DDSketch::new(Config::defaults());
                                 sketch.add(arrow_array.value(idx));
                                 Some(sketch)
                             }
@@ -74,50 +71,28 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                     });
 
                     match sketch {
-                        Some(s) => Ok(s.quantile(percentiles[0])?),
+                        Some(s) => Ok(Some(compute_percentiles(&s, &convert_q_to_vec(q)?)?)),
                         None => Ok(None),
                     }
                 })
-                .collect::<DaftResult<Vec<_>>>()?;
-
-            Box::new(arrow2::array::PrimitiveArray::<f64>::from_trusted_len_iter(
-                quantiles.into_iter(),
-            ))
+                .collect::<DaftResult<Vec<Option<Vec<Option<f64>>>>>>()?
         } else {
-            let quantiles: Vec<f64> = groups
+            groups
                 .iter()
                 .map(|g| {
-                    let sketch = g.iter().fold(Sketch::new(), |mut acc, index| {
-                        let idx = *index as usize;
-                        acc.add(arrow_array.value(idx));
-                        acc
-                    });
+                    let sketch =
+                        g.iter()
+                            .fold(DDSketch::new(Config::defaults()), |mut acc, index| {
+                                let idx = *index as usize;
+                                acc.add(arrow_array.value(idx));
+                                acc
+                            });
 
-                    let quantile = sketch.quantile(percentiles[0])?;
-                    Ok(quantile.unwrap())
+                    Ok(Some(compute_percentiles(&sketch, &convert_q_to_vec(q)?)?))
                 })
-                .collect::<DaftResult<Vec<f64>>>()?;
-
-            Box::new(
-                arrow2::array::PrimitiveArray::<f64>::from_trusted_len_values_iter(
-                    quantiles.into_iter(),
-                ),
-            )
+                .collect::<DaftResult<Vec<Option<Vec<Option<f64>>>>>>()?
         };
 
-        DataArray::new(self.field.clone(), sketch_per_group)
-    }
-}
-
-fn convert_q_to_vec(q: &Series) -> DaftResult<Vec<f64>> {
-    match q.data_type() {
-        DataType::Float64 => Ok(vec![q
-            .f64()?
-            .get(0)
-            .expect("q parameter of approx_percentile must have one non-null element")]),
-        other => Err(DaftError::TypeError(format!(
-            "q parameter type must be a float 64, got {}",
-            other
-        ))),
+        ListArray::try_from((self.field.name.as_str(), percentiles_per_group.as_slice()))
     }
 }
