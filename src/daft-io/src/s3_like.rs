@@ -200,18 +200,14 @@ impl From<Error> for super::Error {
 pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
     let default_s3_config = S3Config::default();
     let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
-    let (key_id, access_key, session_token) = match s3_conf
+    let creds = s3_conf
         .credentials_cache()
         .provide_cached_credentials()
         .await
-    {
-        Ok(creds) => (
-            Some(creds.access_key_id().to_string()),
-            Some(creds.secret_access_key().to_string()),
-            creds.session_token().map(|t| t.to_string()),
-        ),
-        Err(_) => (None, None, None),
-    };
+        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
+    let key_id = Some(creds.access_key_id().to_string());
+    let access_key = Some(creds.secret_access_key().to_string());
+    let session_token = creds.session_token().map(|t| t.to_string());
     let region_name = s3_conf.region().map(|r| r.to_string());
     Ok(S3Config {
         // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
