@@ -42,11 +42,11 @@ daft_string_types = [DataType.string()]
 )
 @pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
 def test_table_join_single_column(join_impl, dtype, data) -> None:
-    l, r, expected_pairs = data
-    left_table = MicroPartition.from_pydict({"x": l, "x_ind": list(range(len(l)))}).eval_expression_list(
+    left, right, expected_pairs = data
+    left_table = MicroPartition.from_pydict({"x": left, "x_ind": list(range(len(left)))}).eval_expression_list(
         [col("x").cast(dtype), col("x_ind")]
     )
-    right_table = MicroPartition.from_pydict({"y": r, "y_ind": list(range(len(r)))})
+    right_table = MicroPartition.from_pydict({"y": right, "y_ind": list(range(len(right)))})
     result_table = getattr(left_table, join_impl)(
         right_table, left_on=[col("x")], right_on=[col("y")], how=JoinType.Inner
     )

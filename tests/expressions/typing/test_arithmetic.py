@@ -112,3 +112,37 @@ def test_round(unary_data_fixture):
         run_kernel=lambda: arg.round(0),
         resolvable=is_numeric(arg.datatype()),
     )
+
+
+@pytest.mark.parametrize(
+    "fun",
+    [
+        "sin",
+        "cos",
+        "tan",
+        "cot",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "radians",
+        "degrees",
+    ],
+)
+def test_trigonometry(fun: str, unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=getattr(col(arg.name()), fun)(),
+        run_kernel=lambda: getattr(arg, fun)(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_exp(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).exp(),
+        run_kernel=lambda: arg.exp(),
+        resolvable=is_numeric(arg.datatype()),
+    )

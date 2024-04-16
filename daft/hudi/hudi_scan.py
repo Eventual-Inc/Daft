@@ -57,7 +57,9 @@ class HudiScanOperator(ScanOperator):
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logging.warning(
-                f"{self.display_name()} has partitioning keys = {self.partitioning_keys()}, but no partition filter was specified. This will result in a full table scan."
+                "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
+                self.display_name(),
+                self.partitioning_keys(),
             )
 
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None

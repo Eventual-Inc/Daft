@@ -8,6 +8,7 @@ from daft.table import MicroPartition
 
 NUM_ROWS = 10_000_000
 
+
 # Perform take against a int64 column: take all Nones
 def generate_int64_take_all_none() -> tuple[dict, daft.Expression, list]:
     return (

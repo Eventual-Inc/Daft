@@ -1,5 +1,8 @@
 .vscode
 
+# Added by jetbrains IDE
+.idea/
+
 .coverage
 .env
 venv
@@ -20,16 +23,17 @@ data/**
 log/
 *.egg-info
 
+# Added by MacOS
 **.DS_Store
 
-
 # Added by cargo
-
 /target
 
 # pytest benchmarks
 .benchmarks
 
-
 # docs autogen
 /docs/source/api_docs/doc_gen/
+
+# Added by pyenv
+.python-version

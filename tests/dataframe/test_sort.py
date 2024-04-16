@@ -46,8 +46,8 @@ def test_single_float_col_sort(make_df, desc: bool, n_partitions: int):
     df = df.sort("A", desc=desc)
     sorted_data = df.to_pydict()
 
-    def _replace_nan_with_string(l):
-        return ["nan" if isinstance(item, float) and math.isnan(item) else item for item in l]
+    def _replace_nan_with_string(items):
+        return ["nan" if isinstance(item, float) and math.isnan(item) else item for item in items]
 
     expected = [1.0, 2.0, 3.0, float("nan"), None]
     if desc:
@@ -69,8 +69,8 @@ def test_multi_float_col_sort(make_df, n_partitions: int):
     df = df.sort(["A", "B"], desc=[True, False])
     sorted_data = df.to_pydict()
 
-    def _replace_nan_with_string(l):
-        return ["nan" if isinstance(item, float) and math.isnan(item) else item for item in l]
+    def _replace_nan_with_string(items):
+        return ["nan" if isinstance(item, float) and math.isnan(item) else item for item in items]
 
     expected = {
         "A": [

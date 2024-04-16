@@ -14,7 +14,7 @@ impl FunctionEvaluator for RoundEvaluator {
         "round"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -31,7 +31,7 @@ impl FunctionEvaluator for RoundEvaluator {
         Ok(field)
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -39,10 +39,7 @@ impl FunctionEvaluator for RoundEvaluator {
             )));
         }
         let decimal = match expr {
-            Expr::Function {
-                func: FunctionExpr::Numeric(NumericExpr::Round(index)),
-                inputs: _,
-            } => index,
+            FunctionExpr::Numeric(NumericExpr::Round(index)) => index,
             _ => panic!("Expected Round Expr, got {expr}"),
         };
         inputs.first().unwrap().round(*decimal)

@@ -9,7 +9,7 @@ from daft.table import MicroPartition
 
 def test_expressions_projection_error_dup_name():
     with pytest.raises(ValueError):
-        ep = ExpressionsProjection(
+        ExpressionsProjection(
             [
                 col("x"),
                 col("y").alias("x"),

@@ -225,6 +225,56 @@ impl PyExpr {
         Ok(round(&self.expr, decimal).into())
     }
 
+    pub fn sin(&self) -> PyResult<Self> {
+        use functions::numeric::sin;
+        Ok(sin(&self.expr).into())
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        use functions::numeric::cos;
+        Ok(cos(&self.expr).into())
+    }
+
+    pub fn tan(&self) -> PyResult<Self> {
+        use functions::numeric::tan;
+        Ok(tan(&self.expr).into())
+    }
+
+    pub fn cot(&self) -> PyResult<Self> {
+        use functions::numeric::cot;
+        Ok(cot(&self.expr).into())
+    }
+
+    pub fn arcsin(&self) -> PyResult<Self> {
+        use functions::numeric::arcsin;
+        Ok(arcsin(&self.expr).into())
+    }
+
+    pub fn arccos(&self) -> PyResult<Self> {
+        use functions::numeric::arccos;
+        Ok(arccos(&self.expr).into())
+    }
+
+    pub fn arctan(&self) -> PyResult<Self> {
+        use functions::numeric::arctan;
+        Ok(arctan(&self.expr).into())
+    }
+
+    pub fn radians(&self) -> PyResult<Self> {
+        use functions::numeric::radians;
+        Ok(radians(&self.expr).into())
+    }
+
+    pub fn degrees(&self) -> PyResult<Self> {
+        use functions::numeric::degrees;
+        Ok(degrees(&self.expr).into())
+    }
+
+    pub fn exp(&self) -> PyResult<Self> {
+        use functions::numeric::exp;
+        Ok(exp(&self.expr).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }

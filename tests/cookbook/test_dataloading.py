@@ -91,7 +91,7 @@ def test_glob_files(tmpdir):
 
 
 def test_glob_files_single_file(tmpdir):
-    filepath = pathlib.Path(tmpdir) / f"file.foo"
+    filepath = pathlib.Path(tmpdir) / "file.foo"
     filepath.write_text("b" * 10)
     daft_df = daft.from_glob_path(os.path.join(tmpdir, "file.foo"))
     daft_pd_df = daft_df.to_pandas()

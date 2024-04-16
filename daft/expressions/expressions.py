@@ -46,7 +46,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
     # an instance; @sphinx_accessor is a @property that allows this.
     NS = TypeVar("NS")
 
-    class sphinx_accessor(property):  # noqa: D101
+    class sphinx_accessor(property):
         def __get__(  # type: ignore[override]
             self,
             instance: Any,
@@ -357,6 +357,56 @@ class Expression:
         expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 
+    def sin(self) -> Expression:
+        """The elementwise sine of a numeric expression (``expr.sin()``)"""
+        expr = self._expr.sin()
+        return Expression._from_pyexpr(expr)
+
+    def cos(self) -> Expression:
+        """The elementwise cosine of a numeric expression (``expr.cos()``)"""
+        expr = self._expr.cos()
+        return Expression._from_pyexpr(expr)
+
+    def tan(self) -> Expression:
+        """The elementwise tangent of a numeric expression (``expr.tan()``)"""
+        expr = self._expr.tan()
+        return Expression._from_pyexpr(expr)
+
+    def cot(self) -> Expression:
+        """The elementwise cotangent of a numeric expression (``expr.cot()``)"""
+        expr = self._expr.cot()
+        return Expression._from_pyexpr(expr)
+
+    def arcsin(self) -> Expression:
+        """The elementwise arc sine of a numeric expression (``expr.arcsin()``)"""
+        expr = self._expr.arcsin()
+        return Expression._from_pyexpr(expr)
+
+    def arccos(self) -> Expression:
+        """The elementwise arc cosine of a numeric expression (``expr.arccos()``)"""
+        expr = self._expr.arccos()
+        return Expression._from_pyexpr(expr)
+
+    def arctan(self) -> Expression:
+        """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
+        expr = self._expr.arctan()
+        return Expression._from_pyexpr(expr)
+
+    def radians(self) -> Expression:
+        """The elementwise radians of a numeric expression (``expr.radians()``)"""
+        expr = self._expr.radians()
+        return Expression._from_pyexpr(expr)
+
+    def degrees(self) -> Expression:
+        """The elementwise degrees of a numeric expression (``expr.degrees()``)"""
+        expr = self._expr.degrees()
+        return Expression._from_pyexpr(expr)
+
+    def exp(self) -> Expression:
+        """The e^self of a numeric expression (``expr.exp()``)"""
+        expr = self._expr.exp()
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
@@ -616,7 +666,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             elif on_error == "null":
                 raise_on_error = False
             else:
-                raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
@@ -1251,12 +1301,10 @@ class ExpressionsProjection(Iterable[Expression]):
         return iter(self._output_name_to_exprs.values())
 
     @overload
-    def __getitem__(self, idx: slice) -> list[Expression]:
-        ...
+    def __getitem__(self, idx: slice) -> list[Expression]: ...
 
     @overload
-    def __getitem__(self, idx: int) -> Expression:
-        ...
+    def __getitem__(self, idx: int) -> Expression: ...
 
     def __getitem__(self, idx: int | slice) -> Expression | list[Expression]:
         # Relies on the fact that Python dictionaries are ordered
@@ -1355,7 +1403,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         elif on_error == "null":
             raise_on_error = False
         else:
-            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
         return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error))
 

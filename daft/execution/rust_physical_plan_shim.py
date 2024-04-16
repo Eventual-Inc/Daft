@@ -33,7 +33,10 @@ def scan_with_tasks(
     # TODO(Clark): Currently hardcoded to have 1 file per instruction
     # We can instead right-size and bundle the ScanTask into single-instruction bulk reads.
     for scan_task in scan_tasks:
-        scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
+        scan_step = execution_step.PartitionTaskBuilder[PartitionT](
+            inputs=[],
+            partial_metadatas=None,
+        ).add_instruction(
             instruction=execution_step.ScanWithTask(scan_task),
             # Set the filesize as the memory request.
             # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
@@ -46,7 +49,10 @@ def empty_scan(
     schema: Schema,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     """yield a plan to create an empty Partition"""
-    scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
+    scan_step = execution_step.PartitionTaskBuilder[PartitionT](
+        inputs=[],
+        partial_metadatas=None,
+    ).add_instruction(
         instruction=execution_step.EmptyScan(schema=schema),
         resource_request=ResourceRequest(memory_bytes=0),
     )

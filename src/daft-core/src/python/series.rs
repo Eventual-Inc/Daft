@@ -18,6 +18,7 @@ use crate::{
 
 use super::datatype::PyDataType;
 use crate::array::ops::as_arrow::AsArrow;
+use crate::array::ops::trigonometry::TrigonometricFunction;
 
 #[pyclass]
 #[derive(Clone)]
@@ -127,6 +128,73 @@ impl PySeries {
             )));
         }
         Ok(self.series.round(decimal)?.into())
+    }
+
+    pub fn sin(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sin)?
+            .into())
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cos)?
+            .into())
+    }
+
+    pub fn tan(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Tan)?
+            .into())
+    }
+
+    pub fn cot(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cot)?
+            .into())
+    }
+
+    pub fn arcsin(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcSin)?
+            .into())
+    }
+
+    pub fn arccos(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcCos)?
+            .into())
+    }
+
+    pub fn arctan(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::ArcTan)?
+            .into())
+    }
+
+    pub fn degrees(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Degrees)?
+            .into())
+    }
+
+    pub fn radians(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Radians)?
+            .into())
+    }
+
+    pub fn exp(&self) -> PyResult<Self> {
+        Ok(self.series.exp()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {

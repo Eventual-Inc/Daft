@@ -8,6 +8,7 @@ from daft.table import MicroPartition
 
 NUM_ROWS = 1_000_000
 
+
 # Perform filter against a int64 column: selecting every other element
 def generate_int64_keep_every_other() -> tuple[dict, daft.Expression, list]:
     return (

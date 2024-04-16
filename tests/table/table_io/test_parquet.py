@@ -324,7 +324,6 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
 
 @pytest.mark.parametrize("n_bytes", [0, 1, 2, 7])
 def test_read_too_small_parquet_file(tmpdir, n_bytes):
-
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
     with open(file_path, "wb") as f:
@@ -338,30 +337,25 @@ def test_read_empty_parquet_file_with_table(tmpdir):
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
     tab = pa.table({"x": pa.array([], type=pa.int64())})
-    with open(file_path, "wb") as f:
-        papq.write_table(tab, file_path.as_posix())
+    papq.write_table(tab, file_path.as_posix())
     read_back = MicroPartition.read_parquet(file_path.as_posix()).to_arrow()
     assert tab == read_back
 
 
 def test_read_empty_parquet_file_with_pyarrow(tmpdir):
-
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
     tab = pa.table({"x": pa.array([], type=pa.int64())})
-    with open(file_path, "wb") as f:
-        papq.write_table(tab, file_path.as_posix())
+    papq.write_table(tab, file_path.as_posix())
     read_back = read_parquet_into_pyarrow(file_path.as_posix())
     assert tab == read_back
 
 
 def test_read_empty_parquet_file_with_pyarrow_bulk(tmpdir):
-
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
     tab = pa.table({"x": pa.array([], type=pa.int64())})
-    with open(file_path, "wb") as f:
-        papq.write_table(tab, file_path.as_posix())
+    papq.write_table(tab, file_path.as_posix())
     read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()])
     assert len(read_back) == 1
     assert tab == read_back[0]

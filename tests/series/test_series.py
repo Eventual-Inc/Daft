@@ -32,7 +32,7 @@ def test_series_arrow_chunked_array_round_trip() -> None:
 
 
 @pytest.mark.parametrize("pyobj", ["allow", "disallow", "force"])
-def test_series_pylist_round_trip(pyobj) -> None:
+def test_series_pylist_round_trip_objects(pyobj) -> None:
     data = [1, 2, 3, 4, None]
     s = Series.from_pylist(data, pyobj=pyobj)
     back_to_list = s.to_pylist()
@@ -72,7 +72,7 @@ def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomTestObject(1)]
 
     with pytest.raises(pa.lib.ArrowInvalid):
-        s = Series.from_pylist(objects, pyobj="disallow")
+        Series.from_pylist(objects, pyobj="disallow")
 
 
 def test_series_pyobj_explicit_roundtrip() -> None:
@@ -88,7 +88,6 @@ def test_series_pyobj_explicit_roundtrip() -> None:
 
 
 def test_serialize_with_pyobjects() -> None:
-
     objects = [CustomTestObject(1), None]
 
     s = Series.from_pylist(objects)
@@ -181,7 +180,7 @@ def test_series_bincode_serdes_on_complex_types() -> None:
 
     assert s.name() == copied_s.name()
     assert s.datatype() == copied_s.datatype()
-    assert all(np.all(l == r) for l, r in zip(s.to_pylist(), copied_s.to_pylist()))
+    assert all(np.all(left == right) for left, right in zip(s.to_pylist(), copied_s.to_pylist()))
 
 
 def test_series_bincode_serdes_on_null_types() -> None:

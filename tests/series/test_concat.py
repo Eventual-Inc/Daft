@@ -10,7 +10,7 @@ from ray.data.extensions import ArrowTensorArray
 from daft import DataType, Series
 from daft.context import get_context
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-from tests.conftest import *
+from tests.conftest import UuidType
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())

@@ -360,9 +360,7 @@ def read_csv(
             parse_options=parse_options,
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
-                column_names=schema.column_names()
-                if csv_options.header_index is None
-                else None,
+                column_names=schema.column_names() if csv_options.header_index is None else None,
             ),
             convert_options=pacsv.ConvertOptions(
                 # Column pruning
@@ -412,7 +410,6 @@ def write_tabular(
     io_config: IOConfig | None = None,
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
-
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     if isinstance(path, pathlib.Path):
         path_str = str(path)
@@ -428,7 +425,6 @@ def write_tabular(
     part_keys_postfix_per_table: list[str | None]
     partition_values = None
     if partition_cols and len(partition_cols) > 0:
-
         default_part = Series.from_pylist([partition_null_fallback])
         split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
         assert len(split_tables) == len(partition_values)
@@ -563,7 +559,6 @@ def write_iceberg(
     spec_id: int | None,
     io_config: IOConfig | None = None,
 ):
-
     from pyiceberg.io.pyarrow import (
         compute_statistics_plan,
         fill_parquet_file_metadata,
@@ -586,7 +581,6 @@ def write_iceberg(
     data_files = []
 
     def file_visitor(written_file, protocol=protocol):
-
         file_path = f"{protocol}://{written_file.path}"
         size = written_file.size
         metadata = written_file.metadata

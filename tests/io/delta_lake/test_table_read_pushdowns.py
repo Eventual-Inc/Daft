@@ -120,3 +120,54 @@ def test_read_predicate_pushdown_on_part_empty(deltalake_table, partition_genera
         df.to_arrow().sort_by("part_idx"),
         pa.concat_tables([table.filter(pc.field("part_idx") == part_value) for table in tables]),
     )
+
+
+def test_read_select_partition_key(deltalake_table):
+    path, catalog_table, io_config, tables = deltalake_table
+    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+
+    df = df.select("part_idx", "a")
+
+    assert df.schema().column_names() == ["part_idx", "a"]
+
+    assert_pyarrow_tables_equal(
+        df.to_arrow().sort_by([("part_idx", "ascending"), ("a", "ascending")]),
+        pa.concat_tables([table.select(["part_idx", "a"]) for table in tables]).sort_by(
+            [("part_idx", "ascending"), ("a", "ascending")]
+        ),
+    )
+
+
+def test_read_select_partition_key_with_filter(deltalake_table):
+    path, catalog_table, io_config, tables = deltalake_table
+    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+
+    df = df.select("part_idx", "a")
+    df = df.where(df["a"] < 5)
+
+    assert df.schema().column_names() == ["part_idx", "a"]
+
+    assert_pyarrow_tables_equal(
+        df.to_arrow().sort_by([("part_idx", "ascending"), ("a", "ascending")]),
+        pa.concat_tables([table.select(["part_idx", "a"]) for table in tables]).sort_by(
+            [("part_idx", "ascending"), ("a", "ascending")]
+        ),
+    )
+
+
+@pytest.mark.skip(
+    reason="Selecting just the partition key in a deltalake table is not yet supported. "
+    "Issue: https://github.com/Eventual-Inc/Daft/issues/2129"
+)
+def test_read_select_only_partition_key(deltalake_table):
+    path, catalog_table, io_config, tables = deltalake_table
+    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+
+    df = df.select("part_idx")
+
+    assert df.schema().column_names() == ["part_idx"]
+
+    assert_pyarrow_tables_equal(
+        df.to_arrow().sort_by("part_idx"),
+        pa.concat_tables([table.select(["part_idx"]) for table in tables]).sort_by("part_idx"),
+    )

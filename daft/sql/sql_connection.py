@@ -108,7 +108,7 @@ class SQLConnection:
         import connectorx as cx
 
         assert isinstance(self.conn, str)
-        logger.info(f"Using connectorx to execute sql: {sql}")
+        logger.info("Using connectorx to execute sql: %s", sql)
         try:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
@@ -118,7 +118,7 @@ class SQLConnection:
     def _execute_sql_query_with_sqlalchemy(self, sql: str) -> pa.Table:
         from sqlalchemy import create_engine, text
 
-        logger.info(f"Using sqlalchemy to execute sql: {sql}")
+        logger.info("Using sqlalchemy to execute sql: %s", sql)
         try:
             if isinstance(self.conn, str):
                 with create_engine(self.conn).connect() as connection:

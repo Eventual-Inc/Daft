@@ -190,9 +190,7 @@ impl AggExpr {
                     ))),
                 }
             }
-            MapGroups { func, inputs } => {
-                func.to_field(inputs.as_slice(), schema, &Expr::Agg(self.clone()))
-            }
+            MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
 
@@ -450,7 +448,7 @@ impl Expr {
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
-            Function { func, inputs } => func.to_field(inputs.as_slice(), schema, self),
+            Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
             BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;

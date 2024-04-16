@@ -110,7 +110,7 @@ def series(
             # Some nulls
             lists(nullable_dtype_strategy, min_size=length, max_size=length),
         ),
-        label=f"Column data",
+        label="Column data",
     )
     return Series.from_pylist(col_data).cast(daft_type)
 

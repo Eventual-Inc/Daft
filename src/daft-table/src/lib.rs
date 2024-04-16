@@ -382,7 +382,7 @@ impl Table {
                     .iter()
                     .map(|e| self.eval_expression(e))
                     .collect::<DaftResult<Vec<_>>>()?;
-                func.evaluate(evaluated_inputs.as_slice(), expr)
+                func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Literal(lit_value) => Ok(lit_value.to_series()),
             IfElse {

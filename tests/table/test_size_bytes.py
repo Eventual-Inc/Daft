@@ -38,7 +38,6 @@ def test_micropartitions_size_bytes(mp) -> None:
 
 
 def test_table_size_bytes() -> None:
-
     data = MicroPartition.from_pydict(
         {"a": [1, 2, 3, 4, None], "b": [False, True, False, True, None]}
     ).eval_expression_list([col("a").cast(DataType.int64()), col("b")])

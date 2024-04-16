@@ -87,7 +87,7 @@ class MetricsBuilder:
 
     @contextlib.contextmanager
     def collect_metrics(self, qnum: int):
-        logger.info(f"Running benchmarks for TPC-H q{qnum}")
+        logger.info("Running benchmarks for TPC-H q %s", qnum)
         start = datetime.now()
         profile_filename = (
             f"tpch_q{qnum}_{self._runner}_{datetime.replace(start, microsecond=0).isoformat()}_viztracer.json"
@@ -95,7 +95,7 @@ class MetricsBuilder:
         with profiler(profile_filename):
             yield
         walltime_s = (datetime.now() - start).total_seconds()
-        logger.info(f"Finished benchmarks for q{qnum}: {walltime_s}s")
+        logger.info("Finished benchmarks for q%s: %ss", qnum, walltime_s)
         self._metrics[f"tpch_q{qnum}"] = walltime_s
 
         if str(os.getenv("RAY_PROFILING")) == str(1) and self._runner == "ray":
@@ -135,7 +135,7 @@ def run_all_benchmarks(
 
     for i in range(1, 11):
         if i in skip_questions:
-            logger.warning(f"Skipping TPC-H q{i}")
+            logger.warning("Skipping TPC-H q%s", i)
             continue
 
         # Run as a Ray Job if dashboard URL is provided
@@ -174,10 +174,10 @@ def run_all_benchmarks(
                 daft_df.collect()
 
     if csv_output_location:
-        logger.info(f"Writing CSV to: {csv_output_location}")
+        logger.info("Writing CSV to: %s", csv_output_location)
         metrics_builder.dump_csv(csv_output_location)
     else:
-        logger.info(f"No CSV location specified, skipping CSV write")
+        logger.info("No CSV location specified, skipping CSV write")
 
 
 def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: int) -> str:
@@ -244,7 +244,9 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
     for table in ALL_TABLES:
         df = get_df(table)
         logger.info(
-            f"Warming up local execution environment by loading table {table} and counting rows: {df.count(df.columns[0]).to_pandas()}"
+            "Warming up local execution environment by loading table %s and counting rows: %s",
+            table,
+            df.count(df.columns[0]).to_pandas(),
         )
 
 

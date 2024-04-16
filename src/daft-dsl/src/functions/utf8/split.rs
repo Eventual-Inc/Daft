@@ -16,7 +16,7 @@ impl FunctionEvaluator for SplitEvaluator {
         "split"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
                 (Ok(data_field), Ok(pattern_field)) => {
@@ -38,14 +38,11 @@ impl FunctionEvaluator for SplitEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => {
                 let regex = match expr {
-                    Expr::Function {
-                        func: FunctionExpr::Utf8(Utf8Expr::Split(regex)),
-                        inputs: _,
-                    } => regex,
+                    FunctionExpr::Utf8(Utf8Expr::Split(regex)) => regex,
                     _ => panic!("Expected Utf8 Split Expr, got {expr}"),
                 };
                 data.utf8_split(pattern, *regex)

@@ -1,3 +1,4 @@
+use crate::functions::FunctionExpr;
 use crate::Expr;
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
@@ -11,7 +12,7 @@ impl FunctionEvaluator for ExplodeEvaluator {
         "explode"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
@@ -24,7 +25,7 @@ impl FunctionEvaluator for ExplodeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => input.explode(),
             _ => Err(DaftError::ValueError(format!(
