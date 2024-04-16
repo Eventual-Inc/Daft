@@ -214,9 +214,10 @@ pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
     };
     let region_name = s3_conf.region().map(|r| r.to_string());
     Ok(S3Config {
-        endpoint_url: std::env::var("AWS_ENDPOINT_URL")
-            .or_else(|_| std::env::var("AWS_ENDPOINT_URL_S3"))
-            .ok(),
+        // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
+        // of work that our current implementation of `build_s3_conf` does not yet do. See smithy-rs code:
+        // https://github.com/smithy-lang/smithy-rs/blob/94ecd38c2518583042796b2b45c37947237e31dd/aws/rust-runtime/aws-config/src/lib.rs#L824-L849
+        endpoint_url: None,
         region_name,
         key_id,
         session_token,
