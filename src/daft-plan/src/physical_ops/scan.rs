@@ -1,6 +1,6 @@
+use daft_scan::{file_format::FileFormatConfig, ScanTask};
+use itertools::Itertools;
 use std::sync::Arc;
-
-use daft_scan::ScanTask;
 
 use crate::ClusteringSpec;
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,21 @@ impl TabularScan {
 
         res.push(format!("Num Scan Tasks = {num_scan_tasks}",));
         res.push(format!("Estimated Scan Bytes = {total_bytes}",));
+
+        #[cfg(feature = "python")]
+        if let FileFormatConfig::Database(..) = self.scan_tasks[0].file_format_config.as_ref() {
+            let sql_queries = self
+                .scan_tasks
+                .iter()
+                .map(|st| {
+                    st.file_format_config
+                        .multiline_display()
+                        .pop()
+                        .expect("Each scan task should have a single SQL query")
+                })
+                .join(", ");
+            res.push(format!("SQL Queries = [{}]", sql_queries));
+        }
 
         res.push(format!(
             "Clustering spec = {{ {} }}",

@@ -227,3 +227,9 @@ def test_sql_connection_factory_ok(test_db, pdf) -> None:
 def test_sql_bad_connection_factory() -> None:
     with pytest.raises(ValueError):
         daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", lambda: "bad_conn")
+
+
+@pytest.mark.integration()
+def test_sql_unsupported_dialect() -> None:
+    with pytest.raises(ValueError, match="Unsupported dialect"):
+        daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", "sqlheavy://user:password@localhost:5432/db")

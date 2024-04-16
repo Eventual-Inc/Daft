@@ -237,24 +237,10 @@ def read_sql(
         MicroPartition: MicroPartition from SQL query
     """
 
-    if sql_options.predicate_expression is not None:
-        # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-        predicate_sql = sql_options.predicate_expression._to_sql(conn.dialect)
-        apply_pushdowns_to_sql = predicate_sql is not None
-    else:
-        # If we don't have a predicate, we can still apply the limit and projection to the SQL query
-        predicate_sql = None
-        apply_pushdowns_to_sql = True
-
-    pa_table = conn.read(
-        sql,
-        projection=read_options.column_names if apply_pushdowns_to_sql else None,
-        predicate=predicate_sql,
-        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
-    )
+    pa_table = conn.read(sql)
     mp = MicroPartition.from_arrow(pa_table)
 
-    if len(mp) != 0 and apply_pushdowns_to_sql is False:
+    if len(mp) != 0:
         # If we have a non-empty table and we didn't apply pushdowns to SQL, we need to apply them in-memory
         if sql_options.predicate_expression is not None:
             mp = mp.filter(ExpressionsProjection([sql_options.predicate_expression]))
