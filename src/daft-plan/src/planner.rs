@@ -780,6 +780,11 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         cfg: cfg.clone(),
     };
     let _ = logical_plan.visit(&mut visitor);
+    assert_eq!(
+        visitor.physical_children.len(),
+        1,
+        "We should have exactly 1 node left"
+    );
     let pplan = visitor
         .physical_children
         .pop()
