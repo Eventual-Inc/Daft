@@ -57,6 +57,7 @@ connectorx==0.3.2; (platform_system != "Linux" or platform_machine != "aarch64")
 trino[sqlalchemy]==0.328.0; python_version >= '3.8'
 PyMySQL==1.1.0; python_version >= '3.8'
 psycopg2-binary==2.9.9; python_version >= '3.8'
+sqlglot==23.3.0; python_version >= '3.8'
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
