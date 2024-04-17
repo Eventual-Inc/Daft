@@ -7,8 +7,6 @@ from collections.abc import Iterator
 from enum import Enum, auto
 from typing import Any
 
-import sqlglot
-
 from daft.context import get_context
 from daft.daft import (
     DatabaseSourceConfig,
@@ -255,6 +253,8 @@ class SQLScanOperator(ScanOperator):
         limit: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
     ) -> str:
+        import sqlglot
+
         target_dialect = self.conn.dialect
         # sqlglot does not support "postgresql" dialect, it only supports "postgres"
         if target_dialect == "postgresql":
