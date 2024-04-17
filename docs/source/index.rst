@@ -23,7 +23,7 @@ Learn about other more advanced installation options in our :doc:`Installation G
 Learning Daft
 -------------
 
-* :doc:`Quckstart Notebook <10-min>`: up-and-running with Daft in less than 10 minutes!
+* :doc:`Quickstart Notebook <10-min>`: up-and-running with Daft in less than 10 minutes!
 * :doc:`Daft User Guide <user_guide/index>`: useful learning material to learn key Daft concepts
 * :doc:`Daft API Documentation <api_docs/index>`: Python API documentation for reference
 

@@ -42,8 +42,7 @@ def test_dataframe_getitem_multiple_bad(valid_data: list[dict[str, float]]) -> N
     with pytest.raises(ValueError, match="indexing type"):
         df[[{"a": 1}]]
 
-    class A:
-        ...
+    class A: ...
 
     with pytest.raises(ValueError, match="indexing type"):
         df[A()]

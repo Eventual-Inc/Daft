@@ -20,7 +20,7 @@ def generate_one_file_per_dir():
     NUM_LEVELS = 4
     FANOUT_PER_LEVEL = 10
     return [
-        "/".join(f"part_col_{i}={val}" for i, val in enumerate(part_vals)) + f"/0.parquet"
+        "/".join(f"part_col_{i}={val}" for i, val in enumerate(part_vals)) + "/0.parquet"
         for part_vals in itertools.product([str(i) for i in range(FANOUT_PER_LEVEL)], repeat=NUM_LEVELS)
     ]
 

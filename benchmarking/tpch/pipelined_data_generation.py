@@ -31,9 +31,9 @@ STATIC_TABLES = ["nation", "region"]
 
 
 def batch(iterable, n=1):
-    l = len(iterable)
-    for ndx in range(0, l, n):
-        yield iterable[ndx : min(ndx + n, l)]
+    length = len(iterable)
+    for ndx in range(0, length, n):
+        yield iterable[ndx : min(ndx + n, length)]
 
 
 def gen_csv(part_idx: int, cachedir: str, scale_factor: float, num_parts: int):
@@ -56,12 +56,12 @@ def pipelined_data_generation(
         subprocess.check_output("make", cwd=str(cachedir))
 
     for i, part_indices in enumerate(batch(range(1, num_parts + 1), n=parallelism)):
-        logger.info(f"Partition {part_indices}: Generating CSV files")
+        logger.info("Partition %s: Generating CSV files", part_indices)
         with Pool(parallelism) as process_pool:
             process_pool.starmap(gen_csv, [(part_idx, cachedir, scale_factor, num_parts) for part_idx in part_indices])
 
         # Postprocessing: remove trailing delimiter, change permissions of files
-        logger.info(f"Partition {part_indices}: Post-processing CSV files")
+        logger.info("Partition %s: Post-processing CSV files", part_indices)
         subprocess.check_output(shlex.split("chmod -R u+rwx ."), cwd=str(cachedir))
         csv_files = glob.glob(f"{cachedir}/*.tbl*")
         for csv_file in csv_files:
@@ -70,10 +70,10 @@ def pipelined_data_generation(
         for backup_file in backup_files:
             os.remove(backup_file)
 
-        logger.info(f"Partition {part_indices}: Generating Parquet")
+        logger.info("Partition %s: Generating Parquet", part_indices)
         generated_parquet_folder = gen_parquet(cachedir)
 
-        logger.info(f"Partition {part_indices}: Syncing to AWS S3")
+        logger.info("Partition %s: Syncing to AWS S3", part_indices)
         # Exclude static tables except for first iteration
         exclude_static_tables = "" if i == 0 else " ".join([f'--exclude "*/{tbl}/*"' for tbl in STATIC_TABLES])
         subprocess.check_output(
@@ -82,12 +82,12 @@ def pipelined_data_generation(
             )
         )
 
-        logger.info(f"Partition {part_indices}: Cleaning up files")
+        logger.info("Partition %s: Cleaning up files", part_indices)
         shutil.rmtree(generated_parquet_folder)
         for table_file in glob.glob(f"{cachedir}/*.tbl*"):
             os.remove(table_file)
 
-        logger.info(f"Partition {part_indices}: Completed")
+        logger.info("Partition %s: Completed", part_indices)
 
 
 if __name__ == "__main__":

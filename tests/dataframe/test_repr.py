@@ -166,9 +166,6 @@ def test_alias_repr(make_df):
             ["a", "b", "c"],
         ),
     }
-    expected_data_html = {
-        **expected_data,
-    }
     assert parse_str_table(df.__repr__()) == expected_data
     assert (
         df._repr_html_()

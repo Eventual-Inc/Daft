@@ -111,7 +111,6 @@ class HudiTableProps:
 
 @dataclass
 class HudiTableMetadata:
-
     files_metadata: pa.RecordBatch
     colstats_min_values: pa.RecordBatch
     colstats_max_values: pa.RecordBatch

@@ -178,3 +178,42 @@ impl ListArray {
         ))
     }
 }
+
+impl<'a> IntoIterator for &'a ListArray {
+    type Item = Option<Series>;
+
+    type IntoIter = ListArrayIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+pub struct ListArrayIter<'a> {
+    array: &'a ListArray,
+    idx: usize,
+}
+
+impl Iterator for ListArrayIter<'_> {
+    type Item = Option<Series>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.array.len() {
+            if let Some(validity) = self.array.validity() && !validity.get_bit(self.idx) {
+                self.idx += 1;
+                Some(None)
+            } else {
+                let start = *self.array.offsets().get(self.idx).unwrap() as usize;
+                let end = *self.array.offsets().get(self.idx + 1).unwrap() as usize;
+
+                self.idx += 1;
+                Some(Some(self.array.flat_child.slice(start, end).unwrap()))
+            }
+        } else {
+            None
+        }
+    }
+}

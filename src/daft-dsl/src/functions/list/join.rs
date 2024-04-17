@@ -5,6 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 
+use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
@@ -16,7 +17,7 @@ impl FunctionEvaluator for JoinEvaluator {
         "join"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input, delimiter] => {
                 let input_field = input.to_field(schema)?;
@@ -50,7 +51,7 @@ impl FunctionEvaluator for JoinEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input, delimiter] => {
                 let delimiter = delimiter.utf8().unwrap();

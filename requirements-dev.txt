@@ -32,7 +32,7 @@ opencv-python==4.8.1.78
 
 # Pyarrow
 pyarrow==12; platform_system != "Windows"
-pyarrow==6.0.1; platform_system === "Windows"
+pyarrow==6.0.1; platform_system == "Windows"
 # Ray
 ray[data, client]==2.7.1; python_version < '3.8'
 ray[data, client]==2.7.1; python_version >= '3.8'

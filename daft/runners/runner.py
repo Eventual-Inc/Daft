@@ -26,12 +26,10 @@ class Runner(Generic[PartitionT]):
         return self._part_set_cache.put_partition_set(pset=pset)
 
     @abstractmethod
-    def runner_io(self) -> RunnerIO:
-        ...
+    def runner_io(self) -> RunnerIO: ...
 
     @abstractmethod
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        ...
+    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry: ...
 
     @abstractmethod
     def run_iter(

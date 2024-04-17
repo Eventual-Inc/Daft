@@ -26,7 +26,7 @@ def daft_df(request, tmp_path):
         papq.write_table(pacsv.read_csv(COOKBOOK_DATA_CSV), str(tmp_file))
         df = daft.read_parquet(str(tmp_file))
     else:
-        assert False, f"Can only handle CSV/Parquet formats"
+        assert False, "Can only handle CSV/Parquet formats"
     return df.select(*[col(c) for c in COLUMNS])
 
 

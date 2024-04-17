@@ -390,13 +390,13 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
         # _task_staging, finalized, and put into _finalized_tasks.
         self._task_staging: dict[str, PartitionTaskBuilder[PartitionT]] = {}
         # Merge-join tasks that have been finalized, but not yet yielded to the runner.
-        self._finalized_tasks: collections.defaultdict[
-            str, deque[SingleOutputPartitionTask[PartitionT]]
-        ] = collections.defaultdict(deque)
+        self._finalized_tasks: collections.defaultdict[str, deque[SingleOutputPartitionTask[PartitionT]]] = (
+            collections.defaultdict(deque)
+        )
         # Merge-join tasks that have been yielded to the runner, and still need to be coalesced.
-        self._uncoalesced_tasks: collections.defaultdict[
-            str, deque[SingleOutputPartitionTask[PartitionT]]
-        ] = collections.defaultdict(deque)
+        self._uncoalesced_tasks: collections.defaultdict[str, deque[SingleOutputPartitionTask[PartitionT]]] = (
+            collections.defaultdict(deque)
+        )
         # Larger-side partitions that have been finalized, i.e. we're guaranteed that no more smaller-side partitions
         # will be added to the tracker for this partition.
         self._finalized: dict[str, bool] = {}
@@ -925,7 +925,8 @@ def sort_merge_join_aligned_boundaries(
                     ]
                 ),
             )
-        ).finalize_partition_task_single_output(stage_id=stage_id_reduce)
+        )
+        .finalize_partition_task_single_output(stage_id=stage_id_reduce)
     )
     yield right_boundaries
 

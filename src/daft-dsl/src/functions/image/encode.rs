@@ -16,7 +16,7 @@ impl FunctionEvaluator for EncodeEvaluator {
         "encode"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
@@ -37,12 +37,9 @@ impl FunctionEvaluator for EncodeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         let image_format = match expr {
-            Expr::Function {
-                func: FunctionExpr::Image(ImageExpr::Encode { image_format }),
-                inputs: _,
-            } => image_format,
+            FunctionExpr::Image(ImageExpr::Encode { image_format }) => image_format,
             _ => panic!("Expected ImageEncode Expr, got {expr}"),
         };
         match inputs {

@@ -112,7 +112,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v1.5.1
+      uses: isbang/compose-action@v2.0.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes

@@ -4,6 +4,7 @@ import itertools
 import math
 import operator as ops
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -118,7 +119,7 @@ def test_table_numeric_expressions(data_dtype, op) -> None:
 
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["result"]
-    pyresult = [op(l, r) for l, r in zip(a, b)]
+    pyresult = [op(left, right) for left, right in zip(a, b)]
     assert daft_table.get_column("result").to_pylist() == pyresult
 
 
@@ -134,7 +135,7 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
 
     assert len(daft_table) == 5
     assert daft_table.column_names() == ["result"]
-    pyresult = [op(l, r) for l, r in zip(a[:2], b[:2])]
+    pyresult = [op(left, right) for left, right in zip(a[:2], b[:2])]
     assert daft_table.get_column("result").to_pylist()[:2] == pyresult
 
     assert daft_table.get_column("result").to_pylist()[2:] == [None, None, None]
@@ -239,6 +240,57 @@ def test_table_sign_bad_input() -> None:
         table.eval_expression_list([col("a").sign()])
 
 
+@pytest.mark.parametrize(
+    ("fun", "is_arc"),
+    [
+        ("sin", False),
+        ("cos", False),
+        ("tan", False),
+        ("arcsin", True),
+        ("arccos", True),
+        ("arctan", True),
+        ("radians", False),
+        ("degrees", False),
+    ],
+)
+def test_table_numeric_trigonometry(fun: str, is_arc: bool) -> None:
+    if not is_arc:
+        table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+    else:
+        table = MicroPartition.from_pydict({"a": [0.0, 1, 0.5, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = getattr(np, fun)(s)
+
+    trigonometry_table = table.eval_expression_list([getattr(col("a"), fun)()])
+    assert (
+        all(
+            x == y or (math.isnan(x) and math.isnan(y))
+            for x, y in zip(trigonometry_table.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_arc_trigonometry_oor() -> None:
+    table = MicroPartition.from_pydict({"a": [math.pi, 2]})
+    cot_table = table.eval_expression_list([col("a").arcsin(), col("a").arccos().alias("b")])
+    assert all(math.isnan(x) for x in cot_table.get_column("a").to_pylist())
+    assert all(math.isnan(x) for x in cot_table.get_column("b").to_pylist())
+
+
+def test_table_numeric_cot() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, None, math.nan]})
+    cot_table = table.eval_expression_list([col("a").cot()])
+    expected = [math.inf, None, math.nan]
+    assert (
+        all(
+            x == y or (math.isnan(x) and math.isnan(y)) or (math.isinf(x) and math.isinf(y))
+            for x, y in zip(cot_table.get_column("a").to_pylist(), expected)
+        )
+        is True
+    )
+
+
 def test_table_numeric_round() -> None:
     from decimal import ROUND_HALF_UP, Decimal
 
@@ -266,3 +318,10 @@ def test_table_round_bad_input() -> None:
 
     with pytest.raises(ValueError, match="decimal can not be negative: -2"):
         table.eval_expression_list([col("a").round(-2)])
+
+
+def test_table_exp() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
+    exp_table = table.eval_expression_list([col("a").exp(), col("b").exp()])
+    assert [1.1051709180756477, 1.010050167084168, None] == exp_table.get_column("a").to_pylist()
+    assert [2.718281828459045, 22026.465794806718, None] == exp_table.get_column("b").to_pylist()

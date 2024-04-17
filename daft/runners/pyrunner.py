@@ -233,7 +233,7 @@ class PyRunner(Runner[MicroPartition]):
                     # Await at least one task and process the results.
                     assert (
                         len(future_to_task) > 0
-                    ), f"Scheduler deadlocked! This should never happen. Please file an issue."
+                    ), "Scheduler deadlocked! This should never happen. Please file an issue."
                     done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                     for done_future in done_set:
                         done_id = future_to_task.pop(done_future)

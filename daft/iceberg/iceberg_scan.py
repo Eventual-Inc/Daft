@@ -132,8 +132,10 @@ class IcebergScanOperator(ScanOperator):
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warn(
-                f"{self.display_name()} has Partitioning Keys: {self.partitioning_keys()} but no partition filter was specified. This will result in a full table scan."
+            logging.warning(
+                "%s has Partitioning Keys: %s but no partition filter was specified. This will result in a full table scan.",
+                self.display_name(),
+                self.partitioning_keys(),
             )
         scan_tasks = []
 
@@ -157,7 +159,7 @@ class IcebergScanOperator(ScanOperator):
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
 
             if len(task.delete_files) > 0:
-                raise NotImplementedError(f"Iceberg Merge-on-Read currently not supported, please make an issue!")
+                raise NotImplementedError("Iceberg Merge-on-Read currently not supported, please make an issue!")
 
             # TODO: Thread in Statistics to each ScanTask: P2
             pspec = self._iceberg_record_to_partition_spec(file.partition)

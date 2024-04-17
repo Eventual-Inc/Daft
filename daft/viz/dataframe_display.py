@@ -18,7 +18,6 @@ if HAS_PILLOW:
 
 @dataclass(frozen=True)
 class DataFrameDisplay:
-
     preview: DataFramePreview
     schema: Schema
     # These formatting options are deprecated for now and not guaranteed to be supported.

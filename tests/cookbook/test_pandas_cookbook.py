@@ -1,6 +1,5 @@
 """This module tests examples from https://pandas.pydata.org/docs/user_guide/cookbook.html"""
 
-
 from __future__ import annotations
 
 import numpy as np
@@ -122,7 +121,7 @@ SELECTION_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50,
 def test_splitting_by_row_index(repartition_nparts):
     daft_df = daft.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
-    daft_df = daft_df.where((col("AAA") <= 6) & F.row_number().is_in([0, 2, 4]))
+    daft_df = daft_df.where((col("AAA") <= 6) & F.row_number().is_in([0, 2, 4]))  # noqa: F821
     pd_df = pd_df[(pd_df.AAA <= 6) & (pd_df.index.isin([0, 2, 4]))]
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
@@ -132,7 +131,7 @@ def test_splitting_by_row_index(repartition_nparts):
 def test_splitting_by_row_range(repartition_nparts):
     daft_df = daft.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
-    daft_df = daft_df.where((F.row_number() >= 0) & (F.row_number() < 3))
+    daft_df = daft_df.where((F.row_number() >= 0) & (F.row_number() < 3))  # noqa: F821
     pd_df = pd_df[0:3]
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")

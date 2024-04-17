@@ -42,6 +42,30 @@ Any subsequent filter operations on the Daft ``df`` DataFrame object will be cor
     df = df.where(df["partition_key"] < 1000)
     df.show()
 
+Writing to a Table
+******************
+
+To write to an Apache Iceberg table, use the :meth:`daft.DataFrame.write_iceberg` method.
+
+The following is an example of appending data to an Iceberg table:
+
+.. code:: python
+
+    written_df = df.write_iceberg(table, mode="append")
+    written_df.show()
+
+This call will then return a DataFrame containing the operations that were performed on the Iceberg table, like so:
+
+.. code::
+
+    ╭───────────┬───────┬───────────┬────────────────────────────────╮
+    │ operation ┆ rows  ┆ file_size ┆ file_name                      │
+    │ ---       ┆ ---   ┆ ---       ┆ ---                            │
+    │ Utf8      ┆ Int64 ┆ Int64     ┆ Utf8                           │
+    ╞═══════════╪═══════╪═══════════╪════════════════════════════════╡
+    │ ADD       ┆ 5     ┆ 707       ┆ 2f1a2bb1-3e64-49da-accd-1074e… │
+    ╰───────────┴───────┴───────────┴────────────────────────────────╯
+
 Type System
 ***********
 
@@ -97,5 +121,5 @@ Roadmap
 Here are features of Iceberg that are works-in-progress.
 
 1. Iceberg V2 merge-on-read features
-2. Writing back to an Iceberg table (appends, overwrites, upserts)
+2. Writing to partitioned Iceberg tables (this is currently pending functionality to be added to the PyIceberg library)
 3. More extensive usage of Iceberg-provided statistics to futher optimize queries

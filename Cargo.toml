@@ -47,6 +47,7 @@ publish = false
 version = "0.2.0-dev0"
 
 [patch.crates-io]
+arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"}
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
 
 [profile.dev]
@@ -87,18 +88,19 @@ members = [
   "src/daft-table",
   "src/daft-plan",
   "src/daft-micropartition",
-  "src/daft-scan"
+  "src/daft-scan",
+  "src/daft-sketch"
 ]
 
 [workspace.dependencies]
 async-compat = "0.2.3"
 async-compression = {version = "0.4.7", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
-bytes = "1.4.0"
+bytes = "1.6.0"
 chrono = "0.4.26"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.0"
-futures = "0.3.28"
+futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
 itertools = "0.11"
@@ -114,7 +116,7 @@ regex = "1.10.3"
 rstest = "0.18.2"
 serde_json = "1.0.108"
 snafu = {version = "0.7.4", features = ["futures"]}
-tokio = {version = "1.32.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
+tokio = {version = "1.37.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
 tokio-util = "0.7.8"
 url = "2.4.0"
