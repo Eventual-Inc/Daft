@@ -41,18 +41,18 @@ pub struct QueryStageVisitor {
 
 impl TreeNodeVisitor for QueryStageVisitor {
     type N = LogicalPlan;
-    fn pre_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
+    fn pre_visit(&mut self, _node: &Self::N) -> DaftResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
     }
 
     fn post_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
-        let output = plan2(node, &mut self.physical_children, &self.cfg)?;
+        let output = translate_single_logical_node(node, &mut self.physical_children, &self.cfg)?;
         self.physical_children.push(output);
         Ok(VisitRecursion::Continue)
     }
 }
 
-pub fn plan2(
+pub fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
     physical_children: &mut Vec<PhysicalPlan>,
     cfg: &DaftExecutionConfig,
@@ -112,7 +112,7 @@ pub fn plan2(
             }
         },
         LogicalPlan::Project(LogicalProject {
-            input,
+            input: _,
             projection,
             resource_request,
             ..
@@ -126,7 +126,10 @@ pub fn plan2(
                 clustering_spec,
             )?))
         }
-        LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
+        LogicalPlan::Filter(LogicalFilter {
+            input: _,
+            predicate,
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Filter(Filter::new(
                 input_physical.into(),
@@ -134,7 +137,7 @@ pub fn plan2(
             )))
         }
         LogicalPlan::Limit(LogicalLimit {
-            input,
+            input: _,
             limit,
             eager,
         }) => {
@@ -148,7 +151,9 @@ pub fn plan2(
             )))
         }
         LogicalPlan::Explode(LogicalExplode {
-            input, to_explode, ..
+            input: _,
+            to_explode,
+            ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Explode(Explode::try_new(
@@ -157,7 +162,7 @@ pub fn plan2(
             )?))
         }
         LogicalPlan::Sort(LogicalSort {
-            input,
+            input: _,
             sort_by,
             descending,
         }) => {
@@ -171,7 +176,7 @@ pub fn plan2(
             )))
         }
         LogicalPlan::Repartition(LogicalRepartition {
-            input,
+            input: _,
             repartition_spec,
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -268,7 +273,7 @@ pub fn plan2(
             }
         }
         LogicalPlan::Sample(LogicalSample {
-            input,
+            input: _,
             fraction,
             with_replacement,
             seed,
@@ -284,7 +289,7 @@ pub fn plan2(
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,
             groupby,
-            input,
+            input: _,
             ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
@@ -513,7 +518,7 @@ pub fn plan2(
 
             Ok(result_plan)
         }
-        LogicalPlan::Concat(LogicalConcat { input, other }) => {
+        LogicalPlan::Concat(LogicalConcat { input: _, other: _ }) => {
             let other_physical = physical_children.pop().expect("requires 1 inputs");
             let input_physical = physical_children.pop().expect("requires 2 inputs");
             Ok(PhysicalPlan::Concat(Concat::new(
@@ -522,8 +527,8 @@ pub fn plan2(
             )))
         }
         LogicalPlan::Join(LogicalJoin {
-            left,
-            right,
+            left: _,
+            right: _,
             left_on,
             right_on,
             join_type,
@@ -713,7 +718,7 @@ pub fn plan2(
         LogicalPlan::Sink(LogicalSink {
             schema,
             sink_info,
-            input,
+            input: _,
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             match sink_info.as_ref() {
@@ -756,7 +761,7 @@ pub fn plan2(
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
-            input,
+            input: _,
             column_name,
             ..
         }) => {
