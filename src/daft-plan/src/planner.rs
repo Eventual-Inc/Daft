@@ -7,6 +7,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_treenode::{TreeNode, TreeNodeVisitor};
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;
@@ -32,8 +33,30 @@ use crate::{physical_ops::*, JoinStrategy};
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
 
-/// Translate a logical plan to a physical plan.
-pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
+use common_treenode::VisitRecursion;
+pub struct QueryStageVisitor {
+    pub physical_children: Vec<PhysicalPlan>,
+    pub cfg: Arc<DaftExecutionConfig>,
+}
+
+impl TreeNodeVisitor for QueryStageVisitor {
+    type N = LogicalPlan;
+    fn pre_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
+        Ok(VisitRecursion::Continue)
+    }
+
+    fn post_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
+        let output = plan2(node, &mut self.physical_children, &self.cfg)?;
+        self.physical_children.push(output);
+        Ok(VisitRecursion::Continue)
+    }
+}
+
+pub fn plan2(
+    logical_plan: &LogicalPlan,
+    physical_children: &mut Vec<PhysicalPlan>,
+    cfg: &DaftExecutionConfig,
+) -> DaftResult<PhysicalPlan> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::ExternalInfo(ScanExternalInfo {
@@ -94,7 +117,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             resource_request,
             ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let clustering_spec = input_physical.clustering_spec().clone();
             Ok(PhysicalPlan::Project(Project::try_new(
                 input_physical.into(),
@@ -104,7 +127,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             )?))
         }
         LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Filter(Filter::new(
                 input_physical.into(),
                 predicate.clone(),
@@ -115,7 +138,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             limit,
             eager,
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Limit(Limit::new(
                 input_physical.into(),
@@ -127,7 +150,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         LogicalPlan::Explode(LogicalExplode {
             input, to_explode, ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Explode(Explode::try_new(
                 input_physical.into(),
                 to_explode.clone(),
@@ -138,7 +161,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             sort_by,
             descending,
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Sort(Sort::new(
                 input_physical.into(),
@@ -151,7 +174,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             input,
             repartition_spec,
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let input_clustering_spec = input_physical.clustering_spec();
             let input_num_partitions = input_clustering_spec.num_partitions();
             let clustering_spec = repartition_spec.to_clustering_spec(input_num_partitions);
@@ -215,7 +238,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             Ok(repartitioned_plan)
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
                 .names()
@@ -250,7 +273,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             with_replacement,
             seed,
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Sample(Sample::new(
                 input_physical.into(),
                 *fraction,
@@ -266,13 +289,13 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         }) => {
             use daft_dsl::AggExpr::{self, *};
             use daft_dsl::Expr::Column;
-            let input_plan = plan(input, cfg.clone())?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
 
-            let num_input_partitions = input_plan.clustering_spec().num_partitions();
+            let num_input_partitions = input_physical.clustering_spec().num_partitions();
 
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
-                    input_plan.into(),
+                    input_physical.into(),
                     aggregations.clone(),
                     groupby.clone(),
                 )),
@@ -446,10 +469,10 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     }
 
                     let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_plan
+                        input_physical
                     } else {
                         PhysicalPlan::Aggregate(Aggregate::new(
-                            input_plan.into(),
+                            input_physical.into(),
                             first_stage_aggs.values().cloned().collect(),
                             groupby.clone(),
                         ))
@@ -491,8 +514,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             Ok(result_plan)
         }
         LogicalPlan::Concat(LogicalConcat { input, other }) => {
-            let input_physical = plan(input, cfg.clone())?;
-            let other_physical = plan(other, cfg.clone())?;
+            let other_physical = physical_children.pop().expect("requires 1 inputs");
+            let input_physical = physical_children.pop().expect("requires 2 inputs");
             Ok(PhysicalPlan::Concat(Concat::new(
                 input_physical.into(),
                 other_physical.into(),
@@ -508,8 +531,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             output_schema,
             ..
         }) => {
-            let mut left_physical = plan(left, cfg.clone())?;
-            let mut right_physical = plan(right, cfg.clone())?;
+            let mut right_physical = physical_children.pop().expect("requires 1 inputs");
+            let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
             let left_clustering_spec = left_physical.clustering_spec();
             let right_clustering_spec = right_physical.clustering_spec();
@@ -692,7 +715,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             sink_info,
             input,
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             match sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(file_info @ OutputFileInfo { file_format, .. }) => {
                     match file_format {
@@ -737,12 +760,26 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             column_name,
             ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::MonotonicallyIncreasingId(
                 MonotonicallyIncreasingId::new(input_physical.into(), column_name),
             ))
         }
     }
+}
+
+/// Translate a logical plan to a physical plan.
+pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
+    let mut visitor = crate::planner::QueryStageVisitor {
+        physical_children: vec![],
+        cfg: cfg.clone(),
+    };
+    let _ = logical_plan.visit(&mut visitor);
+    let pplan = visitor
+        .physical_children
+        .pop()
+        .expect("should have exactly 1 parent");
+    Ok(pplan)
 }
 
 #[cfg(test)]
