@@ -793,7 +793,7 @@ pub(crate) fn read_sql_into_py_table(
     py: Python,
     sql: &str,
     conn: &PyObject,
-    predicate_expr: Option<PyExpr>,
+    predicate: Option<PyExpr>,
     schema: PySchema,
     include_columns: Option<Vec<String>>,
     num_rows: Option<usize>,
@@ -803,7 +803,7 @@ pub(crate) fn read_sql_into_py_table(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((schema,))?;
-    let predicate_pyexpr = match predicate_expr {
+    let py_predicate = match predicate {
         Some(p) => Some(
             py.import(pyo3::intern!(py, "daft.expressions.expressions"))?
                 .getattr(pyo3::intern!(py, "Expression"))?
@@ -812,17 +812,13 @@ pub(crate) fn read_sql_into_py_table(
         ),
         None => None,
     };
-    let sql_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadSQLOptions"))?
-        .call1((predicate_pyexpr,))?;
     let read_options = py
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
     py.import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
-        .call1((sql, conn, py_schema, sql_options, read_options))?
+        .call1((sql, conn, py_schema, read_options, py_predicate))?
         .getattr(pyo3::intern!(py, "to_table"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?

@@ -151,10 +151,16 @@ class SQLScanOperator(ScanOperator):
 
         except RuntimeError as e:
             # If percentiles fails, use the min and max of the partition column
-            logger.info("Failed to get percentiles using percentile_cont, falling back to min and max. Error: %s", e)
+            logger.info(
+                "Failed to get percentiles using percentile_cont, falling back to min and max. Error: %s",
+                e,
+            )
 
             sql = self._construct_sql_query(
-                projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"]
+                projection=[
+                    f"MIN({self._partition_col}) AS min",
+                    f"MAX({self._partition_col}) AS max",
+                ]
             )
             pa_table = self.conn.read(sql)
             return pa_table, PartitionBoundStrategy.MIN_MAX
@@ -212,17 +218,10 @@ class SQLScanOperator(ScanOperator):
         partition_bounds: tuple[str, str] | None = None,
         stats: PyTable | None = None,
     ) -> ScanTask:
-        if pushdowns.filters is not None:
-            # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-            predicate_sql = pushdowns.filters.to_sql()
-            apply_pushdowns_to_sql = predicate_sql is not None
-        else:
-            # If we don't have a predicate, we can still apply the limit and projection to the SQL query
-            predicate_sql = None
-            apply_pushdowns_to_sql = True
-
-        # If the user has disabled pushdowns, we don't apply any pushdowns to the SQL query
-        apply_pushdowns_to_sql = apply_pushdowns_to_sql and not self._disable_pushdowns_to_sql
+        predicate_sql = pushdowns.filters.to_sql() if pushdowns.filters is not None else None
+        apply_pushdowns_to_sql = not self._disable_pushdowns_to_sql and (
+            pushdowns.filters is None or predicate_sql is not None
+        )
 
         if apply_pushdowns_to_sql:
             sql = self._construct_sql_query(

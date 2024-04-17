@@ -29,6 +29,7 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
+from daft.expressions.expressions import Expression
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -39,7 +40,6 @@ from daft.runners.partitioning import (
     TableParseCSVOptions,
     TableParseParquetOptions,
     TableReadOptions,
-    TableReadSQLOptions,
 )
 from daft.series import Series
 from daft.sql.sql_connection import SQLConnection
@@ -191,11 +191,20 @@ def read_parquet(
 
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit))
+        pqf = papq.ParquetFile(
+            f,
+            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
+        )
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
-        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
+        table = pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in arrow_schema],
+            schema=arrow_schema,
+        )
     elif read_options.num_rows is not None:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit))
+        pqf = papq.ParquetFile(
+            f,
+            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
+        )
         # Only read the required row groups.
         rows_needed = read_options.num_rows
         for i in range(pqf.metadata.num_row_groups):
@@ -221,8 +230,8 @@ def read_sql(
     sql: str,
     conn: SQLConnection,
     schema: Schema,
-    sql_options: TableReadSQLOptions = TableReadSQLOptions(),
     read_options: TableReadOptions = TableReadOptions(),
+    predicate: Expression | None = None,
 ) -> MicroPartition:
     """Reads a MicroPartition from a SQL query
 
@@ -230,7 +239,6 @@ def read_sql(
         sql (str): SQL query to execute
         url (str): URL to the database
         schema (Schema): Daft schema to read the SQL query into
-        sql_options (TableReadSQLOptions, optional): SQL-specific configs to apply when reading the file
         read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
@@ -242,8 +250,8 @@ def read_sql(
 
     if len(mp) != 0:
         # If we have a non-empty table and we didn't apply pushdowns to SQL, we need to apply them in-memory
-        if sql_options.predicate_expression is not None:
-            mp = mp.filter(ExpressionsProjection([sql_options.predicate_expression]))
+        if predicate is not None:
+            mp = mp.filter(ExpressionsProjection([predicate]))
 
         if read_options.num_rows is not None:
             mp = mp.head(read_options.num_rows)
@@ -346,7 +354,7 @@ def read_csv(
             parse_options=parse_options,
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
-                column_names=schema.column_names() if csv_options.header_index is None else None,
+                column_names=(schema.column_names() if csv_options.header_index is None else None),
             ),
             convert_options=pacsv.ConvertOptions(
                 # Column pruning
@@ -521,7 +529,7 @@ def coerce_pyarrow_table_to_schema(pa_table: pa.Table, input_schema: pa.Schema) 
 
     # Perform casting of types to provided schema's types
     cast_to_schema = [
-        input_schema.field(inferred_field.name) if inferred_field.name in input_schema_names else inferred_field
+        (input_schema.field(inferred_field.name) if inferred_field.name in input_schema_names else inferred_field)
         for inferred_field in pa_table.schema
     ]
     casted_table = pa_table.cast(pa.schema(cast_to_schema))
