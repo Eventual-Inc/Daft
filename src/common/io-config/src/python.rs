@@ -263,6 +263,21 @@ impl S3Config {
         }
     }
 
+    /// Creates an S3Config from the current environment, auto-discovering variables such as
+    /// credentials, regions and more.
+    #[staticmethod]
+    pub fn from_env(py: Python) -> PyResult<Self> {
+        let io_config_from_env_func = py
+            .import(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
+        io_config_from_env_func.call0().map(|pyany| {
+            pyany
+                .extract()
+                .expect("s3_config_from_env function must return S3Config")
+        })
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
     }

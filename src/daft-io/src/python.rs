@@ -2,7 +2,7 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, parse_url, stats::IOStatsContext};
+    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
     use common_error::DaftResult;
     use futures::TryStreamExt;
     use pyo3::{
@@ -66,11 +66,24 @@ mod py {
         Ok(crate::set_io_pool_num_threads(num_threads as usize))
     }
 
+    /// Creates an S3Config from the current environment, auto-discovering variables such as
+    /// credentials, regions and more.
+    #[pyfunction]
+    fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
+        let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
+            let runtime = get_runtime(false)?;
+            let runtime_handle = runtime.handle();
+            let _rt_guard = runtime_handle.enter();
+            runtime_handle.block_on(async { Ok(s3_like::s3_config_from_env().await?) })
+        });
+        Ok(common_io_config::python::S3Config { config: s3_config? })
+    }
+
     pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
         common_io_config::python::register_modules(py, parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(set_io_pool_num_threads, parent)?)?;
-
+        parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         Ok(())
     }
 }
