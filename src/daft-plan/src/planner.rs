@@ -760,7 +760,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         physical_children: vec![],
         cfg: cfg.clone(),
     };
-    let _ = logical_plan.visit(&mut visitor);
+    let _output = logical_plan.visit(&mut visitor)?;
     assert_eq!(
         visitor.physical_children.len(),
         1,
