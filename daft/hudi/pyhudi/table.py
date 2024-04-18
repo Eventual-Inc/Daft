@@ -10,6 +10,7 @@ import pyarrow.fs as pafs
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
 from daft.hudi.pyhudi.utils import (
+    FsFileMetadata,
     list_full_sub_dirs,
     list_leaf_dirs,
     list_relative_file_paths,
@@ -85,9 +86,9 @@ class FileSystemView:
 
 @dataclass(init=False)
 class HudiTableProps:
-    def __init__(self, fs: pafs.FileSystem, table_uri: str):
+    def __init__(self, fs: pafs.FileSystem, base_path: str):
         self._props = {}
-        hoodie_properties_file = os.path.join(table_uri, ".hoodie", "hoodie.properties")
+        hoodie_properties_file = os.path.join(base_path, ".hoodie", "hoodie.properties")
         with fs.open_input_file(hoodie_properties_file) as f:
             lines = f.readall().decode("utf-8").splitlines()
             for line in lines:
@@ -122,11 +123,16 @@ class UnsupportedException(Exception):
 
 @dataclass(init=False)
 class HudiTable:
-    def __init__(self, table_uri: str, fs: pafs.FileSystem, base_path: str):
-        self.table_uri = table_uri
+    def __init__(self, table_uri: str, fs: pafs.FileSystem, resolved_base_path: str):
+        self.table_uri = HudiTable._sanitize_path(table_uri)
+        base_path = HudiTable._sanitize_path(resolved_base_path)
         self._meta_client = MetaClient(fs, base_path, timeline=None)
         self._props = HudiTableProps(fs, base_path)
         self._validate_table_props()
+
+    @staticmethod
+    def _sanitize_path(path: str) -> str:
+        return path.rstrip("/")
 
     def _validate_table_props(self):
         if self._props.get_config("hoodie.table.type") != "COPY_ON_WRITE":
@@ -147,10 +153,13 @@ class HudiTable:
         metadata_arrays = [pa.array(column) for column in list(zip(*files_metadata))]
         min_value_arrays = [pa.array(column) for column in list(zip(*min_vals_arr))]
         max_value_arrays = [pa.array(column) for column in list(zip(*max_vals_arr))]
+        colstats_schema = FsFileMetadata.get_colstats_schema(
+            self._meta_client.get_active_timeline().get_latest_commit_schema()
+        )
         return HudiTableMetadata(
             pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.FILES_METADATA_SCHEMA),
-            pa.RecordBatch.from_arrays(min_value_arrays, schema=self.schema),
-            pa.RecordBatch.from_arrays(max_value_arrays, schema=self.schema),
+            pa.RecordBatch.from_arrays(min_value_arrays, schema=colstats_schema),
+            pa.RecordBatch.from_arrays(max_value_arrays, schema=colstats_schema),
         )
 
     @property

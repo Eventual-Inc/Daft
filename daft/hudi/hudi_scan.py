@@ -94,13 +94,14 @@ class HudiScanOperator(ScanOperator):
                 partition_values = None
 
             # Populate scan task with column-wise stats.
-            schema = self._table.schema
+            # TODO: nested fields are skipped
+            colstats_schema = hudi_table_metadata.colstats_min_values.schema
             min_values = hudi_table_metadata.colstats_min_values
             max_values = hudi_table_metadata.colstats_max_values
             arrays = {}
-            for field_idx in range(len(schema)):
-                field_name = schema.field(field_idx).name
-                field_type = schema.field(field_idx).type
+            for field_idx in range(len(colstats_schema)):
+                field_name = colstats_schema.field(field_idx).name
+                field_type = colstats_schema.field(field_idx).type
                 try:
                     arrow_arr = pa.array(
                         [min_values[field_name][task_idx], max_values[field_name][task_idx]], type=field_type

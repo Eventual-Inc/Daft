@@ -18,25 +18,51 @@ class FsFileMetadata:
             metadata = pq.read_metadata(f)
         self.size = metadata.serialized_size
         self.num_records = metadata.num_rows
-        self.schema, self.min_values, self.max_values = FsFileMetadata._extract_min_max(metadata)
+        self.schema = FsFileMetadata._extract_arrow_schema(metadata)
+        self.colstats_schema, self.min_values, self.max_values = FsFileMetadata._extract_min_max(metadata)
+
+    @staticmethod
+    def get_colstats_schema(original_schema: pa.Schema) -> pa.Schema:
+        non_nested_fields = []
+        for i in range(len(original_schema)):
+            f = original_schema.field(i)
+            if not pa.types.is_nested(f.type):
+                non_nested_fields.append(f)
+        return pa.schema(non_nested_fields)
+
+    @staticmethod
+    def _extract_arrow_schema(metadata: pa.FileMetadata) -> pa.Schema:
+        return metadata.schema.to_arrow_schema().remove_metadata()
+
+    @staticmethod
+    def _is_nested(path_in_schema: str) -> bool:
+        return path_in_schema.find(".") != -1
 
     @staticmethod
     def _extract_min_max(metadata: pq.FileMetaData):
-        arrow_schema = pa.schema(metadata.schema.to_arrow_schema())
-        n_columns = len(arrow_schema)
-        min_vals = [None] * n_columns
-        max_vals = [None] * n_columns
-        num_rg = metadata.num_row_groups
-        for rg in range(num_rg):
+        colstats_schema = FsFileMetadata.get_colstats_schema(metadata.schema.to_arrow_schema())
+        num_columns = metadata.num_columns
+        num_row_groups = metadata.num_row_groups
+        min_vals = [None] * num_columns
+        max_vals = [None] * num_columns
+        for rg in range(num_row_groups):
             row_group = metadata.row_group(rg)
-            for col in range(n_columns):
+            for col in range(num_columns):
                 column = row_group.column(col)
-                if column.is_stats_set and column.statistics.has_min_max:
+                if (
+                    column.is_stats_set
+                    and column.statistics.has_min_max
+                    and not FsFileMetadata._is_nested(column.path_in_schema)
+                ):
                     if min_vals[col] is None or column.statistics.min < min_vals[col]:
                         min_vals[col] = column.statistics.min
                     if max_vals[col] is None or column.statistics.max > max_vals[col]:
                         max_vals[col] = column.statistics.max
-        return arrow_schema, min_vals, max_vals
+        filtered_min_vals = list(filter(lambda v: v is not None, min_vals))
+        filtered_max_vals = list(filter(lambda v: v is not None, max_vals))
+
+        assert len(colstats_schema) == len(filtered_min_vals) == len(filtered_max_vals)
+        return colstats_schema, filtered_min_vals, filtered_max_vals
 
 
 def list_relative_file_paths(
