@@ -14,8 +14,8 @@ use daft_dsl::Expr;
 use daft_scan::ScanExternalInfo;
 
 use crate::logical_ops::{
-    Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
-    Explode as LogicalExplode, Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
+    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
+    Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Project as LogicalProject,
     Repartition as LogicalRepartition, Sample as LogicalSample, Sink as LogicalSink,
     Sort as LogicalSort, Source,
@@ -112,7 +112,6 @@ pub fn translate_single_logical_node(
             }
         },
         LogicalPlan::Project(LogicalProject {
-            input: _,
             projection,
             resource_request,
             ..
@@ -126,21 +125,14 @@ pub fn translate_single_logical_node(
                 clustering_spec,
             )?))
         }
-        LogicalPlan::Filter(LogicalFilter {
-            input: _,
-            predicate,
-        }) => {
+        LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Filter(Filter::new(
                 input_physical.into(),
                 predicate.clone(),
             )))
         }
-        LogicalPlan::Limit(LogicalLimit {
-            input: _,
-            limit,
-            eager,
-        }) => {
+        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Limit(Limit::new(
@@ -150,11 +142,7 @@ pub fn translate_single_logical_node(
                 num_partitions,
             )))
         }
-        LogicalPlan::Explode(LogicalExplode {
-            input: _,
-            to_explode,
-            ..
-        }) => {
+        LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Explode(Explode::try_new(
                 input_physical.into(),
@@ -162,9 +150,9 @@ pub fn translate_single_logical_node(
             )?))
         }
         LogicalPlan::Sort(LogicalSort {
-            input: _,
             sort_by,
             descending,
+            ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
@@ -176,8 +164,7 @@ pub fn translate_single_logical_node(
             )))
         }
         LogicalPlan::Repartition(LogicalRepartition {
-            input: _,
-            repartition_spec,
+            repartition_spec, ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let input_clustering_spec = input_physical.clustering_spec();
@@ -273,10 +260,10 @@ pub fn translate_single_logical_node(
             }
         }
         LogicalPlan::Sample(LogicalSample {
-            input: _,
             fraction,
             with_replacement,
             seed,
+            ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Sample(Sample::new(
@@ -289,7 +276,6 @@ pub fn translate_single_logical_node(
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,
             groupby,
-            input: _,
             ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
@@ -518,7 +504,7 @@ pub fn translate_single_logical_node(
 
             Ok(result_plan)
         }
-        LogicalPlan::Concat(LogicalConcat { input: _, other: _ }) => {
+        LogicalPlan::Concat(..) => {
             let other_physical = physical_children.pop().expect("requires 1 inputs");
             let input_physical = physical_children.pop().expect("requires 2 inputs");
             Ok(PhysicalPlan::Concat(Concat::new(
@@ -527,8 +513,6 @@ pub fn translate_single_logical_node(
             )))
         }
         LogicalPlan::Join(LogicalJoin {
-            left: _,
-            right: _,
             left_on,
             right_on,
             join_type,
@@ -716,9 +700,7 @@ pub fn translate_single_logical_node(
             }
         }
         LogicalPlan::Sink(LogicalSink {
-            schema,
-            sink_info,
-            input: _,
+            schema, sink_info, ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             match sink_info.as_ref() {
@@ -761,7 +743,6 @@ pub fn translate_single_logical_node(
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
-            input: _,
             column_name,
             ..
         }) => {
