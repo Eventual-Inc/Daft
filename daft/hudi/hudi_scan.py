@@ -13,7 +13,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.filesystem import _resolve_paths_and_filesystem
-from daft.hudi.pyhudi.table import HudiTable, HudiTableMetadata
+from daft.hudi.pyhudi.table import HUDI_METAFIELD_PARTITION_PATH, HudiTable, HudiTableMetadata
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 
@@ -78,18 +78,15 @@ class HudiScanOperator(ScanOperator):
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
             if self._table.is_partitioned:
-                dtype = files_metadata.schema.field("partition_values").type
-                part_values = files_metadata["partition_values"][task_idx]
-                arrays = {}
-                for field_idx in range(dtype.num_fields):
-                    field_name = dtype.field(field_idx).name
-                    try:
-                        arrow_arr = pa.array([part_values[field_name]], type=dtype.field(field_idx).type)
-                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
-                        # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
-                        arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
-                    arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                partition_values = daft.table.Table.from_pydict(arrays)._table
+                try:
+                    arrow_arr = pa.array([files_metadata["partition_path"][task_idx]], type=pa.string())
+                except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                    # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
+                    arrow_arr = pa.array([files_metadata["partition_path"][task_idx].as_py()], type=pa.string())
+                partition_paths = {
+                    HUDI_METAFIELD_PARTITION_PATH: daft.Series.from_arrow(arrow_arr, HUDI_METAFIELD_PARTITION_PATH),
+                }
+                partition_values = daft.table.Table.from_pydict(partition_paths)._table
             else:
                 partition_values = None
 

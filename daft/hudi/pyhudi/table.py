@@ -19,6 +19,8 @@ from daft.hudi.pyhudi.utils import (
 # TODO(Shiyan): support base file in .orc
 BASE_FILE_EXTENSIONS = [".parquet"]
 
+HUDI_METAFIELD_PARTITION_PATH = "_hoodie_partition_path"
+
 
 @dataclass
 class MetaClient:
@@ -66,8 +68,11 @@ class FileSystemView:
 
     def _load_partitions(self):
         partition_paths = self.meta_client.get_partition_paths()
-        for partition_path in partition_paths:
-            self._load_partition(partition_path)
+        if not partition_paths:
+            self._load_partition("")
+        else:
+            for partition_path in partition_paths:
+                self._load_partition(partition_path)
 
     def _load_partition(self, partition_path: str):
         file_groups = self.meta_client.get_file_groups(partition_path)
@@ -104,7 +109,10 @@ class HudiTableProps:
 
     @property
     def partition_fields(self) -> list[str]:
-        return self._props["hoodie.table.partition.fields"]
+        if "hoodie.table.partition.fields" not in self._props:
+            return []
+
+        return self._props["hoodie.table.partition.fields"].split(",")
 
     def get_config(self, key: str) -> str:
         return self._props[key]
@@ -137,8 +145,10 @@ class HudiTable:
     def _validate_table_props(self):
         if self._props.get_config("hoodie.table.type") != "COPY_ON_WRITE":
             raise UnsupportedException("Only support COPY_ON_WRITE table")
-        if self._props.get_config("hoodie.table.keygenerator.class") != "org.apache.hudi.keygen.SimpleKeyGenerator":
-            raise UnsupportedException("Only support using Simple Key Generator")
+        if self._props.get_config("hoodie.table.version") not in ["5", "6"]:
+            raise UnsupportedException("Only support table version 5 and 6")
+        if self._props.get_config("hoodie.timeline.layout.version") != "1":
+            raise UnsupportedException("Only support timeline layout version 1")
 
     def latest_table_metadata(self) -> HudiTableMetadata:
         file_slices = FileSystemView(self._meta_client).get_latest_file_slices()
@@ -172,7 +182,7 @@ class HudiTable:
 
     @property
     def is_partitioned(self) -> bool:
-        return self._props.partition_fields == ""
+        return bool(self._props.partition_fields)
 
     @property
     def props(self) -> HudiTableProps:

@@ -48,7 +48,7 @@ class FileSlice:
     FILES_METADATA_SCHEMA = pa.schema(
         [
             ("path", pa.string()),
-            ("size", pa.uint32()),
+            ("size_bytes", pa.uint32()),
             ("num_records", pa.uint32()),
             ("partition_path", pa.string()),
         ]
