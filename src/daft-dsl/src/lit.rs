@@ -1,4 +1,5 @@
 use crate::expr::Expr;
+use crate::ExprRef;
 
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
@@ -14,6 +15,7 @@ use daft_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -332,10 +334,10 @@ make_literal!(i64, Int64);
 make_literal!(u64, UInt64);
 make_literal!(f64, Float64);
 
-pub fn lit<L: Literal>(t: L) -> Expr {
-    t.lit()
+pub fn lit<L: Literal>(t: L) -> ExprRef {
+    Arc::new(t.lit())
 }
 
-pub fn null_lit() -> Expr {
-    Expr::Literal(LiteralValue::Null)
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(LiteralValue::Null))
 }

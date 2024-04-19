@@ -64,24 +64,24 @@ impl TreeNode for Expr {
             Agg(agg_expr) => {
                 use crate::AggExpr::*;
                 match agg_expr {
-                    Count(expr, mode) => transform(expr.as_ref().clone())?.count(mode),
-                    Sum(expr) => transform(expr.as_ref().clone())?.sum(),
-                    Mean(expr) => transform(expr.as_ref().clone())?.mean(),
-                    Min(expr) => transform(expr.as_ref().clone())?.min(),
-                    Max(expr) => transform(expr.as_ref().clone())?.max(),
+                    Count(expr, mode) => Arc::new(transform(expr.as_ref().clone())?).count(mode),
+                    Sum(expr) => Arc::new(transform(expr.as_ref().clone())?).sum(),
+                    Mean(expr) => Arc::new(transform(expr.as_ref().clone())?).mean(),
+                    Min(expr) => Arc::new(transform(expr.as_ref().clone())?).min(),
+                    Max(expr) => Arc::new(transform(expr.as_ref().clone())?).max(),
                     AnyValue(expr, ignore_nulls) => {
-                        transform(expr.as_ref().clone())?.any_value(ignore_nulls)
+                        Arc::new(transform(expr.as_ref().clone())?).any_value(ignore_nulls)
                     }
-                    List(expr) => transform(expr.as_ref().clone())?.agg_list(),
-                    Concat(expr) => transform(expr.as_ref().clone())?.agg_concat(),
-                    MapGroups { func, inputs } => Expr::Agg(MapGroups {
-                        func,
-                        inputs: inputs
-                            .into_iter()
-                            .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
-                            .collect::<DaftResult<Vec<_>>>()?,
-                    }),
-                }
+                    List(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_list(),
+                    Concat(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_concat(),
+                    MapGroups { func, inputs } => Arc::new(Expr::Agg(MapGroups {
+                                            func,
+                                            inputs: inputs
+                                                .into_iter()
+                                                .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
+                                                .collect::<DaftResult<Vec<_>>>()?,
+                                        })),
+                }.as_ref().clone()
             }
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
             IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
@@ -115,6 +115,6 @@ impl TreeNode for Expr {
                     .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                     .collect::<DaftResult<Vec<_>>>()?,
             },
-        })
+        }.as_ref().clone())
     }
 }

@@ -598,19 +598,7 @@ class Expression:
     def __reduce__(self) -> tuple:
         return Expression._from_pyexpr, (self._expr,)
 
-    ###
-    # Helper methods required by optimizer:
-    # These should be removed from the Python API for Expressions when logical plans and optimizer are migrated to Rust
-    ###
 
-    def _input_mapping(self) -> builtins.str | None:
-        return self._expr._input_mapping()
-
-    def _required_columns(self) -> set[builtins.str]:
-        return self._expr._required_columns()
-
-    def _is_column(self) -> bool:
-        return self._expr._is_column()
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")

@@ -1,38 +1,28 @@
 use std::ops::*;
 
 use crate::{Expr, Operator};
+use crate::ExprRef;
 
 macro_rules! impl_expr_op {
-    ($math_op:ident, $func_name:ident, $op_name: ident) => {
-        impl $math_op for &Expr {
-            type Output = Expr;
-            fn $func_name(self, rhs: Self) -> Self::Output {
-                Expr::BinaryOp {
-                    op: Operator::$op_name,
-                    left: self.clone().into(),
-                    right: rhs.clone().into(),
-                }
+    ($func_name:ident, $op_name: ident) => {
+    impl Expr {
+        pub fn $func_name(self: ExprRef, rhs: ExprRef) -> Expr {
+            Expr::BinaryOp {
+                op: Operator::$op_name,
+                left: self,
+                right: rhs,
             }
-        }
 
-        impl $math_op for Expr {
-            type Output = Expr;
-            fn $func_name(self, rhs: Self) -> Self::Output {
-                Expr::BinaryOp {
-                    op: Operator::$op_name,
-                    left: self.into(),
-                    right: rhs.into(),
-                }
-            }
         }
+    }
     };
 }
 
-impl_expr_op!(Add, add, Plus);
-impl_expr_op!(Sub, sub, Minus);
-impl_expr_op!(Mul, mul, Multiply);
-impl_expr_op!(Div, div, TrueDivide);
-impl_expr_op!(Rem, rem, Modulus);
+impl_expr_op!(add, Plus);
+impl_expr_op!(sub, Minus);
+impl_expr_op!(mul, Multiply);
+impl_expr_op!(div, TrueDivide);
+impl_expr_op!(rem, Modulus);
 
 #[cfg(test)]
 mod tests {
@@ -43,7 +33,7 @@ mod tests {
     fn check_add_expr_type() -> DaftResult<()> {
         let a = col("a");
         let b = col("b");
-        let c = a + b;
+        let c = a.add(b);
         match c {
             Expr::BinaryOp { .. } => Ok(()),
             other => Err(DaftError::ValueError(format!(

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, VisitRecursion};
 
-use crate::Operator;
+use crate::{ExprRef, Operator};
 
 use super::expr::Expr;
 
@@ -71,6 +71,6 @@ fn _split_conjuction<'a>(expr: &'a Expr, out_exprs: &mut Vec<&'a Expr>) {
     }
 }
 
-pub fn conjuct<T: IntoIterator<Item = Expr>>(exprs: T) -> Option<Expr> {
-    exprs.into_iter().reduce(|acc, expr| acc.and(&expr))
+pub fn conjuct<T: IntoIterator<Item = ExprRef>>(exprs: T) -> Option<ExprRef> {
+    exprs.into_iter().reduce(|acc, expr| acc.and(expr).into())
 }

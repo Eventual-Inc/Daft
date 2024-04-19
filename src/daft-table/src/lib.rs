@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
+use std::sync::Arc;
 
 use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;
@@ -17,7 +18,7 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, Expr};
+use daft_dsl::{col, null_lit, AggExpr, Expr, ExprRef};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod ops;
@@ -219,21 +220,21 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
-    pub fn filter<E: AsRef<Expr>>(&self, predicate: &[E]) -> DaftResult<Self> {
+    pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
             let mask = self.eval_expression(predicate.get(0).unwrap().as_ref())?;
             self.mask_filter(&mask)
         } else {
-            let mut expr = predicate
-                .get(0)
-                .unwrap()
-                .as_ref()
-                .and(predicate.get(1).unwrap().as_ref());
+            let mut expr = Arc::new(predicate
+                            .get(0)
+                            .unwrap()
+                            .clone()
+                            .and(predicate.get(1).unwrap().clone()));
             for i in 2..predicate.len() {
-                let next = predicate.get(i).unwrap().as_ref();
-                expr = expr.and(next);
+                let next = predicate.get(i).unwrap();
+                expr = Arc::new(expr.and(next.clone()));
             }
             let mask = self.eval_expression(&expr)?;
             self.mask_filter(&mask)
@@ -409,7 +410,7 @@ impl Table {
         Ok(series)
     }
 
-    pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
+    pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let result_series = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -444,7 +445,7 @@ impl Table {
     pub fn cast_to_schema_with_fill(
         &self,
         schema: &Schema,
-        fill_map: Option<&HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> DaftResult<Self> {
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
         let null_lit = null_lit();
@@ -581,6 +582,8 @@ impl AsRef<Table> for Table {
 #[cfg(test)]
 mod test {
 
+    use std::sync::Arc;
+
     use crate::Table;
     use common_error::DaftResult;
     use daft_core::datatypes::{DataType, Float64Array, Int64Array};
@@ -596,12 +599,12 @@ mod test {
             b.field().clone().rename("b"),
         ])?;
         let table = Table::new(schema, vec![a, b])?;
-        let e1 = col("a") + col("b");
+        let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
-        let e2 = (col("a") + col("b")).cast(&DataType::Int64);
+        let e2 = (Arc::new(col("a").add(col("b"))).cast(&DataType::Int64));
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
