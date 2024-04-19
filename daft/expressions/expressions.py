@@ -1223,6 +1223,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
 
+    def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
+        """Right-pads each string by truncating or padding with the character
+
+        Example:
+            >>> col("x").str.rpad(5, "0")
+
+        Returns:
+            Expression: a String expression which is `self` truncated or right-padded with the pad character
+        """
+        length_expr = Expression._to_expression(length)
+        pad_expr = Expression._to_expression(pad)
+        return Expression._from_pyexpr(self._expr.utf8_rpad(length_expr._expr, pad_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

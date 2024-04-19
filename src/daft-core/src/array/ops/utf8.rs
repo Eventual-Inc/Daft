@@ -725,6 +725,104 @@ impl Utf8Array {
         Ok(result)
     }
 
+    pub fn rpad<I>(&self, length: &DataArray<I>, padchar: &Utf8Array) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let lengths = &[self.len(), length.len(), padchar.len()];
+        // check valid input lengths
+        if !is_valid_input_lengths(lengths) {
+            let invalid_length_str =
+                itertools::Itertools::join(&mut lengths.iter().map(|x| x.to_string()), ", ");
+            return Err(DaftError::ValueError(format!(
+                "Error in rpad: Inputs have invalid lengths: {invalid_length_str}"
+            )));
+        }
+
+        // check if any array has all nulls
+        if self.null_count() == self.len()
+            || length.null_count() == length.len()
+            || padchar.null_count() == padchar.len()
+        {
+            return Ok(Utf8Array::full_null(
+                self.name(),
+                &DataType::Utf8,
+                self.len(),
+            ));
+        }
+
+        let expected_size = *lengths.iter().max().unwrap();
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+        }
+
+        fn rpad_str(val: &str, length: usize, fillchar: &str) -> DaftResult<String> {
+            if val.len() >= length {
+                return Ok(val.chars().take(length).collect());
+            }
+            let fillchar = if fillchar.is_empty() {
+                return Err(DaftError::ComputeError(
+                    "Error in rpad: empty pad character".to_string(),
+                ));
+            } else if fillchar.len() > 1 {
+                return Err(DaftError::ComputeError(format!(
+                    "Error in rpad: {} is not a valid pad character",
+                    fillchar.len()
+                )));
+            } else {
+                fillchar.chars().next().unwrap()
+            };
+            let fillchar = std::iter::repeat(fillchar).take(length.saturating_sub(val.len()));
+            Ok(val.chars().chain(fillchar).collect())
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let padchar_iter = create_broadcasted_str_iter(padchar, expected_size);
+        let result = match length.len() {
+            1 => {
+                let len = length.get(0).unwrap();
+                let len: usize = NumCast::from(len).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in rpad: failed to cast length as usize {len}"
+                    ))
+                })?;
+                let arrow_result = self_iter
+                    .zip(padchar_iter)
+                    .map(|(val, padchar)| match (val, padchar) {
+                        (Some(val), Some(padchar)) => Ok(Some(rpad_str(val, len, padchar)?)),
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+            _ => {
+                let length_iter = length.as_arrow().iter();
+                let arrow_result = self_iter
+                    .zip(length_iter)
+                    .zip(padchar_iter)
+                    .map(|((val, len), padchar)| match (val, len, padchar) {
+                        (Some(val), Some(len), Some(padchar)) => {
+                            let len: usize = NumCast::from(*len).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in rpad: failed to cast length as usize {len}"
+                                ))
+                            })?;
+                            Ok(Some(rpad_str(val, len, padchar)?))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+        };
+
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
     fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,

@@ -12,6 +12,7 @@ mod match_;
 mod replace;
 mod reverse;
 mod right;
+mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
@@ -30,6 +31,7 @@ use lstrip::LstripEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
+use rpad::RpadEvaluator;
 use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
@@ -60,6 +62,7 @@ pub enum Utf8Expr {
     Left,
     Right,
     Find,
+    Rpad,
 }
 
 impl Utf8Expr {
@@ -85,6 +88,7 @@ impl Utf8Expr {
             Left => &LeftEvaluator {},
             Right => &RightEvaluator {},
             Find => &FindEvaluator {},
+            Rpad => &RpadEvaluator {},
         }
     }
 }
@@ -231,4 +235,11 @@ pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
         inputs: vec![data, pattern],
     }
     .into()
+}
+
+pub fn rpad(data: &Expr, length: &Expr, pad: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Rpad),
+        inputs: vec![data.clone(), length.clone(), pad.clone()],
+    }
 }

@@ -238,4 +238,44 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_rpad(&self, length: &Series, pad: &Series) -> DaftResult<Series> {
+        match (self.data_type(), length.data_type(), pad.data_type()) {
+            (DataType::Utf8, DataType::UInt32, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.u32()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int32, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.i32()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::UInt64, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.u64()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int64, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.i64()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int8, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.i8()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::UInt8, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.u8()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int16, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.i16()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::UInt16, DataType::Utf8) => {
+                Ok(self.utf8()?.rpad(length.u16()?, pad.utf8()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int128, DataType::Utf8) => Ok(self
+                .utf8()?
+                .rpad(length.i128()?, pad.utf8()?)?
+                .into_series()),
+            (DataType::Null, dt, _) if dt.is_integer() => Ok(self.clone()),
+            (DataType::Utf8, dt, _) => Err(DaftError::TypeError(format!(
+                "Rpad not implemented for length type {dt}"
+            ))),
+            (dt, _, _) => Err(DaftError::TypeError(format!(
+                "Rpad not implemented for type {dt}"
+            ))),
+        }
+    }
 }
