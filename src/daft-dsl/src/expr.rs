@@ -37,7 +37,7 @@ pub enum Expr {
     Column(Arc<str>),
     Function {
         func: FunctionExpr,
-        inputs: Vec<Expr>,
+        inputs: Vec<ExprRef>,
     },
     Not(ExprRef),
     IsNull(ExprRef),
@@ -64,7 +64,7 @@ pub enum AggExpr {
     Concat(ExprRef),
     MapGroups {
         func: FunctionExpr,
-        inputs: Vec<Expr>,
+        inputs: Vec<ExprRef>,
     },
 }
 

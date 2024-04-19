@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use common_treenode::{TreeNode, VisitRecursion};
 
@@ -24,14 +26,14 @@ impl TreeNode for Expr {
                     | AnyValue(expr, _)
                     | List(expr)
                     | Concat(expr) => vec![expr.as_ref()],
-                    MapGroups { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
+                    MapGroups { func: _, inputs } => inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
                 }
             }
             BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
             IsIn(expr, items) => vec![expr.as_ref(), items.as_ref()],
             FillNull(expr, fill_value) => vec![expr.as_ref(), fill_value.as_ref()],
             Column(_) | Literal(_) => vec![],
-            Function { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
+            Function { func: _, inputs } => inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
             IfElse {
                 if_true,
                 if_false,
@@ -76,7 +78,7 @@ impl TreeNode for Expr {
                         func,
                         inputs: inputs
                             .into_iter()
-                            .map(transform)
+                            .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                             .collect::<DaftResult<Vec<_>>>()?,
                     }),
                 }
@@ -110,7 +112,7 @@ impl TreeNode for Expr {
                 func,
                 inputs: inputs
                     .into_iter()
-                    .map(transform)
+                    .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                     .collect::<DaftResult<Vec<_>>>()?,
             },
         })
