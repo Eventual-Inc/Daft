@@ -214,6 +214,10 @@ impl AsRef<Expr> for Expr {
 }
 
 impl Expr {
+    pub fn arced(self) -> ExprRef {
+        Arc::new(self)
+    }
+
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
         Expr::Alias(self.clone(), name.into()).into()
     }
@@ -263,6 +267,7 @@ impl Expr {
         Expr::Agg(AggExpr::Concat(self)).into()
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self: ExprRef) -> ExprRef {
         Expr::Not(self).into()
     }

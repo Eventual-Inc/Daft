@@ -4,6 +4,7 @@ use crate::{Expr, Operator};
 macro_rules! impl_expr_op {
     ($func_name:ident, $op_name: ident) => {
         impl Expr {
+            #[allow(clippy::should_implement_trait)]
             pub fn $func_name(self: ExprRef, rhs: ExprRef) -> ExprRef {
                 Expr::BinaryOp {
                     op: Operator::$op_name,

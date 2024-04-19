@@ -12,15 +12,15 @@ use daft_dsl::{
 
 use crate::{PartitionField, PartitionTransform};
 
-fn unalias(expr: &ExprRef) -> DaftResult<ExprRef> {
-    let res = expr.as_ref().clone().transform(&|e| {
+fn unalias(expr: Expr) -> DaftResult<Expr> {
+    let res = expr.transform(&|e| {
         if let Expr::Alias(e, _) = e {
             Ok(Transformed::Yes(e.as_ref().clone()))
         } else {
             Ok(Transformed::No(e))
         }
     })?;
-    Ok(Arc::new(res))
+    Ok(res)
 }
 
 fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<ExprRef> {
@@ -147,7 +147,7 @@ pub fn rewrite_predicate_for_partitioning(
         ));
     }
 
-    let predicate = unalias(predicate)?;
+    let predicate = unalias(predicate.as_ref().clone())?;
 
     let source_to_pfield = {
         let mut map = HashMap::with_capacity(pfields.len());
@@ -162,7 +162,7 @@ pub fn rewrite_predicate_for_partitioning(
         map
     };
 
-    let with_part_cols = predicate.as_ref().clone().transform(&|expr| {
+    let with_part_cols = predicate.transform(&|expr| {
         use Operator::*;
         match expr {
             // Binary Op for Eq
@@ -238,6 +238,8 @@ pub fn rewrite_predicate_for_partitioning(
             _ => Ok(Transformed::No(expr))
         }
     })?;
+
+    let with_part_cols = with_part_cols.arced();
 
     // Filter to predicate clauses that only involve partition columns.
     let split = split_conjuction(&with_part_cols);

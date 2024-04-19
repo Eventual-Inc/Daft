@@ -112,7 +112,13 @@ impl PushDownProjection {
                 let merged_projection = projection
                     .projection
                     .iter()
-                    .map(|e| replace_columns_with_expressions(e, &upstream_names_to_exprs))
+                    .map(|e| {
+                        replace_columns_with_expressions(
+                            e.as_ref().clone(),
+                            &upstream_names_to_exprs,
+                        )
+                        .arced()
+                    })
                     .collect();
 
                 // Make a new projection node with the merged projections.

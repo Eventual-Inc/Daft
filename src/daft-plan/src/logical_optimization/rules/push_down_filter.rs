@@ -50,14 +50,14 @@ impl OptimizerRule for PushDownFilter {
 
                 // Split predicate expression on conjunctions (ANDs).
                 let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&&Expr> = parent_predicates.iter().collect();
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().cloned().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
                     .chain(
                         split_conjuction(&child_filter.predicate)
                             .iter()
-                            .filter(|e| !predicate_set.contains(e)),
+                            .filter(|e| !predicate_set.contains(**e)),
                     )
                     .map(|e| (*e).clone().into())
                     .collect::<Vec<_>>();
@@ -170,9 +170,11 @@ impl OptimizerRule for PushDownFilter {
                         .all(|col| projection_input_mapping.contains_key(col))
                     {
                         // Can push predicate through expression.
-                        let new_predicate =
-                            replace_columns_with_expressions(predicate, &projection_input_mapping);
-                        can_push.push(new_predicate);
+                        let new_predicate = replace_columns_with_expressions(
+                            predicate.as_ref().clone(),
+                            &projection_input_mapping,
+                        );
+                        can_push.push(new_predicate.arced());
                     } else {
                         // Can't push predicate expression through projection.
                         can_not_push.push(predicate.clone().into());
