@@ -291,7 +291,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
+        logical_optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         JoinType, LogicalPlan,
     };

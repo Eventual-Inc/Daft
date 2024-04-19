@@ -79,7 +79,7 @@ mod tests {
     use daft_dsl::{col, lit};
 
     use crate::{
-        optimization::logical_plan_tracker::LogicalPlanDigest,
+        logical_optimization::logical_plan_tracker::LogicalPlanDigest,
         test::{dummy_scan_node, dummy_scan_operator},
     };
 

@@ -7,7 +7,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeVisitor};
+
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;
@@ -33,26 +33,7 @@ use crate::{physical_ops::*, JoinStrategy};
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
 
-use common_treenode::VisitRecursion;
-pub struct QueryStageVisitor {
-    pub physical_children: Vec<PhysicalPlan>,
-    pub cfg: Arc<DaftExecutionConfig>,
-}
-
-impl TreeNodeVisitor for QueryStageVisitor {
-    type N = LogicalPlan;
-    fn pre_visit(&mut self, _node: &Self::N) -> DaftResult<VisitRecursion> {
-        Ok(VisitRecursion::Continue)
-    }
-
-    fn post_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
-        let output = translate_single_logical_node(node, &mut self.physical_children, &self.cfg)?;
-        self.physical_children.push(output);
-        Ok(VisitRecursion::Continue)
-    }
-}
-
-pub fn translate_single_logical_node(
+pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
     physical_children: &mut Vec<PhysicalPlan>,
     cfg: &DaftExecutionConfig,
@@ -754,25 +735,6 @@ pub fn translate_single_logical_node(
     }
 }
 
-/// Translate a logical plan to a physical plan.
-pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
-    let mut visitor = crate::planner::QueryStageVisitor {
-        physical_children: vec![],
-        cfg: cfg.clone(),
-    };
-    let _output = logical_plan.visit(&mut visitor)?;
-    assert_eq!(
-        visitor.physical_children.len(),
-        1,
-        "We should have exactly 1 node left"
-    );
-    let pplan = visitor
-        .physical_children
-        .pop()
-        .expect("should have exactly 1 parent");
-    Ok(pplan)
-}
-
 #[cfg(test)]
 mod tests {
     use common_daft_config::DaftExecutionConfig;
@@ -783,7 +745,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::physical_plan::PhysicalPlan;
-    use crate::planner::plan;
+    use crate::physical_planner::plan;
     use crate::test::{dummy_scan_node, dummy_scan_operator};
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.

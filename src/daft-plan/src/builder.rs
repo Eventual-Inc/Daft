@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use crate::{
     logical_ops,
+    logical_optimization::Optimizer,
     logical_plan::LogicalPlan,
-    optimization::Optimizer,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    planner::plan,
+    physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,

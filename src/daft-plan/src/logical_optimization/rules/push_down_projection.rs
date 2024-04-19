@@ -507,7 +507,9 @@ mod tests {
     use daft_scan::Pushdowns;
 
     use crate::{
-        optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},
+        logical_optimization::{
+            rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };

@@ -7,8 +7,8 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
 
+use crate::logical_optimization::Transformed;
 use crate::logical_plan::{CreationSnafu, Result};
-use crate::optimization::Transformed;
 use crate::{LogicalPlan, ResourceRequest};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -81,7 +81,7 @@ mod tests {
 
     use crate::{
         partitioning::{HashClusteringConfig, UnknownClusteringConfig},
-        planner::plan,
+        physical_planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
         ClusteringSpec,
     };
