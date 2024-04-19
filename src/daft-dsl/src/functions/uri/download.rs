@@ -2,7 +2,7 @@ use daft_core::datatypes::{DataType, Field};
 use daft_io::url_download;
 
 use crate::functions::FunctionExpr;
-use crate::{functions::FunctionEvaluator, Expr};
+use crate::{functions::FunctionEvaluator, ExprRef};
 use common_error::DaftError;
 use common_error::DaftResult;
 use daft_core::schema::Schema;
@@ -19,7 +19,7 @@ impl FunctionEvaluator for DownloadEvaluator {
 
     fn to_field(
         &self,
-        inputs: &[Expr],
+        inputs: &[ExprRef],
         schema: &Schema,
         _expr: &FunctionExpr,
     ) -> DaftResult<Field> {

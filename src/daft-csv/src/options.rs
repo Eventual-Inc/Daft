@@ -112,7 +112,7 @@ impl CsvConvertOptions {
             include_columns,
             column_names,
             schema.map(|s| s.into()),
-            predicate.map(|p| p.expr.into()),
+            predicate.map(|p| p.expr),
         )
     }
 

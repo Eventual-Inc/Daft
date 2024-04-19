@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
 
@@ -70,7 +70,7 @@ impl TableStatistics {
 
     pub fn eval_expression_list(
         &self,
-        exprs: &[Expr],
+        exprs: &[ExprRef],
         expected_schema: &Schema,
     ) -> crate::Result<Self> {
         let result_cols = exprs
@@ -162,7 +162,7 @@ impl TableStatistics {
     pub fn cast_to_schema_with_fill(
         &self,
         schema: SchemaRef,
-        fill_map: Option<&HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> crate::Result<TableStatistics> {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
@@ -215,12 +215,12 @@ mod test {
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
-        let expr = col("a").eq(&lit(0));
+        let expr = col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::False);
 
         // Maybe case
-        let expr = col("a").eq(&lit(3));
+        let expr = col("a").eq(lit(3));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
@@ -229,7 +229,7 @@ mod test {
             .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
-        let expr = col("a").eq(&lit(0));
+        let expr = col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::True);
 

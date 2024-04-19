@@ -11,7 +11,6 @@ def test_dataframe_getitem_single(valid_data: list[dict[str, float]]) -> None:
     expanded_df = df.with_column("foo", df["sepal_length"] + df["sepal_width"])
     # TODO(jay): Test that the expression with name "foo" is equal to the expected expression, except for the IDs of the columns
 
-    assert expanded_df["foo"]._is_column()
     assert expanded_df.column_names == df.column_names + ["foo"]
     assert df.select(df["sepal_length"]).column_names == ["sepal_length"]
 

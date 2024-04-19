@@ -387,9 +387,9 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a") + lit(1),
-            (col("a") + lit(2)).alias("b"),
-            (col("a") + lit(3)).alias("c"),
+            col("a").add(lit(1)),
+            col("a").add(lit(2)).alias("b"),
+            col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .project(proj_exprs, Default::default())?
@@ -422,9 +422,9 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a") + lit(1),
-            (col("a") + lit(2)).alias("b"),
-            (col("a") + lit(3)).alias("c"),
+            col("a").add(lit(1)),
+            col("a").add(lit(2)).alias("b"),
+            col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .project(proj_exprs, Default::default())?
@@ -473,11 +473,11 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a") + lit(1),
-            (col("a") + lit(2)).alias("b"),
-            (col("a") + lit(3)).alias("c"),
+            col("a").add(lit(1)),
+            col("a").add(lit(2)).alias("b"),
+            col("a").add(lit(3)).alias("c"),
         ];
-        let filter_predicate = col("a").lt(&lit(2));
+        let filter_predicate = col("a").lt(lit(2));
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let plan = dummy_scan_node(scan_op.clone())
             .project(proj_exprs.clone(), Default::default())?
@@ -496,9 +496,9 @@ mod tests {
         let mut new_proj_exprs = proj_exprs.clone();
         new_proj_exprs.rotate_left(2);
         let new_pred = filter_predicate
-            .or(&lit(false))
-            .or(&lit(false))
-            .and(&lit(true));
+            .or(lit(false))
+            .or(lit(false))
+            .and(lit(true));
         let expected = dummy_scan_node(scan_op)
             .project(new_proj_exprs, Default::default())?
             .filter(new_pred)?
@@ -535,7 +535,7 @@ mod tests {
                 LogicalPlan::Filter(filter) => filter.clone(),
                 _ => return Ok(Transformed::No(plan)),
             };
-            let new_predicate = filter.predicate.or(&lit(false));
+            let new_predicate = filter.predicate.or(lit(false));
             Ok(Transformed::Yes(
                 LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))
@@ -564,7 +564,7 @@ mod tests {
                 LogicalPlan::Filter(filter) => filter.clone(),
                 _ => return Ok(Transformed::No(plan)),
             };
-            let new_predicate = filter.predicate.and(&lit(true));
+            let new_predicate = filter.predicate.and(lit(true));
             Ok(Transformed::Yes(
                 LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))

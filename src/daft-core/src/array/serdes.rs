@@ -15,7 +15,6 @@ use crate::datatypes::PythonArray;
 
 use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 
-// adapted from Polars Serdes iterator
 pub struct IterSer<I>
 where
     I: IntoIterator,

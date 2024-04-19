@@ -16,7 +16,7 @@ use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -55,7 +55,7 @@ fn check_for_agg(expr: &Expr) -> bool {
         Column(_) | Literal(_) => false,
         Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
-        Function { inputs, .. } => inputs.iter().any(check_for_agg),
+        Function { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
         IfElse {
             if_true,
@@ -91,7 +91,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
                     func,
                     inputs: inputs
                         .into_iter()
-                        .map(|input| Alias(input.into(), name.clone()))
+                        .map(|input| input.alias(name.clone()))
                         .collect(),
                 },
             }
@@ -112,7 +112,7 @@ fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
         Count(e, _) | Sum(e) | Mean(e) | Min(e) | Max(e) | AnyValue(e, _) | List(e) | Concat(e) => {
             check_for_agg(e)
         }
-        MapGroups { inputs, .. } => inputs.iter().any(check_for_agg),
+        MapGroups { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
     };
 
     if has_nested_agg {
@@ -177,7 +177,7 @@ impl LogicalPlanBuilder {
 
     pub fn project(
         &self,
-        projection: Vec<Expr>,
+        projection: Vec<ExprRef>,
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
         for expr in &projection {
@@ -193,7 +193,7 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn filter(&self, predicate: Expr) -> DaftResult<Self> {
+    pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
         if check_for_agg(&predicate) {
             return Err(DaftError::ValueError(format!(
                 "Aggregation expressions are not currently supported in filter: {predicate}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
@@ -211,7 +211,7 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn explode(&self, to_explode: Vec<Expr>) -> DaftResult<Self> {
+    pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         for expr in &to_explode {
             if check_for_agg(expr) {
                 return Err(DaftError::ValueError(format!(
@@ -225,7 +225,7 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn sort(&self, sort_by: Vec<Expr>, descending: Vec<bool>) -> DaftResult<Self> {
+    pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
         for expr in &sort_by {
             if check_for_agg(expr) {
                 return Err(DaftError::ValueError(format!(
@@ -242,7 +242,7 @@ impl LogicalPlanBuilder {
     pub fn hash_repartition(
         &self,
         num_partitions: Option<usize>,
-        partition_by: Vec<Expr>,
+        partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
         for expr in &partition_by {
             if check_for_agg(expr) {
@@ -294,9 +294,14 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
+    pub fn aggregate(
+        &self,
+        agg_exprs: Vec<ExprRef>,
+        groupby_exprs: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
+            .map(|v| v.as_ref())
             .map(extract_and_check_agg_expr)
             .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
@@ -308,8 +313,8 @@ impl LogicalPlanBuilder {
     pub fn join(
         &self,
         right: &Self,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
@@ -351,7 +356,7 @@ impl LogicalPlanBuilder {
         &self,
         root_dir: &str,
         file_format: FileFormat,
-        partition_cols: Option<Vec<Expr>>,
+        partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
@@ -478,7 +483,7 @@ impl PyLogicalPlanBuilder {
         let projection_exprs = projection
             .iter()
             .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         Ok(self
             .builder
             .project(projection_exprs, resource_request)?
@@ -497,12 +502,12 @@ impl PyLogicalPlanBuilder {
         let to_explode_exprs = to_explode
             .iter()
             .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         Ok(self.builder.explode(to_explode_exprs)?.into())
     }
 
     pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
-        let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
+        let sort_by_exprs: Vec<ExprRef> = sort_by.iter().map(|expr| expr.clone().into()).collect();
         Ok(self.builder.sort(sort_by_exprs, descending)?.into())
     }
 
@@ -511,7 +516,7 @@ impl PyLogicalPlanBuilder {
         partition_by: Vec<PyExpr>,
         num_partitions: Option<usize>,
     ) -> PyResult<Self> {
-        let partition_by_exprs: Vec<Expr> = partition_by
+        let partition_by_exprs: Vec<ExprRef> = partition_by
             .iter()
             .map(|expr| expr.clone().into())
             .collect();
@@ -549,11 +554,11 @@ impl PyLogicalPlanBuilder {
         let agg_exprs = agg_exprs
             .iter()
             .map(|expr| expr.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         let groupby_exprs = groupby_exprs
             .iter()
             .map(|expr| expr.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         Ok(self.builder.aggregate(agg_exprs, groupby_exprs)?.into())
     }
 
@@ -568,11 +573,11 @@ impl PyLogicalPlanBuilder {
         let left_on = left_on
             .iter()
             .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         let right_on = right_on
             .iter()
             .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<Vec<ExprRef>>();
         Ok(self
             .builder
             .join(&right.builder, left_on, right_on, join_type, join_strategy)?
@@ -598,8 +603,11 @@ impl PyLogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
-        let partition_cols =
-            partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<Expr>>());
+        let partition_cols = partition_cols.map(|cols| {
+            cols.iter()
+                .map(|e| e.clone().into())
+                .collect::<Vec<ExprRef>>()
+        });
         Ok(self
             .builder
             .table_write(

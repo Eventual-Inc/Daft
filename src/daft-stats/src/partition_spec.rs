@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use daft_core::array::ops::DaftCompare;
-use daft_dsl::{Expr, Literal};
+use daft_dsl::{ExprRef, Literal};
 use daft_table::Table;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -16,7 +16,7 @@ impl PartitionSpec {
         res
     }
 
-    pub fn to_fill_map(&self) -> HashMap<&str, Expr> {
+    pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
         self.keys
             .schema
             .fields
