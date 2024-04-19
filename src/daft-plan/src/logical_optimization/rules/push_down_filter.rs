@@ -9,7 +9,7 @@ use daft_dsl::{
     optimization::{
         conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
     },
-    Expr, ExprRef,
+    ExprRef,
 };
 use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
@@ -59,7 +59,7 @@ impl OptimizerRule for PushDownFilter {
                             .iter()
                             .filter(|e| !predicate_set.contains(**e)),
                     )
-                    .map(|e| (*e).clone().into())
+                    .map(|e| (*e).clone())
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
@@ -177,7 +177,7 @@ impl OptimizerRule for PushDownFilter {
                         can_push.push(new_predicate.arced());
                     } else {
                         // Can't push predicate expression through projection.
-                        can_not_push.push(predicate.clone().into());
+                        can_not_push.push(predicate.clone());
                     }
                 }
                 if can_push.is_empty() {

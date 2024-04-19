@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_dsl::{
@@ -134,9 +134,9 @@ pub fn rewrite_predicate_for_partitioning(
 
         // Push to appropriate vec.
         if has_udf || (!all_data_keys && !all_part_keys) {
-            needs_filter_op_preds.push(e.clone().into());
+            needs_filter_op_preds.push(e.clone());
         } else if all_data_keys || all_part_keys && any_non_identity_part_keys {
-            data_preds.push(e.clone().into());
+            data_preds.push(e.clone());
         }
     }
     if pfields.is_empty() {
@@ -256,7 +256,7 @@ pub fn rewrite_predicate_for_partitioning(
 
         // Push to partition preds vec.
         if all_part_keys {
-            part_preds.push(e.clone().into());
+            part_preds.push(e.clone());
         }
     }
     Ok(PredicateGroups::new(
