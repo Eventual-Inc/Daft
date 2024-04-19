@@ -51,58 +51,58 @@ impl ListExpr {
     }
 }
 
-pub fn explode(input: ExprRef) -> Expr {
+pub fn explode(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Explode),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn join(input: ExprRef, delimiter: ExprRef) -> Expr {
+pub fn join(input: ExprRef, delimiter: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Join),
         inputs: vec![input, delimiter],
-    }
+    }.into()
 }
 
-pub fn count(input: ExprRef, mode: CountMode) -> Expr {
+pub fn count(input: ExprRef, mode: CountMode) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Count(mode)),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn get(input: ExprRef, idx: ExprRef, default: ExprRef) -> Expr {
+pub fn get(input: ExprRef, idx: ExprRef, default: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Get),
         inputs: vec![input, idx, default],
-    }
+    }.into()
 }
 
-pub fn sum(input: ExprRef) -> Expr {
+pub fn sum(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Sum),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn mean(input: ExprRef) -> Expr {
+pub fn mean(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Mean),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn min(input: ExprRef) -> Expr {
+pub fn min(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Min),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn max(input: ExprRef) -> Expr {
+pub fn max(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Max),
         inputs: vec![input],
-    }
+    }.into()
 }

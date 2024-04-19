@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 
 use crate::physical_plan::PhysicalPlanRef;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Sort {
     // Upstream node.
     pub input: PhysicalPlanRef,
-    pub sort_by: Vec<Expr>,
+    pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub num_partitions: usize,
 }
@@ -16,7 +16,7 @@ pub struct Sort {
 impl Sort {
     pub(crate) fn new(
         input: PhysicalPlanRef,
-        sort_by: Vec<Expr>,
+        sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
         num_partitions: usize,
     ) -> Self {

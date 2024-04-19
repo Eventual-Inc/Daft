@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use daft_io::IOStatsContext;
 use daft_table::Table;
 
@@ -43,7 +43,7 @@ impl MicroPartition {
 
     pub fn partition_by_hash(
         &self,
-        exprs: &[Expr],
+        exprs: &[ExprRef],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash");
@@ -88,7 +88,7 @@ impl MicroPartition {
 
     pub fn partition_by_range(
         &self,
-        partition_keys: &[Expr],
+        partition_keys: &[ExprRef],
         boundaries: &Table,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
@@ -112,7 +112,7 @@ impl MicroPartition {
         self.vec_part_tables_to_mps(part_tables)
     }
 
-    pub fn partition_by_value(&self, partition_keys: &[Expr]) -> DaftResult<(Vec<Self>, Self)> {
+    pub fn partition_by_value(&self, partition_keys: &[ExprRef]) -> DaftResult<(Vec<Self>, Self)> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_value");
 
         let tables = self.concat_or_get(io_stats)?;

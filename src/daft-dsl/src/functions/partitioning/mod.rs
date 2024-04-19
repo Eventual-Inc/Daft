@@ -38,44 +38,44 @@ impl PartitioningExpr {
     }
 }
 
-pub fn days(input: ExprRef) -> Expr {
+pub fn days(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Days),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn hours(input: ExprRef) -> Expr {
+pub fn hours(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Hours),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn months(input: ExprRef) -> Expr {
+pub fn months(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Months),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn years(input: ExprRef) -> Expr {
+pub fn years(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Years),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn iceberg_bucket(input: ExprRef, n: i32) -> Expr {
+pub fn iceberg_bucket(input: ExprRef, n: i32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn iceberg_truncate(input: ExprRef, w: i64) -> Expr {
+pub fn iceberg_truncate(input: ExprRef, w: i64) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)),
         inputs: vec![input],
-    }
+    }.into()
 }

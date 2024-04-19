@@ -227,14 +227,14 @@ impl Table {
             let mask = self.eval_expression(predicate.get(0).unwrap().as_ref())?;
             self.mask_filter(&mask)
         } else {
-            let mut expr = Arc::new(predicate
+            let mut expr = predicate
                             .get(0)
                             .unwrap()
                             .clone()
-                            .and(predicate.get(1).unwrap().clone()));
+                            .and(predicate.get(1).unwrap().clone());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
-                expr = Arc::new(expr.and(next.clone()));
+                expr = expr.and(next.clone());
             }
             let mask = self.eval_expression(&expr)?;
             self.mask_filter(&mask)
@@ -463,6 +463,7 @@ impl Table {
                         .as_ref()
                         .and_then(|m| m.get(name.as_str()))
                         .unwrap_or(&null_lit)
+                        .clone()
                         .alias(name.clone())
                         .cast(&field.dtype)
                 }
@@ -604,7 +605,7 @@ mod test {
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
-        let e2 = (Arc::new(col("a").add(col("b"))).cast(&DataType::Int64));
+        let e2 = (col("a").add(col("b")).cast(&DataType::Int64));
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);

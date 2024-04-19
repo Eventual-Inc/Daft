@@ -37,7 +37,7 @@ pub fn download(
     raise_error_on_failure: bool,
     multi_thread: bool,
     config: Option<IOConfig>,
-) -> Expr {
+) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Uri(UriExpr::Download {
             max_connections,
@@ -46,5 +46,5 @@ pub fn download(
             config: config.unwrap_or_default().into(),
         }),
         inputs: vec![input],
-    }
+    }.into()
 }

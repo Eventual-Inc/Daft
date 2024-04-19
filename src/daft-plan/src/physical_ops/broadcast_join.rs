@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 
 use crate::{physical_plan::PhysicalPlanRef, JoinType};
@@ -9,8 +9,8 @@ pub struct BroadcastJoin {
     // Upstream node.
     pub broadcaster: PhysicalPlanRef,
     pub receiver: PhysicalPlanRef,
-    pub left_on: Vec<Expr>,
-    pub right_on: Vec<Expr>,
+    pub left_on: Vec<ExprRef>,
+    pub right_on: Vec<ExprRef>,
     pub join_type: JoinType,
     pub is_swapped: bool,
 }
@@ -19,8 +19,8 @@ impl BroadcastJoin {
     pub(crate) fn new(
         broadcaster: PhysicalPlanRef,
         receiver: PhysicalPlanRef,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
         is_swapped: bool,
     ) -> Self {

@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use common_io_config::IOConfig;
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 
 #[cfg(feature = "python")]
@@ -25,7 +25,7 @@ pub enum SinkInfo {
 pub struct OutputFileInfo {
     pub root_dir: String,
     pub file_format: FileFormat,
-    pub partition_cols: Option<Vec<Expr>>,
+    pub partition_cols: Option<Vec<ExprRef>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
 }
@@ -104,7 +104,7 @@ impl OutputFileInfo {
     pub fn new(
         root_dir: String,
         file_format: FileFormat,
-        partition_cols: Option<Vec<Expr>>,
+        partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> Self {

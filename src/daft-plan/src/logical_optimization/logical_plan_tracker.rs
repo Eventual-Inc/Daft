@@ -118,7 +118,7 @@ mod tests {
             LogicalPlanDigest::new(builder.plan.as_ref(), &mut Default::default()).node_count,
             5usize.try_into().unwrap()
         );
-        let plan = builder.filter(col("a").lt(&lit(2)))?.build();
+        let plan = builder.filter(col("a").lt(lit(2)))?.build();
         assert_eq!(
             LogicalPlanDigest::new(plan.as_ref(), &mut Default::default()).node_count,
             6usize.try_into().unwrap()
@@ -134,7 +134,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
+        .filter(col("a").lt(lit(2)))?
         .build();
         let plan2 = Arc::new(plan1.as_ref().clone());
         // Double-check that logical plans are equal.
@@ -159,7 +159,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .filter(col("a").lt(&lit(2)))?
+        .filter(col("a").lt(lit(2)))?
         .project(vec![col("a")], Default::default())?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
@@ -167,7 +167,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
+        .filter(col("a").lt(lit(2)))?
         .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
@@ -192,14 +192,14 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
+        .filter(col("a").lt(lit(2)))?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
         .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(4)))?
+        .filter(col("a").lt(lit(4)))?
         .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);

@@ -315,7 +315,7 @@ mod tests {
         ]);
         let plan =
             dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
-                .filter(col("a").lt(&lit(2)))?
+                .filter(col("a").lt(lit(2)))?
                 .build();
         // Plan should be unchanged after optimization.
         let expected = plan.clone();
@@ -334,10 +334,10 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let p1 = col("a").lt(&lit(2));
-        let p2 = col("b").eq(&lit("foo"));
+        let p1 = col("a").lt(lit(2));
+        let p2 = col("b").eq(lit("foo"));
         let plan = scan_plan.filter(p1.clone())?.filter(p2.clone())?.build();
-        let merged_filter = p2.and(&p1);
+        let merged_filter = p2.and(p1);
         let expected = if push_into_scan {
             // Merged filter should be pushed into scan.
             dummy_scan_node_with_pushdowns(
@@ -356,7 +356,7 @@ mod tests {
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred = daft_dsl::functions::uri::download(&col("a"), 1, true, true, None);
+        let pred = daft_dsl::functions::uri::download(col("a"), 1, true, true, None);
         let plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -381,7 +381,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let proj = vec![col("a")];
         let plan = scan_plan
             .project(proj.clone(), Default::default())?
@@ -415,7 +415,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo")));
+        let pred = col("a").lt(lit(2)).and(col("b").eq(lit("foo")));
         let proj = vec![col("a"), col("b")];
         let plan = scan_plan
             .project(proj.clone(), Default::default())?
@@ -444,8 +444,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         // Projection involves compute on filtered column "a".
-        .project(vec![col("a") + lit(1)], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
+        .project(vec![col("a").add(lit(1))], Default::default())?
+        .filter(col("a").lt(lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = plan.clone();
@@ -468,8 +468,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
-        let proj = vec![col("a") + lit(1)];
+        let pred = col("a").lt(lit(2));
+        let proj = vec![col("a").add(lit(1))];
         let plan = scan_plan
             // Projection involves compute on filtered column "a".
             .project(proj.clone(), Default::default())?
@@ -501,7 +501,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let sort_by = vec![col("a")];
         let descending = vec![true];
         let plan = scan_plan
@@ -534,7 +534,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let num_partitions = 1;
         let repartition_by = vec![col("a")];
         let plan = scan_plan
@@ -574,7 +574,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .concat(&right_scan_plan)?
             .filter(pred.clone())?
@@ -621,7 +621,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -680,7 +680,7 @@ mod tests {
         );
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
         let join_on = vec![col("b")];
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -731,7 +731,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("c").lt(&lit(2.0));
+        let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -787,7 +787,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("b").lt(&lit(2));
+        let pred = col("b").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,

@@ -217,7 +217,7 @@ pub(super) fn translate_single_logical_node(
                 .names()
                 .iter()
                 .map(|name| Expr::Column(name.clone().into()))
-                .collect::<Vec<Expr>>();
+                .collect::<Vec<ExprRef>>();
             let agg_op = PhysicalPlan::Aggregate(Aggregate::new(
                 input_physical.into(),
                 vec![],
@@ -279,7 +279,7 @@ pub(super) fn translate_single_logical_node(
                     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<Expr> = groupby.clone();
+                    let mut final_exprs: Vec<ExprRef> = groupby.clone();
 
                     for agg_expr in aggregations {
                         let output_name = agg_expr.name().unwrap();
@@ -569,7 +569,7 @@ pub(super) fn translate_single_logical_node(
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
-                let is_primitive = |exprs: &Vec<Expr>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                let is_primitive = |exprs: &Vec<ExprRef>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
                     let dtype = &output_schema.get_field(col).unwrap().dtype;
                     dtype.is_integer() || dtype.is_floating() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
                 });

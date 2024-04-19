@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 
 use crate::{physical_plan::PhysicalPlanRef, JoinType};
@@ -9,8 +9,8 @@ pub struct SortMergeJoin {
     // Upstream node.
     pub left: PhysicalPlanRef,
     pub right: PhysicalPlanRef,
-    pub left_on: Vec<Expr>,
-    pub right_on: Vec<Expr>,
+    pub left_on: Vec<ExprRef>,
+    pub right_on: Vec<ExprRef>,
     pub join_type: JoinType,
     pub num_partitions: usize,
     pub left_is_larger: bool,
@@ -22,8 +22,8 @@ impl SortMergeJoin {
     pub(crate) fn new(
         left: PhysicalPlanRef,
         right: PhysicalPlanRef,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
         num_partitions: usize,
         left_is_larger: bool,

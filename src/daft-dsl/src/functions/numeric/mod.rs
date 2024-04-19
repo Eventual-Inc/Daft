@@ -63,107 +63,107 @@ impl NumericExpr {
     }
 }
 
-pub fn abs(input: ExprRef) -> Expr {
+pub fn abs(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Abs),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn ceil(input: ExprRef) -> Expr {
+pub fn ceil(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Ceil),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn floor(input: ExprRef) -> Expr {
+pub fn floor(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Floor),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn sign(input: ExprRef) -> Expr {
+pub fn sign(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Sign),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn round(input: ExprRef, decimal: i32) -> Expr {
+pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Round(decimal)),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn sin(input: ExprRef) -> Expr {
+pub fn sin(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Sin),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn cos(input: ExprRef) -> Expr {
+pub fn cos(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Cos),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn tan(input: ExprRef) -> Expr {
+pub fn tan(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Tan),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn cot(input: ExprRef) -> Expr {
+pub fn cot(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Cot),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn arcsin(input: ExprRef) -> Expr {
+pub fn arcsin(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcSin),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn arccos(input: ExprRef) -> Expr {
+pub fn arccos(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcCos),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn arctan(input: ExprRef) -> Expr {
+pub fn arctan(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcTan),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn radians(input: ExprRef) -> Expr {
+pub fn radians(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Radians),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn degrees(input: ExprRef) -> Expr {
+pub fn degrees(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Degrees),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn exp(input: ExprRef) -> Expr {
+pub fn exp(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Exp),
         inputs: vec![input],
-    }
+    }.into()
 }

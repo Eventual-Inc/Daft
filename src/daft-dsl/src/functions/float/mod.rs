@@ -22,9 +22,9 @@ impl FloatExpr {
     }
 }
 
-pub fn is_nan(data: ExprRef) -> Expr {
+pub fn is_nan(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Float(FloatExpr::IsNan),
         inputs: vec![data],
-    }
+    }.into()
 }

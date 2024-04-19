@@ -36,16 +36,18 @@ pub fn requires_computation(e: &Expr) -> bool {
     }
 }
 
-pub fn replace_columns_with_expressions(expr: &Expr, replace_map: &HashMap<String, Expr>) -> Expr {
+pub fn replace_columns_with_expressions(expr: &Expr, replace_map: &HashMap<String, ExprRef>) -> ExprRef {
     expr.clone()
         .transform(&|e| {
             if let Expr::Column(ref name) = e && let Some(tgt) = replace_map.get(name.as_ref()) {
+                // work around until we get transforms that can run on ExprRef
+                let tgt = tgt.as_ref().clone();
                 Ok(Transformed::Yes(tgt.clone()))
             } else {
                 Ok(Transformed::No(e))
             }
         })
-        .expect("Error occurred when rewriting column expressions")
+        .expect("Error occurred when rewriting column expressions").into()
 }
 
 pub fn split_conjuction(expr: &Expr) -> Vec<&Expr> {

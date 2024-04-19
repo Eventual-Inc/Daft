@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 
 use crate::physical_plan::PhysicalPlanRef;
@@ -29,14 +29,14 @@ pub struct FanoutByHash {
     // Upstream node.
     pub input: PhysicalPlanRef,
     pub num_partitions: usize,
-    pub partition_by: Vec<Expr>,
+    pub partition_by: Vec<ExprRef>,
 }
 
 impl FanoutByHash {
     pub(crate) fn new(
         input: PhysicalPlanRef,
         num_partitions: usize,
-        partition_by: Vec<Expr>,
+        partition_by: Vec<ExprRef>,
     ) -> Self {
         Self {
             input,
@@ -61,7 +61,7 @@ pub struct FanoutByRange {
     // Upstream node.
     pub input: PhysicalPlanRef,
     pub num_partitions: usize,
-    pub sort_by: Vec<Expr>,
+    pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
 }
 
@@ -70,7 +70,7 @@ impl FanoutByRange {
     pub(crate) fn new(
         input: PhysicalPlanRef,
         num_partitions: usize,
-        sort_by: Vec<Expr>,
+        sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
     ) -> Self {
         Self {

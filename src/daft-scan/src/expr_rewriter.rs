@@ -2,12 +2,7 @@ use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_dsl::{
-    col,
-    common_treenode::{Transformed, TreeNode, VisitRecursion},
-    functions::{partitioning, FunctionExpr},
-    null_lit,
-    optimization::split_conjuction,
-    Expr, Operator,
+    col, common_treenode::{Transformed, TreeNode, VisitRecursion}, functions::{partitioning, FunctionExpr}, null_lit, optimization::split_conjuction, Expr, ExprRef, Operator
 };
 
 use crate::{PartitionField, PartitionTransform};
@@ -22,14 +17,14 @@ fn unalias(expr: Expr) -> DaftResult<Expr> {
     })
 }
 
-fn apply_partitioning_expr(expr: Expr, pfield: &PartitionField) -> Option<Expr> {
+fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<ExprRef> {
     use PartitionTransform::*;
     match pfield.transform {
         Some(Identity) => Some(
             pfield
                 .source_field
                 .as_ref()
-                .map(|s| expr.cast(&s.dtype))
+                .map(|s| expr.clone().cast(&s.dtype))
                 .unwrap_or(expr),
         ),
         Some(Year) => Some(partitioning::years(expr)),
@@ -170,12 +165,12 @@ pub fn rewrite_predicate_for_partitioning(
                 op: Eq,
                 ref left, ref right } => {
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(right.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: Eq, left: col(pfield.field.name.as_str()).into(), right: new_expr.into() }));
                     }
                     Ok(Transformed::No(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(left.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: Eq, left: new_expr.into(), right: col(pfield.field.name.as_str()).into() }));
                     }
                     Ok(Transformed::No(expr))
@@ -189,12 +184,12 @@ pub fn rewrite_predicate_for_partitioning(
                 op: NotEq,
                 ref left, ref right } => {
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(right.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: NotEq, left: col(pfield.field.name.as_str()).into(), right: new_expr.into() }));
                     }
                     Ok(Transformed::No(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(left.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: NotEq, left: new_expr.into(), right: col(pfield.field.name.as_str()).into() }));
                     }
                     Ok(Transformed::No(expr))
@@ -214,12 +209,12 @@ pub fn rewrite_predicate_for_partitioning(
                 };
 
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(right.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: relaxed_op, left: col(pfield.field.name.as_str()).into(), right: new_expr.into() }));
                     }
                     Ok(Transformed::No(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(left.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: relaxed_op, left: new_expr.into(), right: col(pfield.field.name.as_str()).into() }));
                     }
                     Ok(Transformed::No(expr))

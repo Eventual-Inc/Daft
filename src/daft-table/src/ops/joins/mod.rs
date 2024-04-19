@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use daft_core::{schema::Schema, utils::supertype::try_get_supertype, Series};
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 
 use crate::Table;
 
@@ -33,8 +33,8 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
 pub fn infer_join_schema(
     left: &Schema,
     right: &Schema,
-    left_on: &[Expr],
-    right_on: &[Expr],
+    left_on: &[ExprRef],
+    right_on: &[ExprRef],
 ) -> DaftResult<Schema> {
     if left_on.len() != right_on.len() {
         return Err(DaftError::ValueError(format!(
@@ -104,15 +104,15 @@ pub fn infer_join_schema(
 }
 
 impl Table {
-    pub fn hash_join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
+    pub fn hash_join(&self, right: &Self, left_on: &[ExprRef], right_on: &[ExprRef]) -> DaftResult<Self> {
         self.join(right, left_on, right_on, hash_join::hash_inner_join)
     }
 
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[Expr],
-        right_on: &[Expr],
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         if is_sorted {
@@ -149,8 +149,8 @@ impl Table {
     fn join(
         &self,
         right: &Self,
-        left_on: &[Expr],
-        right_on: &[Expr],
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
         inner_join: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
     ) -> DaftResult<Self> {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;

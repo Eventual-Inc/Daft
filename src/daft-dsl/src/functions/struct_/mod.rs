@@ -22,9 +22,9 @@ impl StructExpr {
     }
 }
 
-pub fn get(input: ExprRef, name: &str) -> Expr {
+pub fn get(input: ExprRef, name: &str) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Struct(StructExpr::Get(name.to_string())),
         inputs: vec![input],
-    }
+    }.into()
 }

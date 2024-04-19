@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_core::schema::Schema;
 use daft_core::DataType;
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -15,14 +15,14 @@ use crate::LogicalPlan;
 pub struct Sort {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
-    pub sort_by: Vec<Expr>,
+    pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
 }
 
 impl Sort {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        sort_by: Vec<Expr>,
+        sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
     ) -> logical_plan::Result<Self> {
         if sort_by.is_empty() {

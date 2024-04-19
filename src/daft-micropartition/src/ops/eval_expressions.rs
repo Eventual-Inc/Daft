@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::Schema;
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use daft_io::IOStatsContext;
 use snafu::ResultExt;
 
@@ -10,7 +10,7 @@ use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 
-fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
+fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs
         .iter()
         .map(|e| e.to_field(schema).context(DaftCoreComputeSnafu))
@@ -30,7 +30,7 @@ fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
 }
 
 impl MicroPartition {
-    pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
+    pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
 
         let expected_schema = infer_schema(exprs, &self.schema)?;
@@ -53,7 +53,7 @@ impl MicroPartition {
         ))
     }
 
-    pub fn explode(&self, exprs: &[Expr]) -> DaftResult<Self> {
+    pub fn explode(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::explode");
 
         let tables = self.tables_or_read(io_stats)?;

@@ -6,13 +6,12 @@ use crate::ExprRef;
 macro_rules! impl_expr_op {
     ($func_name:ident, $op_name: ident) => {
     impl Expr {
-        pub fn $func_name(self: ExprRef, rhs: ExprRef) -> Expr {
+        pub fn $func_name(self: ExprRef, rhs: ExprRef) -> ExprRef {
             Expr::BinaryOp {
                 op: Operator::$op_name,
                 left: self,
                 right: rhs,
-            }
-
+            }.into()
         }
     }
     };
@@ -34,7 +33,7 @@ mod tests {
         let a = col("a");
         let b = col("b");
         let c = a.add(b);
-        match c {
+        match c.as_ref() {
             Expr::BinaryOp { .. } => Ok(()),
             other => Err(DaftError::ValueError(format!(
                 "expected expression to be a binary op expression, got {other:?}"

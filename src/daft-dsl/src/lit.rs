@@ -283,47 +283,47 @@ impl LiteralValue {
 
 pub trait Literal {
     /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> Expr;
+    fn lit(self) -> ExprRef;
 }
 
 impl Literal for String {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Utf8(self)).into()
     }
 }
 
 impl<'a> Literal for &'a str {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Utf8(self.to_owned())).into()
     }
 }
 
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
-            fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
+            fn lit(self) -> ExprRef {
+                Expr::Literal(LiteralValue::$SCALAR(self)).into()
             }
         }
     };
 }
 
 impl<'a> Literal for &'a [u8] {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Binary(self.to_vec())).into()
     }
 }
 
 impl Literal for Series {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Series(self))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Series(self)).into()
     }
 }
 
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self }))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self })).into()
     }
 }
 
@@ -335,7 +335,7 @@ make_literal!(u64, UInt64);
 make_literal!(f64, Float64);
 
 pub fn lit<L: Literal>(t: L) -> ExprRef {
-    Arc::new(t.lit())
+    t.lit()
 }
 
 pub fn null_lit() -> ExprRef {

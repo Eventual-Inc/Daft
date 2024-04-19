@@ -40,44 +40,44 @@ impl TemporalExpr {
     }
 }
 
-pub fn date(input: ExprRef) -> Expr {
+pub fn date(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Date),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn day(input: ExprRef) -> Expr {
+pub fn day(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Day),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn hour(input: ExprRef) -> Expr {
+pub fn hour(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Hour),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn month(input: ExprRef) -> Expr {
+pub fn month(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Month),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn year(input: ExprRef) -> Expr {
+pub fn year(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Year),
         inputs: vec![input],
-    }
+    }.into()
 }
 
-pub fn day_of_week(input: ExprRef) -> Expr {
+pub fn day_of_week(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::DayOfWeek),
         inputs: vec![input],
-    }
+    }.into()
 }

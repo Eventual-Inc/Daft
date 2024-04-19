@@ -5,7 +5,7 @@ use daft_core::{
     schema::{hash_index_map, Schema, SchemaRef},
     DataType,
 };
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -20,8 +20,8 @@ pub struct Join {
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
 
-    pub left_on: Vec<Expr>,
-    pub right_on: Vec<Expr>,
+    pub left_on: Vec<ExprRef>,
+    pub right_on: Vec<ExprRef>,
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
@@ -48,8 +48,8 @@ impl Join {
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {

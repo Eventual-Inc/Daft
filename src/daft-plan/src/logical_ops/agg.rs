@@ -4,7 +4,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{AggExpr, Expr};
+use daft_dsl::{AggExpr, Expr, ExprRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
@@ -18,7 +18,7 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub groupby: Vec<Expr>,
+    pub groupby: Vec<ExprRef>,
 
     pub output_schema: SchemaRef,
 }
@@ -27,7 +27,7 @@ impl Aggregate {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         aggregations: Vec<AggExpr>,
-        groupby: Vec<Expr>,
+        groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
         let output_schema = {
             let upstream_schema = input.schema();
