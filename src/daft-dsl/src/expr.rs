@@ -564,14 +564,14 @@ impl Expr {
         }
     }
 
-    pub fn to_sql(&self, db_scheme: &str) -> Option<String> {
-        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W, db_scheme: &str) -> io::Result<()> {
+    pub fn to_sql(&self) -> Option<String> {
+        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
                 Expr::Column(name) => write!(buffer, "{}", name),
-                Expr::Literal(lit) => lit.display_sql(buffer, db_scheme),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer, db_scheme),
+                Expr::Literal(lit) => lit.display_sql(buffer),
+                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {
-                    to_sql_inner(left, buffer, db_scheme)?;
+                    to_sql_inner(left, buffer)?;
                     let op = match op {
                         Operator::Eq => "=",
                         Operator::NotEq => "!=",
@@ -589,21 +589,21 @@ impl Expr {
                         }
                     };
                     write!(buffer, " {} ", op)?;
-                    to_sql_inner(right, buffer, db_scheme)
+                    to_sql_inner(right, buffer)
                 }
                 Expr::Not(inner) => {
                     write!(buffer, "NOT (")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ")")
                 }
                 Expr::IsNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NULL")
                 }
                 Expr::NotNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NOT NULL")
                 }
                 Expr::IfElse {
@@ -612,11 +612,11 @@ impl Expr {
                     predicate,
                 } => {
                     write!(buffer, "CASE WHEN ")?;
-                    to_sql_inner(predicate, buffer, db_scheme)?;
+                    to_sql_inner(predicate, buffer)?;
                     write!(buffer, " THEN ")?;
-                    to_sql_inner(if_true, buffer, db_scheme)?;
+                    to_sql_inner(if_true, buffer)?;
                     write!(buffer, " ELSE ")?;
-                    to_sql_inner(if_false, buffer, db_scheme)?;
+                    to_sql_inner(if_false, buffer)?;
                     write!(buffer, " END")
                 }
                 // TODO: Implement SQL translations for these expressions if possible
@@ -632,7 +632,7 @@ impl Expr {
         }
 
         let mut buffer = Vec::new();
-        to_sql_inner(self, &mut buffer, db_scheme)
+        to_sql_inner(self, &mut buffer)
             .ok()
             .and_then(|_| String::from_utf8(buffer).ok())
     }

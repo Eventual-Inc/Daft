@@ -1,6 +1,5 @@
+use daft_scan::{file_format::FileFormatConfig, ScanTask};
 use std::sync::Arc;
-
-use daft_scan::ScanTask;
 
 use crate::ClusteringSpec;
 use serde::{Deserialize, Serialize};
@@ -34,6 +33,15 @@ impl TabularScan {
 
         res.push(format!("Num Scan Tasks = {num_scan_tasks}",));
         res.push(format!("Estimated Scan Bytes = {total_bytes}",));
+
+        #[cfg(feature = "python")]
+        if let FileFormatConfig::Database(config) = self.scan_tasks[0].file_format_config.as_ref() {
+            if num_scan_tasks == 1 {
+                res.push(format!("SQL Query = {}", config.sql));
+            } else {
+                res.push(format!("SQL Queries = [{},..]", config.sql));
+            }
+        }
 
         res.push(format!(
             "Clustering spec = {{ {} }}",
