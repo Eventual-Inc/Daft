@@ -7,7 +7,7 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    planner::plan,
+    physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,

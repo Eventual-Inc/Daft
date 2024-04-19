@@ -11,7 +11,7 @@ mod logical_plan;
 mod partitioning;
 mod physical_ops;
 mod physical_plan;
-mod planner;
+mod physical_planner;
 mod resource_request;
 mod sink_info;
 mod source_info;

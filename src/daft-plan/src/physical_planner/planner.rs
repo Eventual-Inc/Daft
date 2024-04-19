@@ -756,7 +756,7 @@ pub fn translate_single_logical_node(
 
 /// Translate a logical plan to a physical plan.
 pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
-    let mut visitor = crate::planner::PhysicalPlanTranslator {
+    let mut visitor = PhysicalPlanTranslator {
         physical_children: vec![],
         cfg: cfg.clone(),
     };
@@ -783,7 +783,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::physical_plan::PhysicalPlan;
-    use crate::planner::plan;
+    use crate::physical_planner::plan;
     use crate::test::{dummy_scan_node, dummy_scan_operator};
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
