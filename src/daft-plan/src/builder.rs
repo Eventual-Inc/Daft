@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     logical_ops,
+    logical_optimization::Optimizer,
     logical_plan::LogicalPlan,
-    optimization::Optimizer,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },

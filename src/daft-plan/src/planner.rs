@@ -34,12 +34,12 @@ use crate::{physical_ops::*, JoinStrategy};
 use crate::physical_ops::InMemoryScan;
 
 use common_treenode::VisitRecursion;
-pub struct QueryStageVisitor {
+pub struct PhysicalPlanTranslator {
     pub physical_children: Vec<PhysicalPlan>,
     pub cfg: Arc<DaftExecutionConfig>,
 }
 
-impl TreeNodeVisitor for QueryStageVisitor {
+impl TreeNodeVisitor for PhysicalPlanTranslator {
     type N = LogicalPlan;
     fn pre_visit(&mut self, _node: &Self::N) -> DaftResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
@@ -756,7 +756,7 @@ pub fn translate_single_logical_node(
 
 /// Translate a logical plan to a physical plan.
 pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
-    let mut visitor = crate::planner::QueryStageVisitor {
+    let mut visitor = crate::planner::PhysicalPlanTranslator {
         physical_children: vec![],
         cfg: cfg.clone(),
     };

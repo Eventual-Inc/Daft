@@ -317,7 +317,7 @@ mod tests {
 
     use crate::{
         logical_ops::{Filter, Project},
-        optimization::rules::{ApplyOrder, OptimizerRule, Transformed},
+        logical_optimization::rules::{ApplyOrder, OptimizerRule, Transformed},
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
