@@ -73,11 +73,7 @@ pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
-    Expr::BinaryOp {
-        op,
-        left,
-        right
-    }.into()
+    Expr::BinaryOp { op, left, right }.into()
 }
 
 impl AggExpr {
@@ -217,10 +213,9 @@ impl AsRef<Expr> for Expr {
     }
 }
 
-
 impl Expr {
-    pub fn alias<S: Into<Arc<str>>>(self: ExprRef, name: S) -> ExprRef {
-        Expr::Alias(self, name.into()).into()
+    pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
+        Expr::Alias(self.clone(), name.into()).into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
@@ -228,7 +223,8 @@ impl Expr {
             if_true,
             if_false,
             predicate: self,
-        }.into()
+        }
+        .into()
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
@@ -695,7 +691,6 @@ impl Display for AggExpr {
     }
 }
 
-/// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     Eq,

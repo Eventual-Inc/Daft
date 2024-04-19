@@ -17,7 +17,12 @@ impl FunctionEvaluator for CountEvaluator {
         "count"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(
+        &self,
+        inputs: &[ExprRef],
+        schema: &Schema,
+        expr: &FunctionExpr,
+    ) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let input_field = input.to_field(schema)?;

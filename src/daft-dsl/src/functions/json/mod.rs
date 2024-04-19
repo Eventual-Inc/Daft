@@ -26,5 +26,6 @@ pub fn query(input: ExprRef, query: &str) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Json(JsonExpr::Query(query.to_string())),
         inputs: vec![input],
-    }.into()
+    }
+    .into()
 }

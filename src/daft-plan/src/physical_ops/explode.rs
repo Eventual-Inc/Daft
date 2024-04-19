@@ -123,10 +123,7 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![col("a"), col("b")],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .explode(vec![col("b")])?
         .build();
 

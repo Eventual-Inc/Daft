@@ -17,7 +17,12 @@ impl FunctionEvaluator for ResizeEvaluator {
         "resize"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(
+        &self,
+        inputs: &[ExprRef],
+        schema: &Schema,
+        expr: &FunctionExpr,
+    ) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;

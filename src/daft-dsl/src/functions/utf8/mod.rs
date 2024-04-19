@@ -93,124 +93,142 @@ pub fn endswith(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::EndsWith),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn startswith(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::StartsWith),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn contains(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Contains),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn match_(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Match),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn split(data: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Split(regex)),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn extract(data: ExprRef, pattern: ExprRef, index: usize) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Extract(index)),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn extract_all(data: ExprRef, pattern: ExprRef, index: usize) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }
 
 pub fn replace(data: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Replace(regex)),
         inputs: vec![data, pattern, replacement],
-    }.into()
+    }
+    .into()
 }
 
 pub fn length(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Length),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn lower(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Lower),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn upper(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Upper),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn lstrip(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Lstrip),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn rstrip(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Rstrip),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn reverse(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Reverse),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn capitalize(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Capitalize),
         inputs: vec![data],
-    }.into()
+    }
+    .into()
 }
 
 pub fn left(data: ExprRef, count: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Left),
         inputs: vec![data, count],
-    }.into()
+    }
+    .into()
 }
 
 pub fn right(data: ExprRef, count: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Right),
         inputs: vec![data, count],
-    }.into()
+    }
+    .into()
 }
 
 pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Find),
         inputs: vec![data, pattern],
-    }.into()
+    }
+    .into()
 }

@@ -26,7 +26,9 @@ impl TreeNode for Expr {
                     | AnyValue(expr, _)
                     | List(expr)
                     | Concat(expr) => vec![expr.as_ref()],
-                    MapGroups { func: _, inputs } => inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
+                    MapGroups { func: _, inputs } => {
+                        inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>()
+                    }
                 }
             }
             BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
@@ -75,13 +77,15 @@ impl TreeNode for Expr {
                     List(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_list(),
                     Concat(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_concat(),
                     MapGroups { func, inputs } => Arc::new(Expr::Agg(MapGroups {
-                                            func,
-                                            inputs: inputs
-                                                .into_iter()
-                                                .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
-                                                .collect::<DaftResult<Vec<_>>>()?,
-                                        })),
-                }.as_ref().clone()
+                        func,
+                        inputs: inputs
+                            .into_iter()
+                            .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
+                            .collect::<DaftResult<Vec<_>>>()?,
+                    })),
+                }
+                .as_ref()
+                .clone()
             }
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
             IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
@@ -115,6 +119,8 @@ impl TreeNode for Expr {
                     .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                     .collect::<DaftResult<Vec<_>>>()?,
             },
-        }.as_ref().clone())
+        }
+        .as_ref()
+        .clone())
     }
 }

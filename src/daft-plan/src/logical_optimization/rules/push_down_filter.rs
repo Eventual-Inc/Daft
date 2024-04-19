@@ -9,7 +9,7 @@ use daft_dsl::{
     optimization::{
         conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
     },
-    Expr,
+    Expr, ExprRef,
 };
 use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
@@ -52,14 +52,14 @@ impl OptimizerRule for PushDownFilter {
                 let parent_predicates = split_conjuction(&filter.predicate);
                 let predicate_set: HashSet<&&Expr> = parent_predicates.iter().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
-                let new_predicates = parent_predicates
+                let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
                     .chain(
                         split_conjuction(&child_filter.predicate)
                             .iter()
                             .filter(|e| !predicate_set.contains(e)),
                     )
-                    .map(|e| (*e).clone())
+                    .map(|e| (*e).clone().into())
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
@@ -87,7 +87,7 @@ impl OptimizerRule for PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.clone().and(f.clone())).unwrap_or(predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -98,7 +98,7 @@ impl OptimizerRule for PushDownFilter {
                         // 3. Filters needing their own dedicated filter op (unable to be pushed into scan); this
                         //    includes predicates involving both partition and data columns, and predicates containing
                         //    UDFs.
-                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
+                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(&new_predicate, external_info.scan_op.0.partitioning_keys())?;
                         assert!(partition_only_filter.len() + data_only_filter.len() + needing_filter_op.len() > 0);
 
                         if !needing_filter_op.is_empty() && partition_only_filter.is_empty() && data_only_filter.is_empty() {
@@ -114,12 +114,12 @@ impl OptimizerRule for PushDownFilter {
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
                         let new_pushdowns = if let Some(data_filter) = data_filter {
-                            external_info.pushdowns.with_filters(Some(Arc::new(data_filter)))
+                            external_info.pushdowns.with_filters(Some(data_filter))
                         } else {
                             external_info.pushdowns.clone()
                         };
                         let new_pushdowns = if let Some(partition_filter) = partition_filter {
-                            new_pushdowns.with_partition_filters(Some(Arc::new(partition_filter)))
+                            new_pushdowns.with_partition_filters(Some(partition_filter))
                         } else {
                             new_pushdowns
                         };
@@ -154,15 +154,15 @@ impl OptimizerRule for PushDownFilter {
                         e.input_mapping()
                             .map(|s| (e.name().unwrap().to_string(), col(s)))
                     })
-                    .collect::<HashMap<String, Expr>>();
+                    .collect::<HashMap<String, ExprRef>>();
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
                 // TODO(Clark): Push Filters depending on Projection columns involving compute if those expressions are
                 // (1) determinstic && (pure || idempotent),
                 // (2) inexpensive to recompute.
                 // This can be done by rewriting the Filter predicate expression to contain the relevant Projection expression.
-                let mut can_push = vec![];
-                let mut can_not_push = vec![];
+                let mut can_push: Vec<ExprRef> = vec![];
+                let mut can_not_push: Vec<ExprRef> = vec![];
                 for predicate in predicates {
                     let predicate_cols = get_required_columns(predicate);
                     if predicate_cols
@@ -175,7 +175,7 @@ impl OptimizerRule for PushDownFilter {
                         can_push.push(new_predicate);
                     } else {
                         // Can't push predicate expression through projection.
-                        can_not_push.push(predicate.clone());
+                        can_not_push.push(predicate.clone().into());
                     }
                 }
                 if can_push.is_empty() {

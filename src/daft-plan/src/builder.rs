@@ -294,7 +294,11 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn aggregate(&self, agg_exprs: Vec<ExprRef>, groupby_exprs: Vec<ExprRef>) -> DaftResult<Self> {
+    pub fn aggregate(
+        &self,
+        agg_exprs: Vec<ExprRef>,
+        groupby_exprs: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
             .map(|v| v.as_ref())
@@ -599,8 +603,11 @@ impl PyLogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
-        let partition_cols =
-            partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<ExprRef>>());
+        let partition_cols = partition_cols.map(|cols| {
+            cols.iter()
+                .map(|e| e.clone().into())
+                .collect::<Vec<ExprRef>>()
+        });
         Ok(self
             .builder
             .table_write(

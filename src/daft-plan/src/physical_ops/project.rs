@@ -114,28 +114,20 @@ impl Project {
             },
             Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
             Expr::Alias(child, name) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
                 Ok(newchild.alias(name.clone()))
             }
             Expr::BinaryOp { op, left, right } => {
-                let newleft = Self::translate_clustering_spec_expr(
-                    left,
-                    old_colname_to_new_colname,
-                )?;
-                let newright = Self::translate_clustering_spec_expr(
-                    right,
-                    old_colname_to_new_colname,
-                )?;
+                let newleft =
+                    Self::translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
+                let newright =
+                    Self::translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
                 Ok(binary_op(*op, newleft, newright))
             }
             Expr::Cast(child, dtype) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
                 Ok(newchild.cast(dtype))
             }
             Expr::Function { func, inputs } => {
@@ -146,49 +138,36 @@ impl Project {
                 Ok(Expr::Function {
                     func: func.clone(),
                     inputs: new_inputs,
-                }.into())
+                }
+                .into())
             }
             Expr::Not(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
                 Ok(newchild.not())
             }
             Expr::IsNull(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
                 Ok(newchild.is_null())
             }
             Expr::NotNull(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
                 Ok(newchild.not_null())
             }
             Expr::FillNull(child, fill_value) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
-                let newfill = Self::translate_clustering_spec_expr(
-                    fill_value,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                let newfill =
+                    Self::translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
                 Ok(newchild.fill_null(newfill))
             }
             Expr::IsIn(child, items) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child,
-                    old_colname_to_new_colname,
-                )?;
-                let newitems = Self::translate_clustering_spec_expr(
-                    items,
-                    old_colname_to_new_colname,
-                )?;
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                let newitems =
+                    Self::translate_clustering_spec_expr(items, old_colname_to_new_colname)?;
                 Ok(newchild.is_in(newitems))
             }
             Expr::IfElse {
@@ -196,18 +175,12 @@ impl Project {
                 if_false,
                 predicate,
             } => {
-                let newtrue = Self::translate_clustering_spec_expr(
-                    if_true,
-                    old_colname_to_new_colname,
-                )?;
-                let newfalse = Self::translate_clustering_spec_expr(
-                    if_false,
-                    old_colname_to_new_colname,
-                )?;
-                let newpred = Self::translate_clustering_spec_expr(
-                    predicate,
-                    old_colname_to_new_colname,
-                )?;
+                let newtrue =
+                    Self::translate_clustering_spec_expr(if_true, old_colname_to_new_colname)?;
+                let newfalse =
+                    Self::translate_clustering_spec_expr(if_false, old_colname_to_new_colname)?;
+                let newpred =
+                    Self::translate_clustering_spec_expr(predicate, old_colname_to_new_colname)?;
 
                 Ok(newpred.if_else(newtrue, newfalse))
             }
@@ -266,10 +239,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![col("a"), col("b")],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(expressions, Default::default())?
         .build();
 
@@ -306,10 +276,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![col("a"), col("b")],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(projection, Default::default())?
         .build();
 
@@ -336,10 +303,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![col("a"), col("b")],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(expressions, Default::default())?
         .build();
 

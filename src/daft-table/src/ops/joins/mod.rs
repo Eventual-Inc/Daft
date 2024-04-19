@@ -104,7 +104,12 @@ pub fn infer_join_schema(
 }
 
 impl Table {
-    pub fn hash_join(&self, right: &Self, left_on: &[ExprRef], right_on: &[ExprRef]) -> DaftResult<Self> {
+    pub fn hash_join(
+        &self,
+        right: &Self,
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
+    ) -> DaftResult<Self> {
         self.join(right, left_on, right_on, hash_join::hash_inner_join)
     }
 

@@ -1,19 +1,20 @@
 use std::ops::*;
 
-use crate::{Expr, Operator};
 use crate::ExprRef;
+use crate::{Expr, Operator};
 
 macro_rules! impl_expr_op {
     ($func_name:ident, $op_name: ident) => {
-    impl Expr {
-        pub fn $func_name(self: ExprRef, rhs: ExprRef) -> ExprRef {
-            Expr::BinaryOp {
-                op: Operator::$op_name,
-                left: self,
-                right: rhs,
-            }.into()
+        impl Expr {
+            pub fn $func_name(self: ExprRef, rhs: ExprRef) -> ExprRef {
+                Expr::BinaryOp {
+                    op: Operator::$op_name,
+                    left: self,
+                    right: rhs,
+                }
+                .into()
+            }
         }
-    }
     };
 }
 

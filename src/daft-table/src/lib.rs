@@ -228,10 +228,10 @@ impl Table {
             self.mask_filter(&mask)
         } else {
             let mut expr = predicate
-                            .get(0)
-                            .unwrap()
-                            .clone()
-                            .and(predicate.get(1).unwrap().clone());
+                .get(0)
+                .unwrap()
+                .clone()
+                .and(predicate.get(1).unwrap().clone());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
                 expr = expr.and(next.clone());

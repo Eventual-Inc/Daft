@@ -468,16 +468,15 @@ pub mod pylib {
 
         #[getter]
         pub fn filters(&self) -> Option<PyExpr> {
-            self.0.filters.as_ref().map(|e| PyExpr {
-                expr: e.clone(),
-            })
+            self.0.filters.as_ref().map(|e| PyExpr { expr: e.clone() })
         }
 
         #[getter]
         pub fn partition_filters(&self) -> Option<PyExpr> {
-            self.0.partition_filters.as_ref().map(|e| PyExpr {
-                expr: e.clone(),
-            })
+            self.0
+                .partition_filters
+                .as_ref()
+                .map(|e| PyExpr { expr: e.clone() })
         }
 
         #[getter]

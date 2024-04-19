@@ -33,8 +33,6 @@ else:
 if TYPE_CHECKING:
     from daft.io import IOConfig
 
-
-# Implementation taken from: https://github.com/pola-rs/polars/blob/main/py-polars/polars/utils/various.py#L388-L399
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 accessor_namespace_property: type[property] = property
@@ -598,7 +596,8 @@ class Expression:
     def __reduce__(self) -> tuple:
         return Expression._from_pyexpr, (self._expr,)
 
-
+    def _input_mapping(self) -> builtins.str | None:
+        return self._expr._input_mapping()
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -1306,13 +1305,6 @@ class ExpressionsProjection(Iterable[Expression]):
             (s.name() == o.name()) and expr_structurally_equal(s, o)
             for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
         )
-
-    def required_columns(self) -> set[str]:
-        """Column names required to run this ExpressionsProjection"""
-        result: set[str] = set()
-        for e in self._output_name_to_exprs.values():
-            result |= e._required_columns()
-        return result
 
     def union(self, other: ExpressionsProjection, rename_dup: str | None = None) -> ExpressionsProjection:
         """Unions two Expressions. Output naming conflicts are handled with keyword arguments.

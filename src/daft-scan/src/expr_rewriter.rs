@@ -1,20 +1,26 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::{
-    col, common_treenode::{Transformed, TreeNode, VisitRecursion}, functions::{partitioning, FunctionExpr}, null_lit, optimization::split_conjuction, Expr, ExprRef, Operator
+    col,
+    common_treenode::{Transformed, TreeNode, VisitRecursion},
+    functions::{partitioning, FunctionExpr},
+    null_lit,
+    optimization::split_conjuction,
+    Expr, ExprRef, Operator,
 };
 
 use crate::{PartitionField, PartitionTransform};
 
-fn unalias(expr: Expr) -> DaftResult<Expr> {
-    expr.transform(&|e| {
+fn unalias(expr: &ExprRef) -> DaftResult<ExprRef> {
+    let res = expr.as_ref().clone().transform(&|e| {
         if let Expr::Alias(e, _) = e {
             Ok(Transformed::Yes(e.as_ref().clone()))
         } else {
             Ok(Transformed::No(e))
         }
-    })
+    })?;
+    Ok(Arc::new(res))
 }
 
 fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<ExprRef> {
@@ -48,21 +54,21 @@ fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<Exp
 pub struct PredicateGroups {
     // All partition-only filters, which can be applied directly to partition values and can be dropped from the
     // data-level filter.
-    pub partition_only_filter: Vec<Expr>,
+    pub partition_only_filter: Vec<ExprRef>,
     // Predicates that only reference data columns (no partition column references) or only reference partition columns
     // but involve non-identity transformations; these need to be applied to the data, but don't require a separate
     // filter op (i.e. they can be pushed into the scan).
-    pub data_only_filter: Vec<Expr>,
+    pub data_only_filter: Vec<ExprRef>,
     // Filters needing their own dedicated filter op (unable to be pushed into scan); this includes predicates
     // involving both partition and data columns, and predicates containing UDFs.
-    pub needing_filter_op: Vec<Expr>,
+    pub needing_filter_op: Vec<ExprRef>,
 }
 
 impl PredicateGroups {
     pub fn new(
-        partition_only_filter: Vec<Expr>,
-        data_only_filter: Vec<Expr>,
-        needing_filter_op: Vec<Expr>,
+        partition_only_filter: Vec<ExprRef>,
+        data_only_filter: Vec<ExprRef>,
+        needing_filter_op: Vec<ExprRef>,
     ) -> Self {
         Self {
             partition_only_filter,
@@ -73,7 +79,7 @@ impl PredicateGroups {
 }
 
 pub fn rewrite_predicate_for_partitioning(
-    predicate: Expr,
+    predicate: &ExprRef,
     pfields: &[PartitionField],
 ) -> DaftResult<PredicateGroups> {
     let pfields_map: HashMap<&str, &PartitionField> = pfields
@@ -86,10 +92,10 @@ pub fn rewrite_predicate_for_partitioning(
     // transformations).
     let data_split = split_conjuction(&predicate);
     // Predicates that reference both partition columns and data columns.
-    let mut needs_filter_op_preds = vec![];
+    let mut needs_filter_op_preds: Vec<ExprRef> = vec![];
     // Predicates that only reference data columns (no partition column references) or only reference partition columns
     // but involve non-identity transformations.
-    let mut data_preds = vec![];
+    let mut data_preds: Vec<ExprRef> = vec![];
     for e in data_split.into_iter() {
         let mut all_data_keys = true;
         let mut all_part_keys = true;
@@ -128,9 +134,9 @@ pub fn rewrite_predicate_for_partitioning(
 
         // Push to appropriate vec.
         if has_udf || (!all_data_keys && !all_part_keys) {
-            needs_filter_op_preds.push(e.clone());
+            needs_filter_op_preds.push(e.clone().into());
         } else if all_data_keys || all_part_keys && any_non_identity_part_keys {
-            data_preds.push(e.clone());
+            data_preds.push(e.clone().into());
         }
     }
     if pfields.is_empty() {
@@ -156,7 +162,7 @@ pub fn rewrite_predicate_for_partitioning(
         map
     };
 
-    let with_part_cols = predicate.transform(&|expr| {
+    let with_part_cols = predicate.as_ref().clone().transform(&|expr| {
         use Operator::*;
         match expr {
             // Binary Op for Eq
@@ -235,7 +241,7 @@ pub fn rewrite_predicate_for_partitioning(
 
     // Filter to predicate clauses that only involve partition columns.
     let split = split_conjuction(&with_part_cols);
-    let mut part_preds = vec![];
+    let mut part_preds: Vec<ExprRef> = vec![];
     for e in split.into_iter() {
         let mut all_part_keys = true;
         e.apply(&mut |e| {
@@ -248,7 +254,7 @@ pub fn rewrite_predicate_for_partitioning(
 
         // Push to partition preds vec.
         if all_part_keys {
-            part_preds.push(e.clone());
+            part_preds.push(e.clone().into());
         }
     }
     Ok(PredicateGroups::new(

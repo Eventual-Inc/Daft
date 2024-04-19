@@ -9,7 +9,12 @@ use crate::micropartition::MicroPartition;
 use daft_stats::TruthValue;
 
 impl MicroPartition {
-    pub fn hash_join(&self, right: &Self, left_on: &[ExprRef], right_on: &[ExprRef]) -> DaftResult<Self> {
+    pub fn hash_join(
+        &self,
+        right: &Self,
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
+    ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
 

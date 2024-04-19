@@ -36,7 +36,10 @@ pub fn requires_computation(e: &Expr) -> bool {
     }
 }
 
-pub fn replace_columns_with_expressions(expr: &Expr, replace_map: &HashMap<String, ExprRef>) -> ExprRef {
+pub fn replace_columns_with_expressions(
+    expr: &Expr,
+    replace_map: &HashMap<String, ExprRef>,
+) -> ExprRef {
     expr.clone()
         .transform(&|e| {
             if let Expr::Column(ref name) = e && let Some(tgt) = replace_map.get(name.as_ref()) {
@@ -47,7 +50,8 @@ pub fn replace_columns_with_expressions(expr: &Expr, replace_map: &HashMap<Strin
                 Ok(Transformed::No(e))
             }
         })
-        .expect("Error occurred when rewriting column expressions").into()
+        .expect("Error occurred when rewriting column expressions")
+        .into()
 }
 
 pub fn split_conjuction(expr: &Expr) -> Vec<&Expr> {
@@ -57,7 +61,7 @@ pub fn split_conjuction(expr: &Expr) -> Vec<&Expr> {
 }
 
 fn _split_conjuction<'a>(expr: &'a Expr, out_exprs: &mut Vec<&'a Expr>) {
-    match expr {
+    match expr.as_ref() {
         Expr::BinaryOp {
             op: Operator::And,
             left,

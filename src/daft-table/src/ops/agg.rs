@@ -72,7 +72,6 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
-
         let udf = match func {
             FunctionExpr::Python(udf) => udf,
             _ => {

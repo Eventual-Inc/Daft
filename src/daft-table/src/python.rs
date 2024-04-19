@@ -84,7 +84,8 @@ impl PyTable {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<daft_dsl::ExprRef> = to_agg.into_iter().map(|e| e.into()).collect();
+        let converted_to_agg: Vec<daft_dsl::ExprRef> =
+            to_agg.into_iter().map(|e| e.into()).collect();
         let converted_group_by: Vec<daft_dsl::ExprRef> =
             group_by.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {

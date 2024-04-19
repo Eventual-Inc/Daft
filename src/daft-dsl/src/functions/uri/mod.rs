@@ -5,7 +5,7 @@ use std::sync::Arc;
 use download::DownloadEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::{ExprRef, Expr};
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -46,5 +46,6 @@ pub fn download(
             config: config.unwrap_or_default().into(),
         }),
         inputs: vec![input],
-    }.into()
+    }
+    .into()
 }

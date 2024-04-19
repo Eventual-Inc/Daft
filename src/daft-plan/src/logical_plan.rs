@@ -76,7 +76,11 @@ impl LogicalPlan {
                     .collect()]
             }
             Self::Sort(sort) => {
-                let res = sort.sort_by.iter().flat_map(|v| get_required_columns(v.as_ref())).collect();
+                let res = sort
+                    .sort_by
+                    .iter()
+                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .collect();
                 vec![res]
             }
             Self::Repartition(repartition) => {
@@ -112,13 +116,22 @@ impl LogicalPlan {
                     .aggregations
                     .iter()
                     .map(|agg| get_required_columns(&Expr::Agg(agg.clone())))
-                    .chain(aggregate.groupby.iter().map(|v| get_required_columns(v.as_ref())))
+                    .chain(
+                        aggregate
+                            .groupby
+                            .iter()
+                            .map(|v| get_required_columns(v.as_ref())),
+                    )
                     .flatten()
                     .collect();
                 vec![res]
             }
             Self::Join(join) => {
-                let left = join.left_on.iter().flat_map(|v| get_required_columns(v.as_ref())).collect();
+                let left = join
+                    .left_on
+                    .iter()
+                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .collect();
                 let right = join
                     .right_on
                     .iter()

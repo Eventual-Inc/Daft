@@ -177,6 +177,10 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 
 #[pymethods]
 impl PyExpr {
+    pub fn _input_mapping(&self) -> PyResult<Option<String>> {
+        Ok(self.expr.input_mapping())
+    }
+
     pub fn alias(&self, name: &str) -> PyResult<Self> {
         Ok(self.expr.clone().alias(name).into())
     }
@@ -261,7 +265,11 @@ impl PyExpr {
     }
 
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
-        Ok(self.expr.clone().if_else(if_true.expr.clone(), if_false.expr.clone()).into())
+        Ok(self
+            .expr
+            .clone()
+            .if_else(if_true.expr.clone(), if_false.expr.clone())
+            .into())
     }
 
     pub fn count(&self, mode: CountMode) -> PyResult<Self> {
@@ -319,7 +327,12 @@ impl PyExpr {
     }
 
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::FloorDivide, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(
+            crate::Operator::FloorDivide,
+            self.into(),
+            other.expr.clone(),
+        )
+        .into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
@@ -468,7 +481,13 @@ impl PyExpr {
 
     pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
         use crate::functions::utf8::replace;
-        Ok(replace(self.into(), pattern.expr.clone(), replacement.expr.clone(), regex).into())
+        Ok(replace(
+            self.into(),
+            pattern.expr.clone(),
+            replacement.expr.clone(),
+            regex,
+        )
+        .into())
     }
 
     pub fn utf8_length(&self) -> PyResult<Self> {
@@ -660,7 +679,9 @@ impl From<ExprRef> for PyExpr {
 
 impl From<Expr> for PyExpr {
     fn from(value: crate::Expr) -> Self {
-        PyExpr { expr: Arc::new(value) }
+        PyExpr {
+            expr: Arc::new(value),
+        }
     }
 }
 

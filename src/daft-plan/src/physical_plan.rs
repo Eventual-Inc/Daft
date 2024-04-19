@@ -14,8 +14,8 @@ use {
     std::collections::HashMap,
 };
 
-use daft_dsl::ExprRef;
 use daft_core::impl_bincode_py_state_serialization;
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
