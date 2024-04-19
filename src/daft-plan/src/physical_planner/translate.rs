@@ -7,7 +7,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeVisitor};
+
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;
@@ -32,8 +32,6 @@ use crate::{physical_ops::*, JoinStrategy};
 
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
-
-use common_treenode::VisitRecursion;
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
