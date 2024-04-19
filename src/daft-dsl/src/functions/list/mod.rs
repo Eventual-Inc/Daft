@@ -18,7 +18,7 @@ use min::MinEvaluator;
 use serde::{Deserialize, Serialize};
 use sum::SumEvaluator;
 
-use crate::Expr;
+use crate::{ExprRef, Expr};
 
 use super::FunctionEvaluator;
 
@@ -51,58 +51,58 @@ impl ListExpr {
     }
 }
 
-pub fn explode(input: &Expr) -> Expr {
+pub fn explode(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Explode),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn join(input: &Expr, delimiter: &Expr) -> Expr {
+pub fn join(input: ExprRef, delimiter: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Join),
-        inputs: vec![input.clone(), delimiter.clone()],
+        inputs: vec![input, delimiter],
     }
 }
 
-pub fn count(input: &Expr, mode: CountMode) -> Expr {
+pub fn count(input: ExprRef, mode: CountMode) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Count(mode)),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn get(input: &Expr, idx: &Expr, default: &Expr) -> Expr {
+pub fn get(input: ExprRef, idx: ExprRef, default: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Get),
-        inputs: vec![input.clone(), idx.clone(), default.clone()],
+        inputs: vec![input, idx, default],
     }
 }
 
-pub fn sum(input: &Expr) -> Expr {
+pub fn sum(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Sum),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn mean(input: &Expr) -> Expr {
+pub fn mean(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Mean),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn min(input: &Expr) -> Expr {
+pub fn min(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Min),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn max(input: &Expr) -> Expr {
+pub fn max(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Max),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }

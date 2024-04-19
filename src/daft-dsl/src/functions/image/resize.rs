@@ -1,5 +1,5 @@
 use crate::functions::image::ImageExpr;
-use crate::Expr;
+use crate::ExprRef;
 use common_error::DaftError;
 use daft_core::datatypes::DataType;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
@@ -17,7 +17,7 @@ impl FunctionEvaluator for ResizeEvaluator {
         "resize"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;

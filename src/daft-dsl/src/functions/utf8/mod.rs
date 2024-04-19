@@ -36,7 +36,7 @@ use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
 use upper::UpperEvaluator;
 
-use crate::{functions::utf8::match_::MatchEvaluator, Expr};
+use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -89,128 +89,128 @@ impl Utf8Expr {
     }
 }
 
-pub fn endswith(data: &Expr, pattern: &Expr) -> Expr {
+pub fn endswith(data: ExprRef, pattern: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::EndsWith),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn startswith(data: &Expr, pattern: &Expr) -> Expr {
+pub fn startswith(data: ExprRef, pattern: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::StartsWith),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn contains(data: &Expr, pattern: &Expr) -> Expr {
+pub fn contains(data: ExprRef, pattern: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Contains),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
+pub fn match_(data: ExprRef, pattern: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Match),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn split(data: &Expr, pattern: &Expr, regex: bool) -> Expr {
+pub fn split(data: ExprRef, pattern: ExprRef, regex: bool) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Split(regex)),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn extract(data: &Expr, pattern: &Expr, index: usize) -> Expr {
+pub fn extract(data: ExprRef, pattern: ExprRef, index: usize) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Extract(index)),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn extract_all(data: &Expr, pattern: &Expr, index: usize) -> Expr {
+pub fn extract_all(data: ExprRef, pattern: ExprRef, index: usize) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }
 
-pub fn replace(data: &Expr, pattern: &Expr, replacement: &Expr, regex: bool) -> Expr {
+pub fn replace(data: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Replace(regex)),
-        inputs: vec![data.clone(), pattern.clone(), replacement.clone()],
+        inputs: vec![data, pattern, replacement],
     }
 }
 
-pub fn length(data: &Expr) -> Expr {
+pub fn length(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Length),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn lower(data: &Expr) -> Expr {
+pub fn lower(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Lower),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn upper(data: &Expr) -> Expr {
+pub fn upper(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Upper),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn lstrip(data: &Expr) -> Expr {
+pub fn lstrip(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Lstrip),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn rstrip(data: &Expr) -> Expr {
+pub fn rstrip(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Rstrip),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn reverse(data: &Expr) -> Expr {
+pub fn reverse(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Reverse),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn capitalize(data: &Expr) -> Expr {
+pub fn capitalize(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Capitalize),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }
 
-pub fn left(data: &Expr, count: &Expr) -> Expr {
+pub fn left(data: ExprRef, count: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Left),
-        inputs: vec![data.clone(), count.clone()],
+        inputs: vec![data, count],
     }
 }
 
-pub fn right(data: &Expr, count: &Expr) -> Expr {
+pub fn right(data: ExprRef, count: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Right),
-        inputs: vec![data.clone(), count.clone()],
+        inputs: vec![data, count],
     }
 }
 
-pub fn find(data: &Expr, pattern: &Expr) -> Expr {
+pub fn find(data: ExprRef, pattern: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Find),
-        inputs: vec![data.clone(), pattern.clone()],
+        inputs: vec![data, pattern],
     }
 }

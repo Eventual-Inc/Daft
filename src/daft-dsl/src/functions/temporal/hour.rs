@@ -6,7 +6,7 @@ use daft_core::{
 };
 
 use crate::functions::FunctionExpr;
-use crate::Expr;
+use crate::ExprRef;
 
 use super::super::FunctionEvaluator;
 
@@ -17,7 +17,7 @@ impl FunctionEvaluator for HourEvaluator {
         "hour"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => {

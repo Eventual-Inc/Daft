@@ -8,6 +8,7 @@ use crate::{
         MonthsEvaluator, YearsEvaluator,
     },
     Expr,
+    ExprRef
 };
 
 use super::FunctionEvaluator;
@@ -37,42 +38,42 @@ impl PartitioningExpr {
     }
 }
 
-pub fn days(input: Expr) -> Expr {
+pub fn days(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Days),
         inputs: vec![input],
     }
 }
 
-pub fn hours(input: Expr) -> Expr {
+pub fn hours(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Hours),
         inputs: vec![input],
     }
 }
 
-pub fn months(input: Expr) -> Expr {
+pub fn months(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Months),
         inputs: vec![input],
     }
 }
 
-pub fn years(input: Expr) -> Expr {
+pub fn years(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Years),
         inputs: vec![input],
     }
 }
 
-pub fn iceberg_bucket(input: Expr, n: i32) -> Expr {
+pub fn iceberg_bucket(input: ExprRef, n: i32) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
         inputs: vec![input],
     }
 }
 
-pub fn iceberg_truncate(input: Expr, w: i64) -> Expr {
+pub fn iceberg_truncate(input: ExprRef, w: i64) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)),
         inputs: vec![input],

@@ -3,7 +3,7 @@ mod get;
 use get::GetEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -22,9 +22,9 @@ impl StructExpr {
     }
 }
 
-pub fn get(input: &Expr, name: &str) -> Expr {
+pub fn get(input: ExprRef, name: &str) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Struct(StructExpr::Get(name.to_string())),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }

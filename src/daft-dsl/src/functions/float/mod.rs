@@ -3,7 +3,7 @@ mod is_nan;
 use is_nan::IsNanEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -22,9 +22,9 @@ impl FloatExpr {
     }
 }
 
-pub fn is_nan(data: &Expr) -> Expr {
+pub fn is_nan(data: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Float(FloatExpr::IsNan),
-        inputs: vec![data.clone()],
+        inputs: vec![data],
     }
 }

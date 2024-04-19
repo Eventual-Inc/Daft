@@ -11,7 +11,7 @@ use crate::functions::temporal::{
     date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
     month::MonthEvaluator, year::YearEvaluator,
 };
-use crate::Expr;
+use crate::{ExprRef, Expr};
 
 use super::FunctionEvaluator;
 
@@ -40,44 +40,44 @@ impl TemporalExpr {
     }
 }
 
-pub fn date(input: &Expr) -> Expr {
+pub fn date(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Date),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn day(input: &Expr) -> Expr {
+pub fn day(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Day),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn hour(input: &Expr) -> Expr {
+pub fn hour(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Hour),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn month(input: &Expr) -> Expr {
+pub fn month(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Month),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn year(input: &Expr) -> Expr {
+pub fn year(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Year),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn day_of_week(input: &Expr) -> Expr {
+pub fn day_of_week(input: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::DayOfWeek),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }

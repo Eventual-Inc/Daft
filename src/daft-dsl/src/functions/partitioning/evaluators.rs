@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 
-use crate::{functions::partitioning::PartitioningExpr, Expr};
+use crate::{functions::partitioning::PartitioningExpr, ExprRef};
 
 use common_error::{DaftError, DaftResult};
 
@@ -21,7 +21,7 @@ macro_rules! impl_func_evaluator_for_partitioning {
 
             fn to_field(
                 &self,
-                inputs: &[Expr],
+                inputs: &[ExprRef],
                 schema: &Schema,
                 _: &FunctionExpr,
             ) -> DaftResult<Field> {
@@ -72,7 +72,7 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
         "partitioning_iceberg_bucket"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match field.dtype {
@@ -125,7 +125,7 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         "partitioning_iceberg_truncate"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {

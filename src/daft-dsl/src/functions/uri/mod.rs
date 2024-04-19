@@ -5,7 +5,7 @@ use std::sync::Arc;
 use download::DownloadEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::Expr;
+use crate::{ExprRef, Expr};
 
 use super::FunctionEvaluator;
 
@@ -32,7 +32,7 @@ impl UriExpr {
 }
 
 pub fn download(
-    input: &Expr,
+    input: ExprRef,
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
@@ -45,6 +45,6 @@ pub fn download(
             multi_thread,
             config: config.unwrap_or_default().into(),
         }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
