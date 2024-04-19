@@ -19,7 +19,16 @@ import logging
 import math
 import pathlib
 from collections import deque
-from typing import TYPE_CHECKING, Generator, Generic, Iterable, Iterator, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Generic,
+    Iterable,
+    Iterator,
+    TypeVar,
+    Union,
+)
 
 from daft.context import get_context
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
@@ -121,6 +130,42 @@ def iceberg_write(
                 iceberg_schema=iceberg_schema,
                 iceberg_properties=iceberg_properties,
                 spec_id=spec_id,
+                io_config=io_config,
+            ),
+        )
+        if isinstance(step, PartitionTaskBuilder)
+        else step
+        for step in child_plan
+    )
+
+
+def deltalake_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    base_path: str,
+    large_dtypes: bool,
+    current_version: int,
+    mode: str,
+    invariants: list[tuple[str, str]] | None,
+    file_writer_spec: list[tuple[str, int | None]],
+    delta_table_info: dict[str, Any],
+    partition_filters: list[tuple[str, str, Any]] | None,
+    partition_by: list[str] | None,
+    io_config: IOConfig | None,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
+
+    yield from (
+        step.add_instruction(
+            execution_step.WriteDeltaLake(
+                base_path=base_path,
+                large_dtypes=large_dtypes,
+                current_version=current_version,
+                mode=mode,
+                invariants=invariants,
+                file_writer_spec=file_writer_spec,
+                partition_filters=partition_filters,
+                delta_table_info=delta_table_info,
+                partition_by=partition_by,
                 io_config=io_config,
             ),
         )

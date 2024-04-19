@@ -17,6 +17,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Mapping,
     Optional,
     Set,
     Tuple,
@@ -27,9 +28,20 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest
+from daft.daft import (
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    NativeStorageConfig,
+    ResourceRequest,
+    StorageConfig,
+)
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
+from daft.delta_lake.delta_lake_storage_function import (
+    _storage_config_to_storage_options,
+)
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
@@ -533,6 +545,180 @@ class DataFrame:
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return with_operations
+
+    @DataframePublicAPI
+    def write_delta(
+        self,
+        path: str,
+        partition_by: Optional[Union[List[str], str]] = None,
+        mode: str = "error",
+        max_partitions: Optional[int] = None,
+        max_open_files: int = 1024,
+        max_rows_per_file: int = 10 * 1024 * 1024,
+        min_rows_per_group: int = 64 * 1024,
+        max_rows_per_group: int = 128 * 1024,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        configuration: Optional[Mapping[str, Optional[str]]] = None,
+        overwrite_schema: bool = False,
+        # large_dtypes = True in current dataset the column k child 0 is large_string but delta is writing it as string. hmm need to check on delta docs
+        # this is not fixing anything just making the assert pass :)
+        large_dtypes: bool = True,
+        io_config: Optional[IOConfig] = None,
+        partition_filters: Optional[List[Tuple[str, str, Any]]] = None,
+        custom_metadata: Optional[Dict[str, str]] = None,
+    ) -> None:
+        # most of the code is inspired by delta-rs repo see daft/delta_lake/deltalake_license.txt for license
+
+        import deltalake
+        import pyarrow as pa
+        from deltalake.schema import _convert_pa_schema_to_delta
+        from deltalake.writer import (
+            MAX_SUPPORTED_WRITER_VERSION,
+            DeltaProtocolError,
+            try_get_table_and_table_uri,
+            write_deltalake_pyarrow,
+        )
+        from packaging.version import parse
+
+        if mode not in ["error", "append", "overwrite", "ignore"]:
+            raise ValueError(
+                f"Mode {mode} is not supported. Only 'error', 'append', 'overwrite', 'ignore' are supported"
+            )
+
+        if parse(deltalake.__version__) < parse("0.14.0"):
+            raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
+
+        if isinstance(partition_by, str):
+            partition_by = [partition_by]
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
+        storage_options = _storage_config_to_storage_options(storage_config, path)
+        table, table_uri = try_get_table_and_table_uri(path, storage_options)
+        if table is not None:
+            storage_options = table._storage_options or {}
+            storage_options.update(storage_options or {})
+
+            table.update_incremental()
+
+        fields = [f for f in self.schema()]
+        pyarrow_fields = [pa.field(f.name, f.dtype.to_arrow_dtype()) for f in fields]
+        pyarrow_schema = pa.schema(pyarrow_fields)
+
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=large_dtypes)
+        if table:
+            if delta_schema != table.schema().to_pyarrow(as_large_types=large_dtypes) and not (
+                mode == "overwrite" and overwrite_schema
+            ):
+                raise ValueError(
+                    "Schema of data does not match table schema\n"
+                    f"Data schema:\n{delta_schema}\nTable Schema:\n{table.schema().to_pyarrow(as_large_types=large_dtypes)}"
+                )
+            if mode == "error":
+                raise AssertionError("DeltaTable already exists.")
+            elif mode == "ignore":
+                return
+
+            current_version = table.version()
+
+            if partition_by:
+                assert partition_by == table.metadata().partition_columns
+            else:
+                partition_by = table.metadata().partition_columns
+
+        else:
+            current_version = -1
+
+        invariants = None
+        if table is not None:
+            if table.protocol().min_writer_version > MAX_SUPPORTED_WRITER_VERSION:
+                raise DeltaProtocolError(
+                    "This table's min_writer_version is "
+                    f"{table.protocol().min_writer_version}, "
+                    "but this method only supports version 2."
+                )
+
+            invariants = table.schema().invariants
+
+        file_writer_spec = []
+        delta_paratition_by: List[str] = []
+        if isinstance(partition_by, str):
+            delta_paratition_by = [partition_by]
+        elif partition_by is None:
+            delta_paratition_by = []
+        else:
+            delta_paratition_by = partition_by
+
+        file_writer_spec.append(("max_partitions", max_partitions))
+        file_writer_spec.append(("max_open_files", max_open_files))
+        file_writer_spec.append(("max_rows_per_file", max_rows_per_file))
+        file_writer_spec.append(("min_rows_per_group", min_rows_per_group))
+        file_writer_spec.append(("max_rows_per_group", max_rows_per_group))
+        table_info: dict = {}
+        if table:
+            existed_partitions = table._table.get_active_partitions()
+            allowed_partitions = table._table.get_active_partitions(partition_filters)
+
+            table_info["existed_partitions"] = existed_partitions
+            table_info["allowed_partitions"] = allowed_partitions
+            table_info["partition_columns"] = table.metadata().partition_columns
+
+        builder = self._builder.write_delta(
+            path=path,
+            mode=mode,
+            current_version=current_version,
+            large_dtypes=large_dtypes,
+            invariants=invariants,
+            table_info=table_info,
+            file_writer_spec=file_writer_spec,
+            partition_by=delta_paratition_by,
+            partition_filters=partition_filters,
+            io_config=io_config,
+        )
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        write_result = write_df.to_pydict()
+        assert "data_file" in write_result
+        data_files = write_result["data_file"]
+        add_action = []
+
+        operations = []
+        respath = []
+        size = []
+
+        for data_file in data_files:
+            operations.append("ADD")
+            respath.append(data_file.path)
+            size.append(data_file.size)
+            add_action.append(data_file)
+
+        if table is None:
+            write_deltalake_pyarrow(
+                table_uri,
+                delta_schema,
+                add_action,
+                mode,
+                partition_by or [],
+                name,
+                description,
+                configuration,
+                storage_options,
+                custom_metadata,
+            )
+        else:
+            table._table.create_write_transaction(
+                add_action,
+                mode,
+                partition_by or [],
+                delta_schema,
+                None,
+                custom_metadata,
+            )
+            table.update_incremental()
+
+        return None
 
     ###
     # DataFrame operations

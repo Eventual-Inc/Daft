@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
     CountMode,
@@ -243,4 +243,33 @@ class LogicalPlanBuilder:
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
         builder = self._builder.iceberg_write(name, location, spec_id, schema, props, columns, io_config)
+        return LogicalPlanBuilder(builder)
+
+    def write_delta(
+        self,
+        path: str | pathlib.Path,
+        mode: str,
+        current_version: int,
+        large_dtypes: bool,
+        invariants: list[tuple[str, str]] | None,
+        table_info: dict[str, Any],
+        file_writer_spec: list[tuple[str, int | None]],
+        partition_filters: list[tuple[str, str, Any]] | None,
+        partition_by: list[str] | None,
+        io_config: IOConfig,
+    ) -> LogicalPlanBuilder:
+        columns_name = self.schema().column_names()
+        builder = self._builder.delta_write(
+            str(path),
+            columns_name,
+            mode,
+            current_version,
+            large_dtypes,
+            table_info,
+            partition_filters,
+            file_writer_spec,
+            invariants,
+            partition_by,
+            io_config,
+        )
         return LogicalPlanBuilder(builder)

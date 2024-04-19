@@ -1406,6 +1406,20 @@ class LogicalPlanBuilder:
         catalog_columns: list[str],
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
+    def delta_write(
+        self,
+        path: str,
+        columns_name: list[str],
+        mode: str,
+        current_version: int,
+        large_dtypes: bool,
+        table_info: dict[str, Any],
+        partition_filters: list[tuple[str, str, Any]] | None,
+        file_writer_spec: list[tuple[str, int | None]],
+        invariants: list[tuple[str, str]] | None,
+        partition_by: list[str] | None,
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def optimize(self) -> LogicalPlanBuilder: ...
     def to_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> PhysicalPlanScheduler: ...

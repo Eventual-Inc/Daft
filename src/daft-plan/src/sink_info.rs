@@ -41,6 +41,7 @@ pub struct CatalogInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CatalogType {
     Iceberg(IcebergCatalogInfo),
+    DeltaLake(DeltaLakeCatalogInfo),
 }
 
 #[cfg(feature = "python")]
@@ -92,6 +93,70 @@ impl IcebergCatalogInfo {
         res.push(format!("Table Name = {}", self.table_name));
         res.push(format!("Table Location = {}", self.table_location));
         res.push(format!("Spec ID = {}", self.spec_id));
+        match &self.io_config {
+            None => res.push("IOConfig = None".to_string()),
+            Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+        };
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeltaLakeCatalogInfo {
+    pub path: String,
+    pub mode: String,
+    pub current_version: i32,
+    pub large_dtypes: bool,
+    pub file_writer_spec: Option<Vec<(String, Option<i32>)>>,
+    pub invariants: Option<Vec<(String, String)>>,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub table_info: PyObject,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub partition_filters: PyObject,
+    pub partition_by: Option<Vec<String>>,
+    pub io_config: Option<IOConfig>,
+}
+
+#[cfg(feature = "python")]
+impl PartialEq for DeltaLakeCatalogInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.mode == other.mode
+            && self.current_version == other.current_version
+            && self.large_dtypes == other.large_dtypes
+            && self.io_config == other.io_config
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for DeltaLakeCatalogInfo {}
+
+#[cfg(feature = "python")]
+impl Hash for DeltaLakeCatalogInfo {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.mode.hash(state);
+        self.current_version.hash(state);
+        self.large_dtypes.hash(state);
+        self.io_config.hash(state);
+    }
+}
+
+#[cfg(feature = "python")]
+impl DeltaLakeCatalogInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Table Name = {}", self.path));
+        res.push(format!("Mode = {}", self.mode));
+        res.push(format!("Current Version = {}", self.current_version));
+        res.push(format!("Large Dtypes = {}", self.large_dtypes));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),

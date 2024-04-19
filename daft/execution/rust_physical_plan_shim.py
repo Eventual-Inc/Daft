@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
     FileFormat,
@@ -327,4 +327,32 @@ def write_iceberg(
         iceberg_properties=iceberg_properties,
         spec_id=spec_id,
         io_config=io_config,
+    )
+
+
+def write_deltalake(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    path: str,
+    large_dtypes: bool,
+    current_version: int,
+    mode: str,
+    invariants: list[tuple[str, str]] | None,
+    file_writer_spec: list[tuple[str, int | None]],
+    delta_table_info: dict[str, Any],
+    partition_filters: list[tuple[str, str, Any]] | None,
+    partition_by: list[str] | None,
+    io_config: IOConfig | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.deltalake_write(
+        input,
+        path,
+        large_dtypes,
+        current_version,
+        mode,
+        invariants,
+        file_writer_spec,
+        delta_table_info,
+        partition_filters,
+        partition_by,
+        io_config,
     )

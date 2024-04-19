@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import itertools
 import pathlib
+import sys
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Generic
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Protocol
+else:
+    from typing import Protocol
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
@@ -404,6 +411,54 @@ class WriteIceberg(SingleOutputInstruction):
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
             spec_id=self.spec_id,
+            io_config=self.io_config,
+        )
+
+
+@dataclass(frozen=True)
+class WriteDeltaLake(SingleOutputInstruction):
+    base_path: str
+    large_dtypes: bool
+    current_version: int
+    mode: str
+    invariants: list[tuple[str, str]] | None
+    file_writer_spec: list[tuple[str, int | None]]
+    delta_table_info: dict[str, Any]
+    partition_filters: list[tuple[str, str, Any]] | None
+    partition_by: list[str] | None
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._write_deltalake(inputs)
+
+    def _write_deltalake(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        partition = self._handle_file_write(
+            input=input,
+        )
+        return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
+
+    def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
+        return table_io.write_deltalake(
+            input,
+            large_dtypes=self.large_dtypes,
+            base_path=self.base_path,
+            current_version=self.current_version,
+            mode=self.mode,
+            invariants=self.invariants,
+            file_writer_spec=self.file_writer_spec,
+            delta_table_info=self.delta_table_info,
+            partition_filters=self.partition_filters,
+            partition_by=self.partition_by,
             io_config=self.io_config,
         )
 

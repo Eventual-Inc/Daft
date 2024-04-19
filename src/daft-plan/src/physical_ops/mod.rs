@@ -3,6 +3,8 @@ mod broadcast_join;
 mod coalesce;
 mod concat;
 mod csv;
+#[cfg(feature = "python")]
+mod deltalake_write;
 mod empty_scan;
 mod explode;
 mod fanout;
@@ -31,6 +33,8 @@ pub use broadcast_join::BroadcastJoin;
 pub use coalesce::Coalesce;
 pub use concat::Concat;
 pub use csv::TabularWriteCsv;
+#[cfg(feature = "python")]
+pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;
 pub use explode::Explode;
 pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
