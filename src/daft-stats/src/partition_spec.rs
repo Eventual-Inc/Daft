@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use daft_core::array::ops::DaftCompare;
-use daft_dsl::{Expr, ExprRef, Literal};
+use daft_dsl::{ExprRef, Literal};
 use daft_table::Table;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

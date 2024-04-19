@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ExprRef};
 use daft_io::IOStatsContext;
 use snafu::ResultExt;
 
@@ -15,8 +15,7 @@ impl MicroPartition {
         }
         if let Some(statistics) = &self.statistics {
             let folded_expr = predicate
-                .iter()
-                .map(|e| e.clone())
+                .iter().cloned()
                 .reduce(|a, b| a.and(b))
                 .expect("should have at least 1 expr");
             let eval_result = statistics.eval_expression(&folded_expr)?;

@@ -768,8 +768,8 @@ mod tests {
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Lt,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Boolean);
@@ -795,8 +795,8 @@ mod tests {
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -805,8 +805,8 @@ mod tests {
         let y = lit(12);
 
         let z = Expr::BinaryOp {
-            left: y.into(),
-            right: x.into(),
+            left: y,
+            right: x,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -824,8 +824,8 @@ mod tests {
         ])?;
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -834,8 +834,8 @@ mod tests {
         let y = col("y");
 
         let z = Expr::BinaryOp {
-            left: y.into(),
-            right: x.into(),
+            left: y,
+            right: x,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);

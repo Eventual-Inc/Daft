@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 

@@ -4,7 +4,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, ExprRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;

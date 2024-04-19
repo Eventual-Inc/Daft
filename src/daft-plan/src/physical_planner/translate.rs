@@ -11,7 +11,7 @@ use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::col;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ExprRef};
 
 use daft_scan::ScanExternalInfo;
 
@@ -262,7 +262,7 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
-            use daft_dsl::Expr::Column;
+            
             let input_physical = physical_children.pop().expect("requires 1 input");
 
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
@@ -289,30 +289,28 @@ pub(super) fn translate_single_logical_node(
                             Count(e, mode) => {
                                 let count_id = agg_expr.semantic_id(&schema).id;
                                 let sum_of_count_id =
-                                    Sum(col(count_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs.entry(count_id.clone()).or_insert(Count(
-                                    e.alias(count_id.clone()).clone().into(),
+                                    e.alias(count_id.clone()).clone(),
                                     *mode,
                                 ));
                                 second_stage_aggs
                                     .entry(sum_of_count_id.clone())
                                     .or_insert(Sum(col(count_id.clone())
-                                        .alias(sum_of_count_id.clone())
-                                        .into()));
+                                        .alias(sum_of_count_id.clone())));
                                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
                             }
                             Sum(e) => {
                                 let sum_id = agg_expr.semantic_id(&schema).id;
                                 let sum_of_sum_id =
-                                    Sum(col(sum_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone().into()));
+                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(sum_of_sum_id.clone())
                                     .or_insert(Sum(col(sum_id.clone())
-                                        .alias(sum_of_sum_id.clone())
-                                        .into()));
+                                        .alias(sum_of_sum_id.clone())));
                                 final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
                             }
                             Mean(e) => {
@@ -320,26 +318,24 @@ pub(super) fn translate_single_logical_node(
                                 let count_id =
                                     Count(e.clone(), CountMode::Valid).semantic_id(&schema).id;
                                 let sum_of_sum_id =
-                                    Sum(col(sum_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
                                 let sum_of_count_id =
-                                    Sum(col(count_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone().into()));
+                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
                                 first_stage_aggs.entry(count_id.clone()).or_insert(Count(
-                                    e.alias(count_id.clone()).clone().into(),
+                                    e.alias(count_id.clone()).clone(),
                                     CountMode::Valid,
                                 ));
                                 second_stage_aggs
                                     .entry(sum_of_sum_id.clone())
                                     .or_insert(Sum(col(sum_id.clone())
-                                        .alias(sum_of_sum_id.clone())
-                                        .into()));
+                                        .alias(sum_of_sum_id.clone())));
                                 second_stage_aggs
                                     .entry(sum_of_count_id.clone())
                                     .or_insert(Sum(col(count_id.clone())
-                                        .alias(sum_of_count_id.clone())
-                                        .into()));
+                                        .alias(sum_of_count_id.clone())));
                                 final_exprs.push(
                                     (col(sum_of_sum_id.clone()).div(col(sum_of_count_id.clone())))
                                         .alias(output_name),
@@ -348,78 +344,74 @@ pub(super) fn translate_single_logical_node(
                             Min(e) => {
                                 let min_id = agg_expr.semantic_id(&schema).id;
                                 let min_of_min_id =
-                                    Min(col(min_id.clone()).into()).semantic_id(&schema).id;
+                                    Min(col(min_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(min_id.clone())
-                                    .or_insert(Min(e.alias(min_id.clone()).clone().into()));
+                                    .or_insert(Min(e.alias(min_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(min_of_min_id.clone())
                                     .or_insert(Min(col(min_id.clone())
-                                        .alias(min_of_min_id.clone())
-                                        .into()));
+                                        .alias(min_of_min_id.clone())));
                                 final_exprs.push(col(min_of_min_id.clone()).alias(output_name));
                             }
                             Max(e) => {
                                 let max_id = agg_expr.semantic_id(&schema).id;
                                 let max_of_max_id =
-                                    Max(col(max_id.clone()).into()).semantic_id(&schema).id;
+                                    Max(col(max_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(max_id.clone())
-                                    .or_insert(Max(e.alias(max_id.clone()).clone().into()));
+                                    .or_insert(Max(e.alias(max_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(max_of_max_id.clone())
                                     .or_insert(Max(col(max_id.clone())
-                                        .alias(max_of_max_id.clone())
-                                        .into()));
+                                        .alias(max_of_max_id.clone())));
                                 final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
                             }
                             AnyValue(e, ignore_nulls) => {
                                 let any_id = agg_expr.semantic_id(&schema).id;
                                 let any_of_any_id =
-                                    AnyValue(col(any_id.clone()).into(), *ignore_nulls)
+                                    AnyValue(col(any_id.clone()), *ignore_nulls)
                                         .semantic_id(&schema)
                                         .id;
                                 first_stage_aggs.entry(any_id.clone()).or_insert(AnyValue(
-                                    e.alias(any_id.clone()).clone().into(),
+                                    e.alias(any_id.clone()).clone(),
                                     *ignore_nulls,
                                 ));
                                 second_stage_aggs
                                     .entry(any_of_any_id.clone())
                                     .or_insert(AnyValue(
-                                        col(any_id.clone()).alias(any_of_any_id.clone()).into(),
+                                        col(any_id.clone()).alias(any_of_any_id.clone()),
                                         *ignore_nulls,
                                     ));
                             }
                             List(e) => {
                                 let list_id = agg_expr.semantic_id(&schema).id;
                                 let concat_of_list_id =
-                                    Concat(col(list_id.clone()).into()).semantic_id(&schema).id;
+                                    Concat(col(list_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(list_id.clone())
-                                    .or_insert(List(e.alias(list_id.clone()).clone().into()));
+                                    .or_insert(List(e.alias(list_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(concat_of_list_id.clone())
                                     .or_insert(Concat(
                                         col(list_id.clone())
-                                            .alias(concat_of_list_id.clone())
-                                            .into(),
+                                            .alias(concat_of_list_id.clone()),
                                     ));
                                 final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
                             }
                             Concat(e) => {
                                 let concat_id = agg_expr.semantic_id(&schema).id;
-                                let concat_of_concat_id = Concat(col(concat_id.clone()).into())
+                                let concat_of_concat_id = Concat(col(concat_id.clone()))
                                     .semantic_id(&schema)
                                     .id;
                                 first_stage_aggs
                                     .entry(concat_id.clone())
-                                    .or_insert(Concat(e.alias(concat_id.clone()).clone().into()));
+                                    .or_insert(Concat(e.alias(concat_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(concat_of_concat_id.clone())
                                     .or_insert(Concat(
                                         col(concat_id.clone())
-                                            .alias(concat_of_concat_id.clone())
-                                            .into(),
+                                            .alias(concat_of_concat_id.clone()),
                                     ));
                                 final_exprs
                                     .push(col(concat_of_concat_id.clone()).alias(output_name));
@@ -738,7 +730,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit, AggExpr, Expr};
+    use daft_dsl::{col, lit};
     use std::assert_matches::assert_matches;
     use std::sync::Arc;
 

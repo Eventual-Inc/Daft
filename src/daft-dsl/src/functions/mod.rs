@@ -32,7 +32,7 @@ pub mod python;
 #[cfg(feature = "python")]
 use python::PythonUDF;
 
-use super::Expr;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {

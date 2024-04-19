@@ -215,7 +215,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit, Expr, ExprRef};
+    use daft_dsl::{col, lit, ExprRef};
     use rstest::rstest;
 
     use crate::{

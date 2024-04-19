@@ -1,5 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
 
-use crate::{functions, optimization, Expr, ExprRef, LiteralValue};
+use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
     datatypes::ImageFormat,

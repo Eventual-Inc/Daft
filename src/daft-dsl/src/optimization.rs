@@ -61,7 +61,7 @@ pub fn split_conjuction(expr: &Expr) -> Vec<&Expr> {
 }
 
 fn _split_conjuction<'a>(expr: &'a Expr, out_exprs: &mut Vec<&'a Expr>) {
-    match expr.as_ref() {
+    match expr {
         Expr::BinaryOp {
             op: Operator::And,
             left,
@@ -78,5 +78,5 @@ fn _split_conjuction<'a>(expr: &'a Expr, out_exprs: &mut Vec<&'a Expr>) {
 }
 
 pub fn conjuct<T: IntoIterator<Item = ExprRef>>(exprs: T) -> Option<ExprRef> {
-    exprs.into_iter().reduce(|acc, expr| acc.and(expr).into())
+    exprs.into_iter().reduce(|acc, expr| acc.and(expr))
 }

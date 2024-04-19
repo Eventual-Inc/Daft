@@ -1,4 +1,4 @@
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ExprRef};
 use itertools::Itertools;
 
 use crate::{physical_plan::PhysicalPlanRef, JoinType};

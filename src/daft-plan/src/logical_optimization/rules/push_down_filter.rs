@@ -342,7 +342,7 @@ mod tests {
             // Merged filter should be pushed into scan.
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(merged_filter.into())),
+                Pushdowns::default().with_filters(Some(merged_filter)),
             )
             .build()
         } else {
@@ -390,7 +390,7 @@ mod tests {
         let expected_scan_filter = if push_into_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             scan_plan.filter(pred)?
@@ -424,7 +424,7 @@ mod tests {
         let expected_scan_filter = if push_into_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             scan_plan.filter(pred)?
@@ -478,7 +478,7 @@ mod tests {
         let expected_filter_scan = if push_into_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             scan_plan.filter(pred)?
@@ -511,7 +511,7 @@ mod tests {
         let expected_filter_scan = if push_into_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             scan_plan.filter(pred)?
@@ -544,7 +544,7 @@ mod tests {
         let expected_filter_scan = if push_into_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             scan_plan.filter(pred)?
@@ -582,7 +582,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -590,7 +590,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             right_scan_plan.filter(pred)?
@@ -635,7 +635,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -643,7 +643,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             right_scan_plan.filter(pred)?
@@ -694,7 +694,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -745,7 +745,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             right_scan_plan.filter(pred.clone())?
@@ -801,7 +801,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -809,7 +809,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             right_scan_plan.filter(pred)?

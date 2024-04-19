@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use daft_dsl::{optimization::get_required_columns, Expr, ExprRef};
+use daft_dsl::{optimization::get_required_columns, ExprRef};
 use itertools::Itertools;
 
 use crate::{
@@ -77,7 +77,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, Expr};
+    use daft_dsl::{col};
 
     use crate::{
         partitioning::{HashClusteringConfig, UnknownClusteringConfig},

@@ -74,8 +74,7 @@ impl PushDownProjection {
             // For each of them, make sure they are used only once in this downstream projection.
             let mut exprs_to_walk: Vec<Arc<Expr>> = projection
                 .projection
-                .iter()
-                .map(|e| e.clone().into())
+                .iter().cloned()
                 .collect();
 
             let mut upstream_computations_used = IndexSet::new();
@@ -267,7 +266,7 @@ impl PushDownProjection {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = combined_dependencies
                         .into_iter()
-                        .map(|s| col(s))
+                        .map(col)
                         .collect::<Vec<_>>();
 
                     Project::try_new(
@@ -305,7 +304,7 @@ impl PushDownProjection {
 
                 let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
                     .into_iter()
-                    .map(|s| col(s))
+                    .map(col)
                     .collect::<Vec<_>>();
                 let new_left_subprojection: LogicalPlan = {
                     Project::try_new(
@@ -387,7 +386,7 @@ impl PushDownProjection {
                     if left_combined_dependencies.len() < left_upstream_names.len() {
                         let pushdown_column_exprs: Vec<ExprRef> = left_combined_dependencies
                             .into_iter()
-                            .map(|s| col(s))
+                            .map(col)
                             .collect::<Vec<_>>();
                         let new_project: LogicalPlan = Project::try_new(
                             join.left.clone(),
@@ -405,7 +404,7 @@ impl PushDownProjection {
                     if right_combined_dependencies.len() < right_upstream_names.len() {
                         let pushdown_column_exprs: Vec<ExprRef> = right_combined_dependencies
                             .into_iter()
-                            .map(|s| col(s))
+                            .map(col)
                             .collect::<Vec<_>>();
                         let new_project: LogicalPlan = Project::try_new(
                             join.right.clone(),

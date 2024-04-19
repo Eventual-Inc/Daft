@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
-use std::sync::Arc;
+
 
 use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;
@@ -583,7 +583,7 @@ impl AsRef<Table> for Table {
 #[cfg(test)]
 mod test {
 
-    use std::sync::Arc;
+    
 
     use crate::Table;
     use common_error::DaftResult;
@@ -605,7 +605,7 @@ mod test {
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
-        let e2 = (col("a").add(col("b")).cast(&DataType::Int64));
+        let e2 = col("a").add(col("b")).cast(&DataType::Int64);
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);

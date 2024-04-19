@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use daft_core::{schema::Schema, utils::supertype::try_get_supertype, Series};
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ExprRef};
 
 use crate::Table;
 
