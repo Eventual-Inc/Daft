@@ -23,11 +23,12 @@ readme = "README.rst"
 requires-python = ">=3.7"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql]"]
+all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, hudi, iceberg, deltalake, sql]"]
 aws = ["boto3"]
 azure = []
 deltalake = ["deltalake"]
 gcp = []
+hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 numpy = ["numpy"]
 pandas = ["pandas"]
