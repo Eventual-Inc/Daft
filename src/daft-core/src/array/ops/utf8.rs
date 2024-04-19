@@ -740,6 +740,8 @@ impl Utf8Array {
             )));
         }
 
+        let expected_size = *lengths.iter().max().unwrap();
+
         // check if any array has all nulls
         if self.null_count() == self.len()
             || length.null_count() == length.len()
@@ -748,11 +750,10 @@ impl Utf8Array {
             return Ok(Utf8Array::full_null(
                 self.name(),
                 &DataType::Utf8,
-                self.len(),
+                expected_size,
             ));
         }
 
-        let expected_size = *lengths.iter().max().unwrap();
         if expected_size == 0 {
             return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
         }

@@ -807,3 +807,73 @@ def test_series_utf8_replace_bad_regex_pattern() -> None:
     replacement = Series.from_arrow(pa.array([" "]))
     with pytest.raises(ValueError):
         s.str.replace(pattern, replacement, regex=True)
+
+
+@pytest.mark.parametrize(
+    ["data", "length", "pad", "expected"],
+    [
+        # No Broadcast
+        (["foo", "barbaz", "quux"], [5, 6, 7], [" ", ".", "-"], ["foo  ", "barbaz", "quux---"]),
+        (["foo", "barbaz", "quux"], [5, 6, 7], ["-", ".", " "], ["foo--", "barbaz", "quux   "]),
+        # Broadcast length
+        (["foo", "barbaz", "quux"], [5], ["-", ".", " "], ["foo--", "barba", "quux "]),
+        # Broadcast data
+        (["foo"], [5, 6, 7], ["-", ".", " "], ["foo--", "foo...", "foo    "]),
+        # Broadcast pad
+        (["foo", "barbaz", "quux"], [5, 6, 7], ["-"], ["foo--", "barbaz", "quux---"]),
+        # Broadcast null data
+        ([None], [5, 6, 7], ["-", ".", "-"], [None, None, None]),
+        # Broadcast null length
+        (["foo", "barbaz", "quux"], [None], ["-", ".", " "], [None, None, None]),
+        # Broadcast null pad
+        (["foo", "barbaz", "quux"], [5, 6, 7], [None], [None, None, None]),
+        # All Empty
+        ([[], [], [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], [5, 6, 7, 8], ["-", ".", " ", None], ["foo--", None, "barbaz ", None]),
+        # All null data.
+        ([None] * 4, [5] * 4, ["-", ".", " ", "_"], [None] * 4),
+        # All null length
+        (["foo"] * 4, [None] * 4, ["-", ".", " ", "_"], [None] * 4),
+        # All null pad
+        (["foo"] * 4, [5] * 4, [None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_rpad(data, length, pad, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    lengths = Series.from_arrow(pa.array(length, type=pa.uint32()))
+    pads = Series.from_arrow(pa.array(pad, type=pa.string()))
+    result = s.str.rpad(lengths, pads)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_rpad_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    lengths = Series.from_arrow(pa.array([5, 6], type=pa.uint32()))
+    pads = Series.from_arrow(pa.array(["-", "."], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
+
+
+def test_series_utf8_rpad_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    lengths = Series.from_arrow(pa.array([5, 6, 7], type=pa.uint32()))
+    pads = Series.from_arrow(pa.array(["-", ".", " "], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
+
+
+def test_series_utf8_rpad_bad_lengths_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    lengths = Series.from_arrow(pa.array(["5", "6", "7"]))
+    pads = Series.from_arrow(pa.array(["-", ".", " "], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
+
+
+def test_series_utf8_rpad_bad_pads_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    lengths = Series.from_arrow(pa.array([5, 6, 7], type=pa.uint32()))
+    pads = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
