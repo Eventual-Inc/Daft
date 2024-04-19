@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::DataType;
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use snafu::ResultExt;
 
 use crate::logical_plan::{CreationSnafu, Result};

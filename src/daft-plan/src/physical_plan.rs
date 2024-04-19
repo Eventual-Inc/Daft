@@ -514,8 +514,6 @@ fn tabular_write(
     partition_cols: &Option<Vec<ExprRef>>,
     io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
-    
-
     let part_cols = partition_cols.as_ref().map(|cols| {
         cols.iter()
             .map(|e| e.clone().into())

@@ -77,7 +77,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col};
+    use daft_dsl::col;
 
     use crate::{
         partitioning::{HashClusteringConfig, UnknownClusteringConfig},

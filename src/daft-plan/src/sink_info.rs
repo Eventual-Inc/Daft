@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use common_io_config::IOConfig;
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 #[cfg(feature = "python")]

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_table::Table;
 

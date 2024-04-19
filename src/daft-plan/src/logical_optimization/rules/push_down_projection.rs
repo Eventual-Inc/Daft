@@ -72,10 +72,7 @@ impl PushDownProjection {
                 .collect::<IndexSet<_>>();
 
             // For each of them, make sure they are used only once in this downstream projection.
-            let mut exprs_to_walk: Vec<Arc<Expr>> = projection
-                .projection
-                .iter().cloned()
-                .collect();
+            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.to_vec();
 
             let mut upstream_computations_used = IndexSet::new();
             let mut okay_to_merge = true;

@@ -2,7 +2,7 @@ use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
 use daft_core::array::ops::IntoGroups;
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use rand::SeedableRng;
 
 use common_error::{DaftError, DaftResult};

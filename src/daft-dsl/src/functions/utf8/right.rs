@@ -1,4 +1,4 @@
-use crate::{ExprRef};
+use crate::ExprRef;
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,

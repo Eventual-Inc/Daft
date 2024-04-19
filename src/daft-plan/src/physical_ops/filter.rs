@@ -1,4 +1,4 @@
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 
 use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};

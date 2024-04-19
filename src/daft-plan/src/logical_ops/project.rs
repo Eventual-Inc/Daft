@@ -111,7 +111,7 @@ impl Project {
         // all existing names must also be converted to semantic IDs.
         let mut column_name_substitutions = IndexMap::new();
 
-        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.iter().cloned().collect();
+        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.to_vec();
         while !exprs_to_walk.is_empty() {
             exprs_to_walk = exprs_to_walk
                 .iter()
@@ -322,11 +322,7 @@ fn replace_column_with_semantic_id(
                 let transforms = inputs
                     .iter()
                     .map(|e| {
-                        replace_column_with_semantic_id(
-                            e.clone(),
-                            subexprs_to_replace,
-                            schema,
-                        )
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
                     })
                     .collect::<Vec<_>>();
                 if transforms.iter().all(|e| e.is_no()) {
@@ -395,9 +391,7 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::MapGroups { func, inputs } => {
             let transforms = inputs
                 .iter()
-                .map(|e| {
-                    replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
-                })
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
                 .collect::<Vec<_>>();
             if transforms.iter().all(|e| e.is_no()) {
                 Transformed::No(AggExpr::MapGroups { func, inputs })

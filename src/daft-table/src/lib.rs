@@ -5,7 +5,6 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
 
-
 use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
@@ -582,8 +581,6 @@ impl AsRef<Table> for Table {
 
 #[cfg(test)]
 mod test {
-
-    
 
     use crate::Table;
     use common_error::DaftResult;

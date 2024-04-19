@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_core::schema::Schema;
 use daft_core::DataType;
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 use snafu::ResultExt;
 

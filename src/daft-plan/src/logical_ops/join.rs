@@ -5,7 +5,7 @@ use daft_core::{
     schema::{hash_index_map, Schema, SchemaRef},
     DataType,
 };
-use daft_dsl::{ExprRef};
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 use snafu::ResultExt;
 
