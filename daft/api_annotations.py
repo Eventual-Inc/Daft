@@ -38,6 +38,7 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
 
     @functools.wraps(func)
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+        __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
         timed_func = time_func(func)
         return timed_func(*args, **kwargs)
