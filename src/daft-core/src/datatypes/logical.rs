@@ -58,10 +58,6 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
     pub fn field(&self) -> &Field {
         &self.field
     }
-
-    pub fn data_type(&self) -> &DataType {
-        &self.field.dtype
-    }
 }
 
 macro_rules! impl_logical_type {

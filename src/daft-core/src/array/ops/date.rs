@@ -1,7 +1,7 @@
 use crate::{
     datatypes::{
         logical::{DateArray, TimeArray, TimestampArray},
-        Field, Int32Array, Int64Array, TimeUnit, UInt32Array,
+        DaftArrayType, Field, Int32Array, Int64Array, TimeUnit, UInt32Array,
     },
     DataType,
 };
