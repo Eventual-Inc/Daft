@@ -91,9 +91,9 @@ pub fn day_of_week(input: ExprRef) -> ExprRef {
     .into()
 }
 
-pub fn truncate(input: &Expr, freq: &str, start_time: &Expr) -> Expr {
+pub fn truncate(input: ExprRef, freq: &str, start_time: ExprRef) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Truncate(freq.to_string())),
-        inputs: vec![input.clone(), start_time.clone()],
+        inputs: vec![input, start_time],
     }
 }

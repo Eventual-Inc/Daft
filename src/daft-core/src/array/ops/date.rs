@@ -247,7 +247,6 @@ impl TimestampArray {
         let truncate_ts = |ts: i64| -> DaftResult<i64> {
             let ts = match start_time {
                 Some(st) => {
-                    println!("st: {st}");
                     if *st > ts {
                         return Err(DaftError::ValueError(format!(
                             "Start time is greater than timestamp: {st} > {ts}"

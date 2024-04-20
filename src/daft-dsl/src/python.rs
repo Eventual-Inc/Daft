@@ -446,7 +446,7 @@ impl PyExpr {
 
     pub fn dt_truncate(&self, interval: &str, start_time: &Self) -> PyResult<Self> {
         use functions::temporal::truncate;
-        Ok(truncate(&self.expr, interval, &start_time.expr).into())
+        Ok(truncate(self.into(), interval, start_time.expr.clone()).into())
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
