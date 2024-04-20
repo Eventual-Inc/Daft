@@ -22,7 +22,11 @@ pub struct LogicalArrayImpl<L: DaftLogicalType, PhysicalArray: DaftArrayType> {
     marker_: PhantomData<L>,
 }
 
-impl<L: DaftLogicalType, W: DaftArrayType> DaftArrayType for LogicalArrayImpl<L, W> {}
+impl<L: DaftLogicalType, W: DaftArrayType> DaftArrayType for LogicalArrayImpl<L, W> {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
     pub fn new<F: Into<Arc<Field>>>(field: F, physical: P) -> Self {
@@ -32,14 +36,14 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             "Can only construct Logical Arrays on Logical Types, got {}",
             field.dtype
         );
-        // TODO(FixedSizeList): How to do this assert on the physical datatype?
-        // assert_eq!(
-        //     physical.data_type(),
-        //     &field.dtype.to_physical(),
-        //     "Expected {} for Physical Array, got {}",
-        //     &field.dtype.to_physical(),
-        //     physical.data_type()
-        // );
+        assert_eq!(
+            physical.data_type(),
+            &field.dtype.to_physical(),
+            "Logical field {} expected {} for Physical Array, got {}",
+            &field,
+            &field.dtype.to_physical(),
+            physical.data_type()
+        );
         LogicalArrayImpl {
             physical,
             field,

@@ -15,7 +15,11 @@ pub struct StructArray {
     len: usize,
 }
 
-impl DaftArrayType for StructArray {}
+impl DaftArrayType for StructArray {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl StructArray {
     pub fn new<F: Into<Arc<Field>>>(
