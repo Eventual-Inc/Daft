@@ -64,6 +64,23 @@ def test_udf_kwargs():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
+def test_udf_tuples():
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    def repeat_n(data, tuple_data):
+        n = tuple_data[0]
+        return Series.from_pylist([d.as_py() * n for d in data.to_arrow()])
+
+    expr = repeat_n(col("a"), (2,))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+
 @pytest.mark.parametrize("container", [Series, list, np.ndarray])
 def test_udf_return_containers(container):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})

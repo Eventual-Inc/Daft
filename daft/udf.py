@@ -31,10 +31,13 @@ class PartialUDF:
 
     def expressions(self) -> dict[str, Expression]:
         parsed_expressions = {}
+        signature = self.bound_args.signature
         for key, val in self.bound_args.arguments.items():
             if isinstance(val, Expression):
                 parsed_expressions[key] = val
-            elif isinstance(val, tuple):
+            # If the argument is VAR_POSITIONAL (e.g. `*args`), we parse each
+            # entry in the tuple to find any expressions
+            elif signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
                 for idx, x in enumerate(val):
                     if isinstance(x, Expression):
                         parsed_expressions[f"{key}-{idx}"] = x
@@ -43,10 +46,11 @@ class PartialUDF:
 
     def arg_keys(self) -> list[str]:
         parsed_arg_keys = []
+        signature = self.bound_args.signature
         for key, value in self.bound_args.arguments.items():
             if key in self.bound_args.kwargs:
                 continue
-            if isinstance(value, tuple):
+            elif signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
                 for idx, _ in enumerate(value):
                     parsed_arg_keys.append(f"{key}-{idx}")
             else:
@@ -140,7 +144,7 @@ class UDF:
             return_dtype=self.return_dtype,
         )
 
-    def bind_func(self, *args, **kwargs):
+    def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
         if isinstance(self.func, types.FunctionType):
             sig = inspect.signature(self.func)
             bound_args = sig.bind(*args, **kwargs)
