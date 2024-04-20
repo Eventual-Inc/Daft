@@ -54,7 +54,12 @@ def test_multipartition_count_empty(mp):
         MicroPartition.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
         MicroPartition.concat(
             [
-                MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict(
+                    {
+                        "a": np.array([]).astype(np.int64),
+                        "b": pa.array([], type=pa.string()),
+                    }
+                ),
                 MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
                 MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
             ]
@@ -115,7 +120,9 @@ test_table_minmax_numerics_cases = [
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types)
 @pytest.mark.parametrize(
-    "case", test_table_minmax_numerics_cases, ids=[f"{_}" for _ in test_table_minmax_numerics_cases]
+    "case",
+    test_table_minmax_numerics_cases,
+    ids=[f"{_}" for _ in test_table_minmax_numerics_cases],
 )
 def test_table_minmax_numerics(idx_dtype, case) -> None:
     input, expected = case
@@ -143,7 +150,11 @@ test_table_minmax_string_cases = [
 
 
 @pytest.mark.parametrize("idx_dtype", daft_string_types)
-@pytest.mark.parametrize("case", test_table_minmax_string_cases, ids=[f"{_}" for _ in test_table_minmax_string_cases])
+@pytest.mark.parametrize(
+    "case",
+    test_table_minmax_string_cases,
+    ids=[f"{_}" for _ in test_table_minmax_string_cases],
+)
 def test_table_minmax_string(idx_dtype, case) -> None:
     input, expected = case
     daft_table = MicroPartition.from_pydict({"input": input})
@@ -168,7 +179,11 @@ test_table_minmax_bool_cases = [
 ]
 
 
-@pytest.mark.parametrize("case", test_table_minmax_bool_cases, ids=[f"{_}" for _ in test_table_minmax_bool_cases])
+@pytest.mark.parametrize(
+    "case",
+    test_table_minmax_bool_cases,
+    ids=[f"{_}" for _ in test_table_minmax_bool_cases],
+)
 def test_table_minmax_bool(case) -> None:
     input, expected = case
     daft_table = MicroPartition.from_pydict({"input": input})
@@ -241,7 +256,12 @@ test_micropartition_any_value_cases = [
     (
         MicroPartition.concat(
             [
-                MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict(
+                    {
+                        "a": np.array([]).astype(np.int64),
+                        "b": pa.array([], type=pa.string()),
+                    }
+                ),
                 MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
             ]
         ),  # 2 tables
@@ -251,7 +271,12 @@ test_micropartition_any_value_cases = [
     (
         MicroPartition.concat(
             [
-                MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict(
+                    {
+                        "a": np.array([]).astype(np.int64),
+                        "b": pa.array([], type=pa.string()),
+                    }
+                ),
                 MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
                 MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
             ]
@@ -279,7 +304,11 @@ test_table_any_value_cases = [
     ({"a": [1], "b": ["a"]}, {"a": False}, {"a": False}),
     ({"a": [None], "b": ["a"]}, {"a": True}, {"a": True}),
     ({"a": [None, 1], "b": ["a", "a"]}, {"a": True}, {"a": False}),
-    ({"a": [1, None, 2], "b": ["a", "b", "b"]}, {"a": False, "b": True}, {"a": False, "b": False}),
+    (
+        {"a": [1, None, 2], "b": ["a", "b", "b"]},
+        {"a": False, "b": True},
+        {"a": False, "b": False},
+    ),
 ]
 
 
@@ -301,15 +330,36 @@ def test_table_any_value(case, expected_nulls, expected_no_nulls):
 test_table_agg_global_cases = [
     (
         [],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[]],
+        },
     ),
     (
         [None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None]],
+        },
     ),
     (
         [None, None, None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None, None, None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None, None, None]],
+        },
     ),
     (
         [None, 3, None, None, 1, 2, 0, None],
@@ -325,7 +375,11 @@ test_table_agg_global_cases = [
 ]
 
 
-@pytest.mark.parametrize("case", test_table_agg_global_cases, ids=[f"{_}" for _ in test_table_agg_global_cases])
+@pytest.mark.parametrize(
+    "case",
+    test_table_agg_global_cases,
+    ids=[f"{_}" for _ in test_table_agg_global_cases],
+)
 def test_table_agg_global(case) -> None:
     """Test that global aggregation works at the API layer."""
     input, expected = case
@@ -401,7 +455,9 @@ test_table_agg_groupby_cases = [
 
 
 @pytest.mark.parametrize(
-    "case", test_table_agg_groupby_cases, ids=[f"{case['groups']}" for case in test_table_agg_groupby_cases]
+    "case",
+    test_table_agg_groupby_cases,
+    ids=[f"{case['groups']}" for case in test_table_agg_groupby_cases],
 )
 def test_table_agg_groupby(case) -> None:
     values = [
@@ -581,14 +637,55 @@ def test_groupby_floats_nan(dtype) -> None:
     )
     # have to sort and compare since `utils.pydict_to_rows` doesnt work on NaNs
     for result_col, expected_col in zip(
-        result_table.sort([col("group")]).to_pydict(), expected_table.sort([col("group")]).to_pydict()
+        result_table.sort([col("group")]).to_pydict(),
+        expected_table.sort([col("group")]).to_pydict(),
     ):
         for r, e in zip(result_col, expected_col):
             assert (r == e) or (math.isnan(r) and math.isnan(e))
 
 
+def test_groupby_timestamp() -> None:
+    daft_table = MicroPartition.from_pydict(
+        {
+            "group": Series.from_pylist(
+                [
+                    datetime.datetime(2020, 1, 1, 0, 0, 0),
+                    datetime.datetime(2020, 1, 1, 0, 30, 0),
+                    datetime.datetime(2020, 1, 1, 0, 59, 59),
+                    datetime.datetime(2020, 1, 1, 1, 0, 0),
+                    datetime.datetime(2020, 1, 1, 1, 30, 0),
+                    datetime.datetime(2020, 1, 1, 1, 59, 59),
+                    datetime.datetime(2020, 1, 1, 2, 0, 0),
+                    datetime.datetime(2020, 1, 1, 2, 30, 0),
+                    datetime.datetime(2020, 1, 1, 2, 59, 59),
+                ]
+            ),
+            "value": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+        }
+    )
+    result_table = daft_table.agg([col("value").sum()], group_by=[col("group").dt.truncate("1 hour")])
+    expected_table = MicroPartition.from_pydict(
+        {
+            "group": Series.from_pylist(
+                [
+                    datetime.datetime(2020, 1, 1, 0, 0, 0),
+                    datetime.datetime(2020, 1, 1, 1, 0, 0),
+                    datetime.datetime(2020, 1, 1, 2, 0, 0),
+                ]
+            ),
+            "value": [3, 6, 9],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
+
+
 @pytest.mark.parametrize(
-    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+    "dtype",
+    daft_nonnull_types + daft_null_types,
+    ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types],
 )
 def test_global_list_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4]
@@ -610,7 +707,9 @@ def test_global_pyobj_list_aggs() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+    "dtype",
+    daft_nonnull_types + daft_null_types,
+    ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types],
 )
 def test_grouped_list_aggs(dtype) -> None:
     groups = [None, 1, None, 1, 2, 2]
@@ -654,7 +753,9 @@ def test_list_aggs_empty() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+    "dtype",
+    daft_nonnull_types + daft_null_types,
+    ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types],
 )
 @pytest.mark.parametrize("with_null", [False, True])
 def test_global_concat_aggs(dtype, with_null) -> None:
@@ -695,7 +796,9 @@ def test_global_concat_aggs_pyobj() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+    "dtype",
+    daft_nonnull_types + daft_null_types,
+    ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types],
 )
 def test_grouped_concat_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4]

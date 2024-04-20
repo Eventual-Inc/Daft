@@ -444,6 +444,11 @@ impl PyExpr {
         Ok(day_of_week(self.into()).into())
     }
 
+    pub fn dt_truncate(&self, interval: &str, start_time: &Self) -> PyResult<Self> {
+        use functions::temporal::truncate;
+        Ok(truncate(&self.expr, interval, &start_time.expr).into())
+    }
+
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::endswith;
         Ok(endswith(self.into(), pattern.expr.clone()).into())

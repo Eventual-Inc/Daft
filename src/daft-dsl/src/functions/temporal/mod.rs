@@ -3,13 +3,14 @@ mod day;
 mod day_of_week;
 mod hour;
 mod month;
+mod truncate;
 mod year;
 
 use serde::{Deserialize, Serialize};
 
 use crate::functions::temporal::{
     date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
-    month::MonthEvaluator, year::YearEvaluator,
+    month::MonthEvaluator, truncate::TruncateEvaluator, year::YearEvaluator,
 };
 use crate::{Expr, ExprRef};
 
@@ -23,6 +24,7 @@ pub enum TemporalExpr {
     Year,
     DayOfWeek,
     Date,
+    Truncate(String),
 }
 
 impl TemporalExpr {
@@ -36,6 +38,7 @@ impl TemporalExpr {
             Year => &YearEvaluator {},
             DayOfWeek => &DayOfWeekEvaluator {},
             Date => &DateEvaluator {},
+            Truncate(..) => &TruncateEvaluator {},
         }
     }
 }
@@ -86,4 +89,11 @@ pub fn day_of_week(input: ExprRef) -> ExprRef {
         inputs: vec![input],
     }
     .into()
+}
+
+pub fn truncate(input: &Expr, freq: &str, start_time: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Truncate(freq.to_string())),
+        inputs: vec![input.clone(), start_time.clone()],
+    }
 }

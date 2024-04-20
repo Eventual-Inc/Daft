@@ -163,3 +163,125 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert years.datatype() == DataType.int32()
 
     assert input == years.to_pylist()
+
+
+@pytest.mark.parametrize(
+    ["input", "interval", "expected"],
+    [
+        (
+            (2024, 1, 2, 3, 4, 5, 6),
+            "1 week",
+            (2023, 12, 28, 0, 0, 0, 0),
+            # 2023/12/12 is 2817 weeks from 1970/01/01, which is what the input should truncate to
+        ),
+        # yyyy mm dd hh mi ss us
+        ((2024, 1, 1, 2, 3, 4, 5), "1 day", (2024, 1, 1, 0, 0, 0, 0)),
+        ((2024, 1, 1, 2, 3, 4, 5), "2 day", (2023, 12, 31, 0, 0, 0, 0)),
+        ((2024, 1, 1, 1, 2, 3, 4), "1 hour", (2024, 1, 1, 1, 0, 0, 0)),
+        ((2024, 1, 1, 1, 2, 3, 4), "6 hour", (2024, 1, 1, 0, 0, 0, 0)),
+        ((2024, 1, 1, 1, 1, 2, 3), "1 minute", (2024, 1, 1, 1, 1, 0, 0)),
+        ((2024, 1, 1, 1, 1, 2, 3), "30 minute", (2024, 1, 1, 1, 0, 0, 0)),
+        ((2024, 1, 1, 1, 1, 1, 2), "1 second", (2024, 1, 1, 1, 1, 1, 0)),
+        ((2024, 1, 1, 1, 1, 1, 2), "30 second", (2024, 1, 1, 1, 1, 0, 0)),
+        ((2024, 1, 1, 1, 1, 1, 500), "1 millisecond", (2024, 1, 1, 1, 1, 1, 0)),
+        ((2024, 1, 1, 1, 1, 1, 500), "500 millisecond", (2024, 1, 1, 1, 1, 1, 0)),
+        ((2024, 1, 1, 1, 1, 1, 1), "1 microsecond", (2024, 1, 1, 1, 1, 1, 1)),
+        ((2024, 1, 1, 1, 1, 1, 1), "500 microsecond", (2024, 1, 1, 1, 1, 1, 0)),
+    ],
+)
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00"])
+def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    import pytz
+
+    def ts_maker(y, m, d, h, mi, s, us):
+        if tz is None:
+            return datetime(y, m, d, h, mi, s, us)
+        elif tz.startswith("+"):
+            return datetime(y, m, d, h, mi, s, us, timezone(offset=timedelta(hours=int(tz[1:3]))))
+        else:
+            return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
+
+    input_dt = [ts_maker(*input)]
+    input_series = Series.from_pylist(input_dt)
+
+    expected_dt = [ts_maker(*expected)]
+    expected_series = Series.from_pylist(expected_dt)
+
+    truncated = input_series.dt.truncate(interval).to_pylist()
+    assert expected_series.to_pylist() == truncated
+
+
+@pytest.mark.parametrize("tz", [None])
+@pytest.mark.parametrize(
+    ["input", "interval", "expected", "start_time"],
+    [
+        (
+            (2024, 1, 2, 3, 4, 5, 6),
+            "1 week",
+            (2023, 12, 28, 0, 0, 0, 0),
+            None,
+        ),
+        (
+            (2024, 1, 2, 3, 4, 5, 6),
+            "1 week",
+            (2024, 1, 1, 0, 0, 0, 0),
+            (2024, 1, 1, 0, 0, 0, 0),
+        ),
+        (
+            (2024, 1, 1, 1, 1, 4, 0),
+            "2 second",
+            (2024, 1, 1, 1, 1, 3, 0),
+            (2024, 1, 1, 1, 1, 1, 0),
+        ),
+    ],
+)
+def test_series_timestamp_truncate_operation_with_start_time(tz, input, interval, expected, start_time) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    import pytz
+
+    def ts_maker(y, m, d, h, mi, s, us):
+        if tz is None:
+            return datetime(y, m, d, h, mi, s, us)
+        elif tz.startswith("+"):
+            return datetime(y, m, d, h, mi, s, us, timezone(offset=timedelta(hours=int(tz[1:3]))))
+        else:
+            return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
+
+    input_dt = [ts_maker(*input)]
+    input_series = Series.from_pylist(input_dt)
+
+    expected_dt = [ts_maker(*expected)]
+    expected_series = Series.from_pylist(expected_dt)
+
+    if start_time is not None:
+        start_time = Series.from_pylist([ts_maker(*start_time)])
+    truncated = input_series.dt.truncate(interval, start_time).to_pylist()
+    assert expected_series.to_pylist() == truncated
+
+
+def test_series_timestamp_truncate_operation_invalid_interval() -> None:
+    from datetime import datetime
+
+    input = [datetime(2024, 1, 1, 1, 1, 1, 1)]
+    input_series = Series.from_pylist(input)
+
+    with pytest.raises(ValueError):
+        input_series.dt.truncate("1 year")
+
+
+def test_series_timestamp_truncate_operation_invalid_start_time() -> None:
+    from datetime import datetime
+
+    input = [datetime(2024, 1, 1, 1, 1, 1, 1)]
+    input_series = Series.from_pylist(input)
+
+    with pytest.raises(ValueError):
+        # Start time must be a series of timestamps
+        input_series.dt.truncate("1 second", Series.from_pylist([1]))
+
+    with pytest.raises(ValueError):
+        # Start time must be less than the input series
+        input_series.dt.truncate("1 second", Series.from_pylist([datetime(2024, 1, 2)]))

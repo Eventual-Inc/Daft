@@ -74,7 +74,8 @@ class Series:
                 storage_series = Series.from_arrow(array.storage, name=name)
                 series = storage_series.cast(
                     DataType.fixed_size_list(
-                        DataType.from_arrow_type(array.type.scalar_type), int(np.prod(array.type.shape))
+                        DataType.from_arrow_type(array.type.scalar_type),
+                        int(np.prod(array.type.shape)),
                     )
                 )
                 return series.cast(DataType.from_arrow_type(array.type))
@@ -262,7 +263,10 @@ class Series:
                 storage = arrow_series.storage
                 list_size = storage.type.list_size
                 storage = pa.ListArray.from_arrays(
-                    pa.array(list(range(0, (len(arrow_series) + 1) * list_size, list_size)), pa.int32()),
+                    pa.array(
+                        list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
+                        pa.int32(),
+                    ),
                     storage.values,
                 )
                 return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
@@ -738,6 +742,13 @@ class SeriesDateNamespace(SeriesNamespace):
 
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
+
+    def truncate(self, interval: str, start_time: Series | None = None) -> Series:
+        if start_time is not None and not isinstance(start_time, Series):
+            raise ValueError(f"expected another Series but got {type(start_time)}")
+        if start_time is None:
+            start_time = Series.from_arrow(pa.array([None], pa.timestamp("s")))
+        return Series._from_pyseries(self._series.dt_truncate(interval, start_time._series))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

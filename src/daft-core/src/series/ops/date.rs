@@ -1,9 +1,11 @@
+use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::logical::TimestampArray;
 use crate::series::array_impl::IntoSeries;
 use crate::{
     datatypes::{logical::DateArray, DataType},
     series::Series,
 };
+
 use common_error::{DaftError, DaftResult};
 
 impl Series {
@@ -98,6 +100,29 @@ impl Series {
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run dt_day_of_week() operation on temporal types, got {}",
                 self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_truncate(&self, interval: &str, start_time: &Self) -> DaftResult<Self> {
+        match (self.data_type(), start_time.data_type()) {
+            (DataType::Timestamp(..), DataType::Timestamp(..)) => {
+                let ts_array = self.downcast::<TimestampArray>()?;
+                let start_time = start_time
+                    .downcast::<TimestampArray>()?
+                    .physical
+                    .as_arrow()
+                    .get(0);
+                Ok(ts_array.truncate(interval, &start_time)?.into_series())
+            }
+            (DataType::Timestamp(..), DataType::Null) => {
+                let ts_array = self.downcast::<TimestampArray>()?;
+                Ok(ts_array.truncate(interval, &None)?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run truncate() operation on temporal types, got {} {}",
+                self.data_type(),
+                start_time.data_type()
             ))),
         }
     }

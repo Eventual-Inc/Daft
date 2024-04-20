@@ -154,12 +154,16 @@ class ResourceRequest:
     memory_bytes: int | None
 
     def __init__(
-        self, num_cpus: float | None = None, num_gpus: float | None = None, memory_bytes: int | None = None
+        self,
+        num_cpus: float | None = None,
+        num_gpus: float | None = None,
+        memory_bytes: int | None = None,
     ): ...
     @staticmethod
     def max_resources(resource_requests: list[ResourceRequest]):
         """Take a field-wise max of the list of resource requests."""
         ...
+
     def __add__(self, other: ResourceRequest) -> ResourceRequest: ...
     def __repr__(self) -> str: ...
     def __eq__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
@@ -251,29 +255,34 @@ class FileFormatConfig:
         Create a Parquet file format config.
         """
         ...
+
     @staticmethod
     def from_csv_config(config: CsvSourceConfig) -> FileFormatConfig:
         """
         Create a CSV file format config.
         """
         ...
+
     @staticmethod
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """
         Create a JSON file format config.
         """
         ...
+
     @staticmethod
     def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
         """
         Create a database file format config.
         """
         ...
+
     def file_format(self) -> FileFormat:
         """
         Get the file format for this config.
         """
         ...
+
     def __eq__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
 
@@ -394,16 +403,19 @@ class FileInfos:
         Create from a Daft table with "path", "size", and "num_rows" columns.
         """
         ...
+
     def extend(self, new_infos: FileInfos) -> FileInfos:
         """
         Concatenate two FileInfos together.
         """
         ...
+
     def __getitem__(self, idx: int) -> FileInfo: ...
     def to_table(self) -> PyTable:
         """
         Convert to a Daft table with "path", "size", and "num_rows" columns.
         """
+
     def __len__(self) -> int: ...
 
 class S3Config:
@@ -529,7 +541,12 @@ class IOConfig:
     azure: AzureConfig
     gcs: GCSConfig
 
-    def __init__(self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None): ...
+    def __init__(
+        self,
+        s3: S3Config | None = None,
+        azure: AzureConfig | None = None,
+        gcs: GCSConfig | None = None,
+    ): ...
     @staticmethod
     def from_json(input: str) -> IOConfig:
         """
@@ -538,7 +555,10 @@ class IOConfig:
         ...
 
     def replace(
-        self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None
+        self,
+        s3: S3Config | None = None,
+        azure: AzureConfig | None = None,
+        gcs: GCSConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig"""
         ...
@@ -575,12 +595,14 @@ class StorageConfig:
         Create from a native storage config.
         """
         ...
+
     @staticmethod
     def python(config: PythonStorageConfig) -> StorageConfig:
         """
         Create from a Python storage config.
         """
         ...
+
     @property
     def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
 
@@ -594,16 +616,19 @@ class ScanTask:
         Get number of rows that will be scanned by this ScanTask.
         """
         ...
+
     def size_bytes(self) -> int:
         """
         Get number of bytes that will be scanned by this ScanTask.
         """
         ...
+
     def estimate_in_memory_size_bytes(self, cfg: PyDaftExecutionConfig) -> int:
         """
         Estimate the In Memory Size of this ScanTask.
         """
         ...
+
     @staticmethod
     def catalog_scan_task(
         file: str,
@@ -620,6 +645,7 @@ class ScanTask:
         Create a Catalog Scan Task
         """
         ...
+
     @staticmethod
     def sql_scan_task(
         url: str,
@@ -666,7 +692,10 @@ class PartitionField:
     field: PyField
 
     def __init__(
-        self, field: PyField, source_field: PyField | None = None, transform: PartitionTransform | None = None
+        self,
+        field: PyField,
+        source_field: PyField | None = None,
+        transform: PartitionTransform | None = None,
     ) -> None: ...
 
 class PartitionTransform:
@@ -846,7 +875,11 @@ class PyDataType:
     @staticmethod
     def embedding(data_type: PyDataType, size: int) -> PyDataType: ...
     @staticmethod
-    def image(mode: ImageMode | None = None, height: int | None = None, width: int | None = None) -> PyDataType: ...
+    def image(
+        mode: ImageMode | None = None,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> PyDataType: ...
     @staticmethod
     def tensor(dtype: PyDataType, shape: tuple[int, ...] | None = None) -> PyDataType: ...
     @staticmethod
@@ -950,6 +983,7 @@ class PyExpr:
     def dt_month(self) -> PyExpr: ...
     def dt_year(self) -> PyExpr: ...
     def dt_day_of_week(self) -> PyExpr: ...
+    def dt_truncate(self, interval: str, start_time: PyExpr) -> PyExpr: ...
     def utf8_endswith(self, pattern: PyExpr) -> PyExpr: ...
     def utf8_startswith(self, pattern: PyExpr) -> PyExpr: ...
     def utf8_contains(self, pattern: PyExpr) -> PyExpr: ...
@@ -981,7 +1015,11 @@ class PyExpr:
     def list_max(self) -> PyExpr: ...
     def struct_get(self, name: str) -> PyExpr: ...
     def url_download(
-        self, max_connections: int, raise_error_on_failure: bool, multi_thread: bool, config: IOConfig
+        self,
+        max_connections: int,
+        raise_error_on_failure: bool,
+        multi_thread: bool,
+        config: IOConfig,
     ) -> PyExpr: ...
     def partitioning_days(self) -> PyExpr: ...
     def partitioning_hours(self) -> PyExpr: ...
@@ -1089,6 +1127,7 @@ class PySeries:
     def dt_month(self) -> PySeries: ...
     def dt_year(self) -> PySeries: ...
     def dt_day_of_week(self) -> PySeries: ...
+    def dt_truncate(self, interval: str, start_time: PySeries) -> PySeries: ...
     def partitioning_days(self) -> PySeries: ...
     def partitioning_hours(self) -> PySeries: ...
     def partitioning_months(self) -> PySeries: ...
@@ -1121,7 +1160,11 @@ class PyTable:
     def agg(self, to_agg: list[PyExpr], group_by: list[PyExpr]) -> PyTable: ...
     def hash_join(self, right: PyTable, left_on: list[PyExpr], right_on: list[PyExpr]) -> PyTable: ...
     def sort_merge_join(
-        self, right: PyTable, left_on: list[PyExpr], right_on: list[PyExpr], is_sorted: bool
+        self,
+        right: PyTable,
+        left_on: list[PyExpr],
+        right_on: list[PyExpr],
+        is_sorted: bool,
     ) -> PyTable: ...
     def explode(self, to_explode: list[PyExpr]) -> PyTable: ...
     def head(self, num: int) -> PyTable: ...
@@ -1180,7 +1223,11 @@ class PyMicroPartition:
     def agg(self, to_agg: list[PyExpr], group_by: list[PyExpr]) -> PyMicroPartition: ...
     def hash_join(self, right: PyMicroPartition, left_on: list[PyExpr], right_on: list[PyExpr]) -> PyMicroPartition: ...
     def sort_merge_join(
-        self, right: PyMicroPartition, left_on: list[PyExpr], right_on: list[PyExpr], is_sorted: bool
+        self,
+        right: PyMicroPartition,
+        left_on: list[PyExpr],
+        right_on: list[PyExpr],
+        is_sorted: bool,
     ) -> PyMicroPartition: ...
     def explode(self, to_explode: list[PyExpr]) -> PyMicroPartition: ...
     def head(self, num: int) -> PyMicroPartition: ...
@@ -1264,7 +1311,11 @@ class LogicalPlanBuilder:
 
     @staticmethod
     def in_memory_scan(
-        partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int, size_bytes: int
+        partition_key: str,
+        cache_entry: PartitionCacheEntry,
+        schema: PySchema,
+        num_partitions: int,
+        size_bytes: int,
     ) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
