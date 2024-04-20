@@ -203,6 +203,24 @@ def test_udf_arbitrary_number_of_args():
     assert result.to_pydict() == {"a": [3, 6, 9]}
 
 
+def test_udf_arbitrary_number_of_kwargs():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.string())
+    def repeat_kwargs(**kwargs):
+        data = {k: v.to_pylist() for k, v in kwargs.items()}
+        length = len(data[list(data.keys())[0]])
+        return Series.from_pylist(["".join([key * data[key][i] for key in data]) for i in range(length)])
+
+    expr = repeat_kwargs(a=col("a"), b=col("b"), c=col("c"))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": ["abc", "aabbcc", "aaabbbccc"]}
+
+
 def test_udf_arbitrary_number_of_args_with_kwargs():
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
