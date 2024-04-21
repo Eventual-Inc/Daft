@@ -77,6 +77,11 @@ where
         .collect::<Vec<_>>();
     let result_len = lengths.iter().max().unwrap();
 
+    // check if self array is empty
+    if self_arr.is_empty() {
+        return Ok((true, 0));
+    }
+
     // check valid input lengths
     if !is_valid_input_lengths(&lengths) {
         let invalid_length_str =
