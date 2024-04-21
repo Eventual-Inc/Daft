@@ -457,6 +457,24 @@ def test_join_with_null(join_strategy, join_type, expected, make_df, repartition
                 "values_right": ["c2", None, None],
             },
         ),
+        (
+            "right",
+            {
+                "id": [1, None, None],
+                "id2": ["foo1", "foo2", None],
+                "values_left": ["a1", None, None],
+                "values_right": ["c2", "a2", "b2"],
+            },
+        ),
+        (
+            "outer",
+            {
+                "id": [1, None, None, None, None],
+                "id2": ["foo1", "foo2", "foo2", None, None],
+                "values_left": ["a1", "b1", None, "c1", None],
+                "values_right": ["c2", None, "a2", None, "b2"],
+            },
+        ),
     ],
 )
 def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, repartition_nparts):
@@ -478,7 +496,9 @@ def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, re
         },
         repartition=repartition_nparts,
     )
-    daft_df = daft_df.join(daft_df2, on=["id", "id2"], strategy=join_strategy, how=join_type).sort(["id", "id2"])
+    daft_df = daft_df.join(daft_df2, on=["id", "id2"], strategy=join_strategy, how=join_type).sort(
+        ["id", "id2", "values_left", "values_right"]
+    )
 
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id") == sort_arrow_table(
         pa.Table.from_pydict(expected), "id"
@@ -527,6 +547,17 @@ def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, re
                 "values_right": ["c2", "a2", "b2"],
             },
         ),
+        (
+            "outer",
+            {
+                "left_id": [1, None, None, None, None],
+                "left_id2": ["foo1", "foo2", None, None, None],
+                "values_left": ["a1", "b1", None, "c1", None],
+                "right_id": [1, None, None, None, None],
+                "right_id2": ["foo1", None, "foo2", None, None],
+                "values_right": ["c2", None, "a2", None, "b2"],
+            },
+        ),
     ],
 )
 def test_join_with_null_asymmetric_multikey(join_strategy, join_type, expected, make_df, repartition_nparts):
@@ -554,7 +585,7 @@ def test_join_with_null_asymmetric_multikey(join_strategy, join_type, expected, 
         right_on=["right_id", "right_id2"],
         how=join_type,
         strategy=join_strategy,
-    ).sort(["left_id", "left_id2", "right_id", "right_id2"])
+    ).sort(["left_id", "left_id2", "right_id", "right_id2", "values_left", "values_right"])
 
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "left_id") == sort_arrow_table(
         pa.Table.from_pydict(expected), "left_id"
