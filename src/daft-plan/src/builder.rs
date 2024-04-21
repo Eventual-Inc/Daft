@@ -10,12 +10,14 @@ use crate::{
     physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
+    PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
-use daft_core::schema::Schema;
-use daft_core::schema::SchemaRef;
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    schema::{Schema, SchemaRef},
+};
 use daft_dsl::{Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 

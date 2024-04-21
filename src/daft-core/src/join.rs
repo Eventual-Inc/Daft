@@ -3,8 +3,8 @@ use std::{
     str::FromStr,
 };
 
+use crate::impl_bincode_py_state_serialization;
 use common_error::{DaftError, DaftResult};
-use daft_core::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{
     exceptions::PyValueError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
@@ -20,6 +20,7 @@ pub enum JoinType {
     Inner,
     Left,
     Right,
+    Outer,
 }
 
 #[cfg(feature = "python")]
@@ -45,7 +46,7 @@ impl JoinType {
     pub fn iterator() -> std::slice::Iter<'static, JoinType> {
         use JoinType::*;
 
-        static JOIN_TYPES: [JoinType; 3] = [Inner, Left, Right];
+        static JOIN_TYPES: [JoinType; 4] = [Inner, Left, Right, Outer];
         JOIN_TYPES.iter()
     }
 }
@@ -60,6 +61,7 @@ impl FromStr for JoinType {
             "inner" => Ok(Inner),
             "left" => Ok(Left),
             "right" => Ok(Right),
+            "outer" => Ok(Outer),
             _ => Err(DaftError::TypeError(format!(
                 "Join type {} is not supported; only the following types are supported: {:?}",
                 join_type,

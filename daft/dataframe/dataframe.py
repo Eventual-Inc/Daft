@@ -879,9 +879,9 @@ class DataFrame:
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
-            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame.. Defaults to None.
+            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame. Defaults to None.
             right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
-            how (str, optional): what type of join to performing, currently only `inner` is supported. Defaults to "inner".
+            how (str, optional): what type of join to perform' currently "inner", "left", "right", and "outer" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
 
@@ -901,8 +901,6 @@ class DataFrame:
             left_on = on
             right_on = on
         join_type = JoinType.from_join_type_str(how)
-        if join_type != JoinType.Inner:
-            raise ValueError(f"Only inner joins are currently supported, but got: {how}")
         join_strategy = JoinStrategy.from_join_strategy_str(strategy) if strategy is not None else None
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))

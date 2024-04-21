@@ -1,3 +1,4 @@
+use daft_core::JoinType;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -102,13 +103,19 @@ impl PyTable {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
         let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
-                .hash_join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+                .hash_join(
+                    &right.table,
+                    left_exprs.as_slice(),
+                    right_exprs.as_slice(),
+                    how,
+                )?
                 .into())
         })
     }

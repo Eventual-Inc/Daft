@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use daft_core::{schema::Schema, utils::supertype::try_get_supertype, Series};
+use daft_core::{
+    array::growable::make_growable, schema::Schema, utils::supertype::try_get_supertype, JoinType,
+    Series,
+};
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
@@ -109,8 +112,11 @@ impl Table {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
+        how: JoinType,
     ) -> DaftResult<Self> {
-        self.join(right, left_on, right_on, hash_join::hash_inner_join)
+        self.join(right, left_on, right_on, |l, r| {
+            hash_join::hash_join(l, r, how)
+        })
     }
 
     pub fn sort_merge_join(
@@ -156,27 +162,49 @@ impl Table {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
-        inner_join: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
+        join_fn: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
     ) -> DaftResult<Self> {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
-        if self.is_empty() || right.is_empty() {
-            return Self::empty(Some(join_schema.into()));
-        }
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
-        let (lidx, ridx) = inner_join(&ltable, &rtable)?;
+        let (lidx, ridx) = join_fn(&ltable, &rtable)?;
+
         let mut join_fields = ltable
             .column_names()
             .iter()
             .map(|s| self.schema.get_field(s).cloned())
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let mut join_series = self
-            .get_columns(ltable.column_names().as_slice())?
-            .take(&lidx)?
-            .columns;
+        let mut join_series = vec![];
+
+        for (l, r) in ltable
+            .column_names()
+            .iter()
+            .zip(rtable.column_names().iter())
+        {
+            if l == r {
+                let lcol = self.get_column(l)?;
+                let rcol = right.get_column(r)?;
+
+                let mut growable =
+                    make_growable(l, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
+
+                for (li, ri) in lidx.u64()?.into_iter().zip(ridx.u64()?) {
+                    match (li, ri) {
+                        (Some(i), _) => growable.extend(0, *i as usize, 1),
+                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                        (None, None) => unreachable!("Join should not have None for both sides"),
+                    }
+                }
+
+                join_series.push(growable.build()?);
+            } else {
+                join_series.push(self.get_column(l)?.take(&lidx)?);
+            }
+        }
+
         drop(ltable);
         drop(rtable);
 

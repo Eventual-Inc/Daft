@@ -1,7 +1,8 @@
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
-use crate::{physical_plan::PhysicalPlanRef, JoinType};
+use crate::physical_plan::PhysicalPlanRef;
+use daft_core::join::JoinType;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -166,21 +166,14 @@ class LogicalPlanBuilder:
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
     ) -> LogicalPlanBuilder:
-        if how == JoinType.Left:
-            raise NotImplementedError("Left join not implemented.")
-        elif how == JoinType.Right:
-            raise NotImplementedError("Right join not implemented.")
-        elif how == JoinType.Inner:
-            builder = self._builder.join(
-                right._builder,
-                [expr._expr for expr in left_on],
-                [expr._expr for expr in right_on],
-                how,
-                strategy,
-            )
-            return LogicalPlanBuilder(builder)
-        else:
-            raise NotImplementedError(f"{how} join not implemented.")
+        builder = self._builder.join(
+            right._builder,
+            [expr._expr for expr in left_on],
+            [expr._expr for expr in right_on],
+            how,
+            strategy,
+        )
+        return LogicalPlanBuilder(builder)
 
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
         builder = self._builder.concat(other._builder)
