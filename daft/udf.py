@@ -32,15 +32,22 @@ class PartialUDF:
     def expressions(self) -> dict[str, Expression]:
         parsed_expressions = {}
         signature = self.bound_args.signature
+
         for key, val in self.bound_args.arguments.items():
-            if isinstance(val, Expression):
-                parsed_expressions[key] = val
             # If the argument is VAR_POSITIONAL (e.g. `*args`), we parse each
             # entry in the tuple to find any expressions
-            elif signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
+            if signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
                 for idx, x in enumerate(val):
                     if isinstance(x, Expression):
                         parsed_expressions[f"{key}-{idx}"] = x
+            # If the key is VAR_KEYWORD (e.g. `**kwargs`), we parse each entry
+            # in the dict to find any expressions
+            elif signature.parameters[key].kind == inspect.Parameter.VAR_KEYWORD:
+                for kwarg_key, x in val.items():
+                    if isinstance(x, Expression):
+                        parsed_expressions[kwarg_key] = x
+            elif isinstance(val, Expression):
+                parsed_expressions[key] = val
 
         return parsed_expressions
 
@@ -48,12 +55,10 @@ class PartialUDF:
         parsed_arg_keys = []
         signature = self.bound_args.signature
         for key, value in self.bound_args.arguments.items():
-            if key in self.bound_args.kwargs:
-                continue
-            elif signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
+            if signature.parameters[key].kind == inspect.Parameter.VAR_POSITIONAL:
                 for idx, _ in enumerate(value):
                     parsed_arg_keys.append(f"{key}-{idx}")
-            else:
+            elif key not in self.bound_args.kwargs and signature.parameters[key].kind != inspect.Parameter.VAR_KEYWORD:
                 parsed_arg_keys.append(key)
 
         return parsed_arg_keys
