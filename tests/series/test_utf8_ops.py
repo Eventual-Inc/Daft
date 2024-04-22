@@ -837,6 +837,8 @@ def test_series_utf8_replace_bad_regex_pattern() -> None:
         (["foo"] * 4, [None] * 4, ["-", ".", " ", "_"], [None] * 4),
         # All null pad
         (["foo"] * 4, [5] * 4, [None] * 4, [None] * 4),
+        # With emojis
+        (["😃😌😝", "abc"], [5, 6], ["😅"], ["😃😌😝😅😅", "abc😅😅😅"]),
     ],
 )
 def test_series_utf8_rpad(data, length, pad, expected) -> None:

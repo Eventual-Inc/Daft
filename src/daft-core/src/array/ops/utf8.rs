@@ -730,9 +730,9 @@ impl Utf8Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
     {
-        let lengths = &[self.len(), length.len(), padchar.len()];
+        let lengths = [self.len(), length.len(), padchar.len()];
         // check valid input lengths
-        if !is_valid_input_lengths(lengths) {
+        if !is_valid_input_lengths(&lengths) {
             let invalid_length_str =
                 itertools::Itertools::join(&mut lengths.iter().map(|x| x.to_string()), ", ");
             return Err(DaftError::ValueError(format!(
@@ -752,10 +752,6 @@ impl Utf8Array {
                 &DataType::Utf8,
                 expected_size,
             ));
-        }
-
-        if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
         }
 
         fn rpad_str(val: &str, length: usize, fillchar: &str) -> DaftResult<String> {
@@ -842,6 +838,9 @@ impl Utf8Array {
                 &DataType::Boolean,
                 expected_size,
             ));
+        }
+        if expected_size == 0 {
+            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
