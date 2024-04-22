@@ -771,7 +771,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Args:
             interval: The interval to truncate to. Must be a string representing a valid interval, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
-            start_time: Optional start time for truncation. If provided, truncation will be done from this start time.
+            start_time: Optional start time for truncation. If provided, truncation will be done from this start time, otherwise truncation will be done from the beginning of the epoch.
 
         Returns:
             Expression: a DateTime expression truncated to the specified interval
@@ -1019,12 +1019,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
-    def replace(
-        self,
-        pattern: str | Expression,
-        replacement: str | Expression,
-        regex: bool = False,
-    ) -> Expression:
+    def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
         """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
         Example:
@@ -1324,10 +1319,7 @@ class ExpressionsProjection(Iterable[Expression]):
 
         return len(self._output_name_to_exprs) == len(other._output_name_to_exprs) and all(
             (s.name() == o.name()) and expr_structurally_equal(s, o)
-            for s, o in zip(
-                self._output_name_to_exprs.values(),
-                other._output_name_to_exprs.values(),
-            )
+            for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
         )
 
     def union(self, other: ExpressionsProjection, rename_dup: str | None = None) -> ExpressionsProjection:
