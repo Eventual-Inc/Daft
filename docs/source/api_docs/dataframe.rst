@@ -39,6 +39,7 @@ Manipulating Columns
 
     DataFrame.select
     DataFrame.with_column
+    DataFrame.with_columns
     DataFrame.exclude
     DataFrame.explode
 

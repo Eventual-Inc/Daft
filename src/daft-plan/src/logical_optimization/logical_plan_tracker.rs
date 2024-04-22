@@ -95,7 +95,7 @@ mod tests {
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let builder1 = builder1.project(vec![col("a")], Default::default())?;
+        let builder1 = builder1.select(vec![col("a")])?;
         assert_eq!(
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -108,7 +108,7 @@ mod tests {
             LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let builder2 = builder2.project(vec![col("a")], Default::default())?;
+        let builder2 = builder2.select(vec![col("a")])?;
         assert_eq!(
             LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -133,7 +133,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .project(vec![col("a")], Default::default())?
+        .select(vec![col("a")])?
         .filter(col("a").lt(lit(2)))?
         .build();
         let plan2 = Arc::new(plan1.as_ref().clone());
@@ -160,13 +160,13 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .filter(col("a").lt(lit(2)))?
-        .project(vec![col("a")], Default::default())?
+        .select(vec![col("a")])?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .project(vec![col("a")], Default::default())?
+        .select(vec![col("a")])?
         .filter(col("a").lt(lit(2)))?
         .build();
         // Double-check that logical plans are NOT equal.
@@ -191,14 +191,14 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .project(vec![col("a")], Default::default())?
+        .select(vec![col("a")])?
         .filter(col("a").lt(lit(2)))?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .project(vec![col("a")], Default::default())?
+        .select(vec![col("a")])?
         .filter(col("a").lt(lit(4)))?
         .build();
         // Double-check that logical plans are NOT equal.

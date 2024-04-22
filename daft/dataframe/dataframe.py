@@ -642,7 +642,7 @@ class DataFrame:
             DataFrame: new DataFrame that will select the passed in columns
         """
         assert len(columns) > 0
-        builder = self._builder.project(self.__column_input_to_expression(columns))
+        builder = self._builder.select(self.__column_input_to_expression(columns))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -695,9 +695,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with some columns excluded.
         """
-        names_to_skip = set(names)
-        el = [col(e.name) for e in self._builder.schema() if e.name not in names_to_skip]
-        builder = self._builder.project(el)
+        builder = self._builder.exclude(list(names))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -737,11 +735,43 @@ class DataFrame:
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        prev_schema_as_cols = ExpressionsProjection(
-            [col(field.name) for field in self._builder.schema() if field.name != column_name]
-        )
-        new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
-        builder = self._builder.project(list(new_schema), resource_request)
+        builder = self._builder.with_columns([expr.alias(column_name)], resource_request)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def with_columns(
+        self,
+        columns: List[Union[Expression, Tuple[str, Expression]]],
+        resource_request: ResourceRequest = ResourceRequest(),
+    ) -> "DataFrame":
+        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
+        with all current columns and the new ones
+
+        Example:
+            >>> new_df = df.with_columns([
+                    (col('x') + 1).alias('x_plus_1'),
+                    ('y_minus_1', col('y') - 1,
+                ])
+
+        Args:
+            columns (List[Union[ColumnInputType, Tuple[str, Expression]]): list of new columns, either named expressions, or tuples of (name, expression).
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+
+        Returns:
+            DataFrame: DataFrame with new columns.
+        """
+        if not isinstance(resource_request, ResourceRequest):
+            raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
+
+        new_columns = []
+        for col_input in columns:
+            if isinstance(col_input, tuple):
+                name, expr = col_input
+                new_columns.append(expr.alias(name))
+            else:
+                new_columns.append(col_input)
+
+        builder = self._builder.with_columns(new_columns, resource_request)
         return DataFrame(builder)
 
     @DataframePublicAPI
