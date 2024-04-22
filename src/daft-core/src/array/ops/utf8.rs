@@ -759,14 +759,14 @@ impl Utf8Array {
         }
 
         fn rpad_str(val: &str, length: usize, fillchar: &str) -> DaftResult<String> {
-            if val.len() >= length {
+            if val.chars().count() >= length {
                 return Ok(val.chars().take(length).collect());
             }
             let fillchar = if fillchar.is_empty() {
                 return Err(DaftError::ComputeError(
                     "Error in rpad: empty pad character".to_string(),
                 ));
-            } else if fillchar.len() > 1 {
+            } else if fillchar.chars().count() > 1 {
                 return Err(DaftError::ComputeError(format!(
                     "Error in rpad: {} is not a valid pad character",
                     fillchar.len()
@@ -774,7 +774,8 @@ impl Utf8Array {
             } else {
                 fillchar.chars().next().unwrap()
             };
-            let fillchar = std::iter::repeat(fillchar).take(length.saturating_sub(val.len()));
+            let fillchar =
+                std::iter::repeat(fillchar).take(length.saturating_sub(val.chars().count()));
             Ok(val.chars().chain(fillchar).collect())
         }
 
@@ -841,9 +842,6 @@ impl Utf8Array {
                 &DataType::Boolean,
                 expected_size,
             ));
-        }
-        if expected_size == 0 {
-            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);

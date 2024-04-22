@@ -1226,6 +1226,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character
 
+        .. NOTE::
+            If the string is longer than the specified length, it will be truncated.
+            The pad character must be a single character.
+
         Example:
             >>> col("x").str.rpad(5, "0")
 
