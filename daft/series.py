@@ -403,6 +403,18 @@ class Series:
         """The elementwise degrees of a numeric series"""
         return Series._from_pyseries(self._series.degrees())
 
+    def log2(self) -> Series:
+        """The elementwise log2 of a numeric series"""
+        return Series._from_pyseries(self._series.log2())
+
+    def log10(self) -> Series:
+        """The elementwise log10 of a numeric series"""
+        return Series._from_pyseries(self._series.log10())
+
+    def ln(self) -> Series:
+        """The elementwise ln of a numeric series"""
+        return Series._from_pyseries(self._series.ln())
+
     def exp(self) -> Series:
         """The e^self of a numeric series"""
         return Series._from_pyseries(self._series.exp())

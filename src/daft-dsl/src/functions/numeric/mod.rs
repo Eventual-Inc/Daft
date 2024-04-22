@@ -36,6 +36,9 @@ pub enum NumericExpr {
     ArcTan,
     Radians,
     Degrees,
+    Log2,
+    Log10,
+    Ln,
     Exp,
 }
 
@@ -58,6 +61,9 @@ impl NumericExpr {
             ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
             Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
             Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
+            Log2 => &TrigonometryEvaluator(TrigonometricFunction::Log2),
+            Log10 => &TrigonometryEvaluator(TrigonometricFunction::Log10),
+            Ln => &TrigonometryEvaluator(TrigonometricFunction::Ln),
             Exp => &ExpEvaluator {},
         }
     }
@@ -170,6 +176,30 @@ pub fn radians(input: ExprRef) -> ExprRef {
 pub fn degrees(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Degrees),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn log2(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Log2),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn log10(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Log10),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn ln(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Ln),
         inputs: vec![input],
     }
     .into()

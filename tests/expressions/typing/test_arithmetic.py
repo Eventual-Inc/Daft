@@ -126,6 +126,9 @@ def test_round(unary_data_fixture):
         "arctan",
         "radians",
         "degrees",
+        "log2",
+        "log10",
+        "ln",
     ],
 )
 def test_trigonometry(fun: str, unary_data_fixture):

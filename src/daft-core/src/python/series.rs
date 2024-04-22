@@ -193,6 +193,24 @@ impl PySeries {
             .into())
     }
 
+    pub fn log2(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Log2)?
+            .into())
+    }
+
+    pub fn log10(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Log10)?
+            .into())
+    }
+
+    pub fn ln(&self) -> PyResult<Self> {
+        Ok(self.series.trigonometry(&TrigonometricFunction::Ln)?.into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
     }

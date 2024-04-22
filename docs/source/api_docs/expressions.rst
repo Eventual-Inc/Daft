@@ -59,6 +59,9 @@ Numeric
     Expression.arctan
     Expression.radians
     Expression.degrees
+    Expression.log2
+    Expression.log10
+    Expression.ln
     Expression.exp
 
 .. _api-comparison-expression:

@@ -135,6 +135,9 @@ def test_repr_functions_round() -> None:
         "arctan",
         "radians",
         "degrees",
+        "log2",
+        "log10",
+        "ln",
     ],
 )
 def test_repr_functions_trigonometry(fun: str) -> None:
