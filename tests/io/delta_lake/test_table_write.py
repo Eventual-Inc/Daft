@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.delta_lake.delta_lake_storage_function import _io_config_to_storage_options
 from daft.logical.schema import Schema
 
 
@@ -68,3 +69,15 @@ def test_deltalake_write_parationby(tmp_path, base_table):
     expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
     assert df.schema() == expected_schema
     assert read_delta.metadata().partition_columns == ["c"]
+
+
+def test_deltalake_write_cloud(base_table, cloud_paths):
+    deltalake = pytest.importorskip("deltalake")
+    path, io_config, catalog_table = cloud_paths
+    df = daft.from_arrow(base_table)
+    df.write_delta(str(path), io_config=io_config)
+    storage_options = _io_config_to_storage_options(io_config, path) if io_config is not None else None
+    read_delta = deltalake.DeltaTable(str(path), storage_options=storage_options)
+    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    assert df.schema() == expected_schema
+    assert read_delta.to_pyarrow_table() == base_table

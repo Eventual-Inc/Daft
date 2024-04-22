@@ -416,11 +416,16 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
         pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
     ],
 )
+def cloud_paths(request) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable | None]:
+    return request.param
+
+
+@pytest.fixture(scope="function")
 def deltalake_table(
-    request, base_table: pa.Table, num_partitions: int, partition_generator: callable
+    cloud_paths, base_table: pa.Table, num_partitions: int, partition_generator: callable
 ) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
     partition_generator, _ = partition_generator
-    path, io_config, catalog_table = request.param
+    path, io_config, catalog_table = cloud_paths
     storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     parts = []
     for i in range(num_partitions):
