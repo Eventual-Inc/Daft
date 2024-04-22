@@ -188,10 +188,22 @@ def test_temporal_arithmetic_timestamp_with_duration(timeunit, timezone) -> None
 
 
 def test_temporal_arithmetic_date_with_duration() -> None:
+    day_in_seconds = 60 * 60 * 24
     pa_table = pa.Table.from_pydict(
         {
-            "date": pa.array([1, 0, -1], pa.date32()),
-            "duration": pa.array([60 * 60 * 24, 0, -60 * 60 * 24], pa.duration("s")),
+            "date": pa.array([1, 1, 1, 0, -1, -1, -1], pa.date32()),
+            "duration": pa.array(
+                [
+                    day_in_seconds,
+                    day_in_seconds - 1,
+                    day_in_seconds + 1,
+                    0,
+                    -day_in_seconds,
+                    -day_in_seconds + 1,
+                    -day_in_seconds - 1,
+                ],
+                pa.duration("s"),
+            ),
         }
     )
     df = daft.from_arrow(pa_table)
@@ -212,9 +224,9 @@ def test_temporal_arithmetic_date_with_duration() -> None:
     expected_result = daft.from_arrow(
         pa.Table.from_pydict(
             {
-                "ladd": pa.array([2, 0, -2], pa.date32()),
-                "radd": pa.array([2, 0, -2], pa.date32()),
-                "sub": pa.array([0, 0, 0], pa.date32()),
+                "ladd": pa.array([2, 1, 2, 0, -2, -1, -2], pa.date32()),
+                "radd": pa.array([2, 1, 2, 0, -2, -1, -2], pa.date32()),
+                "sub": pa.array([0, 1, 0, 0, 0, -1, 0], pa.date32()),
             }
         )
     ).to_pydict()
