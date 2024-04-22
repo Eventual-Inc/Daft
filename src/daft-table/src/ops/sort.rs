@@ -1,15 +1,15 @@
 use crate::Table;
 use common_error::{DaftError, DaftResult};
 use daft_core::Series;
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 
 impl Table {
-    pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Table> {
+    pub fn sort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Table> {
         let argsort = self.argsort(sort_keys, descending)?;
         self.take(&argsort)
     }
 
-    pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
+    pub fn argsort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Series> {
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use common_treenode::{TreeNode, VisitRecursion};
 
@@ -24,14 +26,16 @@ impl TreeNode for Expr {
                     | AnyValue(expr, _)
                     | List(expr)
                     | Concat(expr) => vec![expr.as_ref()],
-                    MapGroups { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
+                    MapGroups { func: _, inputs } => {
+                        inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>()
+                    }
                 }
             }
             BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
             IsIn(expr, items) => vec![expr.as_ref(), items.as_ref()],
             FillNull(expr, fill_value) => vec![expr.as_ref(), fill_value.as_ref()],
             Column(_) | Literal(_) => vec![],
-            Function { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
+            Function { func: _, inputs } => inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
             IfElse {
                 if_true,
                 if_false,
@@ -62,24 +66,26 @@ impl TreeNode for Expr {
             Agg(agg_expr) => {
                 use crate::AggExpr::*;
                 match agg_expr {
-                    Count(expr, mode) => transform(expr.as_ref().clone())?.count(mode),
-                    Sum(expr) => transform(expr.as_ref().clone())?.sum(),
-                    Mean(expr) => transform(expr.as_ref().clone())?.mean(),
-                    Min(expr) => transform(expr.as_ref().clone())?.min(),
-                    Max(expr) => transform(expr.as_ref().clone())?.max(),
+                    Count(expr, mode) => Arc::new(transform(expr.as_ref().clone())?).count(mode),
+                    Sum(expr) => Arc::new(transform(expr.as_ref().clone())?).sum(),
+                    Mean(expr) => Arc::new(transform(expr.as_ref().clone())?).mean(),
+                    Min(expr) => Arc::new(transform(expr.as_ref().clone())?).min(),
+                    Max(expr) => Arc::new(transform(expr.as_ref().clone())?).max(),
                     AnyValue(expr, ignore_nulls) => {
-                        transform(expr.as_ref().clone())?.any_value(ignore_nulls)
+                        Arc::new(transform(expr.as_ref().clone())?).any_value(ignore_nulls)
                     }
-                    List(expr) => transform(expr.as_ref().clone())?.agg_list(),
-                    Concat(expr) => transform(expr.as_ref().clone())?.agg_concat(),
-                    MapGroups { func, inputs } => Expr::Agg(MapGroups {
+                    List(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_list(),
+                    Concat(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_concat(),
+                    MapGroups { func, inputs } => Arc::new(Expr::Agg(MapGroups {
                         func,
                         inputs: inputs
                             .into_iter()
-                            .map(transform)
+                            .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                             .collect::<DaftResult<Vec<_>>>()?,
-                    }),
+                    })),
                 }
+                .as_ref()
+                .clone()
             }
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
             IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
@@ -110,9 +116,11 @@ impl TreeNode for Expr {
                 func,
                 inputs: inputs
                     .into_iter()
-                    .map(transform)
+                    .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
                     .collect::<DaftResult<Vec<_>>>()?,
             },
-        })
+        }
+        .as_ref()
+        .clone())
     }
 }

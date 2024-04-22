@@ -21,6 +21,7 @@ def read_sql(
     conn: Union[Callable[[], "Connection"], str],
     partition_col: Optional[str] = None,
     num_partitions: Optional[int] = None,
+    disable_pushdowns_to_sql: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from the results of a SQL query.
 
@@ -30,11 +31,15 @@ def read_sql(
         partition_col (Optional[str]): Column to partition the data by, defaults to None
         num_partitions (Optional[int]): Number of partitions to read the data into,
             defaults to None, which will lets Daft determine the number of partitions.
+        disable_pushdowns_to_sql (bool): Whether to disable pushdowns to the SQL query, defaults to False
 
     Returns:
         DataFrame: Dataframe containing the results of the query
 
     .. NOTE::
+        #. Supported databases:
+            Daft uses `SQLGlot <https://sqlglot.com/sqlglot/dialects.html>`_ to build SQL queries, so it supports all databases that SQLGlot supports.
+
         #. Partitioning:
             When `partition_col` is specified, the function partitions the query based on that column.
             You can define `num_partitions` or leave it to Daft to decide.
@@ -44,6 +49,10 @@ def read_sql(
         #. Execution:
             Daft executes SQL queries using using `ConnectorX <https://sfu-db.github.io/connector-x/intro.html>`_ or `SQLAlchemy <https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine>`_,
             preferring ConnectorX unless a SQLAlchemy connection factory is specified or the database dialect is unsupported by ConnectorX.
+
+        #. Pushdowns:
+            Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
+            You can disable pushdowns by setting `disable_pushdowns_to_sql=True`, which will execute the SQL query as is.
 
     Example:
         Read data from a SQL query and a database URL:
@@ -85,6 +94,7 @@ def read_sql(
         sql,
         sql_conn,
         storage_config,
+        disable_pushdowns_to_sql,
         partition_col=partition_col,
         num_partitions=num_partitions,
     )

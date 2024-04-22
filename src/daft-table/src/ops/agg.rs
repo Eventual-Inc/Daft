@@ -5,8 +5,10 @@ use common_error::{DaftError, DaftResult};
 
 use crate::Table;
 
+use daft_dsl::ExprRef;
+
 impl Table {
-    pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
+    pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {
             0 => self.agg_global(to_agg),
@@ -14,14 +16,14 @@ impl Table {
         }
     }
 
-    pub fn agg_global(&self, to_agg: &[Expr]) -> DaftResult<Table> {
+    pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Table> {
         self.eval_expression_list(to_agg)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Table> {
+    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {
         let agg_exprs = to_agg
             .iter()
-            .map(|e| match e {
+            .map(|e| match e.as_ref() {
                 Expr::Agg(e) => Ok(e),
                 _ => Err(DaftError::ValueError(format!(
                     "Trying to run non-Agg expression in Grouped Agg! {e}"
@@ -67,8 +69,8 @@ impl Table {
     pub fn map_groups(
         &self,
         func: &FunctionExpr,
-        inputs: &[Expr],
-        group_by: &[Expr],
+        inputs: &[ExprRef],
+        group_by: &[ExprRef],
     ) -> DaftResult<Table> {
         let udf = match func {
             FunctionExpr::Python(udf) => udf,

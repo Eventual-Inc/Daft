@@ -86,7 +86,7 @@ impl JsonConvertOptions {
             limit,
             include_columns,
             schema.map(|s| s.into()),
-            predicate.map(|p| p.expr.into()),
+            predicate.map(|p| p.expr),
         )
     }
 

@@ -265,7 +265,7 @@ async fn read_csv_single_into_table(
 
     let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.as_ref()])?;
+            let filtered = table?.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())
             } else {

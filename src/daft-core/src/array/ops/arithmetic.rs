@@ -14,9 +14,6 @@ use super::{as_arrow::AsArrow, full::FullNull};
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
-/// This function is based from https://github.com/pola-rs/polars/blob/master/polars/polars-core/src/chunked_array/arithmetic.rs#L58
-/// with the following license:
-// Copyright (c) 2020 Ritchie Vink
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights

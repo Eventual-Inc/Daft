@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 use crate::{physical_plan::PhysicalPlanRef, JoinType};
@@ -9,8 +9,8 @@ pub struct HashJoin {
     // Upstream node.
     pub left: PhysicalPlanRef,
     pub right: PhysicalPlanRef,
-    pub left_on: Vec<Expr>,
-    pub right_on: Vec<Expr>,
+    pub left_on: Vec<ExprRef>,
+    pub right_on: Vec<ExprRef>,
     pub join_type: JoinType,
 }
 
@@ -18,8 +18,8 @@ impl HashJoin {
     pub(crate) fn new(
         left: PhysicalPlanRef,
         right: PhysicalPlanRef,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
     ) -> Self {
         Self {

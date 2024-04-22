@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_core::array::ops::DaftCompare;
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_table::infer_join_schema;
 
@@ -9,7 +9,12 @@ use crate::micropartition::MicroPartition;
 use daft_stats::TruthValue;
 
 impl MicroPartition {
-    pub fn hash_join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
+    pub fn hash_join(
+        &self,
+        right: &Self,
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
+    ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
 
@@ -62,8 +67,8 @@ impl MicroPartition {
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[Expr],
-        right_on: &[Expr],
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");

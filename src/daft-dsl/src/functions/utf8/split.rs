@@ -1,4 +1,4 @@
-use crate::{functions::FunctionExpr, Expr};
+use crate::{functions::FunctionExpr, ExprRef};
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
@@ -16,7 +16,7 @@ impl FunctionEvaluator for SplitEvaluator {
         "split"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
                 (Ok(data_field), Ok(pattern_field)) => {

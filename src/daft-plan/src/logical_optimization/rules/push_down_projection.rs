@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use daft_core::schema::Schema;
-use daft_dsl::{optimization::replace_columns_with_expressions, Expr};
+use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
 use indexmap::IndexSet;
 
 use crate::{
@@ -39,7 +39,7 @@ impl PushDownProjection {
                     .projection
                     .iter()
                     .zip(upstream_schema.names().iter())
-                    .all(|(expr, upstream_col)| match expr {
+                    .all(|(expr, upstream_col)| match expr.as_ref() {
                         Expr::Column(colname) => colname.as_ref() == upstream_col,
                         _ => false,
                     })
@@ -72,11 +72,7 @@ impl PushDownProjection {
                 .collect::<IndexSet<_>>();
 
             // For each of them, make sure they are used only once in this downstream projection.
-            let mut exprs_to_walk: Vec<Arc<Expr>> = projection
-                .projection
-                .iter()
-                .map(|e| e.clone().into())
-                .collect();
+            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.to_vec();
 
             let mut upstream_computations_used = IndexSet::new();
             let mut okay_to_merge = true;
@@ -116,7 +112,13 @@ impl PushDownProjection {
                 let merged_projection = projection
                     .projection
                     .iter()
-                    .map(|e| replace_columns_with_expressions(e, &upstream_names_to_exprs))
+                    .map(|e| {
+                        replace_columns_with_expressions(
+                            e.as_ref().clone(),
+                            &upstream_names_to_exprs,
+                        )
+                        .arced()
+                    })
                     .collect();
 
                 // Make a new projection node with the merged projections.
@@ -267,7 +269,7 @@ impl PushDownProjection {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = combined_dependencies
                         .into_iter()
-                        .map(|s| Expr::Column(s.into()))
+                        .map(col)
                         .collect::<Vec<_>>();
 
                     Project::try_new(
@@ -303,9 +305,9 @@ impl PushDownProjection {
                     return Ok(Transformed::No(plan));
                 }
 
-                let pushdown_column_exprs = combined_dependencies
+                let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
                     .into_iter()
-                    .map(|s| Expr::Column(s.into()))
+                    .map(col)
                     .collect::<Vec<_>>();
                 let new_left_subprojection: LogicalPlan = {
                     Project::try_new(
@@ -385,9 +387,9 @@ impl PushDownProjection {
                 // For each upstream, see if a non-vacuous pushdown is possible.
                 let maybe_new_left_upstream: Option<Arc<LogicalPlan>> = {
                     if left_combined_dependencies.len() < left_upstream_names.len() {
-                        let pushdown_column_exprs = left_combined_dependencies
+                        let pushdown_column_exprs: Vec<ExprRef> = left_combined_dependencies
                             .into_iter()
-                            .map(|s| Expr::Column(s.into()))
+                            .map(col)
                             .collect::<Vec<_>>();
                         let new_project: LogicalPlan = Project::try_new(
                             join.left.clone(),
@@ -403,9 +405,9 @@ impl PushDownProjection {
 
                 let maybe_new_right_upstream: Option<Arc<LogicalPlan>> = {
                     if right_combined_dependencies.len() < right_upstream_names.len() {
-                        let pushdown_column_exprs = right_combined_dependencies
+                        let pushdown_column_exprs: Vec<ExprRef> = right_combined_dependencies
                             .into_iter()
-                            .map(|s| Expr::Column(s.into()))
+                            .map(col)
                             .collect::<Vec<_>>();
                         let new_project: LogicalPlan = Project::try_new(
                             join.right.clone(),
@@ -461,7 +463,7 @@ impl PushDownProjection {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = aggregation_required_cols
                     .iter()
-                    .map(|s| Expr::Column(s.clone().into()))
+                    .map(|s| col(s.as_str()))
                     .collect::<Vec<_>>();
 
                 Project::try_new(
@@ -507,7 +509,9 @@ mod tests {
     use daft_scan::Pushdowns;
 
     use crate::{
-        optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},
+        logical_optimization::{
+            rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
@@ -529,9 +533,9 @@ mod tests {
     /// Projection merging: Ensure factored projections do not get merged.
     #[test]
     fn test_merge_does_not_unfactor() -> DaftResult<()> {
-        let a2 = col("a") + col("a");
-        let a4 = &a2 + &a2;
-        let a8 = &a4 + &a4;
+        let a2 = col("a").clone().add(col("a"));
+        let a4 = a2.clone().add(a2);
+        let a8 = a4.clone().add(a4);
         let expressions = vec![a8.alias("x")];
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let plan = dummy_scan_node(scan_op)
@@ -550,17 +554,21 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj1 = vec![col("a") + lit(1), col("b") + lit(2), col("a").alias("c")];
-        let proj2 = vec![col("a") + lit(3), col("b"), col("c") + lit(4)];
+        let proj1 = vec![
+            col("a").add(lit(1)),
+            col("b").add(lit(2)),
+            col("a").alias("c"),
+        ];
+        let proj2 = vec![col("a").add(lit(3)), col("b"), col("c").add(lit(4))];
         let plan = dummy_scan_node(scan_op.clone())
             .project(proj1, Default::default())?
             .project(proj2, Default::default())?
             .build();
 
         let merged_proj = vec![
-            col("a") + lit(1) + lit(3),
-            col("b") + lit(2),
-            col("a").alias("c") + lit(4),
+            col("a").add(lit(1)).add(lit(3)),
+            col("b").add(lit(2)),
+            col("a").alias("c").add(lit(4)),
         ];
         let expected = dummy_scan_node(scan_op)
             .project(merged_proj, Default::default())?
@@ -616,7 +624,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj = vec![col("b") + lit(3)];
+        let proj = vec![col("b").add(lit(3))];
         let plan = dummy_scan_node(scan_op.clone())
             .project(proj.clone(), Default::default())?
             .build();
@@ -641,14 +649,14 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj1 = vec![col("b") + lit(3), col("a"), col("a").alias("x")];
+        let proj1 = vec![col("b").add(lit(3)), col("a"), col("a").alias("x")];
         let proj2 = vec![col("a"), col("b"), col("b").alias("c")];
         let plan = dummy_scan_node(scan_op.clone())
             .project(proj1, Default::default())?
             .project(proj2.clone(), Default::default())?
             .build();
 
-        let new_proj1 = vec![col("b") + lit(3), col("a")];
+        let new_proj1 = vec![col("b").add(lit(3)), col("a")];
         let expected = dummy_scan_node(scan_op)
             .project(new_proj1, Default::default())?
             .project(proj2, Default::default())?

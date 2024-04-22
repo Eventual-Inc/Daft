@@ -9,7 +9,7 @@ use daft_dsl::{
     optimization::{
         conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
     },
-    Expr,
+    ExprRef,
 };
 use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
@@ -50,14 +50,14 @@ impl OptimizerRule for PushDownFilter {
 
                 // Split predicate expression on conjunctions (ANDs).
                 let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&&Expr> = parent_predicates.iter().collect();
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().cloned().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
-                let new_predicates = parent_predicates
+                let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
                     .chain(
                         split_conjuction(&child_filter.predicate)
                             .iter()
-                            .filter(|e| !predicate_set.contains(e)),
+                            .filter(|e| !predicate_set.contains(**e)),
                     )
                     .map(|e| (*e).clone())
                     .collect::<Vec<_>>();
@@ -87,7 +87,7 @@ impl OptimizerRule for PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.clone().and(f.clone())).unwrap_or(predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -98,7 +98,7 @@ impl OptimizerRule for PushDownFilter {
                         // 3. Filters needing their own dedicated filter op (unable to be pushed into scan); this
                         //    includes predicates involving both partition and data columns, and predicates containing
                         //    UDFs.
-                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
+                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(&new_predicate, external_info.scan_op.0.partitioning_keys())?;
                         assert!(partition_only_filter.len() + data_only_filter.len() + needing_filter_op.len() > 0);
 
                         if !needing_filter_op.is_empty() && partition_only_filter.is_empty() && data_only_filter.is_empty() {
@@ -114,12 +114,12 @@ impl OptimizerRule for PushDownFilter {
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
                         let new_pushdowns = if let Some(data_filter) = data_filter {
-                            external_info.pushdowns.with_filters(Some(Arc::new(data_filter)))
+                            external_info.pushdowns.with_filters(Some(data_filter))
                         } else {
                             external_info.pushdowns.clone()
                         };
                         let new_pushdowns = if let Some(partition_filter) = partition_filter {
-                            new_pushdowns.with_partition_filters(Some(Arc::new(partition_filter)))
+                            new_pushdowns.with_partition_filters(Some(partition_filter))
                         } else {
                             new_pushdowns
                         };
@@ -154,15 +154,15 @@ impl OptimizerRule for PushDownFilter {
                         e.input_mapping()
                             .map(|s| (e.name().unwrap().to_string(), col(s)))
                     })
-                    .collect::<HashMap<String, Expr>>();
+                    .collect::<HashMap<String, ExprRef>>();
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
                 // TODO(Clark): Push Filters depending on Projection columns involving compute if those expressions are
                 // (1) determinstic && (pure || idempotent),
                 // (2) inexpensive to recompute.
                 // This can be done by rewriting the Filter predicate expression to contain the relevant Projection expression.
-                let mut can_push = vec![];
-                let mut can_not_push = vec![];
+                let mut can_push: Vec<ExprRef> = vec![];
+                let mut can_not_push: Vec<ExprRef> = vec![];
                 for predicate in predicates {
                     let predicate_cols = get_required_columns(predicate);
                     if predicate_cols
@@ -170,9 +170,11 @@ impl OptimizerRule for PushDownFilter {
                         .all(|col| projection_input_mapping.contains_key(col))
                     {
                         // Can push predicate through expression.
-                        let new_predicate =
-                            replace_columns_with_expressions(predicate, &projection_input_mapping);
-                        can_push.push(new_predicate);
+                        let new_predicate = replace_columns_with_expressions(
+                            predicate.as_ref().clone(),
+                            &projection_input_mapping,
+                        );
+                        can_push.push(new_predicate.arced());
                     } else {
                         // Can't push predicate expression through projection.
                         can_not_push.push(predicate.clone());
@@ -291,7 +293,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
+        logical_optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         JoinType, LogicalPlan,
     };
@@ -315,7 +317,7 @@ mod tests {
         ]);
         let plan =
             dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
-                .filter(col("a").lt(&lit(2)))?
+                .filter(col("a").lt(lit(2)))?
                 .build();
         // Plan should be unchanged after optimization.
         let expected = plan.clone();
@@ -334,15 +336,15 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let p1 = col("a").lt(&lit(2));
-        let p2 = col("b").eq(&lit("foo"));
+        let p1 = col("a").lt(lit(2));
+        let p2 = col("b").eq(lit("foo"));
         let plan = scan_plan.filter(p1.clone())?.filter(p2.clone())?.build();
-        let merged_filter = p2.and(&p1);
+        let merged_filter = p2.and(p1);
         let expected = if push_into_scan {
             // Merged filter should be pushed into scan.
             dummy_scan_node_with_pushdowns(
                 scan_op,
-                Pushdowns::default().with_filters(Some(merged_filter.into())),
+                Pushdowns::default().with_filters(Some(merged_filter)),
             )
             .build()
         } else {
@@ -356,7 +358,7 @@ mod tests {
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred = daft_dsl::functions::uri::download(&col("a"), 1, true, true, None);
+        let pred = daft_dsl::functions::uri::download(col("a"), 1, true, true, None);
         let plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -381,17 +383,14 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let proj = vec![col("a")];
         let plan = scan_plan
             .project(proj.clone(), Default::default())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             scan_plan.filter(pred)?
         };
@@ -415,17 +414,14 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo")));
+        let pred = col("a").lt(lit(2)).and(col("b").eq(lit("foo")));
         let proj = vec![col("a"), col("b")];
         let plan = scan_plan
             .project(proj.clone(), Default::default())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             scan_plan.filter(pred)?
         };
@@ -444,8 +440,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         // Projection involves compute on filtered column "a".
-        .project(vec![col("a") + lit(1)], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
+        .project(vec![col("a").add(lit(1))], Default::default())?
+        .filter(col("a").lt(lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = plan.clone();
@@ -468,18 +464,15 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
-        let proj = vec![col("a") + lit(1)];
+        let pred = col("a").lt(lit(2));
+        let proj = vec![col("a").add(lit(1))];
         let plan = scan_plan
             // Projection involves compute on filtered column "a".
             .project(proj.clone(), Default::default())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             scan_plan.filter(pred)?
         };
@@ -501,7 +494,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let sort_by = vec![col("a")];
         let descending = vec![true];
         let plan = scan_plan
@@ -509,10 +502,7 @@ mod tests {
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             scan_plan.filter(pred)?
         };
@@ -534,7 +524,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let num_partitions = 1;
         let repartition_by = vec![col("a")];
         let plan = scan_plan
@@ -542,10 +532,7 @@ mod tests {
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             scan_plan.filter(pred)?
         };
@@ -574,7 +561,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .concat(&right_scan_plan)?
             .filter(pred.clone())?
@@ -582,16 +569,13 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
         };
         let expected_right_filter_scan = if push_into_right_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             right_scan_plan.filter(pred)?
         };
@@ -621,7 +605,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -635,16 +619,13 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
         };
         let expected_right_filter_scan = if push_into_right_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
-            )
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
         } else {
             right_scan_plan.filter(pred)?
         };
@@ -680,7 +661,7 @@ mod tests {
         );
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
         let join_on = vec![col("b")];
-        let pred = col("a").lt(&lit(2));
+        let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -694,7 +675,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -731,7 +712,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("c").lt(&lit(2.0));
+        let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -745,7 +726,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             right_scan_plan.filter(pred.clone())?
@@ -787,7 +768,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
-        let pred = col("b").lt(&lit(2));
+        let pred = col("b").lt(lit(2));
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -801,7 +782,7 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone().into())),
+                Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
             left_scan_plan.filter(pred.clone())?
@@ -809,7 +790,7 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op,
-                Pushdowns::default().with_filters(Some(pred.into())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
             right_scan_plan.filter(pred)?

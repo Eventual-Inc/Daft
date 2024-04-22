@@ -3,7 +3,7 @@ use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
 use super::NumericExpr;
-use crate::Expr;
+use crate::ExprRef;
 
 use crate::functions::FunctionExpr;
 
@@ -14,7 +14,7 @@ impl FunctionEvaluator for RoundEvaluator {
         "round"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
