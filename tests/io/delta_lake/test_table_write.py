@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-
-import pytest
-
-deltalake = pytest.importorskip("deltalake")
+import sys
 
 import pyarrow as pa
+import pytest
 
 import daft
 from daft.logical.schema import Schema
@@ -25,10 +23,14 @@ def split_small_pq_files():
 
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="deltalake only supported if pyarrow >= 8.0.0")
+PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
+pytestmark = pytest.mark.skipif(
+    PYARROW_LE_8_0_0 or PYTHON_LT_3_8, reason="deltalake only supported if pyarrow >= 8.0.0 and python >= 3.8"
+)
 
 
 def test_deltalake_write_basic(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
     df.write_delta(str(path))
@@ -39,6 +41,7 @@ def test_deltalake_write_basic(tmp_path, base_table):
 
 
 def test_deltalake_write_overwrite(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
     df.write_delta(str(path))
@@ -57,6 +60,7 @@ def test_deltalake_write_overwrite(tmp_path, base_table):
 
 
 def test_deltalake_write_parationby(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
     df.write_delta(str(path), partition_by="c")

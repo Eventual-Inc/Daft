@@ -22,8 +22,6 @@ from daft import DataCatalogTable, DataCatalogType
 from daft.io.object_store_options import io_config_to_storage_options
 from tests.io.delta_lake.mock_aws_server import start_service, stop_process
 
-deltalake = pytest.importorskip("deltalake")
-
 
 @pytest.fixture(params=[1, 2, 8])
 def num_partitions(request) -> int:
@@ -431,6 +429,7 @@ def deltalake_table(
         part = base_table.append_column("part_idx", pa.array([part_value if part_value is not None else i] * 3))
         parts.append(part)
     table = pa.concat_tables(parts)
+    deltalake = pytest.importorskip("deltalake")
     deltalake.write_deltalake(
         path,
         table,
