@@ -15,6 +15,7 @@ use {
 };
 
 use daft_core::impl_bincode_py_state_serialization;
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
@@ -510,7 +511,7 @@ fn tabular_write(
     schema: &SchemaRef,
     root_dir: &String,
     compression: &Option<String>,
-    partition_cols: &Option<Vec<Expr>>,
+    partition_cols: &Option<Vec<ExprRef>>,
     io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
     let part_cols = partition_cols.as_ref().map(|cols| {

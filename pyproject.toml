@@ -37,7 +37,7 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-sql = ["connectorx", "sqlalchemy"]
+sql = ["connectorx", "sqlalchemy", "sqlglot"]
 viz = []
 
 [project.urls]

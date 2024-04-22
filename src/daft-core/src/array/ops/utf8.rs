@@ -11,6 +11,7 @@ use crate::{
 use arrow2::{self, array::Array};
 
 use common_error::{DaftError, DaftResult};
+use itertools::Itertools;
 use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
@@ -45,24 +46,6 @@ fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> BroadcastedStrIte
     }
 }
 
-fn is_valid_input_lengths(lengths: &[usize]) -> bool {
-    // Check if all elements are equal
-    if lengths.iter().all(|&x| x == lengths[0]) {
-        return true;
-    }
-
-    // Separate the elements into '1's and others
-    let ones_count = lengths.iter().filter(|&&x| x == 1).count();
-    let others: Vec<&usize> = lengths.iter().filter(|&&x| x != 1).collect();
-
-    if ones_count > 0 && !others.is_empty() {
-        // Check if all 'other' elements are equal and greater than 1, which means that this is a broadcastable operation
-        others.iter().all(|&&x| x == *others[0] && x > 1)
-    } else {
-        false
-    }
-}
-
 /// Parse inputs for string operations.
 /// Returns a tuple of (is_full_null, expected_size).
 fn parse_inputs<T>(
@@ -72,26 +55,44 @@ fn parse_inputs<T>(
 where
     T: DaftPhysicalType,
 {
-    let lengths = std::iter::once(self_arr.len())
-        .chain(other_arrs.iter().map(|arr| arr.len()))
-        .collect::<Vec<_>>();
-    let result_len = lengths.iter().max().unwrap();
+    let input_length = self_arr.len();
+    let other_lengths = other_arrs.iter().map(|arr| arr.len()).collect::<Vec<_>>();
 
-    // check valid input lengths
-    if !is_valid_input_lengths(&lengths) {
-        let invalid_length_str =
-            itertools::Itertools::join(&mut lengths.iter().map(|x| x.to_string()), ", ");
+    // Parse the expected `result_len` from the length of the input and other arguments
+    let result_len = if input_length == 0 {
+        // Empty input: expect empty output
+        0
+    } else if other_lengths.iter().all(|&x| x == input_length) {
+        // All lengths matching: expect non-broadcasted length
+        input_length
+    } else if let [broadcasted_len] = std::iter::once(&input_length)
+        .chain(other_lengths.iter())
+        .filter(|&&x| x != 1)
+        .sorted()
+        .dedup()
+        .collect::<Vec<&usize>>()
+        .as_slice()
+    {
+        // All non-unit lengths match: expect broadcast
+        **broadcasted_len
+    } else {
+        let invalid_length_str = itertools::Itertools::join(
+            &mut std::iter::once(&input_length)
+                .chain(other_lengths.iter())
+                .map(|x| x.to_string()),
+            ", ",
+        );
         return Err(format!("Inputs have invalid lengths: {invalid_length_str}"));
-    }
+    };
 
     // check if any array has all nulls
     if other_arrs.iter().any(|arr| arr.null_count() == arr.len())
         || self_arr.null_count() == self_arr.len()
     {
-        return Ok((true, *result_len));
+        return Ok((true, result_len));
     }
 
-    Ok((false, *result_len))
+    Ok((false, result_len))
 }
 
 fn split_array_on_literal<'a>(

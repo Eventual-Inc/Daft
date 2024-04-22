@@ -316,7 +316,7 @@ fn materialize_scan_task(
                     sql,
                     conn,
                 }) => {
-                    let predicate_expr = scan_task
+                    let predicate = scan_task
                         .pushdowns
                         .filters
                         .as_ref()
@@ -326,7 +326,7 @@ fn materialize_scan_task(
                             py,
                             sql,
                             conn,
-                            predicate_expr.clone(),
+                            predicate.clone(),
                             scan_task.schema.clone().into(),
                             scan_task
                                 .pushdowns

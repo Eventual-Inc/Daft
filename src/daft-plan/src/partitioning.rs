@@ -1,5 +1,4 @@
-use daft_dsl::Expr;
-
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +19,7 @@ impl RepartitionSpec {
         }
     }
 
-    pub fn repartition_by(&self) -> Vec<Expr> {
+    pub fn repartition_by(&self) -> Vec<ExprRef> {
         match self {
             Self::Hash(HashRepartitionConfig { by, .. }) => by.clone(),
             _ => vec![],
@@ -56,11 +55,11 @@ impl RepartitionSpec {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct HashRepartitionConfig {
     pub num_partitions: Option<usize>,
-    pub by: Vec<Expr>,
+    pub by: Vec<ExprRef>,
 }
 
 impl HashRepartitionConfig {
-    pub fn new(num_partitions: Option<usize>, by: Vec<Expr>) -> Self {
+    pub fn new(num_partitions: Option<usize>, by: Vec<ExprRef>) -> Self {
         Self { num_partitions, by }
     }
 
@@ -133,7 +132,7 @@ impl ClusteringSpec {
         }
     }
 
-    pub fn partition_by(&self) -> Vec<Expr> {
+    pub fn partition_by(&self) -> Vec<ExprRef> {
         match self {
             Self::Range(RangeClusteringConfig { by, .. }) => by.clone(),
             Self::Hash(HashClusteringConfig { by, .. }) => by.clone(),
@@ -184,12 +183,12 @@ impl From<UnknownClusteringConfig> for ClusteringSpec {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct RangeClusteringConfig {
     pub num_partitions: usize,
-    pub by: Vec<Expr>,
+    pub by: Vec<ExprRef>,
     pub descending: Vec<bool>,
 }
 
 impl RangeClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<Expr>, descending: Vec<bool>) -> Self {
+    pub fn new(num_partitions: usize, by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
         Self {
             num_partitions,
             by,
@@ -214,11 +213,11 @@ impl RangeClusteringConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct HashClusteringConfig {
     pub num_partitions: usize,
-    pub by: Vec<Expr>,
+    pub by: Vec<ExprRef>,
 }
 
 impl HashClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<Expr>) -> Self {
+    pub fn new(num_partitions: usize, by: Vec<ExprRef>) -> Self {
         Self { num_partitions, by }
     }
 

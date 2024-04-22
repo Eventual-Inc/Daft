@@ -3,7 +3,7 @@ use crate::datatypes::logical::{
     FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
     TimestampArray,
 };
-use crate::datatypes::{BooleanArray, DaftLogicalType, Field};
+use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;

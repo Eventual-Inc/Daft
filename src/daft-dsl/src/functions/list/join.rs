@@ -1,4 +1,4 @@
-use crate::Expr;
+use crate::ExprRef;
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
@@ -17,7 +17,7 @@ impl FunctionEvaluator for JoinEvaluator {
         "join"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input, delimiter] => {
                 let input_field = input.to_field(schema)?;

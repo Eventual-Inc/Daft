@@ -15,7 +15,11 @@ pub struct ListArray {
     validity: Option<arrow2::bitmap::Bitmap>,
 }
 
-impl DaftArrayType for ListArray {}
+impl DaftArrayType for ListArray {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl ListArray {
     pub fn new<F: Into<Arc<Field>>>(

@@ -39,6 +39,7 @@ repos:
   hooks:
   - id: pretty-format-toml
     args: [--autofix]
+    exclude: Cargo.lock
   - id: pretty-format-yaml
     args: [--autofix]
 
