@@ -24,7 +24,7 @@ The following sections explain conceptual and technical differences between Dask
 
 Dask aims for as much feature-parity with pandas as possible, including maintaining the presence of an Index in the DataFrame. But keeping an Index is difficult when moving to a distributed computing environment. Dask doesn’t support row-based positional indexing (with .iloc) because it does not track the length of its partitions. It also does not support pandas MultiIndex. The argument for keeping the Index is that it makes some operations against the sorted index column very fast. In reality, resetting the Index forces a data shuffle and is an expensive operation.
 
-Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API]().
+Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API](/user_guide/basic_concepts/expressions.rst).
 
 In Dask you would index your DataFrame to return row `b` as follows:
 
@@ -73,7 +73,7 @@ def my_function(**kwargs):
 res = ddf.map_partitions(my_function, **kwargs)
 ```
 
-Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions]() and [UDFs](). Expressions are most useful when you need to define computation over your columns.
+Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions](/user_guide/basic_concepts/expressions.rst) and [UDFs](/user_guide/daft_in_depth/udf.rst). Expressions are most useful when you need to define computation over your columns.
 
 ```
 # Add 1 to each element in column "A"
@@ -107,7 +107,7 @@ Dask supports the same data types as pandas. Daft is built to support many more 
 
 ## Distributed Computing and Remote Clusters
 
-Both Dask and Daft support distributed computing on remote clusters. In Dask, you create a Dask cluster either locally or remotely and perform computations in parallel there. Currently, Daft supports distributed cluster computing [with Ray](https://www.getdaft.io/projects/docs/en/latest/user_guide/poweruser/scaling-up.html). Support for running Daft computations on Dask clusters is on the roadmap.
+Both Dask and Daft support distributed computing on remote clusters. In Dask, you create a Dask cluster either locally or remotely and perform computations in parallel there. Currently, Daft supports distributed cluster computing [with Ray](/user_guide/poweruser/scaling-up.html). Support for running Daft computations on Dask clusters is on the roadmap.
 
 Cloud support for both Dask and Daft is the same.
 
@@ -119,4 +119,4 @@ Daft provides a read_sql method to read SQL queries into a DataFrame. Daft uses 
 
 ## Daft combines Python with Rust and Pyarrow for optimal performance
 
-Daft combines Python with Rust and Pyarrow for optimal performance. Under the hood, Table and Series are implemented in Rust on top of the Apache Arrow specification (using the Rust arrow2 library). This architecture means that all the computationally expensive operations on Table and Series are performed in Rust, and can be heavily optimized for raw speed. Python is most useful as a user-facing API layer for ease of use and an interactive data science user experience. Read [more](faq/technical_architecture).
+Daft combines Python with Rust and Pyarrow for optimal performance. Under the hood, Table and Series are implemented in Rust on top of the Apache Arrow specification (using the Rust arrow2 library). This architecture means that all the computationally expensive operations on Table and Series are performed in Rust, and can be heavily optimized for raw speed. Python is most useful as a user-facing API layer for ease of use and an interactive data science user experience. Read [more](/faq/technical_architecture.rst).
