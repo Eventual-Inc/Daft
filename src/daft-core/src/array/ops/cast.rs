@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat, ops::Div, sync::Arc};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -429,6 +429,32 @@ impl DurationArray {
             DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
         }
+    }
+
+    pub fn cast_to_days(&self) -> DaftResult<Series> {
+        let physical = self.physical.clone();
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let days = match tu {
+            TimeUnit::Seconds => {
+                physical.div(&Int64Array::from(("SecondsInDay", vec![60 * 60 * 24])))?
+            }
+            TimeUnit::Milliseconds => physical.div(&Int64Array::from((
+                "MillisecondsInDay",
+                vec![1_000 * 60 * 60 * 24],
+            )))?,
+            TimeUnit::Microseconds => physical.div(&Int64Array::from((
+                "MicrosecondsInDay",
+                vec![1_000_000 * 60 * 60 * 24],
+            )))?,
+            TimeUnit::Nanoseconds => physical.div(&Int64Array::from((
+                "NanosecondsInDay",
+                vec![1_000_000_000 * 60 * 60 * 24],
+            )))?,
+        };
+        days.cast(&DataType::Int32)
     }
 }
 
