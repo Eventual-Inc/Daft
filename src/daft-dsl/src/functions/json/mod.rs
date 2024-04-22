@@ -3,7 +3,7 @@ mod query;
 use query::JsonQueryEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -22,9 +22,10 @@ impl JsonExpr {
     }
 }
 
-pub fn query(input: &Expr, query: &str) -> Expr {
+pub fn query(input: ExprRef, query: &str) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Json(JsonExpr::Query(query.to_string())),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }

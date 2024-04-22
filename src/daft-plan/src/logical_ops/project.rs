@@ -7,15 +7,15 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
 
+use crate::logical_optimization::Transformed;
 use crate::logical_plan::{CreationSnafu, Result};
-use crate::optimization::Transformed;
 use crate::{LogicalPlan, ResourceRequest};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Project {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
-    pub projection: Vec<Expr>,
+    pub projection: Vec<ExprRef>,
     pub resource_request: ResourceRequest,
     pub projected_schema: SchemaRef,
 }
@@ -23,7 +23,7 @@ pub struct Project {
 impl Project {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        projection: Vec<Expr>,
+        projection: Vec<ExprRef>,
         resource_request: ResourceRequest,
     ) -> Result<Self> {
         // Factor the projection and see if there are any substitutions to factor out.
@@ -56,9 +56,9 @@ impl Project {
 
     fn try_factor_subexpressions(
         input: Arc<LogicalPlan>,
-        projection: Vec<Expr>,
+        projection: Vec<ExprRef>,
         resource_request: &ResourceRequest,
-    ) -> Result<(Arc<LogicalPlan>, Vec<Expr>)> {
+    ) -> Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
@@ -72,12 +72,13 @@ impl Project {
         } else {
             let child_projection = projection
                 .iter()
+                .map(|v| v.as_ref())
                 .flat_map(optimization::get_required_columns)
                 .collect::<IndexSet<_>>()
                 .into_iter()
                 .map(|colname| {
                     let expr = &substitutions[&colname];
-                    Expr::Alias(expr.clone().into(), colname.clone().into())
+                    expr.clone().alias(colname)
                 })
                 .collect::<Vec<_>>();
 
@@ -89,9 +90,9 @@ impl Project {
     }
 
     fn factor_expressions(
-        exprs: Vec<Expr>,
+        exprs: Vec<ExprRef>,
         schema: &Schema,
-    ) -> (Vec<Expr>, IndexMap<String, Expr>) {
+    ) -> (Vec<ExprRef>, IndexMap<String, ExprRef>) {
         // Returns
         //  1. original expressions with substitutions
         //  2. substitution definitions
@@ -110,7 +111,7 @@ impl Project {
         // all existing names must also be converted to semantic IDs.
         let mut column_name_substitutions = IndexMap::new();
 
-        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.iter().map(|e| e.clone().into()).collect();
+        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.to_vec();
         while !exprs_to_walk.is_empty() {
             exprs_to_walk = exprs_to_walk
                 .iter()
@@ -155,14 +156,9 @@ impl Project {
             let substituted_expressions = exprs
                 .iter()
                 .map(|e| {
-                    let new_expr = replace_column_with_semantic_id(
-                        e.clone().into(),
-                        &subexprs_to_replace,
-                        schema,
-                    )
-                    .unwrap()
-                    .as_ref()
-                    .clone();
+                    let new_expr =
+                        replace_column_with_semantic_id(e.clone(), &subexprs_to_replace, schema);
+                    let new_expr = new_expr.unwrap();
                     // The substitution can unintentionally change the expression's name
                     // (since the name depends on the first column referenced, which can be substituted away)
                     // so re-alias the original name here if it has changed.
@@ -170,7 +166,7 @@ impl Project {
                     if new_expr.name().unwrap() != old_name {
                         new_expr.alias(old_name)
                     } else {
-                        new_expr
+                        new_expr.clone()
                     }
                 })
                 .collect::<Vec<_>>();
@@ -178,7 +174,7 @@ impl Project {
             let substitutions = subexpressions_to_cache
                 .iter()
                 .chain(column_name_substitutions.iter())
-                .map(|(k, v)| (k.id.as_ref().to_string(), v.as_ref().clone()))
+                .map(|(k, v)| (k.id.as_ref().to_string(), v.clone()))
                 .collect::<IndexMap<_, _>>();
 
             (substituted_expressions, substitutions)
@@ -326,11 +322,7 @@ fn replace_column_with_semantic_id(
                 let transforms = inputs
                     .iter()
                     .map(|e| {
-                        replace_column_with_semantic_id(
-                            e.clone().into(),
-                            subexprs_to_replace,
-                            schema,
-                        )
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
                     })
                     .collect::<Vec<_>>();
                 if transforms.iter().all(|e| e.is_no()) {
@@ -339,11 +331,7 @@ fn replace_column_with_semantic_id(
                     Transformed::Yes(
                         Expr::Function {
                             func: func.clone(),
-                            inputs: transforms
-                                .iter()
-                                .map(|t| t.unwrap().as_ref())
-                                .cloned()
-                                .collect(),
+                            inputs: transforms.iter().map(|t| t.unwrap()).cloned().collect(),
                         }
                         .into(),
                     )
@@ -403,20 +391,14 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::MapGroups { func, inputs } => {
             let transforms = inputs
                 .iter()
-                .map(|e| {
-                    replace_column_with_semantic_id(e.clone().into(), subexprs_to_replace, schema)
-                })
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
                 .collect::<Vec<_>>();
             if transforms.iter().all(|e| e.is_no()) {
                 Transformed::No(AggExpr::MapGroups { func, inputs })
             } else {
                 Transformed::Yes(AggExpr::MapGroups {
                     func: func.clone(),
-                    inputs: transforms
-                        .iter()
-                        .map(|t| t.unwrap().as_ref())
-                        .cloned()
-                        .collect(),
+                    inputs: transforms.iter().map(|t| t.unwrap()).cloned().collect(),
                 })
             }
         }
@@ -450,22 +432,26 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]))
         .build();
-        let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
-        let a4 = binary_op(Operator::Plus, &a2, &a2);
-        let a8 = binary_op(Operator::Plus, &a4, &a4);
+        let a2 = binary_op(Operator::Plus, col("a"), col("a"));
+        let a2_colname = a2.semantic_id(&source.schema()).id;
+
+        let a4 = binary_op(Operator::Plus, a2.clone(), a2.clone());
+        let a4_colname = a4.semantic_id(&source.schema()).id;
+
+        let a8 = binary_op(Operator::Plus, a4.clone(), a4.clone());
         let expressions = vec![a8.alias("x")];
         let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
 
-        let a4_colname = a4.semantic_id(&source.schema()).id;
         let a4_col = col(a4_colname.clone());
         let expected_result_projection =
-            vec![binary_op(Operator::Plus, &a4_col, &a4_col).alias("x")];
+            vec![binary_op(Operator::Plus, a4_col.clone(), a4_col.clone()).alias("x")];
         assert_eq!(result_projection.projection, expected_result_projection);
 
-        let a2_colname = a2.semantic_id(&source.schema()).id;
         let a2_col = col(a2_colname.clone());
         let expected_subprojection =
-            vec![binary_op(Operator::Plus, &a2_col, &a2_col).alias(a4_colname.clone())];
+            vec![
+                binary_op(Operator::Plus, a2_col.clone(), a2_col.clone()).alias(a4_colname.clone())
+            ];
         let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
             panic!()
         };
@@ -494,22 +480,24 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]))
         .build();
-        let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
+        let a2 = binary_op(Operator::Plus, col("a"), col("a"));
+        let a2_colname = a2.semantic_id(&source.schema()).id;
+
         let expressions = vec![
-            a2.alias("x"),
-            binary_op(Operator::Plus, &a2, &col("a")).alias("y"),
+            a2.clone().alias("x"),
+            binary_op(Operator::Plus, a2.clone(), col("a")).alias("y"),
         ];
         let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
 
-        let a2_colname = a2.semantic_id(&source.schema()).id;
         let a2_col = col(a2_colname.clone());
         let expected_result_projection = vec![
             a2_col.alias("x"),
-            binary_op(Operator::Plus, &a2_col, &col("a")).alias("y"),
+            binary_op(Operator::Plus, a2_col, col("a")).alias("y"),
         ];
         assert_eq!(result_projection.projection, expected_result_projection);
 
-        let expected_subprojection = vec![a2.alias(a2_colname.clone()), col("a").alias("a")];
+        let expected_subprojection =
+            vec![a2.clone().alias(a2_colname.clone()), col("a").alias("a")];
         let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
             panic!()
         };

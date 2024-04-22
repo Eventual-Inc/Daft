@@ -276,7 +276,7 @@ pub mod pylib {
         ) -> PyResult<Option<Self>> {
             if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
                 let table = &pvalues.table;
-                let eval_pred = table.eval_expression_list(&[partition_filters.as_ref().clone()])?;
+                let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);
                 let series = eval_pred.get_column_by_index(0)?;
                 assert_eq!(series.data_type(), &daft_core::DataType::Boolean);
@@ -468,16 +468,15 @@ pub mod pylib {
 
         #[getter]
         pub fn filters(&self) -> Option<PyExpr> {
-            self.0.filters.as_ref().map(|e| PyExpr {
-                expr: e.as_ref().clone(),
-            })
+            self.0.filters.as_ref().map(|e| PyExpr { expr: e.clone() })
         }
 
         #[getter]
         pub fn partition_filters(&self) -> Option<PyExpr> {
-            self.0.partition_filters.as_ref().map(|e| PyExpr {
-                expr: e.as_ref().clone(),
-            })
+            self.0
+                .partition_filters
+                .as_ref()
+                .map(|e| PyExpr { expr: e.clone() })
         }
 
         #[getter]

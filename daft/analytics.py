@@ -207,9 +207,9 @@ def time_func(fn):
 
     @functools.wraps(fn)
     def tracked_fn(*args, **kwargs):
+        __tracebackhide__ = True
         if _ANALYTICS_CLIENT is None:
             return fn(*args, **kwargs)
-
         start = time.time()
         try:
             result = fn(*args, **kwargs)

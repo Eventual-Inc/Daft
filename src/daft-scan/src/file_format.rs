@@ -338,7 +338,7 @@ impl DatabaseSourceConfig {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("SQL = {}", self.sql));
+        res.push(format!("SQL = \"{}\"", self.sql));
         res
     }
 }

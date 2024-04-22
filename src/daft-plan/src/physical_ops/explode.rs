@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::{optimization::get_required_columns, ExprRef};
 use itertools::Itertools;
 
 use crate::{
@@ -15,12 +15,12 @@ use serde::{Deserialize, Serialize};
 pub struct Explode {
     // Upstream node.
     pub input: PhysicalPlanRef,
-    pub to_explode: Vec<Expr>,
+    pub to_explode: Vec<ExprRef>,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl Explode {
-    pub(crate) fn try_new(input: PhysicalPlanRef, to_explode: Vec<Expr>) -> DaftResult<Self> {
+    pub(crate) fn try_new(input: PhysicalPlanRef, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         let clustering_spec = Self::translate_clustering_spec(input.clustering_spec(), &to_explode);
         Ok(Self {
             input,
@@ -31,7 +31,7 @@ impl Explode {
 
     fn translate_clustering_spec(
         input_clustering_spec: Arc<ClusteringSpec>,
-        to_explode: &Vec<Expr>,
+        to_explode: &Vec<ExprRef>,
     ) -> Arc<ClusteringSpec> {
         use crate::ClusteringSpec::*;
         match input_clustering_spec.as_ref() {
@@ -41,7 +41,7 @@ impl Explode {
             Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 let required_cols_for_clustering_spec = by
                     .iter()
-                    .flat_map(get_required_columns)
+                    .flat_map(|v| get_required_columns(v.as_ref()))
                     .collect::<HashSet<String>>();
                 for expr in to_explode {
                     let newname = expr.name().unwrap().to_string();
@@ -77,11 +77,11 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, Expr};
+    use daft_dsl::col;
 
     use crate::{
         partitioning::{HashClusteringConfig, UnknownClusteringConfig},
-        planner::plan,
+        physical_planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
         ClusteringSpec,
     };
@@ -96,7 +96,7 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![Expr::Column("a".into())])?
+        .hash_repartition(Some(3), vec![col("a")])?
         .explode(vec![col("b")])?
         .build();
 
@@ -123,10 +123,7 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![Expr::Column("a".into()), Expr::Column("b".into())],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .explode(vec![col("b")])?
         .build();
 

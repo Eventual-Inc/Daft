@@ -34,7 +34,11 @@ impl<T: DaftPhysicalType> Clone for DataArray<T> {
     }
 }
 
-impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {}
+impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl<T> DataArray<T>
 where

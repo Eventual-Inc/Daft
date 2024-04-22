@@ -52,7 +52,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        optimization::{
+        logical_optimization::{
             rules::drop_repartition::DropRepartition, test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},

@@ -1,4 +1,4 @@
-use daft_dsl::{AggExpr, Expr};
+use daft_dsl::{AggExpr, ExprRef};
 use itertools::Itertools;
 
 use crate::physical_plan::PhysicalPlanRef;
@@ -13,14 +13,14 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub groupby: Vec<Expr>,
+    pub groupby: Vec<ExprRef>,
 }
 
 impl Aggregate {
     pub(crate) fn new(
         input: PhysicalPlanRef,
         aggregations: Vec<AggExpr>,
-        groupby: Vec<Expr>,
+        groupby: Vec<ExprRef>,
     ) -> Self {
         Self {
             input,

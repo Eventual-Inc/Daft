@@ -5,7 +5,7 @@ use daft_core::schema::Schema;
 use daft_core::{DataType, Series};
 
 use crate::functions::{FunctionEvaluator, FunctionExpr};
-use crate::Expr;
+use crate::ExprRef;
 
 pub(super) struct TrigonometryEvaluator(pub TrigonometricFunction);
 
@@ -14,7 +14,7 @@ impl FunctionEvaluator for TrigonometryEvaluator {
         self.0.fn_name()
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",

@@ -160,7 +160,7 @@ impl PyMicroPartition {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -174,7 +174,7 @@ impl PyMicroPartition {
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -184,7 +184,7 @@ impl PyMicroPartition {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::Expr> =
+        let converted_exprs: Vec<daft_dsl::ExprRef> =
             sort_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
@@ -200,7 +200,7 @@ impl PyMicroPartition {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::Expr> =
+        let converted_exprs: Vec<daft_dsl::ExprRef> =
             sort_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
@@ -211,8 +211,9 @@ impl PyMicroPartition {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<daft_dsl::Expr> = to_agg.into_iter().map(|e| e.into()).collect();
-        let converted_group_by: Vec<daft_dsl::Expr> =
+        let converted_to_agg: Vec<daft_dsl::ExprRef> =
+            to_agg.into_iter().map(|e| e.into()).collect();
+        let converted_group_by: Vec<daft_dsl::ExprRef> =
             group_by.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
@@ -229,8 +230,8 @@ impl PyMicroPartition {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
-        let right_exprs: Vec<daft_dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
+        let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
+        let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -247,8 +248,8 @@ impl PyMicroPartition {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
-        let right_exprs: Vec<daft_dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
+        let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
+        let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -263,7 +264,7 @@ impl PyMicroPartition {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<daft_dsl::Expr> =
+        let converted_to_explode: Vec<daft_dsl::ExprRef> =
             to_explode.into_iter().map(|e| e.expr).collect();
 
         py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
@@ -347,7 +348,7 @@ impl PyMicroPartition {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -392,7 +393,7 @@ impl PyMicroPartition {
         boundaries: &PyTable,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs: Vec<daft_dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> = partition_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -408,7 +409,7 @@ impl PyMicroPartition {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs: Vec<daft_dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> = partition_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
             let mps = mps.into_iter().map(|m| m.into()).collect::<Vec<Self>>();
@@ -537,7 +538,7 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups.map(|rg| vec![Some(rg)]),
-                predicate.map(|e| e.expr.into()),
+                predicate.map(|e| e.expr),
                 None,
                 io_config,
                 Some(io_stats),
@@ -580,7 +581,7 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups,
-                predicate.map(|e| e.expr.into()),
+                predicate.map(|e| e.expr),
                 None,
                 io_config,
                 Some(io_stats),
@@ -793,7 +794,7 @@ pub(crate) fn read_sql_into_py_table(
     py: Python,
     sql: &str,
     conn: &PyObject,
-    predicate_expr: Option<PyExpr>,
+    predicate: Option<PyExpr>,
     schema: PySchema,
     include_columns: Option<Vec<String>>,
     num_rows: Option<usize>,
@@ -803,7 +804,7 @@ pub(crate) fn read_sql_into_py_table(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((schema,))?;
-    let predicate_pyexpr = match predicate_expr {
+    let py_predicate = match predicate {
         Some(p) => Some(
             py.import(pyo3::intern!(py, "daft.expressions.expressions"))?
                 .getattr(pyo3::intern!(py, "Expression"))?
@@ -812,17 +813,13 @@ pub(crate) fn read_sql_into_py_table(
         ),
         None => None,
     };
-    let sql_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadSQLOptions"))?
-        .call1((predicate_pyexpr,))?;
     let read_options = py
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
     py.import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
-        .call1((sql, conn, py_schema, sql_options, read_options))?
+        .call1((sql, conn, py_schema, read_options, py_predicate))?
         .getattr(pyo3::intern!(py, "to_table"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?

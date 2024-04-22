@@ -33,7 +33,9 @@ pub mod logical;
 /// NOTE: Arrays are 'static because they fully own all their internal components
 /// This implicitly allows them to implement the std::any::Any trait, which we rely on
 /// for downcasting Series to concrete DaftArrayType types.
-pub trait DaftArrayType: Clone + 'static {}
+pub trait DaftArrayType: Clone + 'static {
+    fn data_type(&self) -> &DataType;
+}
 
 /// Trait to wrap DataType Enum
 ///

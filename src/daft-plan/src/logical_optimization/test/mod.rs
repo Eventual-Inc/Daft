@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use crate::{
-    optimization::{
+    logical_optimization::{
         optimizer::{RuleBatch, RuleExecutionStrategy},
         Optimizer,
     },

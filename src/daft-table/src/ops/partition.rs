@@ -2,7 +2,7 @@ use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
 use daft_core::array::ops::IntoGroups;
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use rand::SeedableRng;
 
 use common_error::{DaftError, DaftResult};
@@ -52,7 +52,7 @@ impl Table {
 
     pub fn partition_by_hash(
         &self,
-        exprs: &[Expr],
+        exprs: &[ExprRef],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         if num_partitions == 0 {
@@ -89,7 +89,7 @@ impl Table {
 
     pub fn partition_by_range(
         &self,
-        partition_keys: &[Expr],
+        partition_keys: &[ExprRef],
         boundaries: &Self,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
@@ -101,7 +101,7 @@ impl Table {
         self.partition_by_index(&targets, boundaries.len() + 1)
     }
 
-    pub fn partition_by_value(&self, partition_keys: &[Expr]) -> DaftResult<(Vec<Self>, Self)> {
+    pub fn partition_by_value(&self, partition_keys: &[ExprRef]) -> DaftResult<(Vec<Self>, Self)> {
         let partition_key_table = self.eval_expression_list(partition_keys)?;
         let (key_idx, group_idx) = partition_key_table.make_groups()?;
         let key_idx = UInt64Array::from(("idx", key_idx)).into_series();

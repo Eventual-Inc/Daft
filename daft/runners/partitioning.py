@@ -73,17 +73,6 @@ class TableParseParquetOptions:
 
 
 @dataclass(frozen=True)
-class TableReadSQLOptions:
-    """Options for parsing SQL tables
-
-    Args:
-        predicate_expression: Expression predicate to apply to the table
-    """
-
-    predicate_expression: Expression | None = None
-
-
-@dataclass(frozen=True)
 class PartialPartitionMetadata:
     num_rows: None | int
     size_bytes: None | int
@@ -228,10 +217,15 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pydict()
 
-    def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
+    def to_pandas(
+        self,
+        schema: Schema | None = None,
+        cast_tensors_to_ray_tensor_dtype: bool = False,
+    ) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(
-            schema=schema, cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+            schema=schema,
+            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
         )
 
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:

@@ -37,7 +37,7 @@ pub enum Expr {
     Column(Arc<str>),
     Function {
         func: FunctionExpr,
-        inputs: Vec<Expr>,
+        inputs: Vec<ExprRef>,
     },
     Not(ExprRef),
     IsNull(ExprRef),
@@ -64,20 +64,16 @@ pub enum AggExpr {
     Concat(ExprRef),
     MapGroups {
         func: FunctionExpr,
-        inputs: Vec<Expr>,
+        inputs: Vec<ExprRef>,
     },
 }
 
-pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
-    Expr::Column(name.into())
+pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
+    Expr::Column(name.into()).into()
 }
 
-pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
-    Expr::BinaryOp {
-        op,
-        left: left.clone().into(),
-        right: right.clone().into(),
-    }
+pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
+    Expr::BinaryOp { op, left, right }.into()
 }
 
 impl AggExpr {
@@ -148,7 +144,7 @@ impl AggExpr {
             | AnyValue(expr, _)
             | List(expr)
             | Concat(expr) => vec![expr.clone()],
-            MapGroups { func: _, inputs } => inputs.iter().map(|e| e.clone().into()).collect(),
+            MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
 
@@ -194,15 +190,15 @@ impl AggExpr {
         }
     }
 
-    pub fn from_name_and_child_expr(name: &str, child: &Expr) -> DaftResult<AggExpr> {
+    pub fn from_name_and_child_expr(name: &str, child: ExprRef) -> DaftResult<AggExpr> {
         use AggExpr::*;
         match name {
-            "count" => Ok(Count(child.clone().into(), CountMode::Valid)),
-            "sum" => Ok(Sum(child.clone().into())),
-            "mean" => Ok(Mean(child.clone().into())),
-            "min" => Ok(Min(child.clone().into())),
-            "max" => Ok(Max(child.clone().into())),
-            "list" => Ok(List(child.clone().into())),
+            "count" => Ok(Count(child, CountMode::Valid)),
+            "sum" => Ok(Sum(child)),
+            "mean" => Ok(Mean(child)),
+            "min" => Ok(Min(child)),
+            "max" => Ok(Max(child)),
+            "list" => Ok(List(child)),
             _ => Err(DaftError::ValueError(format!(
                 "{} not a valid aggregation name",
                 name
@@ -218,103 +214,109 @@ impl AsRef<Expr> for Expr {
 }
 
 impl Expr {
-    pub fn alias<S: Into<Arc<str>>>(&self, name: S) -> Self {
-        Expr::Alias(self.clone().into(), name.into())
+    pub fn arced(self) -> ExprRef {
+        Arc::new(self)
     }
 
-    pub fn if_else(&self, if_true: &Self, if_false: &Self) -> Self {
+    pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
+        Expr::Alias(self.clone(), name.into()).into()
+    }
+
+    pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
         Expr::IfElse {
-            if_true: if_true.clone().into(),
-            if_false: if_false.clone().into(),
-            predicate: self.clone().into(),
+            if_true,
+            if_false,
+            predicate: self,
         }
+        .into()
     }
 
-    pub fn cast(&self, dtype: &DataType) -> Self {
-        Expr::Cast(self.clone().into(), dtype.clone())
+    pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
+        Expr::Cast(self, dtype.clone()).into()
     }
 
-    pub fn count(&self, mode: CountMode) -> Self {
-        Expr::Agg(AggExpr::Count(self.clone().into(), mode))
+    pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
+        Expr::Agg(AggExpr::Count(self, mode)).into()
     }
 
-    pub fn sum(&self) -> Self {
-        Expr::Agg(AggExpr::Sum(self.clone().into()))
+    pub fn sum(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Sum(self)).into()
     }
 
-    pub fn mean(&self) -> Self {
-        Expr::Agg(AggExpr::Mean(self.clone().into()))
+    pub fn mean(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Mean(self)).into()
     }
 
-    pub fn min(&self) -> Self {
-        Expr::Agg(AggExpr::Min(self.clone().into()))
+    pub fn min(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Min(self)).into()
     }
 
-    pub fn max(&self) -> Self {
-        Expr::Agg(AggExpr::Max(self.clone().into()))
+    pub fn max(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Max(self)).into()
     }
 
-    pub fn any_value(&self, ignore_nulls: bool) -> Self {
-        Expr::Agg(AggExpr::AnyValue(self.clone().into(), ignore_nulls))
+    pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Expr::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
-    pub fn agg_list(&self) -> Self {
-        Expr::Agg(AggExpr::List(self.clone().into()))
+    pub fn agg_list(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::List(self)).into()
     }
 
-    pub fn agg_concat(&self) -> Self {
-        Expr::Agg(AggExpr::Concat(self.clone().into()))
+    pub fn agg_concat(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Concat(self)).into()
     }
 
-    pub fn not(&self) -> Self {
-        Expr::Not(self.clone().into())
+    #[allow(clippy::should_implement_trait)]
+    pub fn not(self: ExprRef) -> ExprRef {
+        Expr::Not(self).into()
     }
 
-    pub fn is_null(&self) -> Self {
-        Expr::IsNull(self.clone().into())
+    pub fn is_null(self: ExprRef) -> ExprRef {
+        Expr::IsNull(self).into()
     }
 
-    pub fn not_null(&self) -> Self {
-        Expr::NotNull(self.clone().into())
+    pub fn not_null(self: ExprRef) -> ExprRef {
+        Expr::NotNull(self).into()
     }
 
-    pub fn fill_null(&self, fill_value: &Self) -> Self {
-        Expr::FillNull(self.clone().into(), fill_value.clone().into())
+    pub fn fill_null(self: ExprRef, fill_value: ExprRef) -> ExprRef {
+        Expr::FillNull(self, fill_value).into()
     }
 
-    pub fn is_in(&self, items: &Self) -> Self {
-        Expr::IsIn(self.clone().into(), items.clone().into())
+    pub fn is_in(self: ExprRef, items: ExprRef) -> ExprRef {
+        Expr::IsIn(self, items).into()
     }
 
-    pub fn eq(&self, other: &Self) -> Self {
+    pub fn eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Eq, self, other)
     }
 
-    pub fn not_eq(&self, other: &Self) -> Self {
+    pub fn not_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::NotEq, self, other)
     }
 
-    pub fn and(&self, other: &Self) -> Self {
+    pub fn and(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::And, self, other)
     }
 
-    pub fn or(&self, other: &Self) -> Self {
+    pub fn or(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Or, self, other)
     }
 
-    pub fn lt(&self, other: &Self) -> Self {
+    pub fn lt(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Lt, self, other)
     }
 
-    pub fn lt_eq(&self, other: &Self) -> Self {
+    pub fn lt_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::LtEq, self, other)
     }
 
-    pub fn gt(&self, other: &Self) -> Self {
+    pub fn gt(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Gt, self, other)
     }
 
-    pub fn gt_eq(&self, other: &Self) -> Self {
+    pub fn gt_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::GtEq, self, other)
     }
 
@@ -396,7 +398,7 @@ impl Expr {
             Agg(agg_expr) => agg_expr.children(),
 
             // Multiple children.
-            Function { inputs, .. } => inputs.iter().map(|e| e.clone().into()).collect(),
+            Function { inputs, .. } => inputs.clone(),
             BinaryOp { left, right, .. } => {
                 vec![left.clone(), right.clone()]
             }
@@ -562,14 +564,14 @@ impl Expr {
         }
     }
 
-    pub fn to_sql(&self, db_scheme: &str) -> Option<String> {
-        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W, db_scheme: &str) -> io::Result<()> {
+    pub fn to_sql(&self) -> Option<String> {
+        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
                 Expr::Column(name) => write!(buffer, "{}", name),
-                Expr::Literal(lit) => lit.display_sql(buffer, db_scheme),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer, db_scheme),
+                Expr::Literal(lit) => lit.display_sql(buffer),
+                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {
-                    to_sql_inner(left, buffer, db_scheme)?;
+                    to_sql_inner(left, buffer)?;
                     let op = match op {
                         Operator::Eq => "=",
                         Operator::NotEq => "!=",
@@ -587,21 +589,21 @@ impl Expr {
                         }
                     };
                     write!(buffer, " {} ", op)?;
-                    to_sql_inner(right, buffer, db_scheme)
+                    to_sql_inner(right, buffer)
                 }
                 Expr::Not(inner) => {
                     write!(buffer, "NOT (")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ")")
                 }
                 Expr::IsNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NULL")
                 }
                 Expr::NotNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer, db_scheme)?;
+                    to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NOT NULL")
                 }
                 Expr::IfElse {
@@ -610,11 +612,11 @@ impl Expr {
                     predicate,
                 } => {
                     write!(buffer, "CASE WHEN ")?;
-                    to_sql_inner(predicate, buffer, db_scheme)?;
+                    to_sql_inner(predicate, buffer)?;
                     write!(buffer, " THEN ")?;
-                    to_sql_inner(if_true, buffer, db_scheme)?;
+                    to_sql_inner(if_true, buffer)?;
                     write!(buffer, " ELSE ")?;
-                    to_sql_inner(if_false, buffer, db_scheme)?;
+                    to_sql_inner(if_false, buffer)?;
                     write!(buffer, " END")
                 }
                 // TODO: Implement SQL translations for these expressions if possible
@@ -630,7 +632,7 @@ impl Expr {
         }
 
         let mut buffer = Vec::new();
-        to_sql_inner(self, &mut buffer, db_scheme)
+        to_sql_inner(self, &mut buffer)
             .ok()
             .and_then(|_| String::from_utf8(buffer).ok())
     }
@@ -694,7 +696,6 @@ impl Display for AggExpr {
     }
 }
 
-/// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     Eq,
@@ -772,8 +773,8 @@ mod tests {
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Lt,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Boolean);
@@ -784,7 +785,7 @@ mod tests {
     fn check_alias_type() -> DaftResult<()> {
         let a = col("a");
         let b = a.alias("b");
-        match b {
+        match b.as_ref() {
             Expr::Alias(..) => Ok(()),
             other => Err(common_error::DaftError::ValueError(format!(
                 "expected expression to be a alias, got {other:?}"
@@ -799,8 +800,8 @@ mod tests {
         let schema = Schema::empty();
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -809,8 +810,8 @@ mod tests {
         let y = lit(12);
 
         let z = Expr::BinaryOp {
-            left: y.into(),
-            right: x.into(),
+            left: y,
+            right: x,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -828,8 +829,8 @@ mod tests {
         ])?;
 
         let z = Expr::BinaryOp {
-            left: x.into(),
-            right: y.into(),
+            left: x,
+            right: y,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
@@ -838,8 +839,8 @@ mod tests {
         let y = col("y");
 
         let z = Expr::BinaryOp {
-            left: y.into(),
-            right: x.into(),
+            left: y,
+            right: x,
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);

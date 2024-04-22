@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 
-use crate::{functions::FunctionExpr, Expr};
+use crate::{functions::FunctionExpr, ExprRef};
 
 use common_error::{DaftError, DaftResult};
 
@@ -17,7 +17,7 @@ impl FunctionEvaluator for DecodeEvaluator {
         "decode"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;

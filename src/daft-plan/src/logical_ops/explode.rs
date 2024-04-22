@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -15,17 +15,18 @@ pub struct Explode {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // Expressions to explode. e.g. col("a")
-    pub to_explode: Vec<Expr>,
+    pub to_explode: Vec<ExprRef>,
     pub exploded_schema: SchemaRef,
 }
 
 impl Explode {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        to_explode: Vec<Expr>,
+        to_explode: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
         let explode_exprs = to_explode
             .iter()
+            .cloned()
             .map(daft_dsl::functions::list::explode)
             .collect::<Vec<_>>();
         let exploded_schema = {
