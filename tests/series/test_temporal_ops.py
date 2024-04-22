@@ -165,6 +165,14 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert input == years.to_pylist()
 
 
+def test_series_timestamp_timezone_roundtrip() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    s = Series.from_pylist([datetime(2023, 1, 1, 1, 1, 1, 1, timezone(offset=timedelta(hours=8)))])
+    e = s.to_pylist()
+    assert e == [datetime(2023, 1, 1, 1, 1, 1, 1, timezone(offset=timedelta(hours=8)))]
+
+
 @pytest.mark.parametrize(
     ["input", "interval", "expected"],
     [
