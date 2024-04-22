@@ -877,3 +877,30 @@ def test_series_utf8_rpad_bad_pads_dtype() -> None:
     pads = Series.from_arrow(pa.array([1, 2, 3]))
     with pytest.raises(ValueError):
         s.str.rpad(lengths, pads)
+
+
+def test_series_utf8_rpad_multichar_pad() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    lengths = Series.from_arrow(pa.array([5, 6, 7], type=pa.uint32()))
+    pads = Series.from_arrow(pa.array(["--", "..", "  "], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
+
+
+@pytest.mark.parametrize(
+    ["data", "length", "pad"],
+    [
+        # empty data
+        ([], [5, 6, 7], ["-", ".", " "]),
+        # empty length
+        (["foo", "barbaz", "quux"], [], ["-", ".", " "]),
+        # empty pad
+        (["foo", "barbaz", "quux"], [5, 6, 7], []),
+    ],
+)
+def test_series_utf8_rpad_empty_arrs(data, length, pad) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    lengths = Series.from_arrow(pa.array(length, type=pa.uint32()))
+    pads = Series.from_arrow(pa.array(pad, type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.rpad(lengths, pads)
