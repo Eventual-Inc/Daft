@@ -58,7 +58,7 @@ Daft is built with logical query optimization by default. This means that Daft w
 
 Dask currently does not support full-featured query optimization.
 
-_Note: As of version 2024.3.0 Dask is slowly implementing query optimization as well. As far as we can tell this is still in early development and has some rough edges. For context see [the discussion](https://github.com/dask/dask/issues/10995_) in the Dask repo.
+_Note: As of version 2024.3.0 Dask is slowly implementing query optimization as well. As far as we can tell this is still in early development and has some rough edges. For context see [the discussion](https://github.com/dask/dask/issues/10995_) in the Dask repo._
 
 ## Daft uses Expressions and UDFs to perform computations in parallel
 
