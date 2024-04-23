@@ -194,21 +194,15 @@ impl PySeries {
     }
 
     pub fn log2(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Log2)?
-            .into())
+        Ok(self.series.log2()?.into())
     }
 
     pub fn log10(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Log10)?
-            .into())
+        Ok(self.series.log10()?.into())
     }
 
     pub fn ln(&self) -> PyResult<Self> {
-        Ok(self.series.trigonometry(&TrigonometricFunction::Ln)?.into())
+        Ok(self.series.ln()?.into())
     }
 
     pub fn exp(&self) -> PyResult<Self> {

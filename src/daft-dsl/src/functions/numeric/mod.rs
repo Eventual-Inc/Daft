@@ -2,6 +2,7 @@ mod abs;
 mod ceil;
 mod exp;
 mod floor;
+mod log;
 mod round;
 mod sign;
 mod trigonometry;
@@ -9,10 +10,10 @@ mod trigonometry;
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
 use floor::FloorEvaluator;
+use log::LogEvaluator;
 use round::RoundEvaluator;
-use sign::SignEvaluator;
-
 use serde::{Deserialize, Serialize};
+use sign::SignEvaluator;
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
@@ -61,9 +62,9 @@ impl NumericExpr {
             ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
             Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
             Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
-            Log2 => &TrigonometryEvaluator(TrigonometricFunction::Log2),
-            Log10 => &TrigonometryEvaluator(TrigonometricFunction::Log10),
-            Ln => &TrigonometryEvaluator(TrigonometricFunction::Ln),
+            Log2 => &LogEvaluator(log::LogFunction::Log2),
+            Log10 => &LogEvaluator(log::LogFunction::Log10),
+            Ln => &LogEvaluator(log::LogFunction::Ln),
             Exp => &ExpEvaluator {},
         }
     }

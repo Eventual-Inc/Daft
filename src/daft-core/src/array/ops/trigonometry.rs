@@ -17,9 +17,6 @@ pub enum TrigonometricFunction {
     ArcTan,
     Radians,
     Degrees,
-    Log2,
-    Log10,
-    Ln,
 }
 
 impl TrigonometricFunction {
@@ -35,9 +32,6 @@ impl TrigonometricFunction {
             ArcTan => "arctan",
             Radians => "radians",
             Degrees => "degrees",
-            Log2 => "log2",
-            Log10 => "log10",
-            Ln => "ln",
         }
     }
 }
@@ -59,9 +53,6 @@ where
             ArcTan => self.apply(|v| v.atan()),
             Radians => self.apply(|v| v.to_radians()),
             Degrees => self.apply(|v| v.to_degrees()),
-            Log2 => self.apply(|v| v.log2()),
-            Log10 => self.apply(|v| v.log10()),
-            Ln => self.apply(|v| v.ln()),
         }
     }
 }
