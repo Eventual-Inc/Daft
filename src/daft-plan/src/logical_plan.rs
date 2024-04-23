@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::optimization::get_required_columns;
 use indexmap::IndexSet;
 use snafu::Snafu;
 
@@ -115,25 +115,16 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(|agg| agg.children())
                     .flat_map(|e| get_required_columns(&e))
-                    .chain(
-                        aggregate
-                            .groupby
-                            .iter()
-                            .flat_map(|v| get_required_columns(v)),
-                    )
+                    .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
                 vec![res]
             }
             Self::Join(join) => {
-                let left = join
-                    .left_on
-                    .iter()
-                    .flat_map(|v| get_required_columns(v))
-                    .collect();
+                let left = join.left_on.iter().flat_map(get_required_columns).collect();
                 let right = join
                     .right_on
                     .iter()
-                    .flat_map(|v| get_required_columns(v))
+                    .flat_map(get_required_columns)
                     .collect();
                 vec![left, right]
             }

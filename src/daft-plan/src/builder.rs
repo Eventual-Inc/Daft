@@ -688,7 +688,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<PhysicalPlanScheduler> {
         py.allow_threads(|| {
             let logical_plan = self.builder.build();
-            let physical_plan: PhysicalPlanRef = plan(logical_plan, cfg.config.clone())?.into();
+            let physical_plan: PhysicalPlanRef = plan(logical_plan, cfg.config.clone())?;
             Ok(physical_plan.into())
         })
     }

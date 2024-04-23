@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
 use crate::physical_plan::PhysicalPlanRef;
-use crate::{physical_plan::PhysicalPlan, LogicalPlan};
+use crate::LogicalPlan;
 
 use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;

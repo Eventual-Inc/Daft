@@ -41,7 +41,7 @@ impl Explode {
             Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 let required_cols_for_clustering_spec = by
                     .iter()
-                    .flat_map(|v| get_required_columns(v))
+                    .flat_map(get_required_columns)
                     .collect::<HashSet<String>>();
                 for expr in to_explode {
                     let newname = expr.name().unwrap().to_string();

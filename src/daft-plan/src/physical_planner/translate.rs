@@ -457,7 +457,7 @@ pub(super) fn translate_single_logical_node(
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
-                        gather_plan.into(),
+                        gather_plan,
                         second_stage_aggs.values().cloned().collect(),
                         groupby.clone(),
                     ));
@@ -477,7 +477,7 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Concat(..) => {
             let other_physical = physical_children.pop().expect("requires 1 inputs");
             let input_physical = physical_children.pop().expect("requires 2 inputs");
-            Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical.into())).arced())
+            Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical)).arced())
         }
         LogicalPlan::Join(LogicalJoin {
             left_on,
@@ -585,8 +585,8 @@ pub(super) fn translate_single_logical_node(
                         (left_physical, right_physical) = (right_physical, left_physical);
                     }
                     Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
@@ -605,7 +605,7 @@ pub(super) fn translate_single_logical_node(
                         // result in less efficient merge-joins (~all-to-all broadcast).
                         if !is_left_sort_partitioned {
                             left_physical = PhysicalPlan::Sort(Sort::new(
-                                left_physical.into(),
+                                left_physical,
                                 left_on.clone(),
                                 std::iter::repeat(false).take(left_on.len()).collect(),
                                 num_partitions,
@@ -614,7 +614,7 @@ pub(super) fn translate_single_logical_node(
                         }
                         if !is_right_sort_partitioned {
                             right_physical = PhysicalPlan::Sort(Sort::new(
-                                right_physical.into(),
+                                right_physical,
                                 right_on.clone(),
                                 std::iter::repeat(false).take(right_on.len()).collect(),
                                 num_partitions,
@@ -624,8 +624,8 @@ pub(super) fn translate_single_logical_node(
                         false
                     };
                     Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
@@ -641,7 +641,7 @@ pub(super) fn translate_single_logical_node(
                         && !is_left_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            left_physical.into(),
+                            left_physical,
                             num_partitions,
                             left_on.clone(),
                         ));
@@ -653,7 +653,7 @@ pub(super) fn translate_single_logical_node(
                         && !is_right_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            right_physical.into(),
+                            right_physical,
                             num_partitions,
                             right_on.clone(),
                         ));
@@ -661,8 +661,8 @@ pub(super) fn translate_single_logical_node(
                             PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
                     Ok(PhysicalPlan::HashJoin(HashJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,

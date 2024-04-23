@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{physical_plan::PhysicalPlan, LogicalPlan};
 use common_error::DaftResult;
-use common_treenode::{DynTreeNode, TreeNode};
+use common_treenode::DynTreeNode;
 
 trait HasChildren {}
 impl HasChildren for LogicalPlan {}
