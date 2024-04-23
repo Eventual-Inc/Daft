@@ -243,7 +243,7 @@ mod tests {
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
@@ -280,7 +280,7 @@ mod tests {
         .project(projection, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
         assert_eq!(
@@ -307,7 +307,7 @@ mod tests {
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));

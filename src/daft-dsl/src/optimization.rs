@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
-use common_treenode::{Transformed, TreeNode, VisitRecursion};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
 use crate::{ExprRef, Operator};
 
 use super::expr::Expr;
 
-pub fn get_required_columns(e: &Expr) -> Vec<String> {
+pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
-    e.apply(&mut |expr| {
-        if let Expr::Column(name) = expr {
-            cols.push(name.as_ref().into());
+    e.apply(&mut |expr: &ExprRef| {
+        if let Expr::Column(ref name) = &**expr {
+            cols.push(name.to_string());
         }
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     })
     .expect("Error occurred when visiting for required columns");
     cols
@@ -37,19 +37,17 @@ pub fn requires_computation(e: &Expr) -> bool {
 }
 
 pub fn replace_columns_with_expressions(
-    expr: Expr,
+    expr: ExprRef,
     replace_map: &HashMap<String, ExprRef>,
-) -> Expr {
-    expr.transform(&|e| {
-        if let Expr::Column(ref name) = e && let Some(tgt) = replace_map.get(name.as_ref()) {
-                // work around until we get transforms that can run on ExprRef
-                let tgt = tgt.as_ref().clone();
-                Ok(Transformed::Yes(tgt.clone()))
+) -> ExprRef {
+    let transformed = expr.transform(&|e: ExprRef| {
+        if let Expr::Column(ref name) = e.as_ref() && let Some(tgt) = replace_map.get(name.as_ref()) {
+                Ok(Transformed::yes(tgt.clone()))
             } else {
-                Ok(Transformed::No(e))
+                Ok(Transformed::no(e))
             }
-    })
-    .expect("Error occurred when rewriting column expressions")
+    }).expect("Error occurred when rewriting column expressions");
+    transformed.data
 }
 
 pub fn split_conjuction(expr: &ExprRef) -> Vec<&ExprRef> {

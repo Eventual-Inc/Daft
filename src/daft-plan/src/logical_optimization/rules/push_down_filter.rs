@@ -171,10 +171,10 @@ impl OptimizerRule for PushDownFilter {
                     {
                         // Can push predicate through expression.
                         let new_predicate = replace_columns_with_expressions(
-                            predicate.as_ref().clone(),
+                            predicate.clone(),
                             &projection_input_mapping,
                         );
-                        can_push.push(new_predicate.arced());
+                        can_push.push(new_predicate);
                     } else {
                         // Can't push predicate expression through projection.
                         can_not_push.push(predicate.clone());

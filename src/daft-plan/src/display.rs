@@ -11,7 +11,7 @@ pub(crate) trait TreeDisplay {
     fn get_name(&self) -> String;
 
     // Required method: Get the children of the self node.
-    fn get_children(&self) -> Vec<&Arc<Self>>;
+    fn get_children(&self) -> Vec<Arc<Self>>;
 
     // Print the whole tree represented by this node.
     fn fmt_tree(&self, s: &mut String, simple: bool) -> fmt::Result {
@@ -30,7 +30,7 @@ pub(crate) trait TreeDisplay {
 
         // Recursively handle children.
         let children = self.get_children();
-        match children[..] {
+        match &children[..] {
             // No children - stop printing.
             [] => Ok(()),
             // One child.
@@ -69,7 +69,7 @@ pub(crate) trait TreeDisplay {
 
         // Recursively handle children.
         let children = self.get_children();
-        match children[..] {
+        match &children[..] {
             // No children - stop printing.
             [] => Ok(()),
             // One child - print leg, then print the child tree.
@@ -120,7 +120,7 @@ impl TreeDisplay for crate::LogicalPlan {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<&Arc<Self>> {
+    fn get_children(&self) -> Vec<Arc<Self>> {
         self.children()
     }
 }
@@ -134,7 +134,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<&Arc<Self>> {
+    fn get_children(&self) -> Vec<Arc<Self>> {
         self.children()
     }
 }

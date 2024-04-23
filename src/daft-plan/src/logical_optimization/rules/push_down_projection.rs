@@ -112,13 +112,7 @@ impl PushDownProjection {
                 let merged_projection = projection
                     .projection
                     .iter()
-                    .map(|e| {
-                        replace_columns_with_expressions(
-                            e.as_ref().clone(),
-                            &upstream_names_to_exprs,
-                        )
-                        .arced()
-                    })
+                    .map(|e| replace_columns_with_expressions(e.clone(), &upstream_names_to_exprs))
                     .collect();
 
                 // Make a new projection node with the merged projections.
@@ -260,7 +254,7 @@ impl PushDownProjection {
                     .collect::<IndexSet<_>>();
 
                 // Skip optimization if no columns would be pruned.
-                let grand_upstream_plan = upstream_plan.children()[0];
+                let grand_upstream_plan = &upstream_plan.children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
                 if grand_upstream_columns.len() == combined_dependencies.len() {
                     return Ok(Transformed::No(plan));
@@ -299,7 +293,7 @@ impl PushDownProjection {
                     .collect::<IndexSet<_>>();
 
                 // Skip optimization if no columns would be pruned.
-                let grand_upstream_plan = upstream_plan.children()[0];
+                let grand_upstream_plan = &upstream_plan.children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
                 if grand_upstream_columns.len() == combined_dependencies.len() {
                     return Ok(Transformed::No(plan));
