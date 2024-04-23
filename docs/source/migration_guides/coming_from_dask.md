@@ -11,6 +11,7 @@ If you are currently using Dask, you may want to consider migrating to Daft if y
 - Are working with **multimodal data types**, such as nested JSON, tensors, Images, URLs, etc.,
 - Need faster computations through **query planning and optimization**,
 - Are executing **machine learning workloads** at scale,
+- Need deep support for **data catalogs, predicate pushdowns and metadata pruning** from Iceberg, Delta, and Hudi
 - Want to benefit from **native Rust concurrency**
 
 You may want to stick with using Dask if you:
@@ -58,7 +59,7 @@ Daft is built with logical query optimization by default. This means that Daft w
 
 Dask currently does not support full-featured query optimization.
 
-_Note: As of version 2024.3.0 Dask is slowly implementing query optimization as well. As far as we can tell this is still in early development and has some rough edges. For context see [the discussion](https://github.com/dask/dask/issues/10995_) in the Dask repo._
+_Note: As of version 2024.3.0 Dask is slowly implementing query optimization as well. As far as we can tell this is still in early development and has some rough edges. For context see [the discussion](https://github.com/dask/dask/issues/10995_) in the Dask repo.\_
 
 ## Daft uses Expressions and UDFs to perform computations in parallel
 
@@ -119,4 +120,4 @@ Daft provides a read_sql method to read SQL queries into a DataFrame. Daft uses 
 
 ## Daft combines Python with Rust and Pyarrow for optimal performance
 
-Daft combines Python with Rust and Pyarrow for optimal performance. Under the hood, Table and Series are implemented in Rust on top of the Apache Arrow specification (using the Rust arrow2 library). This architecture means that all the computationally expensive operations on Table and Series are performed in Rust, and can be heavily optimized for raw speed. Python is most useful as a user-facing API layer for ease of use and an interactive data science user experience. Read [more](/faq/technical_architecture.rst).
+Daft combines Python with Rust and Pyarrow for optimal performance (see [benchmarks](/faq/benchmarks.rst)). Under the hood, Table and Series are implemented in Rust on top of the Apache Arrow specification (using the Rust arrow2 library). This architecture means that all the computationally expensive operations on Table and Series are performed in Rust, and can be heavily optimized for raw speed. Python is most useful as a user-facing API layer for ease of use and an interactive data science user experience. Read [more](/faq/technical_architecture.rst).
