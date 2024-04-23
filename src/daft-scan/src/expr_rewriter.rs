@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use common_error::DaftResult;
 use daft_dsl::{
     col,
-    common_treenode::{Transformed, TreeNode, VisitRecursion},
+    common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
     functions::{partitioning, FunctionExpr},
     null_lit,
     optimization::split_conjuction,
@@ -12,15 +12,15 @@ use daft_dsl::{
 
 use crate::{PartitionField, PartitionTransform};
 
-fn unalias(expr: Expr) -> DaftResult<Expr> {
-    let res = expr.transform(&|e| {
-        if let Expr::Alias(e, _) = e {
-            Ok(Transformed::Yes(e.as_ref().clone()))
+fn unalias(expr: ExprRef) -> DaftResult<ExprRef> {
+    let res = expr.transform(&|e: ExprRef| {
+        if let Expr::Alias(e, _) = e.as_ref() {
+            Ok(Transformed::yes(e.clone()))
         } else {
-            Ok(Transformed::No(e))
+            Ok(Transformed::no(e))
         }
     })?;
-    Ok(res)
+    Ok(res.data)
 }
 
 fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<ExprRef> {
@@ -101,21 +101,21 @@ pub fn rewrite_predicate_for_partitioning(
         let mut all_part_keys = true;
         let mut any_non_identity_part_keys = false;
         let mut has_udf = false;
-        e.apply(&mut |e| match e {
+        e.apply(&mut |e: &ExprRef| match e.as_ref() {
             #[cfg(feature = "python")]
             Expr::Function {
                 func: FunctionExpr::Python(..),
                 ..
             } => {
                 has_udf = true;
-                Ok(VisitRecursion::Stop)
+                Ok(TreeNodeRecursion::Stop)
             }
             Expr::Function {
                 func: FunctionExpr::Uri(..),
                 ..
             } => {
                 has_udf = true;
-                Ok(VisitRecursion::Stop)
+                Ok(TreeNodeRecursion::Stop)
             }
             Expr::Column(col_name) => {
                 if let Some(pfield) = pfields_map.get(col_name.as_ref()) {
@@ -126,9 +126,9 @@ pub fn rewrite_predicate_for_partitioning(
                 } else {
                     all_part_keys = false;
                 }
-                Ok(VisitRecursion::Continue)
+                Ok(TreeNodeRecursion::Continue)
             }
-            _ => Ok(VisitRecursion::Continue),
+            _ => Ok(TreeNodeRecursion::Continue),
         })
         .unwrap();
 
@@ -147,7 +147,7 @@ pub fn rewrite_predicate_for_partitioning(
         ));
     }
 
-    let predicate = unalias(predicate.as_ref().clone())?;
+    let predicate = unalias(predicate.clone())?;
 
     let source_to_pfield = {
         let mut map = HashMap::with_capacity(pfields.len());
@@ -162,9 +162,9 @@ pub fn rewrite_predicate_for_partitioning(
         map
     };
 
-    let with_part_cols = predicate.transform(&|expr| {
+    let with_part_cols = predicate.transform(&|expr: ExprRef| {
         use Operator::*;
-        match expr {
+        match expr.as_ref() {
             // Binary Op for Eq
             // All transforms should work as is
             Expr::BinaryOp {
@@ -172,16 +172,16 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left, ref right } => {
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: Eq, left: col(pfield.field.name.as_str()), right: new_expr }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: Eq, left: col(pfield.field.name.as_str()), right: new_expr }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_equals() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: Eq, left: new_expr, right: col(pfield.field.name.as_str()) }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: Eq, left: new_expr, right: col(pfield.field.name.as_str()) }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else {
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 }
             },
             // Binary Op for NotEq
@@ -191,16 +191,16 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left, ref right } => {
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: NotEq, left: col(pfield.field.name.as_str()), right: new_expr }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: NotEq, left: col(pfield.field.name.as_str()), right: new_expr }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_not_equals() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: NotEq, left: new_expr, right: col(pfield.field.name.as_str()) }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: NotEq, left: new_expr, right: col(pfield.field.name.as_str()) }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else {
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 }
             },
             // Binary Op for Lt | LtEq | Gt | GtEq
@@ -216,41 +216,41 @@ pub fn rewrite_predicate_for_partitioning(
 
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: relaxed_op, left: col(pfield.field.name.as_str()), right: new_expr }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: relaxed_op, left: col(pfield.field.name.as_str()), right: new_expr }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else if let Expr::Column(col_name) = right.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
                     if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield) {
-                        return Ok(Transformed::Yes(Expr::BinaryOp { op: relaxed_op, left: new_expr, right: col(pfield.field.name.as_str()) }));
+                        return Ok(Transformed::yes(Expr::BinaryOp { op: relaxed_op, left: new_expr, right: col(pfield.field.name.as_str()) }.arced()));
                     }
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 } else {
-                    Ok(Transformed::No(expr))
+                    Ok(Transformed::no(expr))
                 }
             },
 
             Expr::IsNull(ref expr) if let Expr::Column(col_name) = expr.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) => {
-                Ok(Transformed::Yes(Expr::IsNull(col(pfield.field.name.as_str()))))
+                Ok(Transformed::yes(Expr::IsNull(col(pfield.field.name.as_str())).arced()))
             },
             Expr::NotNull(ref expr) if let Expr::Column(col_name) = expr.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) => {
-                Ok(Transformed::Yes(Expr::NotNull(col(pfield.field.name.as_str()))))
+                Ok(Transformed::yes(Expr::NotNull(col(pfield.field.name.as_str())).arced()))
             },
-            _ => Ok(Transformed::No(expr))
+            _ => Ok(Transformed::no(expr))
         }
     })?;
 
-    let with_part_cols = with_part_cols.arced();
+    let with_part_cols = with_part_cols.data;
 
     // Filter to predicate clauses that only involve partition columns.
     let split = split_conjuction(&with_part_cols);
     let mut part_preds: Vec<ExprRef> = vec![];
     for e in split.into_iter() {
         let mut all_part_keys = true;
-        e.apply(&mut |e| {
-            if let Expr::Column(col_name) = e && !pfields_map.contains_key(col_name.as_ref()) {
+        e.apply(&mut |e: &ExprRef| {
+            if let Expr::Column(col_name) = e.as_ref() && !pfields_map.contains_key(col_name.as_ref()) {
                 all_part_keys = false;
             }
-            Ok(VisitRecursion::Continue)
+            Ok(TreeNodeRecursion::Continue)
         })
         .unwrap();
 
