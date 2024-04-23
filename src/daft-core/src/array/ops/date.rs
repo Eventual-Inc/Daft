@@ -228,82 +228,79 @@ impl TimestampArray {
         let tu = timeunit.to_arrow();
         let duration = process_interval(interval)?;
 
-        macro_rules! datetime_to_timestamp {
-            ($dt:expr) => {
-                match tu {
-                    arrow2::datatypes::TimeUnit::Second => $dt.timestamp(),
-                    arrow2::datatypes::TimeUnit::Millisecond => $dt.timestamp_millis(),
-                    arrow2::datatypes::TimeUnit::Microsecond => $dt.timestamp_micros(),
-                    arrow2::datatypes::TimeUnit::Nanosecond => {
-                        $dt.timestamp_nanos_opt()
-                            .ok_or(DaftError::ValueError(format!(
-                                "Error truncating timestamp, result is out of range : {{$dt}}"
-                            )))?
-                    }
+        macro_rules! truncate_dt {
+            ($dt:expr, $duration:expr) => {
+                match $dt.duration_trunc($duration) {
+                    Ok(dt) => match tu {
+                        arrow2::datatypes::TimeUnit::Second => Ok(dt.timestamp()),
+                        arrow2::datatypes::TimeUnit::Millisecond => Ok(dt.timestamp_millis()),
+                        arrow2::datatypes::TimeUnit::Microsecond => Ok(dt.timestamp_micros()),
+                        arrow2::datatypes::TimeUnit::Nanosecond => {
+                            dt.timestamp_nanos_opt()
+                                .ok_or(DaftError::ValueError(format!(
+                                    "Error truncating timestamp, result is out of range : {{dt}}"
+                                )))
+                        }
+                    },
+                    Err(RoundingError::DurationExceedsTimestamp) => Ok(0),
+                    Err(e) => Err(DaftError::ValueError(format!(
+                        "Error truncating timestamp: {e}"
+                    ))),
                 }
             };
         }
 
-        let truncate_ts = |ts: i64| -> DaftResult<i64> {
-            let ts = match start_time {
-                Some(st) => {
-                    if *st > ts {
-                        return Err(DaftError::ValueError(format!(
-                            "Start time is greater than timestamp: {st} > {ts}"
-                        )));
-                    }
-                    ts - st
-                }
-                None => ts,
-            };
-
-            let truncated_ts = match tz {
-                Some(tz) => {
-                    if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
-                        let dt = arrow2::temporal_conversions::timestamp_to_datetime(ts, tu, &tz);
-                        match dt.duration_trunc(duration) {
-                            Ok(dt) => Ok(datetime_to_timestamp!(dt)),
-                            Err(RoundingError::DurationExceedsTimestamp) => Ok(0),
-                            Err(e) => Err(DaftError::ValueError(format!(
-                                "Error truncating timestamp: {e}"
-                            ))),
-                        }
-                    } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz) {
-                        let dt = arrow2::temporal_conversions::timestamp_to_datetime(ts, tu, &tz);
-                        match dt.duration_trunc(duration) {
-                            Ok(dt) => Ok(datetime_to_timestamp!(dt)),
-                            Err(RoundingError::DurationExceedsTimestamp) => Ok(0),
-                            Err(e) => Err(DaftError::ValueError(format!(
-                                "Error truncating timestamp: {e}"
-                            ))),
-                        }
-                    } else {
-                        Err(DaftError::TypeError(format!(
-                            "Cannot parse timezone in Timestamp datatype: {}",
-                            tz
-                        )))
-                    }
-                }
-                None => {
-                    let dt = arrow2::temporal_conversions::timestamp_to_naive_datetime(ts, tu);
-                    match dt.duration_trunc(duration) {
-                        Ok(dt) => Ok(datetime_to_timestamp!(dt)),
-                        Err(RoundingError::DurationExceedsTimestamp) => Ok(0),
-                        Err(e) => Err(DaftError::ValueError(format!(
-                            "Error truncating timestamp: {e}"
-                        ))),
-                    }
-                }
-            };
-            match start_time {
-                Some(st) => truncated_ts.map(|ts| ts + st),
-                None => truncated_ts,
-            }
-        };
-
         let result_timestamps = physical
             .iter()
-            .map(|ts| ts.map_or(Ok(None), |ts| truncate_ts(*ts).map(Some)))
+            .map(|ts| {
+                ts.map_or(Ok(None), |ts| {
+                    let adjusted_ts = match start_time {
+                        Some(st) if *st > *ts => {
+                            return Err(DaftError::ValueError(format!(
+                                "Start time is greater than timestamp: {st} > {ts}"
+                            )));
+                        }
+                        Some(st) => ts - st,
+                        None => *ts,
+                    };
+                    let truncated_ts = match tz {
+                        Some(tz) => {
+                            if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
+                                let dt = arrow2::temporal_conversions::timestamp_to_datetime(
+                                    adjusted_ts,
+                                    tu,
+                                    &tz,
+                                );
+                                truncate_dt!(dt, duration)
+                            } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz)
+                            {
+                                let dt = arrow2::temporal_conversions::timestamp_to_datetime(
+                                    adjusted_ts,
+                                    tu,
+                                    &tz,
+                                );
+                                truncate_dt!(dt, duration)
+                            } else {
+                                Err(DaftError::TypeError(format!(
+                                    "Cannot parse timezone in Timestamp datatype: {}",
+                                    tz
+                                )))
+                            }
+                        }
+                        None => {
+                            let dt = arrow2::temporal_conversions::timestamp_to_naive_datetime(
+                                adjusted_ts,
+                                tu,
+                            );
+                            truncate_dt!(dt, duration)
+                        }
+                    };
+                    match start_time {
+                        Some(st) => truncated_ts.map(|ts| Some(ts + st)),
+                        None => truncated_ts.map(Some),
+                    }
+                })
+            })
             .collect::<DaftResult<arrow2::array::PrimitiveArray<i64>>>()?;
 
         Ok(TimestampArray::new(

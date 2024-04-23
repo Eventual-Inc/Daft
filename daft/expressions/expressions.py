@@ -767,7 +767,28 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Truncates the datetime column to the specified interval
 
         Example:
-            >>> col("x").dt.truncate("1 day")
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
+            ...             datetime.datetime(2021, 1, 1, 0, 2, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("truncated", df["datetime"].dt.truncate("1 minute")).collect()
+            ╭───────────────────────────────┬───────────────────────────────╮
+            │ datetime                      ┆ truncated                     │
+            │ ---                           ┆ ---                           │
+            │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+            ╞═══════════════════════════════╪═══════════════════════════════╡
+            │ 2021-01-01T00:01:01.000000    ┆ 2021-01-01T00:01:00.000000    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01T00:01:59.000000    ┆ 2021-01-01T00:01:00.000000    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01T00:02:00.000000    ┆ 2021-01-01T00:02:00.000000    │
+            ╰───────────────────────────────┴───────────────────────────────╯
 
         Args:
             interval: The interval to truncate to. Must be a string representing a valid interval, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
