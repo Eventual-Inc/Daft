@@ -15,6 +15,7 @@ use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};
 use std::{
+    any::Any,
     fmt::{Debug, Display, Formatter, Result},
     io::{self, Write},
     sync::Arc,
@@ -145,6 +146,30 @@ impl AggExpr {
             | List(expr)
             | Concat(expr) => vec![expr.clone()],
             MapGroups { func: _, inputs } => inputs.clone(),
+        }
+    }
+
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
+        use AggExpr::*;
+
+        if let MapGroups { func: _, inputs } = &self {
+            assert_eq!(children.len(), inputs.len());
+        } else {
+            assert_eq!(children.len(), 1);
+        }
+        match self {
+            Count(_, count_mode) => Count(children[0].clone(), *count_mode),
+            Sum(_) => Sum(children[0].clone()),
+            Mean(_) => Mean(children[0].clone()),
+            Min(_) => Min(children[0].clone()),
+            Max(_) => Mean(children[0].clone()),
+            AnyValue(_, ignore_nulls) => AnyValue(children[0].clone(), *ignore_nulls),
+            List(_) => List(children[0].clone()),
+            Concat(_) => Concat(children[0].clone()),
+            MapGroups { func, inputs: _ } => MapGroups {
+                func: func.clone(),
+                inputs: children,
+            },
         }
     }
 
@@ -414,6 +439,57 @@ impl Expr {
         }
     }
 
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+        use Expr::*;
+        // include enforcement
+        match self {
+            // no children
+            Column(..) | Literal(..) => self.clone(),
+            // 1 child
+            Not(_) => Not(children.get(0).expect("Should have 1 child").clone()),
+            Alias(_, name) => Alias(
+                children.get(0).expect("Should have 1 child").clone(),
+                name.clone(),
+            ),
+            IsNull(_) => IsNull(children.get(0).expect("Should have 1 child").clone()),
+            NotNull(_) => NotNull(children.get(0).expect("Should have 1 child").clone()),
+            Cast(_, dtype) => Cast(
+                children.get(0).expect("Should have 1 child").clone(),
+                dtype.clone(),
+            ),
+            // 2 children
+            BinaryOp { op, left, right } => BinaryOp {
+                op: *op,
+                left: children.get(0).expect("Should have 1 child").clone(),
+                right: children.get(1).expect("Should have 2 child").clone(),
+            },
+            IsIn(left, right) => IsIn(
+                children.get(0).expect("Should have 1 child").clone(),
+                children.get(1).expect("Should have 2 child").clone(),
+            ),
+            FillNull(left, right) => FillNull(
+                children.get(0).expect("Should have 1 child").clone(),
+                children.get(1).expect("Should have 2 child").clone(),
+            ),
+            // ternary
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => IfElse {
+                if_true: children.get(0).expect("Should have 1 child").clone(),
+                if_false: children.get(1).expect("Should have 2 child").clone(),
+                predicate: children.get(2).expect("Should have 3 child").clone(),
+            },
+            // N-ary
+            Agg(agg_expr) => Agg(agg_expr.with_new_children(children)),
+            Function { func, inputs } => Function {
+                func: func.clone(),
+                inputs: children,
+            },
+        }
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use Expr::*;
         match self {
@@ -551,7 +627,7 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
-    pub fn input_mapping(&self) -> Option<String> {
+    pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
 
@@ -559,7 +635,7 @@ impl Expr {
         //   1. There is only one required column
         //   2. No computation is run on this required column
         match (&required_columns[..], requires_computation) {
-            ([required_col], false) => Some(required_col.clone()),
+            ([required_col], false) => Some(required_col.to_string()),
             _ => None,
         }
     }

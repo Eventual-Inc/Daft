@@ -1,126 +1,38 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::{TreeNode, VisitRecursion};
+use common_treenode::DynTreeNode;
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
-impl TreeNode for Expr {
-    fn apply_children<F>(&self, op: &mut F) -> DaftResult<common_treenode::VisitRecursion>
-    where
-        F: FnMut(&Self) -> DaftResult<common_treenode::VisitRecursion>,
+/// Returns a copy of this expr if we change any child according to the pointer comparison.
+/// The size of `children` must be equal to the size of `PhysicalExpr::children()`.
+fn with_new_children_if_necessary(expr: ExprRef, children: Vec<ExprRef>) -> DaftResult<ExprRef> {
+    let old_children = expr.children();
+    if children.len() != old_children.len() {
+        panic!("Expr::with_new_children_if_necessary: Wrong number of children")
+    } else if children.is_empty()
+        || children
+            .iter()
+            .zip(old_children.iter())
+            .any(|(c1, c2)| !Arc::ptr_eq(c1, c2))
     {
-        use Expr::*;
-        let children = match self {
-            Alias(expr, _) | Cast(expr, _) | Not(expr) | IsNull(expr) | NotNull(expr) => {
-                vec![expr.as_ref()]
-            }
-            Agg(agg_expr) => {
-                use crate::AggExpr::*;
-                match agg_expr {
-                    Count(expr, ..)
-                    | Sum(expr)
-                    | Mean(expr)
-                    | Min(expr)
-                    | Max(expr)
-                    | AnyValue(expr, _)
-                    | List(expr)
-                    | Concat(expr) => vec![expr.as_ref()],
-                    MapGroups { func: _, inputs } => {
-                        inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>()
-                    }
-                }
-            }
-            BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
-            IsIn(expr, items) => vec![expr.as_ref(), items.as_ref()],
-            FillNull(expr, fill_value) => vec![expr.as_ref(), fill_value.as_ref()],
-            Column(_) | Literal(_) => vec![],
-            Function { func: _, inputs } => inputs.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
-            IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => vec![if_true.as_ref(), if_false.as_ref(), predicate.as_ref()],
-        };
-        for child in children.into_iter() {
-            match op(child)? {
-                VisitRecursion::Continue => {}
-                VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
-                VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
-            }
-        }
-        Ok(VisitRecursion::Continue)
+        Ok(expr.with_new_children(children).arced())
+    } else {
+        Ok(expr)
+    }
+}
+
+impl DynTreeNode for Expr {
+    fn arc_children(&self) -> Vec<Arc<Self>> {
+        self.children()
     }
 
-    fn map_children<F>(self, transform: F) -> DaftResult<Self>
-    where
-        F: FnMut(Self) -> DaftResult<Self>,
-    {
-        let mut transform = transform;
-
-        use Expr::*;
-        Ok(match self {
-            Alias(expr, name) => Alias(transform(expr.as_ref().clone())?.into(), name),
-            Column(_) | Literal(_) => self,
-            Cast(expr, dtype) => Cast(transform(expr.as_ref().clone())?.into(), dtype),
-            Agg(agg_expr) => {
-                use crate::AggExpr::*;
-                match agg_expr {
-                    Count(expr, mode) => Arc::new(transform(expr.as_ref().clone())?).count(mode),
-                    Sum(expr) => Arc::new(transform(expr.as_ref().clone())?).sum(),
-                    Mean(expr) => Arc::new(transform(expr.as_ref().clone())?).mean(),
-                    Min(expr) => Arc::new(transform(expr.as_ref().clone())?).min(),
-                    Max(expr) => Arc::new(transform(expr.as_ref().clone())?).max(),
-                    AnyValue(expr, ignore_nulls) => {
-                        Arc::new(transform(expr.as_ref().clone())?).any_value(ignore_nulls)
-                    }
-                    List(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_list(),
-                    Concat(expr) => Arc::new(transform(expr.as_ref().clone())?).agg_concat(),
-                    MapGroups { func, inputs } => Arc::new(Expr::Agg(MapGroups {
-                        func,
-                        inputs: inputs
-                            .into_iter()
-                            .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
-                            .collect::<DaftResult<Vec<_>>>()?,
-                    })),
-                }
-                .as_ref()
-                .clone()
-            }
-            Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
-            IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
-            NotNull(expr) => NotNull(transform(expr.as_ref().clone())?.into()),
-            FillNull(expr, fill_value) => FillNull(
-                transform(expr.as_ref().clone())?.into(),
-                transform(fill_value.as_ref().clone())?.into(),
-            ),
-            IsIn(expr, items) => IsIn(
-                transform(expr.as_ref().clone())?.into(),
-                transform(items.as_ref().clone())?.into(),
-            ),
-            IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => Expr::IfElse {
-                if_true: transform(if_true.as_ref().clone())?.into(),
-                if_false: transform(if_false.as_ref().clone())?.into(),
-                predicate: transform(predicate.as_ref().clone())?.into(),
-            },
-            BinaryOp { op, left, right } => Expr::BinaryOp {
-                op,
-                left: transform(left.as_ref().clone())?.into(),
-                right: transform(right.as_ref().clone())?.into(),
-            },
-            Function { func, inputs } => Function {
-                func,
-                inputs: inputs
-                    .into_iter()
-                    .map(|expr| transform(expr.as_ref().clone()).map(Arc::new))
-                    .collect::<DaftResult<Vec<_>>>()?,
-            },
-        }
-        .as_ref()
-        .clone())
+    fn with_new_arc_children(
+        &self,
+        arc_self: Arc<Self>,
+        new_children: Vec<Arc<Self>>,
+    ) -> DaftResult<Arc<Self>> {
+        with_new_children_if_necessary(arc_self, new_children)
     }
 }
