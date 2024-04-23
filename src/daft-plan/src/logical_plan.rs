@@ -28,6 +28,9 @@ pub enum LogicalPlan {
 }
 
 impl LogicalPlan {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
@@ -139,22 +142,24 @@ impl LogicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&Arc<Self>> {
+    pub fn children(&self) -> Vec<Arc<Self>> {
         match self {
             Self::Source(..) => vec![],
-            Self::Project(Project { input, .. }) => vec![input],
-            Self::Filter(Filter { input, .. }) => vec![input],
-            Self::Limit(Limit { input, .. }) => vec![input],
-            Self::Explode(Explode { input, .. }) => vec![input],
-            Self::Sort(Sort { input, .. }) => vec![input],
-            Self::Repartition(Repartition { input, .. }) => vec![input],
-            Self::Distinct(Distinct { input, .. }) => vec![input],
-            Self::Aggregate(Aggregate { input, .. }) => vec![input],
-            Self::Concat(Concat { input, other }) => vec![input, other],
-            Self::Join(Join { left, right, .. }) => vec![left, right],
-            Self::Sink(Sink { input, .. }) => vec![input],
-            Self::Sample(Sample { input, .. }) => vec![input],
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
+            Self::Project(Project { input, .. }) => vec![input.clone()],
+            Self::Filter(Filter { input, .. }) => vec![input.clone()],
+            Self::Limit(Limit { input, .. }) => vec![input.clone()],
+            Self::Explode(Explode { input, .. }) => vec![input.clone()],
+            Self::Sort(Sort { input, .. }) => vec![input.clone()],
+            Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
+            Self::Distinct(Distinct { input, .. }) => vec![input.clone()],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
+            Self::Concat(Concat { input, other }) => vec![input.clone(), other.clone()],
+            Self::Join(Join { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::Sink(Sink { input, .. }) => vec![input.clone()],
+            Self::Sample(Sample { input, .. }) => vec![input.clone()],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                vec![input.clone()]
+            }
         }
     }
 

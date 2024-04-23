@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
-use daft_dsl::common_treenode::{ConcreteTreeNode, Transformed, TreeNode, TreeNodeRecursion};
+use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};

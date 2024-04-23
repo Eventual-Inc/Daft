@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
+use crate::physical_plan::PhysicalPlanRef;
 use crate::{physical_plan::PhysicalPlan, LogicalPlan};
 
 use crate::physical_planner::planner::PhysicalPlanTranslator;
@@ -11,7 +12,10 @@ mod planner;
 mod translate;
 
 /// Translate a logical plan to a physical plan.
-pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
+pub fn plan(
+    logical_plan: Arc<LogicalPlan>,
+    cfg: Arc<DaftExecutionConfig>,
+) -> DaftResult<PhysicalPlanRef> {
     let mut visitor = PhysicalPlanTranslator {
         physical_children: vec![],
         cfg: cfg.clone(),

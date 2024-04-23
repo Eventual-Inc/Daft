@@ -15,7 +15,6 @@ use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};
 use std::{
-    any::Any,
     fmt::{Debug, Display, Formatter, Result},
     io::{self, Write},
     sync::Arc,
@@ -433,7 +432,7 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
-                vec![predicate.clone(), if_true.clone(), if_false.clone()]
+                vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
         }
@@ -446,44 +445,40 @@ impl Expr {
             // no children
             Column(..) | Literal(..) => self.clone(),
             // 1 child
-            Not(_) => Not(children.get(0).expect("Should have 1 child").clone()),
-            Alias(_, name) => Alias(
+            Not(..) => Not(children.get(0).expect("Should have 1 child").clone()),
+            Alias(.., name) => Alias(
                 children.get(0).expect("Should have 1 child").clone(),
                 name.clone(),
             ),
-            IsNull(_) => IsNull(children.get(0).expect("Should have 1 child").clone()),
-            NotNull(_) => NotNull(children.get(0).expect("Should have 1 child").clone()),
-            Cast(_, dtype) => Cast(
+            IsNull(..) => IsNull(children.get(0).expect("Should have 1 child").clone()),
+            NotNull(..) => NotNull(children.get(0).expect("Should have 1 child").clone()),
+            Cast(.., dtype) => Cast(
                 children.get(0).expect("Should have 1 child").clone(),
                 dtype.clone(),
             ),
             // 2 children
-            BinaryOp { op, left, right } => BinaryOp {
+            BinaryOp { op, .. } => BinaryOp {
                 op: *op,
                 left: children.get(0).expect("Should have 1 child").clone(),
                 right: children.get(1).expect("Should have 2 child").clone(),
             },
-            IsIn(left, right) => IsIn(
+            IsIn(..) => IsIn(
                 children.get(0).expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
-            FillNull(left, right) => FillNull(
+            FillNull(..) => FillNull(
                 children.get(0).expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
             // ternary
-            IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => IfElse {
+            IfElse { .. } => IfElse {
                 if_true: children.get(0).expect("Should have 1 child").clone(),
                 if_false: children.get(1).expect("Should have 2 child").clone(),
                 predicate: children.get(2).expect("Should have 3 child").clone(),
             },
             // N-ary
             Agg(agg_expr) => Agg(agg_expr.with_new_children(children)),
-            Function { func, inputs } => Function {
+            Function { func, .. } => Function {
                 func: func.clone(),
                 inputs: children,
             },

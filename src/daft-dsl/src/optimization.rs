@@ -6,7 +6,7 @@ use crate::{ExprRef, Operator};
 
 use super::expr::Expr;
 
-pub fn get_required_columns<'a>(e: &'a ExprRef) -> Vec<String> {
+pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
     e.apply(&mut |expr: &ExprRef| {
         if let Expr::Column(ref name) = &**expr {
