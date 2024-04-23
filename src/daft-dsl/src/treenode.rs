@@ -6,7 +6,7 @@ use common_treenode::DynTreeNode;
 use crate::{Expr, ExprRef};
 
 /// Returns a copy of this expr if we change any child according to the pointer comparison.
-/// The size of `children` must be equal to the size of `PhysicalExpr::children()`.
+/// The size of `children` must be equal to the size of `Expr::children`.
 fn with_new_children_if_necessary(expr: ExprRef, children: Vec<ExprRef>) -> DaftResult<ExprRef> {
     let old_children = expr.children();
     if children.len() != old_children.len() {

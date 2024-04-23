@@ -438,9 +438,8 @@ impl Expr {
         }
     }
 
-    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+    pub(super) fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
         use Expr::*;
-        // include enforcement
         match self {
             // no children
             Column(..) | Literal(..) => self.clone(),
