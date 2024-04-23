@@ -563,21 +563,6 @@ impl Utf8Array {
         })
     }
 
-    pub fn repeat(&self, n: usize) -> DaftResult<Utf8Array> {
-        let self_arrow = self.as_arrow();
-
-        // Handle empty data case.
-        if self.is_empty() {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
-        }
-        let arrow_result = self_arrow
-            .iter()
-            .map(|element| element.map(|w| w.repeat(n)))
-            .collect::<arrow2::array::Utf8Array<i64>>();
-
-        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
-    }
-
     pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
         let (is_full_null, expected_size) = parse_inputs(self, &[substr])
             .map_err(|e| DaftError::ValueError(format!("Error in find: {e}")))?;
