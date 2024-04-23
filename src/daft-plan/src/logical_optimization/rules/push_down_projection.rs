@@ -113,11 +113,8 @@ impl PushDownProjection {
                     .projection
                     .iter()
                     .map(|e| {
-                        replace_columns_with_expressions(
-                            e.as_ref().clone(),
-                            &upstream_names_to_exprs,
-                        )
-                        .arced()
+                        replace_columns_with_expressions(e.clone(), &upstream_names_to_exprs)
+                            .arced()
                     })
                     .collect();
 

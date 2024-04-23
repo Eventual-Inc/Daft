@@ -72,7 +72,6 @@ impl Project {
         } else {
             let child_projection = projection
                 .iter()
-                .map(|v| v.as_ref())
                 .flat_map(optimization::get_required_columns)
                 .collect::<IndexSet<_>>()
                 .into_iter()

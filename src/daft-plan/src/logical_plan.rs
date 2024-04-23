@@ -64,7 +64,6 @@ impl LogicalPlan {
                 let res = projection
                     .projection
                     .iter()
-                    .map(|v| v.as_ref())
                     .flat_map(get_required_columns)
                     .collect();
                 vec![res]
@@ -76,11 +75,7 @@ impl LogicalPlan {
                     .collect()]
             }
             Self::Sort(sort) => {
-                let res = sort
-                    .sort_by
-                    .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
-                    .collect();
+                let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
                 vec![res]
             }
             Self::Repartition(repartition) => {
@@ -88,7 +83,7 @@ impl LogicalPlan {
                     .repartition_spec
                     .repartition_by()
                     .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .flat_map(get_required_columns)
                     .collect();
                 vec![res]
             }
@@ -96,7 +91,7 @@ impl LogicalPlan {
                 let res = explode
                     .to_explode
                     .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .flat_map(get_required_columns)
                     .collect();
                 vec![res]
             }
@@ -115,14 +110,14 @@ impl LogicalPlan {
                 let res = aggregate
                     .aggregations
                     .iter()
-                    .map(|agg| get_required_columns(&Expr::Agg(agg.clone())))
+                    .flat_map(|agg| agg.children())
+                    .flat_map(|e| get_required_columns(&e))
                     .chain(
                         aggregate
                             .groupby
                             .iter()
-                            .map(|v| get_required_columns(v.as_ref())),
+                            .flat_map(|v| get_required_columns(v)),
                     )
-                    .flatten()
                     .collect();
                 vec![res]
             }
@@ -130,12 +125,12 @@ impl LogicalPlan {
                 let left = join
                     .left_on
                     .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .flat_map(|v| get_required_columns(v))
                     .collect();
                 let right = join
                     .right_on
                     .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .flat_map(|v| get_required_columns(v))
                     .collect();
                 vec![left, right]
             }
