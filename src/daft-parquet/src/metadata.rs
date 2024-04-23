@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
-use daft_dsl::common_treenode::{Transformed, TreeNode, VisitRecursion};
+use daft_dsl::common_treenode::{ConcreteTreeNode, Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
@@ -19,48 +19,52 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
 struct ParquetTypeWrapper(ParquetType);
 
 impl TreeNode for ParquetTypeWrapper {
-    fn apply_children<F>(&self, op: &mut F) -> DaftResult<VisitRecursion>
-    where
-        F: FnMut(&Self) -> DaftResult<VisitRecursion>,
-    {
+    fn apply_children<F: FnMut(&Self) -> DaftResult<TreeNodeRecursion>>(
+        &self,
+        mut op: F,
+    ) -> DaftResult<TreeNodeRecursion> {
         match &self.0 {
-            ParquetType::PrimitiveType(..) => Ok(VisitRecursion::Skip),
+            ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursion::Jump),
             ParquetType::GroupType { fields, .. } => {
                 for child in fields.iter() {
                     // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
                     match op(&ParquetTypeWrapper(child.clone()))? {
-                        VisitRecursion::Continue => {}
-                        VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
-                        VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
+                        TreeNodeRecursion::Continue => {}
+                        TreeNodeRecursion::Jump => return Ok(TreeNodeRecursion::Continue),
+                        TreeNodeRecursion::Stop => return Ok(TreeNodeRecursion::Stop),
                     }
                 }
-                Ok(VisitRecursion::Continue)
+                Ok(TreeNodeRecursion::Continue)
             }
         }
     }
 
-    fn map_children<F>(self, transform: F) -> DaftResult<Self>
-    where
-        F: FnMut(Self) -> DaftResult<Self>,
-    {
+    fn map_children<F: FnMut(Self) -> DaftResult<Transformed<Self>>>(
+        self,
+        transform: F,
+    ) -> DaftResult<Transformed<Self>> {
         let mut transform = transform;
 
         match self.0 {
-            ParquetType::PrimitiveType(..) => Ok(self),
+            ParquetType::PrimitiveType(..) => Ok(Transformed::no(self)),
             ParquetType::GroupType {
                 field_info,
                 logical_type,
                 converted_type,
                 fields,
-            } => Ok(ParquetTypeWrapper(ParquetType::GroupType {
-                fields: fields
-                    .into_iter()
-                    .map(|child| transform(ParquetTypeWrapper(child)).map(|wrapper| wrapper.0))
-                    .collect::<DaftResult<Vec<_>>>()?,
-                field_info,
-                logical_type,
-                converted_type,
-            })),
+            } => Ok(Transformed::yes(ParquetTypeWrapper(
+                ParquetType::GroupType {
+                    fields: fields
+                        .into_iter()
+                        .map(|child| {
+                            transform(ParquetTypeWrapper(child)).map(|wrapper| wrapper.data.0)
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?,
+                    field_info,
+                    logical_type,
+                    converted_type,
+                },
+            ))),
         }
     }
 }
@@ -77,7 +81,7 @@ fn rewrite_parquet_type_with_field_id_mapping(
             {
                 // Fix the `pq_type`'s name
                 primitive_type.field_info.name = mapped_field.name.clone();
-                return Ok(Transformed::Yes(pq_type));
+                return Ok(Transformed::yes(pq_type));
             }
         }
         ParquetType::GroupType {
@@ -110,11 +114,11 @@ fn rewrite_parquet_type_with_field_id_mapping(
                     }
                 };
 
-                return Ok(Transformed::Yes(pq_type));
+                return Ok(Transformed::yes(pq_type));
             }
         }
     };
-    Ok(Transformed::No(pq_type))
+    Ok(Transformed::no(pq_type))
 }
 
 /// Applies field_ids to a ParquetType, returns `None` if the field ID is not found
@@ -133,6 +137,7 @@ fn apply_field_ids_to_parquet_type(
                 rewrite_parquet_type_with_field_id_mapping(pq_type, field_id_mapping)
             })
             .unwrap()
+            .data
             .0;
         Some(rewritten_pq_type)
     } else {
