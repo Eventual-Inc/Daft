@@ -964,7 +964,7 @@ class DataFrame:
             >>> df.drop_na("a")  # drops rows where column a contains NaN values
 
         Args:
-            *cols (str): column names by which rows containings nans/NULLs should be filtered
+            *cols (str): column names by which rows containing nans/NULLs should be filtered
 
         Returns:
             DataFrame: DataFrame without NaNs in specified/all columns
@@ -1000,7 +1000,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
             >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
         Args:
-            *cols (str): column names by which rows containings nans should be filtered
+            *cols (str): column names by which rows containing nans should be filtered
 
         Returns:
             DataFrame: DataFrame without missing values in specified/all columns

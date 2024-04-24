@@ -474,7 +474,7 @@ class S3Config:
 
     @staticmethod
     def from_env() -> S3Config:
-        """Creates an S3Config, retrieving credentials and configurations from the current environtment"""
+        """Creates an S3Config, retrieving credentials and configurations from the current environment"""
         ...
 
 class AzureConfig:

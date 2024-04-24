@@ -983,7 +983,7 @@ impl ObjectSource for S3LikeSource {
                 lsr.files.retain(|f| f.filepath == target_path);
 
                 if lsr.files.is_empty() {
-                    // Isnt a file or a directory
+                    // Isn't a file or a directory
                     return Err(Error::NotFound { path: path.into() }.into());
                 }
                 Ok(lsr)

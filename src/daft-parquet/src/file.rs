@@ -487,7 +487,7 @@ impl ParquetFileReader {
                                     num_rows,
                                 );
 
-                                let ser = (|| {
+                                let series = (|| {
                                     let mut all_arrays = vec![];
                                     let mut curr_index = 0;
 
@@ -517,7 +517,7 @@ impl ParquetFileReader {
                                         .collect::<DaftResult<Vec<Series>>>()
                                 })();
 
-                                let _ = send.send(ser);
+                                let _ = send.send(series);
                             });
                             recv.await.context(OneShotRecvSnafu {})?
                         });

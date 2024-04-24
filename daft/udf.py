@@ -132,7 +132,7 @@ class UDF:
     return_dtype: DataType
 
     def __post_init__(self):
-        """Analagous to the @functools.wraps(self.func) pattern
+        """Analogous to the @functools.wraps(self.func) pattern
 
         This will swap out identifiers on `self` to match `self.func`. Most notably, this swaps out
         self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.

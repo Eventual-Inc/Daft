@@ -285,7 +285,7 @@ class DataType:
         of the image array.
 
         If the height, width, or mode may vary across images in the array, leaving these fields unspecified when
-        creating this type will cause Daft to respresent this image array as a heterogeneous collection of images,
+        creating this type will cause Daft to represent this image array as a heterogeneous collection of images,
         where each image can have a different mode, height, and width. This is much more flexible, but will result
         in a less compact representation and may be make some operations less efficient.
 

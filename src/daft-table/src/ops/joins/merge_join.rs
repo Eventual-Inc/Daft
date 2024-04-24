@@ -214,7 +214,7 @@ pub fn merge_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Seri
                         }
                     }
                 };
-                // Move the pointer forward for the appropriate side ofthe join.
+                // Move the pointer forward for the appropriate side of the join.
                 match state {
                     // If extending a left-side run or propagating an existing right-side run, move left pointer forward.
                     MergeJoinState::LeftEqualRun(_) | MergeJoinState::StagedRightEqualRun(_) => {

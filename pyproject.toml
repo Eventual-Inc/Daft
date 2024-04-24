@@ -46,15 +46,13 @@ repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
 
-
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate"
+ignore-words-list = "crate,arithmetics,ser"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
-skip = "target,.git,.venv,venv,data,*.csv,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb"
-
+skip = "./tests/series,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb"
 
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']

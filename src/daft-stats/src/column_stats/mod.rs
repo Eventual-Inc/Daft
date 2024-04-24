@@ -229,9 +229,9 @@ impl std::fmt::Debug for ColumnRangeStatistics {
 impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     type Error = crate::Error;
     fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
-        let ser = value.to_series();
-        assert_eq!(ser.len(), 1);
-        Self::new(Some(ser.clone()), Some(ser.clone()))
+        let series = value.to_series();
+        assert_eq!(series.len(), 1);
+        Self::new(Some(series.clone()), Some(series.clone()))
     }
 }
 
