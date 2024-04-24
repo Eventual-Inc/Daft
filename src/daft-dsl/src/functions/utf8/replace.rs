@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 
-use crate::Expr;
+use crate::ExprRef;
 
 use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
@@ -18,7 +18,7 @@ impl FunctionEvaluator for ReplaceEvaluator {
         "replace"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, pattern, replacement] => match (
                 data.to_field(schema),

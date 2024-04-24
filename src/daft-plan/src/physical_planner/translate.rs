@@ -7,14 +7,17 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
-use daft_dsl::Expr;
+use daft_dsl::col;
+use daft_dsl::ExprRef;
+
 use daft_scan::ScanExternalInfo;
 
 use crate::logical_ops::{
-    Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
-    Explode as LogicalExplode, Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
+    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
+    Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Project as LogicalProject,
     Repartition as LogicalRepartition, Sample as LogicalSample, Sink as LogicalSink,
     Sort as LogicalSort, Source,
@@ -23,7 +26,7 @@ use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
     ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::SourceInfo;
 use crate::FileFormat;
@@ -32,8 +35,11 @@ use crate::{physical_ops::*, JoinStrategy};
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
 
-/// Translate a logical plan to a physical plan.
-pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
+pub(super) fn translate_single_logical_node(
+    logical_plan: &LogicalPlan,
+    physical_children: &mut Vec<PhysicalPlanRef>,
+    cfg: &DaftExecutionConfig,
+) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::ExternalInfo(ScanExternalInfo {
@@ -65,16 +71,17 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     Ok(PhysicalPlan::EmptyScan(EmptyScan::new(
                         source_schema.clone(),
                         clustering_spec,
-                    )))
+                    ))
+                    .arced())
                 } else {
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
 
-                    Ok(PhysicalPlan::TabularScan(TabularScan::new(
-                        scan_tasks,
-                        clustering_spec,
-                    )))
+                    Ok(
+                        PhysicalPlan::TabularScan(TabularScan::new(scan_tasks, clustering_spec))
+                            .arced(),
+                    )
                 }
             }
             #[cfg(feature = "python")]
@@ -84,74 +91,64 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     mem_info.clone(),
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
                         .into(),
-                ));
+                ))
+                .arced();
                 Ok(scan)
             }
         },
         LogicalPlan::Project(LogicalProject {
-            input,
             projection,
             resource_request,
             ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let clustering_spec = input_physical.clustering_spec().clone();
             Ok(PhysicalPlan::Project(Project::try_new(
-                input_physical.into(),
+                input_physical,
                 projection.clone(),
                 resource_request.clone(),
                 clustering_spec,
-            )?))
+            )?)
+            .arced())
         }
-        LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
-            let input_physical = plan(input, cfg)?;
-            Ok(PhysicalPlan::Filter(Filter::new(
-                input_physical.into(),
-                predicate.clone(),
-            )))
+        LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(PhysicalPlan::Filter(Filter::new(input_physical, predicate.clone())).arced())
         }
-        LogicalPlan::Limit(LogicalLimit {
-            input,
-            limit,
-            eager,
-        }) => {
-            let input_physical = plan(input, cfg)?;
+        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(PhysicalPlan::Limit(Limit::new(
-                input_physical.into(),
-                *limit,
-                *eager,
-                num_partitions,
-            )))
+            Ok(
+                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
+                    .arced(),
+            )
         }
-        LogicalPlan::Explode(LogicalExplode {
-            input, to_explode, ..
-        }) => {
-            let input_physical = plan(input, cfg)?;
-            Ok(PhysicalPlan::Explode(Explode::try_new(
-                input_physical.into(),
-                to_explode.clone(),
-            )?))
+        LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(
+                PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
+                    .arced(),
+            )
         }
         LogicalPlan::Sort(LogicalSort {
-            input,
             sort_by,
             descending,
+            ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Sort(Sort::new(
-                input_physical.into(),
+                input_physical,
                 sort_by.clone(),
                 descending.clone(),
                 num_partitions,
-            )))
+            ))
+            .arced())
         }
         LogicalPlan::Repartition(LogicalRepartition {
-            input,
-            repartition_spec,
+            repartition_spec, ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let input_clustering_spec = input_physical.clustering_spec();
             let input_num_partitions = input_clustering_spec.num_partitions();
             let clustering_spec = repartition_spec.to_clustering_spec(input_num_partitions);
@@ -165,7 +162,6 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             {
                 return Ok(input_physical);
             }
-            let input_physical = Arc::new(input_physical);
             let repartitioned_plan = match clustering_spec {
                 ClusteringSpec::Unknown(_) => {
                     match num_partitions.cmp(&input_num_partitions) {
@@ -212,21 +208,18 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     unreachable!("Repartitioning by range is not supported")
                 }
             };
-            Ok(repartitioned_plan)
+            Ok(repartitioned_plan.arced())
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
                 .names()
                 .iter()
-                .map(|name| Expr::Column(name.clone().into()))
-                .collect::<Vec<Expr>>();
-            let agg_op = PhysicalPlan::Aggregate(Aggregate::new(
-                input_physical.into(),
-                vec![],
-                col_exprs.clone(),
-            ));
+                .map(|name| daft_dsl::col(name.clone()))
+                .collect::<Vec<ExprRef>>();
+            let agg_op =
+                PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
@@ -235,44 +228,43 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     col_exprs.clone(),
                 ));
                 let reduce_op = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
-                Ok(PhysicalPlan::Aggregate(Aggregate::new(
-                    reduce_op.into(),
-                    vec![],
-                    col_exprs,
-                )))
+                Ok(
+                    PhysicalPlan::Aggregate(Aggregate::new(reduce_op.into(), vec![], col_exprs))
+                        .arced(),
+                )
             } else {
-                Ok(agg_op)
+                Ok(agg_op.arced())
             }
         }
         LogicalPlan::Sample(LogicalSample {
-            input,
             fraction,
             with_replacement,
             seed,
+            ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Sample(Sample::new(
-                input_physical.into(),
+                input_physical,
                 *fraction,
                 *with_replacement,
                 *seed,
-            )))
+            ))
+            .arced())
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,
             groupby,
-            input,
             ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
-            use daft_dsl::Expr::Column;
-            let input_plan = plan(input, cfg.clone())?;
 
-            let num_input_partitions = input_plan.clustering_spec().num_partitions();
+            let input_physical = physical_children.pop().expect("requires 1 input");
+
+            let num_input_partitions = input_physical.clustering_spec().num_partitions();
 
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
-                    input_plan.into(),
+                    input_physical,
                     aggregations.clone(),
                     groupby.clone(),
                 )),
@@ -284,7 +276,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<Expr> = groupby.clone();
+                    let mut final_exprs: Vec<ExprRef> = groupby.clone();
 
                     for agg_expr in aggregations {
                         let output_name = agg_expr.name().unwrap();
@@ -292,199 +284,179 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                             Count(e, mode) => {
                                 let count_id = agg_expr.semantic_id(&schema).id;
                                 let sum_of_count_id =
-                                    Sum(Column(count_id.clone()).into()).semantic_id(&schema).id;
-                                first_stage_aggs.entry(count_id.clone()).or_insert(Count(
-                                    e.alias(count_id.clone()).clone().into(),
-                                    *mode,
-                                ));
+                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
+                                first_stage_aggs
+                                    .entry(count_id.clone())
+                                    .or_insert(Count(e.alias(count_id.clone()).clone(), *mode));
                                 second_stage_aggs
                                     .entry(sum_of_count_id.clone())
-                                    .or_insert(Sum(Column(count_id.clone())
-                                        .alias(sum_of_count_id.clone())
-                                        .into()));
-                                final_exprs
-                                    .push(Column(sum_of_count_id.clone()).alias(output_name));
+                                    .or_insert(Sum(
+                                        col(count_id.clone()).alias(sum_of_count_id.clone())
+                                    ));
+                                final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
                             }
                             Sum(e) => {
                                 let sum_id = agg_expr.semantic_id(&schema).id;
                                 let sum_of_sum_id =
-                                    Sum(Column(sum_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone().into()));
+                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(sum_of_sum_id.clone())
-                                    .or_insert(Sum(Column(sum_id.clone())
-                                        .alias(sum_of_sum_id.clone())
-                                        .into()));
-                                final_exprs.push(Column(sum_of_sum_id.clone()).alias(output_name));
+                                    .or_insert(Sum(
+                                        col(sum_id.clone()).alias(sum_of_sum_id.clone())
+                                    ));
+                                final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
                             }
                             ApproxSketch(e) => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
-                                let approx_id = ApproxSketch(Column(sketch_id.clone()).into())
-                                    .semantic_id(&schema)
-                                    .id;
+                                let approx_id =
+                                    ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sketch_id.clone())
-                                    .or_insert(ApproxSketch(
-                                        e.alias(sketch_id.clone()).clone().into(),
-                                    ));
+                                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(approx_id.clone())
                                     .or_insert(MergeSketch(
-                                        Column(sketch_id.clone()).alias(approx_id.clone()).into(),
+                                        col(sketch_id.clone()).alias(approx_id.clone()),
                                     ));
-                                final_exprs.push(Column(approx_id.clone()).alias(output_name));
+                                final_exprs.push(col(approx_id.clone()).alias(output_name));
                             }
                             ApproxPercentile(e, q) => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
-                                let approx_id = ApproxSketch(Column(sketch_id.clone()).into())
-                                    .semantic_id(&schema)
-                                    .id;
+                                let approx_id =
+                                    ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sketch_id.clone())
-                                    .or_insert(ApproxSketch(
-                                        e.alias(sketch_id.clone()).clone().into(),
-                                    ));
+                                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(approx_id.clone())
                                     .or_insert(MergeSketch(
-                                        Column(sketch_id.clone()).alias(approx_id.clone()).into(),
+                                        col(sketch_id.clone()).alias(approx_id.clone()),
                                     ));
                                 final_exprs.push(
-                                    Column(approx_id.clone())
-                                        .sketch_percentile(q)
+                                    col(approx_id.clone())
+                                        .sketch_percentile(q.clone())
                                         .alias(output_name),
                                 );
                             }
                             MergeSketch(e) => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
-                                let merge_id = MergeSketch(Column(sketch_id.clone()).into())
-                                    .semantic_id(&schema)
-                                    .id;
+                                let merge_id =
+                                    MergeSketch(col(sketch_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sketch_id.clone())
-                                    .or_insert(MergeSketch(
-                                        e.alias(sketch_id.clone()).clone().into(),
-                                    ));
+                                    .or_insert(MergeSketch(e.alias(sketch_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(merge_id.clone())
                                     .or_insert(MergeSketch(
-                                        Column(sketch_id.clone()).alias(merge_id.clone()).into(),
+                                        col(sketch_id.clone()).alias(merge_id.clone()),
                                     ));
-                                final_exprs.push(Column(merge_id.clone()).alias(output_name));
+                                final_exprs.push(col(merge_id.clone()).alias(output_name));
                             }
                             Mean(e) => {
                                 let sum_id = Sum(e.clone()).semantic_id(&schema).id;
                                 let count_id =
                                     Count(e.clone(), CountMode::Valid).semantic_id(&schema).id;
                                 let sum_of_sum_id =
-                                    Sum(Column(sum_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
                                 let sum_of_count_id =
-                                    Sum(Column(count_id.clone()).into()).semantic_id(&schema).id;
+                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone().into()));
+                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
                                 first_stage_aggs.entry(count_id.clone()).or_insert(Count(
-                                    e.alias(count_id.clone()).clone().into(),
+                                    e.alias(count_id.clone()).clone(),
                                     CountMode::Valid,
                                 ));
                                 second_stage_aggs
                                     .entry(sum_of_sum_id.clone())
-                                    .or_insert(Sum(Column(sum_id.clone())
-                                        .alias(sum_of_sum_id.clone())
-                                        .into()));
+                                    .or_insert(Sum(
+                                        col(sum_id.clone()).alias(sum_of_sum_id.clone())
+                                    ));
                                 second_stage_aggs
                                     .entry(sum_of_count_id.clone())
-                                    .or_insert(Sum(Column(count_id.clone())
-                                        .alias(sum_of_count_id.clone())
-                                        .into()));
+                                    .or_insert(Sum(
+                                        col(count_id.clone()).alias(sum_of_count_id.clone())
+                                    ));
                                 final_exprs.push(
-                                    (Column(sum_of_sum_id.clone())
-                                        / Column(sum_of_count_id.clone()))
-                                    .alias(output_name),
+                                    (col(sum_of_sum_id.clone()).div(col(sum_of_count_id.clone())))
+                                        .alias(output_name),
                                 );
                             }
                             Min(e) => {
                                 let min_id = agg_expr.semantic_id(&schema).id;
                                 let min_of_min_id =
-                                    Min(Column(min_id.clone()).into()).semantic_id(&schema).id;
+                                    Min(col(min_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(min_id.clone())
-                                    .or_insert(Min(e.alias(min_id.clone()).clone().into()));
+                                    .or_insert(Min(e.alias(min_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(min_of_min_id.clone())
-                                    .or_insert(Min(Column(min_id.clone())
-                                        .alias(min_of_min_id.clone())
-                                        .into()));
-                                final_exprs.push(Column(min_of_min_id.clone()).alias(output_name));
+                                    .or_insert(Min(
+                                        col(min_id.clone()).alias(min_of_min_id.clone())
+                                    ));
+                                final_exprs.push(col(min_of_min_id.clone()).alias(output_name));
                             }
                             Max(e) => {
                                 let max_id = agg_expr.semantic_id(&schema).id;
                                 let max_of_max_id =
-                                    Max(Column(max_id.clone()).into()).semantic_id(&schema).id;
+                                    Max(col(max_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(max_id.clone())
-                                    .or_insert(Max(e.alias(max_id.clone()).clone().into()));
+                                    .or_insert(Max(e.alias(max_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(max_of_max_id.clone())
-                                    .or_insert(Max(Column(max_id.clone())
-                                        .alias(max_of_max_id.clone())
-                                        .into()));
-                                final_exprs.push(Column(max_of_max_id.clone()).alias(output_name));
+                                    .or_insert(Max(
+                                        col(max_id.clone()).alias(max_of_max_id.clone())
+                                    ));
+                                final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
                             }
                             AnyValue(e, ignore_nulls) => {
                                 let any_id = agg_expr.semantic_id(&schema).id;
-                                let any_of_any_id =
-                                    AnyValue(Column(any_id.clone()).into(), *ignore_nulls)
-                                        .semantic_id(&schema)
-                                        .id;
+                                let any_of_any_id = AnyValue(col(any_id.clone()), *ignore_nulls)
+                                    .semantic_id(&schema)
+                                    .id;
                                 first_stage_aggs.entry(any_id.clone()).or_insert(AnyValue(
-                                    e.alias(any_id.clone()).clone().into(),
+                                    e.alias(any_id.clone()).clone(),
                                     *ignore_nulls,
                                 ));
                                 second_stage_aggs
                                     .entry(any_of_any_id.clone())
                                     .or_insert(AnyValue(
-                                        Column(any_id.clone()).alias(any_of_any_id.clone()).into(),
+                                        col(any_id.clone()).alias(any_of_any_id.clone()),
                                         *ignore_nulls,
                                     ));
                             }
                             List(e) => {
                                 let list_id = agg_expr.semantic_id(&schema).id;
-                                let concat_of_list_id = Concat(Column(list_id.clone()).into())
-                                    .semantic_id(&schema)
-                                    .id;
+                                let concat_of_list_id =
+                                    Concat(col(list_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(list_id.clone())
-                                    .or_insert(List(e.alias(list_id.clone()).clone().into()));
+                                    .or_insert(List(e.alias(list_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(concat_of_list_id.clone())
                                     .or_insert(Concat(
-                                        Column(list_id.clone())
-                                            .alias(concat_of_list_id.clone())
-                                            .into(),
+                                        col(list_id.clone()).alias(concat_of_list_id.clone()),
                                     ));
-                                final_exprs
-                                    .push(Column(concat_of_list_id.clone()).alias(output_name));
+                                final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
                             }
                             Concat(e) => {
                                 let concat_id = agg_expr.semantic_id(&schema).id;
-                                let concat_of_concat_id = Concat(Column(concat_id.clone()).into())
-                                    .semantic_id(&schema)
-                                    .id;
+                                let concat_of_concat_id =
+                                    Concat(col(concat_id.clone())).semantic_id(&schema).id;
                                 first_stage_aggs
                                     .entry(concat_id.clone())
-                                    .or_insert(Concat(e.alias(concat_id.clone()).clone().into()));
+                                    .or_insert(Concat(e.alias(concat_id.clone()).clone()));
                                 second_stage_aggs
                                     .entry(concat_of_concat_id.clone())
                                     .or_insert(Concat(
-                                        Column(concat_id.clone())
-                                            .alias(concat_of_concat_id.clone())
-                                            .into(),
+                                        col(concat_id.clone()).alias(concat_of_concat_id.clone()),
                                     ));
                                 final_exprs
-                                    .push(Column(concat_of_concat_id.clone()).alias(output_name));
+                                    .push(col(concat_of_concat_id.clone()).alias(output_name));
                             }
                             MapGroups { func, inputs } => {
                                 let func_id = agg_expr.semantic_id(&schema).id;
@@ -495,40 +467,43 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                         func: func.clone(),
                                         inputs: inputs.to_vec(),
                                     });
-                                final_exprs.push(Column(output_name.into()));
+                                final_exprs.push(col(output_name));
                             }
                         }
                     }
 
                     let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_plan
+                        input_physical
                     } else {
                         PhysicalPlan::Aggregate(Aggregate::new(
-                            input_plan.into(),
+                            input_physical,
                             first_stage_aggs.values().cloned().collect(),
                             groupby.clone(),
                         ))
+                        .arced()
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
-                            first_stage_agg.into(),
+                            first_stage_agg,
                             num_input_partitions,
                             1,
                         ))
+                        .arced()
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            first_stage_agg.into(),
+                            first_stage_agg,
                             min(
                                 num_input_partitions,
                                 cfg.shuffle_aggregation_default_partitions,
                             ),
                             groupby.clone(),
-                        ));
-                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
+                        ))
+                        .arced();
+                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
-                        gather_plan.into(),
+                        gather_plan,
                         second_stage_aggs.values().cloned().collect(),
                         groupby.clone(),
                     ));
@@ -543,19 +518,14 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 }
             };
 
-            Ok(result_plan)
+            Ok(result_plan.arced())
         }
-        LogicalPlan::Concat(LogicalConcat { input, other }) => {
-            let input_physical = plan(input, cfg.clone())?;
-            let other_physical = plan(other, cfg.clone())?;
-            Ok(PhysicalPlan::Concat(Concat::new(
-                input_physical.into(),
-                other_physical.into(),
-            )))
+        LogicalPlan::Concat(..) => {
+            let other_physical = physical_children.pop().expect("requires 1 inputs");
+            let input_physical = physical_children.pop().expect("requires 2 inputs");
+            Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical)).arced())
         }
         LogicalPlan::Join(LogicalJoin {
-            left,
-            right,
             left_on,
             right_on,
             join_type,
@@ -563,8 +533,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             output_schema,
             ..
         }) => {
-            let mut left_physical = plan(left, cfg.clone())?;
-            let mut right_physical = plan(right, cfg.clone())?;
+            let mut right_physical = physical_children.pop().expect("requires 1 inputs");
+            let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
             let left_clustering_spec = left_physical.clustering_spec();
             let right_clustering_spec = right_physical.clustering_spec();
@@ -631,7 +601,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
-                let is_primitive = |exprs: &Vec<Expr>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                let is_primitive = |exprs: &Vec<ExprRef>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
                     let dtype = &output_schema.get_field(col).unwrap().dtype;
                     dtype.is_integer() || dtype.is_floating() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
                 });
@@ -661,13 +631,14 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         (left_physical, right_physical) = (right_physical, left_physical);
                     }
                     Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
                         left_is_larger,
-                    )))
+                    ))
+                    .arced())
                 }
                 JoinStrategy::SortMerge => {
                     let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
@@ -680,32 +651,35 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         // result in less efficient merge-joins (~all-to-all broadcast).
                         if !is_left_sort_partitioned {
                             left_physical = PhysicalPlan::Sort(Sort::new(
-                                left_physical.into(),
+                                left_physical,
                                 left_on.clone(),
                                 std::iter::repeat(false).take(left_on.len()).collect(),
                                 num_partitions,
                             ))
+                            .arced()
                         }
                         if !is_right_sort_partitioned {
                             right_physical = PhysicalPlan::Sort(Sort::new(
-                                right_physical.into(),
+                                right_physical,
                                 right_on.clone(),
                                 std::iter::repeat(false).take(right_on.len()).collect(),
                                 num_partitions,
                             ))
+                            .arced()
                         }
                         false
                     };
                     Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
                         num_partitions,
                         left_is_larger,
                         needs_presort,
-                    )))
+                    ))
+                    .arced())
                 }
                 JoinStrategy::Hash => {
                     if (num_partitions > 1
@@ -713,41 +687,40 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         && !is_left_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            left_physical.into(),
+                            left_physical,
                             num_partitions,
                             left_on.clone(),
                         ));
                         left_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
                     if (num_partitions > 1
                         || right_clustering_spec.num_partitions() != num_partitions)
                         && !is_right_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            right_physical.into(),
+                            right_physical,
                             num_partitions,
                             right_on.clone(),
                         ));
                         right_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
                     Ok(PhysicalPlan::HashJoin(HashJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
-                    )))
+                    ))
+                    .arced())
                 }
             }
         }
         LogicalPlan::Sink(LogicalSink {
-            schema,
-            sink_info,
-            input,
+            schema, sink_info, ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = physical_children.pop().expect("requires 1 input");
             match sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(file_info @ OutputFileInfo { file_format, .. }) => {
                     match file_format {
@@ -755,20 +728,23 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                             Ok(PhysicalPlan::TabularWriteParquet(TabularWriteParquet::new(
                                 schema.clone(),
                                 file_info.clone(),
-                                input_physical.into(),
-                            )))
+                                input_physical,
+                            ))
+                            .arced())
                         }
                         FileFormat::Csv => Ok(PhysicalPlan::TabularWriteCsv(TabularWriteCsv::new(
                             schema.clone(),
                             file_info.clone(),
-                            input_physical.into(),
-                        ))),
+                            input_physical,
+                        ))
+                        .arced()),
                         FileFormat::Json => {
                             Ok(PhysicalPlan::TabularWriteJson(TabularWriteJson::new(
                                 schema.clone(),
                                 file_info.clone(),
-                                input_physical.into(),
-                            )))
+                                input_physical,
+                            ))
+                            .arced())
                         }
                         FileFormat::Database => Err(common_error::DaftError::ValueError(
                             "Database sink not yet implemented".to_string(),
@@ -781,21 +757,25 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(
                             schema.clone(),
                             iceberg_info.clone(),
-                            input_physical.into(),
-                        )))
+                            input_physical,
+                        ))
+                        .arced())
                     }
                 },
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
-            input,
             column_name,
             ..
         }) => {
-            let input_physical = plan(input, cfg)?;
-            Ok(PhysicalPlan::MonotonicallyIncreasingId(
-                MonotonicallyIncreasingId::new(input_physical.into(), column_name),
-            ))
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(
+                PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(
+                    input_physical,
+                    column_name,
+                ))
+                .arced(),
+            )
         }
     }
 }
@@ -805,12 +785,12 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit, AggExpr, Expr};
+    use daft_dsl::{col, lit};
     use std::assert_matches::assert_matches;
     use std::sync::Arc;
 
     use crate::physical_plan::PhysicalPlan;
-    use crate::planner::plan;
+    use crate::physical_planner::plan;
     use crate::test::{dummy_scan_node, dummy_scan_operator};
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
@@ -825,17 +805,17 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .into_partitions(10)?
-        .filter(col("a").lt(&lit(2)))?;
+        .filter(col("a").lt(lit(2)))?;
         assert_eq!(
-            plan(builder.build().as_ref(), cfg.clone())?
+            plan(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             10
         );
         let logical_plan = builder.into_partitions(10)?.build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
+        let physical_plan = plan(logical_plan, cfg.clone())?;
         // Check that the last repartition was dropped (the last op should be the filter).
-        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
     }
 
@@ -851,14 +831,14 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]));
         assert_eq!(
-            plan(builder.build().as_ref(), cfg.clone())?
+            plan(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             1
         );
         let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
-        assert_matches!(physical_plan, PhysicalPlan::TabularScan(_));
+        let physical_plan = plan(logical_plan, cfg.clone())?;
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
     }
 
@@ -873,12 +853,12 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .hash_repartition(Some(10), vec![col("a")])?
-        .filter(col("a").lt(&lit(2)))?
+        .filter(col("a").lt(lit(2)))?
         .hash_repartition(Some(10), vec![col("a")])?
         .build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
-        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
     }
 
@@ -893,15 +873,12 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]))
         .hash_repartition(Some(10), vec![col("a")])?
-        .aggregate(
-            vec![Expr::Agg(AggExpr::Sum(col("a").into()))],
-            vec![col("b")],
-        )?
+        .aggregate(vec![col("a").sum()], vec![col("b")])?
         .hash_repartition(Some(10), vec![col("b")])?
         .build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
-        assert_matches!(physical_plan, PhysicalPlan::Project(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
         Ok(())
     }
 }

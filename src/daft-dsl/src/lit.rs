@@ -1,4 +1,5 @@
 use crate::expr::Expr;
+use crate::ExprRef;
 
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
@@ -14,6 +15,7 @@ use daft_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -214,36 +216,12 @@ impl LiteralValue {
         result
     }
 
-    pub fn display_sql<W: Write>(&self, buffer: &mut W, db_scheme: &str) -> io::Result<()> {
+    pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
         use LiteralValue::*;
         let display_sql_err = Err(io::Error::new(
             io::ErrorKind::Other,
             "Unsupported literal for SQL translation",
         ));
-        let display_date_sql = |val: i32| match db_scheme {
-            "postgresql" | "postgres" | "mysql" | "mysql+pymysql" | "trino" | "redshift"
-            | "clickhouse" => Some(format!("DATE '{}'", display_date32(val))),
-            "sqlite" => Some(format!("DATE ('{}')", display_date32(val))),
-            _ => None,
-        };
-        let display_timestamp_sql = |val: i64, tu: &TimeUnit, tz: &Option<String>| {
-            // The `display_timestamp` function formats a timestamp in the ISO 8601 format: "YYYY-MM-DDTHH:MM:SS.fffff".
-            // ANSI SQL standard uses a space instead of 'T'. Some databases do not support 'T', hence it's replaced with a space.
-            // Reference: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.html
-            match db_scheme {
-                "postgresql" | "postgres" | "mysql" | "mysql+pymysql" | "trino" | "redshift"
-                | "clickhouse" => Some(format!(
-                    "TIMESTAMP '{}'",
-                    display_timestamp(val, tu, tz).replace('T', " ")
-                )),
-                "sqlite" => Some(format!(
-                    "DATETIME ('{}')",
-                    display_timestamp(val, tu, tz).replace('T', " ")
-                )),
-                _ => None,
-            }
-        };
-
         match self {
             Null => write!(buffer, "NULL"),
             Boolean(v) => write!(buffer, "{}", v),
@@ -253,24 +231,15 @@ impl LiteralValue {
             UInt64(val) => write!(buffer, "{}", val),
             Float64(val) => write!(buffer, "{}", val),
             Utf8(val) => write!(buffer, "'{}'", val),
-            Date(val) => {
-                if let Some(date_sql) = display_date_sql(*val) {
-                    write!(buffer, "{}", date_sql)
-                } else {
-                    display_sql_err
-                }
-            }
-            Timestamp(val, tu, tz) => {
-                // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
-                if tz.is_some() {
-                    return display_sql_err;
-                }
-                if let Some(timestamp_sql) = display_timestamp_sql(*val, tu, tz) {
-                    write!(buffer, "{}", timestamp_sql)
-                } else {
-                    display_sql_err
-                }
-            }
+            Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
+            // The `display_timestamp` function formats a timestamp in the ISO 8601 format: "YYYY-MM-DDTHH:MM:SS.fffff".
+            // ANSI SQL standard uses a space instead of 'T'. Some databases do not support 'T', hence it's replaced with a space.
+            // Reference: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.html
+            Timestamp(val, tu, tz) => write!(
+                buffer,
+                "TIMESTAMP '{}'",
+                display_timestamp(*val, tu, tz).replace('T', " ")
+            ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,
             #[cfg(feature = "python")]
@@ -281,47 +250,47 @@ impl LiteralValue {
 
 pub trait Literal {
     /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> Expr;
+    fn lit(self) -> ExprRef;
 }
 
 impl Literal for String {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Utf8(self)).into()
     }
 }
 
 impl<'a> Literal for &'a str {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Utf8(self.to_owned())).into()
     }
 }
 
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
-            fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
+            fn lit(self) -> ExprRef {
+                Expr::Literal(LiteralValue::$SCALAR(self)).into()
             }
         }
     };
 }
 
 impl<'a> Literal for &'a [u8] {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Binary(self.to_vec())).into()
     }
 }
 
 impl Literal for Series {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Series(self))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Series(self)).into()
     }
 }
 
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self }))
+    fn lit(self) -> ExprRef {
+        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self })).into()
     }
 }
 
@@ -332,10 +301,10 @@ make_literal!(i64, Int64);
 make_literal!(u64, UInt64);
 make_literal!(f64, Float64);
 
-pub fn lit<L: Literal>(t: L) -> Expr {
+pub fn lit<L: Literal>(t: L) -> ExprRef {
     t.lit()
 }
 
-pub fn null_lit() -> Expr {
-    Expr::Literal(LiteralValue::Null)
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(LiteralValue::Null))
 }

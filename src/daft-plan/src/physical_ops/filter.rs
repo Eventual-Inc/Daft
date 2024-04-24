@@ -1,4 +1,4 @@
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 
 use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
@@ -8,11 +8,11 @@ pub struct Filter {
     // Upstream node.
     pub input: PhysicalPlanRef,
     // The Boolean expression to filter on.
-    pub predicate: Expr,
+    pub predicate: ExprRef,
 }
 
 impl Filter {
-    pub(crate) fn new(input: PhysicalPlanRef, predicate: Expr) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef, predicate: ExprRef) -> Self {
         Self { input, predicate }
     }
 

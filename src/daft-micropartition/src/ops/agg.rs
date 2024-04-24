@@ -1,12 +1,12 @@
 use common_error::DaftResult;
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_table::Table;
 
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
-    pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Self> {
+    pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::agg");
 
         let tables = self.concat_or_get(io_stats)?;

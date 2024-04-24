@@ -5,7 +5,7 @@ use daft_core::{
 };
 
 use crate::functions::FunctionExpr;
-use crate::Expr;
+use crate::ExprRef;
 use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
@@ -17,7 +17,7 @@ impl FunctionEvaluator for LowerEvaluator {
         "lower"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {

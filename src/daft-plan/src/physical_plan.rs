@@ -15,6 +15,7 @@ use {
 };
 
 use daft_core::impl_bincode_py_state_serialization;
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
@@ -67,6 +68,10 @@ pub enum PhysicalPlan {
 }
 
 impl PhysicalPlan {
+    pub fn arced(self) -> PhysicalPlanRef {
+        Arc::new(self)
+    }
+
     pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
         match self {
             #[cfg(feature = "python")]
@@ -279,39 +284,43 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&PhysicalPlanRef> {
+    pub fn children(&self) -> Vec<PhysicalPlanRef> {
         match self {
             #[cfg(feature = "python")]
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
-            Self::Project(Project { input, .. }) => vec![input],
-            Self::Filter(Filter { input, .. }) => vec![input],
-            Self::Limit(Limit { input, .. }) => vec![input],
-            Self::Explode(Explode { input, .. }) => vec![input],
-            Self::Sample(Sample { input, .. }) => vec![input],
-            Self::Sort(Sort { input, .. }) => vec![input],
-            Self::Split(Split { input, .. }) => vec![input],
-            Self::Coalesce(Coalesce { input, .. }) => vec![input],
-            Self::Flatten(Flatten { input }) => vec![input],
-            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input],
-            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input],
-            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input],
-            Self::ReduceMerge(ReduceMerge { input }) => vec![input],
-            Self::Aggregate(Aggregate { input, .. }) => vec![input],
-            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
-            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
-            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::Project(Project { input, .. }) => vec![input.clone()],
+            Self::Filter(Filter { input, .. }) => vec![input.clone()],
+            Self::Limit(Limit { input, .. }) => vec![input.clone()],
+            Self::Explode(Explode { input, .. }) => vec![input.clone()],
+            Self::Sample(Sample { input, .. }) => vec![input.clone()],
+            Self::Sort(Sort { input, .. }) => vec![input.clone()],
+            Self::Split(Split { input, .. }) => vec![input.clone()],
+            Self::Coalesce(Coalesce { input, .. }) => vec![input.clone()],
+            Self::Flatten(Flatten { input }) => vec![input.clone()],
+            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input.clone()],
+            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input.clone()],
+            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input.clone()],
+            Self::ReduceMerge(ReduceMerge { input }) => vec![input.clone()],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
+            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input.clone()],
+            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input.clone()],
+            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
-            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
-            Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
+            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input.clone()],
+            Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
                 receiver,
                 ..
-            }) => vec![broadcaster, receiver],
-            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => vec![left, right],
-            Self::Concat(Concat { input, other }) => vec![input, other],
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
+            }) => vec![broadcaster.clone(), receiver.clone()],
+            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
+            Self::Concat(Concat { input, other }) => vec![input.clone(), other.clone()],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                vec![input.clone()]
+            }
         }
     }
 
@@ -510,7 +519,7 @@ fn tabular_write(
     schema: &SchemaRef,
     root_dir: &String,
     compression: &Option<String>,
-    partition_cols: &Option<Vec<Expr>>,
+    partition_cols: &Option<Vec<ExprRef>>,
     io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
     let part_cols = partition_cols.as_ref().map(|cols| {

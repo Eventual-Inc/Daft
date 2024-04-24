@@ -3,7 +3,7 @@ use daft_core::{datatypes::DataType, datatypes::Field, schema::Schema, series::S
 
 use super::super::FunctionEvaluator;
 use crate::functions::FunctionExpr;
-use crate::Expr;
+use crate::ExprRef;
 
 pub(super) struct PercentileEvaluator {}
 
@@ -12,7 +12,7 @@ impl FunctionEvaluator for PercentileEvaluator {
         "get"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input, q] => {
                 let input_field = input.to_field(schema)?;

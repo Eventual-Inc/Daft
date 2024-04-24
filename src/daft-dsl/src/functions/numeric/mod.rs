@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -63,107 +63,122 @@ impl NumericExpr {
     }
 }
 
-pub fn abs(input: &Expr) -> Expr {
+pub fn abs(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Abs),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn ceil(input: &Expr) -> Expr {
+pub fn ceil(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Ceil),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn floor(input: &Expr) -> Expr {
+pub fn floor(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Floor),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn sign(input: &Expr) -> Expr {
+pub fn sign(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Sign),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn round(input: &Expr, decimal: i32) -> Expr {
+pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Round(decimal)),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn sin(input: &Expr) -> Expr {
+pub fn sin(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Sin),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn cos(input: &Expr) -> Expr {
+pub fn cos(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Cos),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn tan(input: &Expr) -> Expr {
+pub fn tan(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Tan),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn cot(input: &Expr) -> Expr {
+pub fn cot(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Cot),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn arcsin(input: &Expr) -> Expr {
+pub fn arcsin(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcSin),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn arccos(input: &Expr) -> Expr {
+pub fn arccos(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcCos),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn arctan(input: &Expr) -> Expr {
+pub fn arctan(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcTan),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn radians(input: &Expr) -> Expr {
+pub fn radians(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Radians),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn degrees(input: &Expr) -> Expr {
+pub fn degrees(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Degrees),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn exp(input: &Expr) -> Expr {
+pub fn exp(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Exp),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }

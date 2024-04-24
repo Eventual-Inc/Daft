@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::DataType;
-use daft_dsl::Expr;
+use daft_dsl::ExprRef;
 use snafu::ResultExt;
 
 use crate::logical_plan::{CreationSnafu, Result};
@@ -13,11 +13,11 @@ pub struct Filter {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // The Boolean expression to filter on.
-    pub predicate: Expr,
+    pub predicate: ExprRef,
 }
 
 impl Filter {
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: Expr) -> Result<Self> {
+    pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
         let field = predicate
             .to_field(input.schema().as_ref())
             .context(CreationSnafu)?;

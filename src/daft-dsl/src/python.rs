@@ -1,13 +1,14 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
 
-use crate::{functions, optimization, Expr, LiteralValue};
+use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
     datatypes::ImageFormat,
@@ -157,16 +158,16 @@ pub fn udf(
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
     let func = func.to_object(py);
-    let expressions_map: Vec<Expr> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: udf(func, &expressions_map, return_dtype.dtype)?,
+        expr: udf(func, &expressions_map, return_dtype.dtype)?.into(),
     })
 }
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
-    pub expr: crate::Expr,
+    pub expr: crate::ExprRef,
 }
 
 #[pyfunction]
@@ -180,39 +181,27 @@ impl PyExpr {
         Ok(self.expr.input_mapping())
     }
 
-    pub fn _required_columns(&self) -> PyResult<HashSet<String>> {
-        let mut hs = HashSet::new();
-        for name in optimization::get_required_columns(&self.expr) {
-            hs.insert(name);
-        }
-        Ok(hs)
-    }
-
-    pub fn _is_column(&self) -> PyResult<bool> {
-        Ok(matches!(self.expr, Expr::Column(..)))
-    }
-
     pub fn alias(&self, name: &str) -> PyResult<Self> {
-        Ok(self.expr.alias(name).into())
+        Ok(self.expr.clone().alias(name).into())
     }
 
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
-        Ok(self.expr.cast(&dtype.into()).into())
+        Ok(self.expr.clone().cast(&dtype.into()).into())
     }
 
     pub fn ceil(&self) -> PyResult<Self> {
         use functions::numeric::ceil;
-        Ok(ceil(&self.expr).into())
+        Ok(ceil(self.into()).into())
     }
 
     pub fn floor(&self) -> PyResult<Self> {
         use functions::numeric::floor;
-        Ok(floor(&self.expr).into())
+        Ok(floor(self.into()).into())
     }
 
     pub fn sign(&self) -> PyResult<Self> {
         use functions::numeric::sign;
-        Ok(sign(&self.expr).into())
+        Ok(sign(self.into()).into())
     }
 
     pub fn round(&self, decimal: i32) -> PyResult<Self> {
@@ -222,183 +211,192 @@ impl PyExpr {
                 "decimal can not be negative: {decimal}"
             )));
         }
-        Ok(round(&self.expr, decimal).into())
+        Ok(round(self.into(), decimal).into())
     }
 
     pub fn sin(&self) -> PyResult<Self> {
         use functions::numeric::sin;
-        Ok(sin(&self.expr).into())
+        Ok(sin(self.into()).into())
     }
 
     pub fn cos(&self) -> PyResult<Self> {
         use functions::numeric::cos;
-        Ok(cos(&self.expr).into())
+        Ok(cos(self.into()).into())
     }
 
     pub fn tan(&self) -> PyResult<Self> {
         use functions::numeric::tan;
-        Ok(tan(&self.expr).into())
+        Ok(tan(self.into()).into())
     }
 
     pub fn cot(&self) -> PyResult<Self> {
         use functions::numeric::cot;
-        Ok(cot(&self.expr).into())
+        Ok(cot(self.into()).into())
     }
 
     pub fn arcsin(&self) -> PyResult<Self> {
         use functions::numeric::arcsin;
-        Ok(arcsin(&self.expr).into())
+        Ok(arcsin(self.into()).into())
     }
 
     pub fn arccos(&self) -> PyResult<Self> {
         use functions::numeric::arccos;
-        Ok(arccos(&self.expr).into())
+        Ok(arccos(self.into()).into())
     }
 
     pub fn arctan(&self) -> PyResult<Self> {
         use functions::numeric::arctan;
-        Ok(arctan(&self.expr).into())
+        Ok(arctan(self.into()).into())
     }
 
     pub fn radians(&self) -> PyResult<Self> {
         use functions::numeric::radians;
-        Ok(radians(&self.expr).into())
+        Ok(radians(self.into()).into())
     }
 
     pub fn degrees(&self) -> PyResult<Self> {
         use functions::numeric::degrees;
-        Ok(degrees(&self.expr).into())
+        Ok(degrees(self.into()).into())
     }
 
     pub fn exp(&self) -> PyResult<Self> {
         use functions::numeric::exp;
-        Ok(exp(&self.expr).into())
+        Ok(exp(self.into()).into())
     }
 
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
-        Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
+        Ok(self
+            .expr
+            .clone()
+            .if_else(if_true.expr.clone(), if_false.expr.clone())
+            .into())
     }
 
     pub fn count(&self, mode: CountMode) -> PyResult<Self> {
-        Ok(self.expr.count(mode).into())
+        Ok(self.expr.clone().count(mode).into())
     }
 
     pub fn sum(&self) -> PyResult<Self> {
-        Ok(self.expr.sum().into())
+        Ok(self.expr.clone().sum().into())
     }
 
     pub fn approx_percentile(&self, q: &Self) -> PyResult<Self> {
-        Ok(self.expr.approx_percentile(&q.expr).into())
+        Ok(self.expr.clone().approx_percentile(q.expr.clone()).into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {
-        Ok(self.expr.mean().into())
+        Ok(self.expr.clone().mean().into())
     }
 
     pub fn min(&self) -> PyResult<Self> {
-        Ok(self.expr.min().into())
+        Ok(self.expr.clone().min().into())
     }
 
     pub fn max(&self) -> PyResult<Self> {
-        Ok(self.expr.max().into())
+        Ok(self.expr.clone().max().into())
     }
 
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
-        Ok(self.expr.any_value(ignore_nulls).into())
+        Ok(self.expr.clone().any_value(ignore_nulls).into())
     }
 
     pub fn agg_list(&self) -> PyResult<Self> {
-        Ok(self.expr.agg_list().into())
+        Ok(self.expr.clone().agg_list().into())
     }
 
     pub fn agg_concat(&self) -> PyResult<Self> {
-        Ok(self.expr.agg_concat().into())
+        Ok(self.expr.clone().agg_concat().into())
     }
 
     pub fn explode(&self) -> PyResult<Self> {
         use functions::list::explode;
-        Ok(explode(&self.expr).into())
+        Ok(explode(self.into()).into())
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
         use functions::numeric::abs;
-        Ok(abs(&self.expr).into())
+        Ok(abs(self.into()).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Plus, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Minus, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Multiply, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
     }
 
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::FloorDivide, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(
+            crate::Operator::FloorDivide,
+            self.into(),
+            other.expr.clone(),
+        )
+        .into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::TrueDivide, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::TrueDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Modulus, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Modulus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::And, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Or, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Xor, &self.expr, &other.expr).into())
+        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
         use crate::{binary_op, Operator};
         match op {
-            CompareOp::Lt => Ok(binary_op(Operator::Lt, &self.expr, &other.expr).into()),
-            CompareOp::Le => Ok(binary_op(Operator::LtEq, &self.expr, &other.expr).into()),
-            CompareOp::Eq => Ok(binary_op(Operator::Eq, &self.expr, &other.expr).into()),
-            CompareOp::Ne => Ok(binary_op(Operator::NotEq, &self.expr, &other.expr).into()),
-            CompareOp::Gt => Ok(binary_op(Operator::Gt, &self.expr, &other.expr).into()),
-            CompareOp::Ge => Ok(binary_op(Operator::GtEq, &self.expr, &other.expr).into()),
+            CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
+            CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),
+            CompareOp::Eq => Ok(binary_op(Operator::Eq, self.into(), other.into()).into()),
+            CompareOp::Ne => Ok(binary_op(Operator::NotEq, self.into(), other.into()).into()),
+            CompareOp::Gt => Ok(binary_op(Operator::Gt, self.into(), other.into()).into()),
+            CompareOp::Ge => Ok(binary_op(Operator::GtEq, self.into(), other.into()).into()),
         }
     }
 
     pub fn __invert__(&self) -> PyResult<Self> {
-        Ok(self.expr.not().into())
+        Ok(self.expr.clone().not().into())
     }
 
     pub fn is_null(&self) -> PyResult<Self> {
-        Ok(self.expr.is_null().into())
+        Ok(self.expr.clone().is_null().into())
     }
 
     pub fn not_null(&self) -> PyResult<Self> {
-        Ok(self.expr.not_null().into())
+        Ok(self.expr.clone().not_null().into())
     }
 
     pub fn fill_null(&self, fill_value: &Self) -> PyResult<Self> {
-        Ok(self.expr.fill_null(&fill_value.expr).into())
+        Ok(self.expr.clone().fill_null(fill_value.expr.clone()).into())
     }
 
     pub fn is_in(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.expr.is_in(&other.expr).into())
+        Ok(self.expr.clone().is_in(other.expr.clone()).into())
     }
 
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
     }
 
-    pub fn to_sql(&self, db_scheme: &str) -> PyResult<Option<String>> {
-        Ok(self.expr.to_sql(db_scheme))
+    pub fn to_sql(&self) -> PyResult<Option<String>> {
+        Ok(self.expr.to_sql())
     }
 
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
@@ -417,137 +415,143 @@ impl PyExpr {
 
     pub fn is_nan(&self) -> PyResult<Self> {
         use functions::float::is_nan;
-        Ok(is_nan(&self.expr).into())
+        Ok(is_nan(self.into()).into())
     }
 
     pub fn dt_date(&self) -> PyResult<Self> {
         use functions::temporal::date;
-        Ok(date(&self.expr).into())
+        Ok(date(self.into()).into())
     }
 
     pub fn dt_day(&self) -> PyResult<Self> {
         use functions::temporal::day;
-        Ok(day(&self.expr).into())
+        Ok(day(self.into()).into())
     }
 
     pub fn dt_hour(&self) -> PyResult<Self> {
         use functions::temporal::hour;
-        Ok(hour(&self.expr).into())
+        Ok(hour(self.into()).into())
     }
 
     pub fn dt_month(&self) -> PyResult<Self> {
         use functions::temporal::month;
-        Ok(month(&self.expr).into())
+        Ok(month(self.into()).into())
     }
 
     pub fn dt_year(&self) -> PyResult<Self> {
         use functions::temporal::year;
-        Ok(year(&self.expr).into())
+        Ok(year(self.into()).into())
     }
 
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
         use functions::temporal::day_of_week;
-        Ok(day_of_week(&self.expr).into())
+        Ok(day_of_week(self.into()).into())
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::endswith;
-        Ok(endswith(&self.expr, &pattern.expr).into())
+        Ok(endswith(self.into(), pattern.expr.clone()).into())
     }
 
     pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::startswith;
-        Ok(startswith(&self.expr, &pattern.expr).into())
+        Ok(startswith(self.into(), pattern.expr.clone()).into())
     }
 
     pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::contains;
-        Ok(contains(&self.expr, &pattern.expr).into())
+        Ok(contains(self.into(), pattern.expr.clone()).into())
     }
 
     pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::match_;
-        Ok(match_(&self.expr, &pattern.expr).into())
+        Ok(match_(self.into(), pattern.expr.clone()).into())
     }
 
     pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
         use crate::functions::utf8::split;
-        Ok(split(&self.expr, &pattern.expr, regex).into())
+        Ok(split(self.into(), pattern.expr.clone(), regex).into())
     }
 
     pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
         use crate::functions::utf8::extract;
-        Ok(extract(&self.expr, &pattern.expr, index).into())
+        Ok(extract(self.into(), pattern.expr.clone(), index).into())
     }
 
     pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
         use crate::functions::utf8::extract_all;
-        Ok(extract_all(&self.expr, &pattern.expr, index).into())
+        Ok(extract_all(self.into(), pattern.expr.clone(), index).into())
     }
 
     pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
         use crate::functions::utf8::replace;
-        Ok(replace(&self.expr, &pattern.expr, &replacement.expr, regex).into())
+        Ok(replace(
+            self.into(),
+            pattern.expr.clone(),
+            replacement.expr.clone(),
+            regex,
+        )
+        .into())
     }
 
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
-        Ok(length(&self.expr).into())
+        Ok(length(self.into()).into())
     }
 
     pub fn utf8_lower(&self) -> PyResult<Self> {
         use crate::functions::utf8::lower;
-        Ok(lower(&self.expr).into())
+        Ok(lower(self.into()).into())
     }
 
     pub fn utf8_upper(&self) -> PyResult<Self> {
         use crate::functions::utf8::upper;
-        Ok(upper(&self.expr).into())
+        Ok(upper(self.into()).into())
     }
 
     pub fn utf8_lstrip(&self) -> PyResult<Self> {
         use crate::functions::utf8::lstrip;
-        Ok(lstrip(&self.expr).into())
+        Ok(lstrip(self.into()).into())
     }
 
     pub fn utf8_rstrip(&self) -> PyResult<Self> {
         use crate::functions::utf8::rstrip;
-        Ok(rstrip(&self.expr).into())
+        Ok(rstrip(self.into()).into())
     }
 
     pub fn utf8_reverse(&self) -> PyResult<Self> {
         use crate::functions::utf8::reverse;
-        Ok(reverse(&self.expr).into())
+        Ok(reverse(self.into()).into())
     }
 
     pub fn utf8_capitalize(&self) -> PyResult<Self> {
         use crate::functions::utf8::capitalize;
-        Ok(capitalize(&self.expr).into())
+        Ok(capitalize(self.into()).into())
     }
 
     pub fn utf8_left(&self, count: &Self) -> PyResult<Self> {
         use crate::functions::utf8::left;
-        Ok(left(&self.expr, &count.expr).into())
+        Ok(left(self.into(), count.into()).into())
     }
 
     pub fn utf8_right(&self, count: &Self) -> PyResult<Self> {
         use crate::functions::utf8::right;
-        Ok(right(&self.expr, &count.expr).into())
+        Ok(right(self.into(), count.into()).into())
     }
 
     pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
         use crate::functions::utf8::find;
-        Ok(find(&self.expr, &substr.expr).into())
+        Ok(find(self.into(), substr.into()).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
-        Ok(decode(&self.expr, raise_error_on_failure).into())
+        Ok(decode(self.into(), raise_error_on_failure).into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
         use crate::functions::image::encode;
-        Ok(encode(&self.expr, image_format).into())
+        Ok(encode(self.into(), image_format).into())
     }
 
     pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
@@ -562,87 +566,87 @@ impl PyExpr {
             )));
         }
         use crate::functions::image::resize;
-        Ok(resize(&self.expr, w as u32, h as u32).into())
+        Ok(resize(self.into(), w as u32, h as u32).into())
     }
 
     pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
         use crate::functions::image::crop;
-        Ok(crop(&self.expr, &bbox.expr).into())
+        Ok(crop(self.into(), bbox.into()).into())
     }
 
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
         use crate::functions::list::join;
-        Ok(join(&self.expr, &delimiter.expr).into())
+        Ok(join(self.into(), delimiter.into()).into())
     }
 
     pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
         use crate::functions::list::count;
-        Ok(count(&self.expr, mode).into())
+        Ok(count(self.into(), mode).into())
     }
 
     pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
         use crate::functions::list::get;
-        Ok(get(&self.expr, &idx.expr, &default.expr).into())
+        Ok(get(self.into(), idx.into(), default.into()).into())
     }
 
     pub fn list_sum(&self) -> PyResult<Self> {
         use crate::functions::list::sum;
-        Ok(sum(&self.expr).into())
+        Ok(sum(self.into()).into())
     }
 
     pub fn list_mean(&self) -> PyResult<Self> {
         use crate::functions::list::mean;
-        Ok(mean(&self.expr).into())
+        Ok(mean(self.into()).into())
     }
 
     pub fn list_min(&self) -> PyResult<Self> {
         use crate::functions::list::min;
-        Ok(min(&self.expr).into())
+        Ok(min(self.into()).into())
     }
 
     pub fn list_max(&self) -> PyResult<Self> {
         use crate::functions::list::max;
-        Ok(max(&self.expr).into())
+        Ok(max(self.into()).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
-        Ok(get(&self.expr, name).into())
+        Ok(get(self.into(), name).into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {
         use crate::functions::partitioning::days;
-        Ok(days(self.expr.clone()).into())
+        Ok(days(self.into()).into())
     }
 
     pub fn partitioning_hours(&self) -> PyResult<Self> {
         use crate::functions::partitioning::hours;
-        Ok(hours(self.expr.clone()).into())
+        Ok(hours(self.into()).into())
     }
 
     pub fn partitioning_months(&self) -> PyResult<Self> {
         use crate::functions::partitioning::months;
-        Ok(months(self.expr.clone()).into())
+        Ok(months(self.into()).into())
     }
 
     pub fn partitioning_years(&self) -> PyResult<Self> {
         use crate::functions::partitioning::years;
-        Ok(years(self.expr.clone()).into())
+        Ok(years(self.into()).into())
     }
 
     pub fn partitioning_iceberg_bucket(&self, n: i32) -> PyResult<Self> {
         use crate::functions::partitioning::iceberg_bucket;
-        Ok(iceberg_bucket(self.expr.clone(), n).into())
+        Ok(iceberg_bucket(self.into(), n).into())
     }
 
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> PyResult<Self> {
         use crate::functions::partitioning::iceberg_truncate;
-        Ok(iceberg_truncate(self.expr.clone(), w).into())
+        Ok(iceberg_truncate(self.into(), w).into())
     }
 
     pub fn json_query(&self, _query: &str) -> PyResult<Self> {
         use crate::functions::json::query;
-        Ok(query(&self.expr, _query).into())
+        Ok(query(self.into(), _query).into())
     }
 
     pub fn url_download(
@@ -659,7 +663,7 @@ impl PyExpr {
         }
         use crate::functions::uri::download;
         Ok(download(
-            &self.expr,
+            self.into(),
             max_connections as usize,
             raise_error_on_failure,
             multi_thread,
@@ -671,14 +675,28 @@ impl PyExpr {
 
 impl_bincode_py_state_serialization!(PyExpr);
 
-impl From<crate::Expr> for PyExpr {
-    fn from(value: crate::Expr) -> Self {
+impl From<ExprRef> for PyExpr {
+    fn from(value: crate::ExprRef) -> Self {
         PyExpr { expr: value }
     }
 }
 
-impl From<PyExpr> for crate::Expr {
+impl From<Expr> for PyExpr {
+    fn from(value: crate::Expr) -> Self {
+        PyExpr {
+            expr: Arc::new(value),
+        }
+    }
+}
+
+impl From<PyExpr> for crate::ExprRef {
     fn from(item: PyExpr) -> Self {
         item.expr
+    }
+}
+
+impl From<&PyExpr> for crate::ExprRef {
+    fn from(item: &PyExpr) -> Self {
+        item.expr.clone()
     }
 }

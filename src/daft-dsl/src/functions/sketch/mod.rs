@@ -4,7 +4,7 @@ use percentile::PercentileEvaluator;
 
 use serde::{Deserialize, Serialize};
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -23,9 +23,10 @@ impl SketchExpr {
     }
 }
 
-pub fn sketch_percentile(input: &Expr, q: &Expr) -> Expr {
+pub fn sketch_percentile(input: ExprRef, q: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Sketch(SketchExpr::Percentile),
         inputs: vec![input.clone(), q.clone()],
     }
+    .into()
 }

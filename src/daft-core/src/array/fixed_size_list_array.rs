@@ -14,7 +14,11 @@ pub struct FixedSizeListArray {
     validity: Option<arrow2::bitmap::Bitmap>,
 }
 
-impl DaftArrayType for FixedSizeListArray {}
+impl DaftArrayType for FixedSizeListArray {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(

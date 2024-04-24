@@ -17,7 +17,7 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, Expr};
+use daft_dsl::{col, null_lit, AggExpr, Expr, ExprRef};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod ops;
@@ -219,7 +219,7 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
-    pub fn filter<E: AsRef<Expr>>(&self, predicate: &[E]) -> DaftResult<Self> {
+    pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
@@ -229,11 +229,11 @@ impl Table {
             let mut expr = predicate
                 .get(0)
                 .unwrap()
-                .as_ref()
-                .and(predicate.get(1).unwrap().as_ref());
+                .clone()
+                .and(predicate.get(1).unwrap().clone());
             for i in 2..predicate.len() {
-                let next = predicate.get(i).unwrap().as_ref();
-                expr = expr.and(next);
+                let next = predicate.get(i).unwrap();
+                expr = expr.and(next.clone());
             }
             let mask = self.eval_expression(&expr)?;
             self.mask_filter(&mask)
@@ -416,7 +416,7 @@ impl Table {
         Ok(series)
     }
 
-    pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
+    pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let result_series = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -451,7 +451,7 @@ impl Table {
     pub fn cast_to_schema_with_fill(
         &self,
         schema: &Schema,
-        fill_map: Option<&HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> DaftResult<Self> {
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
         let null_lit = null_lit();
@@ -469,6 +469,7 @@ impl Table {
                         .as_ref()
                         .and_then(|m| m.get(name.as_str()))
                         .unwrap_or(&null_lit)
+                        .clone()
                         .alias(name.clone())
                         .cast(&field.dtype)
                 }
@@ -603,12 +604,12 @@ mod test {
             b.field().clone().rename("b"),
         ])?;
         let table = Table::new(schema, vec![a, b])?;
-        let e1 = col("a") + col("b");
+        let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
-        let e2 = (col("a") + col("b")).cast(&DataType::Int64);
+        let e2 = col("a").add(col("b")).cast(&DataType::Int64);
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);

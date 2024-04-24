@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::Expr;
+use daft_dsl::{binary_op, Expr, ExprRef};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct Project {
     // Upstream node.
     pub input: PhysicalPlanRef,
-    pub projection: Vec<Expr>,
+    pub projection: Vec<ExprRef>,
     pub resource_request: ResourceRequest,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
@@ -24,7 +24,7 @@ pub struct Project {
 impl Project {
     pub(crate) fn try_new(
         input: PhysicalPlanRef,
-        projection: Vec<Expr>,
+        projection: Vec<ExprRef>,
         resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
@@ -39,7 +39,7 @@ impl Project {
 
     fn translate_clustering_spec(
         input_clustering_spec: Arc<ClusteringSpec>,
-        projection: &Vec<Expr>,
+        projection: &Vec<ExprRef>,
     ) -> Arc<ClusteringSpec> {
         // Given an input partition spec, and a new projection,
         // produce the new partition spec.
@@ -75,7 +75,7 @@ impl Project {
                         ))
                         .into()
                     },
-                    |new_clustering_spec: Vec<Expr>| match input_clustering_spec.as_ref() {
+                    |new_clustering_spec: Vec<ExprRef>| match input_clustering_spec.as_ref() {
                         Range(RangeClusteringConfig {
                             num_partitions,
                             descending,
@@ -98,49 +98,37 @@ impl Project {
     }
 
     fn translate_clustering_spec_expr(
-        clustering_spec_expr: &Expr,
+        clustering_spec_expr: &ExprRef,
         old_colname_to_new_colname: &IndexMap<String, String>,
-    ) -> std::result::Result<Expr, ()> {
+    ) -> std::result::Result<ExprRef, ()> {
         // Given a single expression of an input partition spec,
         // translate it to a new expression in the given projection.
         // Returns:
         //  - Ok(expr) with expr being the translation, or
         //  - Err(()) if no translation is possible in the new projection.
 
-        match clustering_spec_expr {
+        match clustering_spec_expr.as_ref() {
             Expr::Column(name) => match old_colname_to_new_colname.get(name.as_ref()) {
-                Some(newname) => Ok(Expr::Column(newname.as_str().into())),
+                Some(newname) => Ok(daft_dsl::col(newname.as_str())),
                 None => Err(()),
             },
             Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
             Expr::Alias(child, name) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::Alias(newchild.into(), name.clone()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                Ok(newchild.alias(name.clone()))
             }
             Expr::BinaryOp { op, left, right } => {
-                let newleft = Self::translate_clustering_spec_expr(
-                    left.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                let newright = Self::translate_clustering_spec_expr(
-                    right.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::BinaryOp {
-                    op: *op,
-                    left: newleft.into(),
-                    right: newright.into(),
-                })
+                let newleft =
+                    Self::translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
+                let newright =
+                    Self::translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
+                Ok(binary_op(*op, newleft, newright))
             }
             Expr::Cast(child, dtype) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::Cast(newchild.into(), dtype.clone()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                Ok(newchild.cast(dtype))
             }
             Expr::Function { func, inputs } => {
                 let new_inputs = inputs
@@ -150,73 +138,51 @@ impl Project {
                 Ok(Expr::Function {
                     func: func.clone(),
                     inputs: new_inputs,
-                })
+                }
+                .into())
             }
             Expr::Not(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::Not(newchild.into()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                Ok(newchild.not())
             }
             Expr::IsNull(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::IsNull(newchild.into()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                Ok(newchild.is_null())
             }
             Expr::NotNull(child) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::NotNull(newchild.into()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                Ok(newchild.not_null())
             }
             Expr::FillNull(child, fill_value) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                let newfill = Self::translate_clustering_spec_expr(
-                    fill_value.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::FillNull(newchild.into(), newfill.into()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                let newfill =
+                    Self::translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
+                Ok(newchild.fill_null(newfill))
             }
             Expr::IsIn(child, items) => {
-                let newchild = Self::translate_clustering_spec_expr(
-                    child.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                let newitems = Self::translate_clustering_spec_expr(
-                    items.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::IsIn(newchild.into(), newitems.into()))
+                let newchild =
+                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+                let newitems =
+                    Self::translate_clustering_spec_expr(items, old_colname_to_new_colname)?;
+                Ok(newchild.is_in(newitems))
             }
             Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
             } => {
-                let newtrue = Self::translate_clustering_spec_expr(
-                    if_true.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                let newfalse = Self::translate_clustering_spec_expr(
-                    if_false.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                let newpred = Self::translate_clustering_spec_expr(
-                    predicate.as_ref(),
-                    old_colname_to_new_colname,
-                )?;
-                Ok(Expr::IfElse {
-                    if_true: newtrue.into(),
-                    if_false: newfalse.into(),
-                    predicate: newpred.into(),
-                })
+                let newtrue =
+                    Self::translate_clustering_spec_expr(if_true, old_colname_to_new_colname)?;
+                let newfalse =
+                    Self::translate_clustering_spec_expr(if_false, old_colname_to_new_colname)?;
+                let newpred =
+                    Self::translate_clustering_spec_expr(predicate, old_colname_to_new_colname)?;
+
+                Ok(newpred.if_else(newtrue, newfalse))
             }
             // Cannot have agg exprs in partition specs.
             Expr::Agg(_) => Err(()),
@@ -249,12 +215,12 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit, Expr};
+    use daft_dsl::{col, lit, ExprRef};
     use rstest::rstest;
 
     use crate::{
         partitioning::{ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig},
-        planner::plan,
+        physical_planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
     };
 
@@ -264,7 +230,7 @@ mod tests {
     fn test_clustering_spec_preserving() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
-            (col("a") % lit(2)), // this is now "a"
+            (col("a").rem(lit(2))), // this is now "a"
             col("b"),
             col("a").alias("aa"),
         ];
@@ -273,14 +239,11 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![Expr::Column("a".into()), Expr::Column("b".into())],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
@@ -300,10 +263,10 @@ mod tests {
         #[values(
             vec![col("a"), col("c").alias("b")], // original "b" is gone even though "b" is present
             vec![col("b")],                      // original "a" dropped
-            vec![col("a") % lit(2), col("b")],   // original "a" gone
+            vec![col("a").rem(lit(2)), col("b")],   // original "a" gone
             vec![col("c")],                      // everything gone
         )]
-        projection: Vec<Expr>,
+        projection: Vec<ExprRef>,
     ) -> DaftResult<()> {
         use crate::partitioning::ClusteringSpec;
 
@@ -313,14 +276,11 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![Expr::Column("a".into()), Expr::Column("b".into())],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(projection, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
         assert_eq!(
@@ -343,14 +303,11 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(
-            Some(3),
-            vec![Expr::Column("a".into()), Expr::Column("b".into())],
-        )?
+        .hash_repartition(Some(3), vec![col("a"), col("b")])?
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));

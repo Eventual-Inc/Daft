@@ -1,4 +1,4 @@
-use crate::Expr;
+use crate::ExprRef;
 use common_error::DaftError;
 use daft_core::datatypes::DataType;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
@@ -17,7 +17,7 @@ impl FunctionEvaluator for CropEvaluator {
 
     fn to_field(
         &self,
-        inputs: &[Expr],
+        inputs: &[ExprRef],
         schema: &Schema,
         _expr: &FunctionExpr,
     ) -> DaftResult<Field> {

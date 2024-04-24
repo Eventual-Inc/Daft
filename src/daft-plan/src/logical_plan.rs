@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::optimization::get_required_columns;
 use indexmap::IndexSet;
 use snafu::Snafu;
 
@@ -28,6 +28,9 @@ pub enum LogicalPlan {
 }
 
 impl LogicalPlan {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
@@ -110,9 +113,9 @@ impl LogicalPlan {
                 let res = aggregate
                     .aggregations
                     .iter()
-                    .map(|agg| get_required_columns(&Expr::Agg(agg.clone())))
-                    .chain(aggregate.groupby.iter().map(get_required_columns))
-                    .flatten()
+                    .flat_map(|agg| agg.children())
+                    .flat_map(|e| get_required_columns(&e))
+                    .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
                 vec![res]
             }
@@ -130,22 +133,24 @@ impl LogicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&Arc<Self>> {
+    pub fn children(&self) -> Vec<Arc<Self>> {
         match self {
             Self::Source(..) => vec![],
-            Self::Project(Project { input, .. }) => vec![input],
-            Self::Filter(Filter { input, .. }) => vec![input],
-            Self::Limit(Limit { input, .. }) => vec![input],
-            Self::Explode(Explode { input, .. }) => vec![input],
-            Self::Sort(Sort { input, .. }) => vec![input],
-            Self::Repartition(Repartition { input, .. }) => vec![input],
-            Self::Distinct(Distinct { input, .. }) => vec![input],
-            Self::Aggregate(Aggregate { input, .. }) => vec![input],
-            Self::Concat(Concat { input, other }) => vec![input, other],
-            Self::Join(Join { left, right, .. }) => vec![left, right],
-            Self::Sink(Sink { input, .. }) => vec![input],
-            Self::Sample(Sample { input, .. }) => vec![input],
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
+            Self::Project(Project { input, .. }) => vec![input.clone()],
+            Self::Filter(Filter { input, .. }) => vec![input.clone()],
+            Self::Limit(Limit { input, .. }) => vec![input.clone()],
+            Self::Explode(Explode { input, .. }) => vec![input.clone()],
+            Self::Sort(Sort { input, .. }) => vec![input.clone()],
+            Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
+            Self::Distinct(Distinct { input, .. }) => vec![input.clone()],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
+            Self::Concat(Concat { input, other }) => vec![input.clone(), other.clone()],
+            Self::Join(Join { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::Sink(Sink { input, .. }) => vec![input.clone()],
+            Self::Sample(Sample { input, .. }) => vec![input.clone()],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                vec![input.clone()]
+            }
         }
     }
 

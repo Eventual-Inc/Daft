@@ -51,7 +51,7 @@ Quickstart
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
-.. code:: python
+.. code::
 
     import daft
 
@@ -66,6 +66,7 @@ In this example, we load images from an AWS S3 bucket's URLs and resize each ima
     df = df.with_column("resized", df["image"].image.resize(32, 32))
 
     df.show(3)
+
 
 |Quickstart Image|
 

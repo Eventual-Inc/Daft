@@ -30,9 +30,6 @@ def test_expressions_projection_empty():
     assert ep == ep
     assert ep != ExpressionsProjection([col("x")])
 
-    # Test required_columns
-    assert ep.required_columns() == set()
-
     # Test to_name_set()
     assert ep.to_name_set() == set()
 
@@ -58,9 +55,6 @@ def test_expressions_projection():
     # Test eq
     assert ep == ep
     assert ep != ExpressionsProjection([])
-
-    # Test required_columns
-    assert ep.required_columns() == {"x", "y", "z"}
 
     # Test to_name_set()
     assert ep.to_name_set() == {"x", "y", "a"}

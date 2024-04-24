@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use daft_core::datatypes::ImageFormat;
 
-use crate::Expr;
+use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
@@ -37,32 +37,36 @@ impl ImageExpr {
     }
 }
 
-pub fn decode(input: &Expr, raise_error_on_failure: bool) -> Expr {
+pub fn decode(input: ExprRef, raise_error_on_failure: bool) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Decode {
             raise_error_on_failure,
         }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn encode(input: &Expr, image_format: ImageFormat) -> Expr {
+pub fn encode(input: ExprRef, image_format: ImageFormat) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Encode { image_format }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn resize(input: &Expr, w: u32, h: u32) -> Expr {
+pub fn resize(input: ExprRef, w: u32, h: u32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Resize { w, h }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
+    .into()
 }
 
-pub fn crop(input: &Expr, bbox: &Expr) -> Expr {
+pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Crop()),
-        inputs: vec![input.clone(), bbox.clone()],
+        inputs: vec![input, bbox],
     }
+    .into()
 }

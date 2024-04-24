@@ -143,6 +143,10 @@ class DataFrame:
             print("\n== Physical Plan ==\n")
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
             print(physical_plan_scheduler.pretty_print(simple))
+        else:
+            print(
+                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer."
+            )
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config
@@ -660,7 +664,12 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def sample(self, fraction: float, with_replacement: bool = False, seed: Optional[int] = None) -> "DataFrame":
+    def sample(
+        self,
+        fraction: float,
+        with_replacement: bool = False,
+        seed: Optional[int] = None,
+    ) -> "DataFrame":
         """Samples a fraction of rows from the DataFrame
 
         Example:
@@ -718,7 +727,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(
-        self, column_name: str, expr: Expression, resource_request: ResourceRequest = ResourceRequest()
+        self,
+        column_name: str,
+        expr: Expression,
+        resource_request: ResourceRequest = ResourceRequest(),
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -746,7 +758,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def sort(
-        self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
+        self,
+        by: Union[ColumnInputType, List[ColumnInputType]],
+        desc: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
         """Sorts DataFrame globally
 
@@ -908,7 +922,11 @@ class DataFrame:
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
         builder = self._builder.join(
-            other._builder, left_on=left_exprs, right_on=right_exprs, how=join_type, strategy=join_strategy
+            other._builder,
+            left_on=left_exprs,
+            right_on=right_exprs,
+            how=join_type,
+            strategy=join_strategy,
         )
         return DataFrame(builder)
 
@@ -1281,7 +1299,10 @@ class DataFrame:
         elif len(preview_partition) > n:
             # Preview partition is cached but has more rows that we need, so use the appropriate slice.
             truncated_preview_partition = preview_partition.slice(0, n)
-            preview = DataFramePreview(preview_partition=truncated_preview_partition, dataframe_num_rows=total_rows)
+            preview = DataFramePreview(
+                preview_partition=truncated_preview_partition,
+                dataframe_num_rows=total_rows,
+            )
         else:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
@@ -1360,7 +1381,8 @@ class DataFrame:
         assert result is not None
 
         pd_df = result.to_pandas(
-            schema=self._builder.schema(), cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+            schema=self._builder.schema(),
+            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
         )
         return pd_df
 

@@ -64,6 +64,23 @@ def test_udf_kwargs():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
+def test_udf_tuples():
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.string())
+    def repeat_n(data, tuple_data):
+        n = tuple_data[0]
+        return Series.from_pylist([d.as_py() * n for d in data.to_arrow()])
+
+    expr = repeat_n(col("a"), (2,))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+
 @pytest.mark.parametrize("container", [Series, list, np.ndarray])
 def test_udf_return_containers(container):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
@@ -184,6 +201,24 @@ def test_udf_arbitrary_number_of_args():
 
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"a": [3, 6, 9]}
+
+
+def test_udf_arbitrary_number_of_kwargs():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.string())
+    def repeat_kwargs(**kwargs):
+        data = {k: v.to_pylist() for k, v in kwargs.items()}
+        length = len(data[list(data.keys())[0]])
+        return Series.from_pylist(["".join([key * data[key][i] for key in data]) for i in range(length)])
+
+    expr = repeat_kwargs(a=col("a"), b=col("b"), c=col("c"))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.string()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": ["abc", "aabbcc", "aaabbbccc"]}
 
 
 def test_udf_arbitrary_number_of_args_with_kwargs():

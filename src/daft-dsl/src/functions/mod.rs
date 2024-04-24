@@ -12,6 +12,8 @@ pub mod utf8;
 
 use std::fmt::{Display, Formatter, Result};
 
+use crate::ExprRef;
+
 use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
@@ -32,8 +34,6 @@ pub mod python;
 #[cfg(feature = "python")]
 use python::PythonUDF;
 
-use super::Expr;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
@@ -53,7 +53,12 @@ pub enum FunctionExpr {
 
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field>;
+    fn to_field(
+        &self,
+        inputs: &[ExprRef],
+        schema: &Schema,
+        expr: &FunctionExpr,
+    ) -> DaftResult<Field>;
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series>;
 }
 
@@ -90,7 +95,12 @@ impl FunctionEvaluator for FunctionExpr {
         self.get_evaluator().fn_name()
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(
+        &self,
+        inputs: &[ExprRef],
+        schema: &Schema,
+        expr: &FunctionExpr,
+    ) -> DaftResult<Field> {
         self.get_evaluator().to_field(inputs, schema, expr)
     }
 
@@ -99,7 +109,7 @@ impl FunctionEvaluator for FunctionExpr {
     }
 }
 
-pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[Expr]) -> Result {
+pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[ExprRef]) -> Result {
     write!(f, "{}(", func)?;
     for (i, input) in inputs.iter().enumerate() {
         if i != 0 {
@@ -111,7 +121,7 @@ pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[Expr])
     Ok(())
 }
 
-pub fn function_semantic_id(func: &FunctionExpr, inputs: &[Expr], schema: &Schema) -> FieldID {
+pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Schema) -> FieldID {
     let inputs = inputs
         .iter()
         .map(|expr| expr.semantic_id(schema).id.to_string())
