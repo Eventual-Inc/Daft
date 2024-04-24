@@ -732,12 +732,12 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
-        return self.with_columns([(column_name, expr)], resource_request)
+        return self.with_columns({column_name: expr}, resource_request)
 
     @DataframePublicAPI
     def with_columns(
         self,
-        columns: Iterable[Union[Expression, Tuple[str, Expression]]],
+        columns: Dict[str, Expression],
         resource_request: ResourceRequest = ResourceRequest(),
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
@@ -746,27 +746,27 @@ class DataFrame:
         Example:
             >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
             >>>
-            >>> new_df = df.with_columns([
-                    (df['x'] + 1).alias('x_plus_1'),
-                    ('y_minus_1', df['y'] - 1),
-                ])
-            >>> new_df.show()
-            ╭───────┬───────┬──────────┬───────────╮
-            │ x     ┆ y     ┆ x_plus_1 ┆ y_minus_1 │
-            │ ---   ┆ ---   ┆ ---      ┆ ---       │
-            │ Int64 ┆ Int64 ┆ Int64    ┆ Int64     │
-            ╞═══════╪═══════╪══════════╪═══════════╡
-            │ 1     ┆ 4     ┆ 2        ┆ 3         │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 3        ┆ 4         │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     ┆ 4        ┆ 5         │
-            ╰───────┴───────┴──────────┴───────────╯
+            >>> new_df = df.with_columns({
+                    'foo': df['x'] + 1,
+                    'bar': df['y'] - df['x']
+                })
 
+            >>> new_df.show()
+            ╭───────┬───────┬───────┬───────╮
+            │ x     ┆ y     ┆ foo   ┆ bar   │
+            │ ---   ┆ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 3     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 4     ┆ 3     │
+            ╰───────┴───────┴───────┴───────╯
             (Showing first 3 of 3 rows)
 
         Args:
-            columns (Iterable[Union[ColumnInputType, Tuple[str, Expression]]): iterable of new columns, each of which are either named expressions or tuples of (name, expression).
+            columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
             resource_request (ResourceRequest): a custom resource request for the execution of this operation
 
         Returns:
@@ -775,13 +775,7 @@ class DataFrame:
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        new_columns = []
-        for col_input in columns:
-            if isinstance(col_input, tuple):
-                name, expr = col_input
-                new_columns.append(expr.alias(name))
-            else:
-                new_columns.append(col_input)
+        new_columns = [col.alias(name) for name, col in columns.items()]
 
         builder = self._builder.with_columns(new_columns, resource_request)
         return DataFrame(builder)

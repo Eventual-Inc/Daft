@@ -65,18 +65,17 @@ fn check_for_agg(expr: &Expr) -> bool {
     }
 }
 
-macro_rules! err_if_agg {
-    ($fn_name:expr, $exprs:expr) => {
-        for e in $exprs {
-            if check_for_agg(e) {
-                return Err(DaftError::ValueError(format!(
-                    "Aggregation expressions are not currently supported in {fn_name}: {e}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
-                    fn_name = $fn_name,
-                    e = e
-                )));
-            }
+fn err_if_agg(fn_name: &str, exprs: &Vec<ExprRef>) -> DaftResult<()> {
+    for e in exprs {
+        if check_for_agg(e) {
+            return Err(DaftError::ValueError(format!(
+                "Aggregation expressions are not currently supported in {fn_name}: {e}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                fn_name=fn_name,
+                e=e
+            )));
         }
-    };
+    }
+    Ok(())
 }
 
 fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
@@ -190,7 +189,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
-        err_if_agg!("project", &to_select);
+        err_if_agg("project", &to_select)?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
@@ -202,7 +201,7 @@ impl LogicalPlanBuilder {
         columns: Vec<ExprRef>,
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
-        err_if_agg!("with_column", &columns);
+        err_if_agg("with_columns", &columns)?;
 
         let new_col_names = columns
             .iter()
@@ -251,7 +250,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        err_if_agg!("filter", [&predicate]);
+        err_if_agg("filter", &vec![predicate.to_owned()])?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
@@ -265,7 +264,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
-        err_if_agg!("explode", &to_explode);
+        err_if_agg("explode", &to_explode)?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
@@ -273,7 +272,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
-        err_if_agg!("sort", &sort_by);
+        err_if_agg("sort", &sort_by)?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
@@ -285,7 +284,7 @@ impl LogicalPlanBuilder {
         num_partitions: Option<usize>,
         partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        err_if_agg!("hash_repartition", &partition_by);
+        err_if_agg("hash_repartition", &partition_by)?;
 
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
@@ -353,8 +352,8 @@ impl LogicalPlanBuilder {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
-        err_if_agg!("join", &left_on);
-        err_if_agg!("join", &right_on);
+        err_if_agg("join", &left_on)?;
+        err_if_agg("join", &right_on)?;
 
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -389,7 +388,7 @@ impl LogicalPlanBuilder {
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
         if let Some(partition_cols) = &partition_cols {
-            err_if_agg!("table_write", partition_cols);
+            err_if_agg("table_write", partition_cols)?;
         }
 
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
