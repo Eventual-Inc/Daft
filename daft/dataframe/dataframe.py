@@ -646,7 +646,7 @@ class DataFrame:
             DataFrame: new DataFrame that will select the passed in columns
         """
         assert len(columns) > 0
-        builder = self._builder.project(self.__column_input_to_expression(columns))
+        builder = self._builder.select(self.__column_input_to_expression(columns))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -704,9 +704,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with some columns excluded.
         """
-        names_to_skip = set(names)
-        el = [col(e.name) for e in self._builder.schema() if e.name not in names_to_skip]
-        builder = self._builder.project(el)
+        builder = self._builder.exclude(list(names))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -746,14 +744,52 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
+        return self.with_columns({column_name: expr}, resource_request)
+
+    @DataframePublicAPI
+    def with_columns(
+        self,
+        columns: Dict[str, Expression],
+        resource_request: ResourceRequest = ResourceRequest(),
+    ) -> "DataFrame":
+        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
+        with all current columns and the new ones
+
+        Example:
+            >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
+            >>>
+            >>> new_df = df.with_columns({
+                    'foo': df['x'] + 1,
+                    'bar': df['y'] - df['x']
+                })
+
+            >>> new_df.show()
+            ╭───────┬───────┬───────┬───────╮
+            │ x     ┆ y     ┆ foo   ┆ bar   │
+            │ ---   ┆ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 3     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 4     ┆ 3     │
+            ╰───────┴───────┴───────┴───────╯
+            (Showing first 3 of 3 rows)
+
+        Args:
+            columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+
+        Returns:
+            DataFrame: DataFrame with new columns.
+        """
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        prev_schema_as_cols = ExpressionsProjection(
-            [col(field.name) for field in self._builder.schema() if field.name != column_name]
-        )
-        new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
-        builder = self._builder.project(list(new_schema), resource_request)
+        new_columns = [col.alias(name) for name, col in columns.items()]
+
+        builder = self._builder.with_columns(new_columns, resource_request)
         return DataFrame(builder)
 
     @DataframePublicAPI

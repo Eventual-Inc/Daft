@@ -87,13 +87,21 @@ class LogicalPlanBuilder:
         builder = _LogicalPlanBuilder.table_scan(scan_operator)
         return cls(builder)
 
-    def project(
+    def select(
         self,
-        projection: list[Expression],
-        custom_resource_request: ResourceRequest = ResourceRequest(),
+        to_select: list[Expression],
     ) -> LogicalPlanBuilder:
-        projection_pyexprs = [expr._expr for expr in projection]
-        builder = self._builder.project(projection_pyexprs, custom_resource_request)
+        to_select_pyexprs = [expr._expr for expr in to_select]
+        builder = self._builder.select(to_select_pyexprs)
+        return LogicalPlanBuilder(builder)
+
+    def with_columns(self, columns: list[Expression], custom_resource_request: ResourceRequest) -> LogicalPlanBuilder:
+        column_pyexprs = [expr._expr for expr in columns]
+        builder = self._builder.with_columns(column_pyexprs, custom_resource_request)
+        return LogicalPlanBuilder(builder)
+
+    def exclude(self, to_exclude: list[str]) -> LogicalPlanBuilder:
+        builder = self._builder.exclude(to_exclude)
         return LogicalPlanBuilder(builder)
 
     def filter(self, predicate: Expression) -> LogicalPlanBuilder:
@@ -113,7 +121,7 @@ class LogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
         first_col = col(self.schema().column_names()[0])
         builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
-        builder = builder.project([first_col.alias("count")._expr], ResourceRequest())
+        builder = builder.select([first_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
     def distinct(self) -> LogicalPlanBuilder:

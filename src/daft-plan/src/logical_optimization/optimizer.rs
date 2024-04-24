@@ -392,7 +392,7 @@ mod tests {
             col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
-            .project(proj_exprs, Default::default())?
+            .select(proj_exprs)?
             .build();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -427,7 +427,7 @@ mod tests {
             col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
-            .project(proj_exprs, Default::default())?
+            .select(proj_exprs)?
             .build();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -480,7 +480,7 @@ mod tests {
         let filter_predicate = col("a").lt(lit(2));
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj_exprs.clone(), Default::default())?
+            .select(proj_exprs.clone())?
             .filter(filter_predicate.clone())?
             .build();
         let mut pass_count = 0;
@@ -500,7 +500,7 @@ mod tests {
             .or(lit(false))
             .and(lit(true));
         let expected = dummy_scan_node(scan_op)
-            .project(new_proj_exprs, Default::default())?
+            .select(new_proj_exprs)?
             .filter(new_pred)?
             .build();
         assert_eq!(
