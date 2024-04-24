@@ -463,7 +463,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![inpu.clone()],
+            Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input.clone()],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,

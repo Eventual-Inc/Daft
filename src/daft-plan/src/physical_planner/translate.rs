@@ -708,8 +708,9 @@ pub(super) fn translate_single_logical_node(
                         Ok(PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite::new(
                             schema.clone(),
                             deltalake_info.clone(),
-                            input_physical.into(),
-                        )))
+                            input_physical,
+                        ))
+                        .arced())
                     }
                 },
             }
