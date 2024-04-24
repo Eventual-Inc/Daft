@@ -28,7 +28,7 @@ use crate::partitioning::{
 };
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::SourceInfo;
+use crate::source_info::{PlaceHolderInfo, SourceInfo};
 use crate::FileFormat;
 use crate::{physical_ops::*, JoinStrategy};
 
@@ -86,14 +86,20 @@ pub(super) fn translate_single_logical_node(
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => {
+                let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions)).into()
+                });
+
                 let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
-                        .into(),
+                    clustering_spec
                 ))
                 .arced();
                 Ok(scan)
+            }
+            SourceInfo::PlaceHolderInfo(PlaceHolderInfo {source_id, ..}) => {
+                panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
         LogicalPlan::Project(LogicalProject {

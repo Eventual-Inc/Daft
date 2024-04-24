@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -113,6 +115,7 @@ pub enum ClusteringSpec {
     Unknown(UnknownClusteringConfig),
 }
 
+pub type ClusteringSpecRef = Arc<ClusteringSpec>;
 impl ClusteringSpec {
     pub fn var_name(&self) -> &'static str {
         match self {

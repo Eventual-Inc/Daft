@@ -173,6 +173,9 @@ impl PushDownProjection {
                     }
                     #[cfg(feature = "python")]
                     SourceInfo::InMemoryInfo(_) => Ok(Transformed::No(plan)),
+                    SourceInfo::PlaceHolderInfo(..) => {
+                        panic!("PlaceHolderInfo should not exist for optimization!");
+                    }
                 }
             }
             LogicalPlan::Project(upstream_projection) => {

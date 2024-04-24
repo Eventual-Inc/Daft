@@ -73,6 +73,9 @@ impl OptimizerRule for PushDownLimit {
                                 let out_plan = if external_info.scan_op.0.can_absorb_limit() { new_source } else { plan.with_new_children(&[new_source]).into() };
                                 Ok(Transformed::Yes(out_plan))
                             }
+                            SourceInfo::PlaceHolderInfo(..) => {
+                                panic!("PlaceHolderInfo should not exist for optimization!");
+                            }
                         }
                     }
                     // Fold Limit together.

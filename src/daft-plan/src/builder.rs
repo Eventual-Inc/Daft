@@ -152,6 +152,7 @@ impl LogicalPlanBuilder {
             cache_entry,
             num_partitions,
             size_bytes,
+            None, // TODO(sammy) thread through clustering spec to Python
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
