@@ -355,6 +355,11 @@ class Expression:
         expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 
+    def sqrt(self) -> Expression:
+        """The square root of a numeric expression (``expr.sqrt()``)"""
+        expr = self._expr.sqrt()
+        return Expression._from_pyexpr(expr)
+
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression (``expr.sin()``)"""
         expr = self._expr.sin()

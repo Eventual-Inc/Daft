@@ -214,6 +214,11 @@ impl PyExpr {
         Ok(round(self.into(), decimal).into())
     }
 
+    pub fn sqrt(&self) -> PyResult<Self> {
+        use functions::numeric::sqrt;
+        Ok(sqrt(self.into()).into())
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         use functions::numeric::sin;
         Ok(sin(self.into()).into())

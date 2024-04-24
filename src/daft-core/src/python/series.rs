@@ -130,6 +130,10 @@ impl PySeries {
         Ok(self.series.round(decimal)?.into())
     }
 
+    pub fn sqrt(&self) -> PyResult<Self> {
+        Ok(self.series.sqrt()?.into())
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         Ok(self
             .series

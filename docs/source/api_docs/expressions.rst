@@ -50,6 +50,7 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.sqrt
     Expression.sin
     Expression.cos
     Expression.tan

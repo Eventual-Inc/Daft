@@ -32,6 +32,7 @@ pub mod round;
 pub mod search_sorted;
 pub mod sign;
 pub mod sort;
+pub mod sqrt;
 pub mod struct_;
 pub mod take;
 mod trigonometry;
