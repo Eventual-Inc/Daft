@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use daft_core::DataType;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
@@ -21,15 +22,27 @@ impl FunctionEvaluator for SqrtEvaluator {
             )));
         }
         let field = inputs.first().unwrap().to_field(schema)?;
-        if !field.dtype.is_numeric() {
-            return Err(DaftError::TypeError(format!(
-                "Expected input to sqrt to be numeric, got {}",
-                field.dtype
-            )));
-        }
-        Ok(field)
+        let dtype = match field.dtype {
+            DataType::Int8 => DataType::Float32,
+            DataType::Int16 => DataType::Float32,
+            DataType::UInt8 => DataType::Float32,
+            DataType::UInt16 => DataType::Float32,
+            DataType::Int32 => DataType::Float64,
+            DataType::Int64 => DataType::Float64,
+            DataType::UInt32 => DataType::Float64,
+            DataType::UInt64 => DataType::Float64,
+            DataType::Float32 => DataType::Float32,
+            DataType::Float64 => DataType::Float64,
+            dt if dt.is_numeric() => DataType::Float64,
+            _ => {
+                return Err(DaftError::TypeError(format!(
+                    "Expected input to compute exp to be numeric, got {}",
+                    field.dtype
+                )))
+            }
+        };
+        Ok(Field::new(field.name, dtype))
     }
-
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::SchemaMismatch(format!(
