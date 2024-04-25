@@ -237,9 +237,10 @@ pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
     .into()
 }
 
-pub fn rpad(data: &Expr, length: &Expr, pad: &Expr) -> Expr {
+pub fn rpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Rpad),
-        inputs: vec![data.clone(), length.clone(), pad.clone()],
+        inputs: vec![data, length, pad],
     }
+    .into()
 }

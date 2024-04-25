@@ -567,7 +567,7 @@ impl PyExpr {
 
     pub fn utf8_rpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
         use crate::functions::utf8::rpad;
-        Ok(rpad(&self.expr, &length.expr, &pad.expr).into())
+        Ok(rpad(self.into(), length.into(), pad.into()).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

@@ -892,8 +892,6 @@ def test_series_utf8_rpad_multichar_pad() -> None:
 @pytest.mark.parametrize(
     ["data", "length", "pad"],
     [
-        # empty data
-        ([], [5, 6, 7], ["-", ".", " "]),
         # empty length
         (["foo", "barbaz", "quux"], [], ["-", ".", " "]),
         # empty pad

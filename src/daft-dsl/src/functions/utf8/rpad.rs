@@ -1,4 +1,4 @@
-use crate::Expr;
+use crate::ExprRef;
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
@@ -17,7 +17,7 @@ impl FunctionEvaluator for RpadEvaluator {
         "rpad"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [data, length, pad] => {
                 let data = data.to_field(schema)?;

@@ -138,7 +138,7 @@ def test_str_left_right(binary_data_fixture, op, request):
 
 
 def test_str_rpad():
-    s = Series.from_arrow(pa.array(["foo", "abcdef", "coo"]), name="col")
+    s = Series.from_arrow(pa.array(["foo", "abcdef", "quux"]), name="col")
     zeroes = Series.from_arrow(pa.array([0, 0, 0]), name="zeroes")
     emptystrings = Series.from_arrow(pa.array(["", "", ""]), name="emptystrings")
     assert_typing_resolve_vs_runtime_behavior(

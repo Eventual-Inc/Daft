@@ -730,17 +730,37 @@ impl Utf8Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
     {
-        let lengths = [self.len(), length.len(), padchar.len()];
-        // check valid input lengths
-        if !is_valid_input_lengths(&lengths) {
-            let invalid_length_str =
-                itertools::Itertools::join(&mut lengths.iter().map(|x| x.to_string()), ", ");
-            return Err(DaftError::ValueError(format!(
-                "Error in rpad: Inputs have invalid lengths: {invalid_length_str}"
-            )));
-        }
+        let input_length = self.len();
+        let other_lengths = [length.len(), padchar.len()];
 
-        let expected_size = *lengths.iter().max().unwrap();
+        // Parse the expected `result_len` from the length of the input and other arguments
+        let expected_size = if input_length == 0 {
+            // Empty input: expect empty output
+            0
+        } else if other_lengths.iter().all(|&x| x == input_length) {
+            // All lengths matching: expect non-broadcasted length
+            input_length
+        } else if let [broadcasted_len] = std::iter::once(&input_length)
+            .chain(other_lengths.iter())
+            .filter(|&&x| x != 1)
+            .sorted()
+            .dedup()
+            .collect::<Vec<&usize>>()
+            .as_slice()
+        {
+            // All non-unit lengths match: expect broadcast
+            **broadcasted_len
+        } else {
+            let invalid_length_str = itertools::Itertools::join(
+                &mut std::iter::once(&input_length)
+                    .chain(other_lengths.iter())
+                    .map(|x| x.to_string()),
+                ", ",
+            );
+            return Err(DaftError::ValueError(format!(
+                "Inputs have invalid lengths: {invalid_length_str}"
+            )))?;
+        };
 
         // check if any array has all nulls
         if self.null_count() == self.len()
