@@ -10,8 +10,8 @@ use common_error::DaftResult;
 
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
-use daft_dsl::col;
 use daft_dsl::ExprRef;
+use daft_dsl::{col, ApproxPercentileParams};
 
 use daft_scan::ScanExternalInfo;
 
@@ -323,10 +323,10 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(col(approx_id.clone()).alias(output_name));
                             }
-                            ApproxPercentile {
+                            ApproxPercentile(ApproxPercentileParams {
                                 child: e,
                                 percentiles,
-                            } => {
+                            }) => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
                                 let approx_id =
                                     ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;
@@ -340,13 +340,7 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(
                                     col(approx_id.clone())
-                                        .sketch_percentile(
-                                            percentiles
-                                                .iter()
-                                                .map(|&b| f64::from_be_bytes(b))
-                                                .collect::<Vec<f64>>()
-                                                .as_slice(),
-                                        )
+                                        .sketch_percentile(percentiles.as_slice())
                                         .alias(output_name),
                                 );
                             }

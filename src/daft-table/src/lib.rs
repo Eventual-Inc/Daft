@@ -17,7 +17,7 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, Expr, ExprRef};
+use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod ops;
@@ -323,20 +323,13 @@ impl Table {
             Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
             ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
-            ApproxPercentile {
+            ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
-            } => {
+            }) => {
                 // Convert `percentiles` into a proper Series of Vec<f64>
-                let percentiles_series = Float64Array::from((
-                    "percentiles",
-                    percentiles
-                        .iter()
-                        .map(|&b| f64::from_be_bytes(b))
-                        .collect::<Vec<f64>>()
-                        .as_slice(),
-                ))
-                .into_series();
+                let percentiles_series =
+                    Float64Array::from(("percentiles", percentiles.as_slice())).into_series();
                 Series::approx_percentiles(
                     &self.eval_expression(expr)?,
                     groups,

@@ -12,7 +12,7 @@ mod treenode;
 pub use common_treenode;
 pub use expr::binary_op;
 pub use expr::col;
-pub use expr::{AggExpr, Expr, ExprRef, Operator};
+pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator};
 pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

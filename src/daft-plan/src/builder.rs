@@ -16,7 +16,7 @@ use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -82,13 +82,13 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
                 ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
-                ApproxPercentile {
+                ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
-                } => ApproxPercentile {
+                }) => ApproxPercentile(ApproxPercentileParams {
                     child: Alias(e, name.clone()).into(),
                     percentiles,
-                },
+                }),
                 MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),

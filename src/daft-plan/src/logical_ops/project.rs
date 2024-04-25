@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{optimization, AggExpr, Expr, ExprRef};
+use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -365,14 +365,16 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::ApproxSketch, |_| e.clone())
         }
-        AggExpr::ApproxPercentile {
+        AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,
-        } => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+        }) => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
             .map_yes_no(
-                |transformed_child| AggExpr::ApproxPercentile {
-                    child: transformed_child,
-                    percentiles: percentiles.clone(),
+                |transformed_child| {
+                    AggExpr::ApproxPercentile(ApproxPercentileParams {
+                        child: transformed_child,
+                        percentiles: percentiles.clone(),
+                    })
                 },
                 |_| e.clone(),
             ),
