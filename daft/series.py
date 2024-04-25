@@ -739,12 +739,12 @@ class SeriesDateNamespace(SeriesNamespace):
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
 
-    def truncate(self, interval: str, start_time: Series | None = None) -> Series:
-        if start_time is not None and not isinstance(start_time, Series):
-            raise ValueError(f"expected another Series but got {type(start_time)}")
-        if start_time is None:
-            start_time = Series.from_arrow(pa.array([None], pa.timestamp("s")))
-        return Series._from_pyseries(self._series.dt_truncate(interval, start_time._series))
+    def truncate(self, interval: str, relative_to: Series | None = None) -> Series:
+        if relative_to is not None and not isinstance(relative_to, Series):
+            raise ValueError(f"expected another Series but got {type(relative_to)}")
+        if relative_to is None:
+            relative_to = Series.from_arrow(pa.array([None]))
+        return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

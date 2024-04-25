@@ -1,4 +1,3 @@
-use crate::array::ops::as_arrow::AsArrow;
 use crate::series::array_impl::IntoSeries;
 use crate::{datatypes::DataType, series::Series};
 
@@ -100,13 +99,26 @@ impl Series {
         }
     }
 
-    pub fn dt_truncate(&self, interval: &str, start_time: &Self) -> DaftResult<Self> {
-        match (self.data_type(), start_time.data_type()) {
-            (DataType::Timestamp(..), DataType::Timestamp(..)) => {
+    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> DaftResult<Self> {
+        match (self.data_type(), relative_to.data_type()) {
+            (DataType::Timestamp(self_tu,self_tz), DataType::Timestamp(start_tu,start_tz)) if self_tu == start_tu && self_tz == start_tz => {
                 let ts_array = self.timestamp()?;
-                let start_time = start_time.timestamp()?.physical.as_arrow().get(0);
-                Ok(ts_array.truncate(interval, &start_time)?.into_series())
+                let relative_to = match relative_to.len() {
+                    1 => relative_to.timestamp()?.get(0),
+                    _ => {
+                        return Err(DaftError::ComputeError(format!(
+                            "Expected 1 item for relative_to, got {}",
+                            relative_to.len()
+                        )))
+                    }
+                };
+                Ok(ts_array.truncate(interval, &relative_to)?.into_series())
             }
+            (DataType::Timestamp(..), DataType::Timestamp(..)) => Err(DaftError::ComputeError(format!(
+                "Can only run truncate() operation if self and relative_to have the same timeunit and timezone, got {} {}",
+                self.data_type(),
+                relative_to.data_type()
+            ))),
             (DataType::Timestamp(..), DataType::Null) => {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.truncate(interval, &None)?.into_series())
@@ -114,7 +126,7 @@ impl Series {
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run truncate() operation on temporal types, got {} {}",
                 self.data_type(),
-                start_time.data_type()
+                relative_to.data_type()
             ))),
         }
     }

@@ -16,17 +16,17 @@ impl FunctionEvaluator for TruncateEvaluator {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
-            [input, start_time] => match (input.to_field(schema), start_time.to_field(schema)) {
-                (Ok(input_field), Ok(start_time_field))
+            [input, relative_to] => match (input.to_field(schema), relative_to.to_field(schema)) {
+                (Ok(input_field), Ok(relative_to_field))
                     if input_field.dtype.is_temporal()
-                        && (start_time_field.dtype.is_temporal()
-                            || start_time_field.dtype.is_null()) =>
+                        && (relative_to_field.dtype.is_temporal()
+                            || relative_to_field.dtype.is_null()) =>
                 {
                     Ok(Field::new(input_field.name, input_field.dtype))
                 }
-                (Ok(input_field), Ok(start_time_field)) => Err(DaftError::TypeError(format!(
+                (Ok(input_field), Ok(relative_to_field)) => Err(DaftError::TypeError(format!(
                     "Expected temporal input args, got {} and {}",
-                    input_field.dtype, start_time_field.dtype
+                    input_field.dtype, relative_to_field.dtype
                 ))),
                 (Err(e), _) | (_, Err(e)) => Err(e),
             },
@@ -39,7 +39,7 @@ impl FunctionEvaluator for TruncateEvaluator {
 
     fn evaluate(&self, inputs: &[Series], func: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
-            [input, start_time] => {
+            [input, relative_to] => {
                 let freq = match func {
                     FunctionExpr::Temporal(TemporalExpr::Truncate(freq)) => freq,
                     _ => {
@@ -48,7 +48,7 @@ impl FunctionEvaluator for TruncateEvaluator {
                         ))
                     }
                 };
-                input.dt_truncate(freq, start_time)
+                input.dt_truncate(freq, relative_to)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

@@ -763,7 +763,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_day_of_week())
 
-    def truncate(self, interval: str, start_time: Expression | None = None) -> Expression:
+    def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval
 
         Example:
@@ -792,13 +792,13 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Args:
             interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
-            start_time: Optional start time for truncation. If provided, truncation will be done from this start time, otherwise truncation will be done from the Unix epoch (00:00:00 on 1 January 1970).
+            relative_to: Optional timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
 
         Returns:
             Expression: a DateTime expression truncated to the specified interval
         """
-        start_time = Expression._to_expression(start_time)
-        return Expression._from_pyexpr(self._expr.dt_truncate(interval, start_time._expr))
+        relative_to = Expression._to_expression(relative_to)
+        return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
