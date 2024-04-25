@@ -43,6 +43,7 @@ Frequently Asked Questions
    10-min
    user_guide/index
    api_docs/index
+   migration_guides/index
    FAQs <faq/index>
    Release Notes <https://github.com/Eventual-Inc/Daft/releases>
 
