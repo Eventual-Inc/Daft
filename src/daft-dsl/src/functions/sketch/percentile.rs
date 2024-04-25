@@ -1,7 +1,10 @@
 use common_error::{DaftError, DaftResult};
+use daft_core::datatypes::Float64Array;
+use daft_core::IntoSeries;
 use daft_core::{datatypes::DataType, datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
+use super::SketchExpr;
 use crate::functions::FunctionExpr;
 use crate::ExprRef;
 
@@ -14,31 +17,8 @@ impl FunctionEvaluator for PercentileEvaluator {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
-            [input, q] => {
+            [input] => {
                 let input_field = input.to_field(schema)?;
-                let q_field = q.to_field(schema)?;
-                match q_field.dtype {
-                    DataType::Float64 => (),
-                    DataType::List(child_dtype) => {
-                        if *child_dtype != DataType::Float64 {
-                            return Err(DaftError::TypeError(format!(
-                                "Expected sketch_percentile q to be of type {}, received: {}",
-                                DataType::List(Box::new(DataType::Float64)),
-                                DataType::List(child_dtype),
-                            )));
-                        }
-                    }
-                    #[cfg(feature = "python")]
-                    DataType::Python => (),
-                    _ => {
-                        return Err(DaftError::TypeError(format!(
-                            "Expected sketch_percentile q to be of type {}, received: {}",
-                            DataType::Float64,
-                            q_field.dtype
-                        )))
-                    }
-                }
-
                 match input_field.dtype {
                     DataType::Struct(_) => Ok(Field::new(
                         input_field.name,
@@ -51,17 +31,35 @@ impl FunctionEvaluator for PercentileEvaluator {
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
-            [input, q] => input.sketch_percentile(q),
+            [input] => {
+                let percentiles_series = match expr {
+                    FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)) => {
+                        Float64Array::from((
+                            "percentiles",
+                            percentiles
+                                .iter()
+                                .map(|&b| f64::from_be_bytes(b))
+                                .collect::<Vec<_>>()
+                                .as_slice(),
+                        ))
+                        .into_series()
+                    }
+                    _ => unreachable!(
+                        "PercentileEvaluator must evaluate a SketchExpr::Percentile expression"
+                    ),
+                };
+                input.sketch_percentile(&percentiles_series)
+            }
             _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }

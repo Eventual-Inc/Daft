@@ -60,7 +60,12 @@ pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
     ApproxSketch(ExprRef),
-    ApproxPercentile(ExprRef, ExprRef),
+    ApproxPercentile {
+        child: ExprRef,
+        // These are f64 values kept as big-endian byte arrays in order to satisfy Eq/Hash
+        // You can convert these into floats using f64::from_be_bytes
+        percentiles: Vec<[u8; 8]>,
+    },
     MergeSketch(ExprRef),
     Mean(ExprRef),
     Min(ExprRef),
@@ -89,7 +94,7 @@ impl AggExpr {
             Count(expr, ..)
             | Sum(expr)
             | ApproxSketch(expr)
-            | ApproxPercentile(expr, _)
+            | ApproxPercentile { child: expr, .. }
             | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
@@ -116,9 +121,18 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_sketch()"))
             }
-            ApproxPercentile(expr, q) => {
+            ApproxPercentile {
+                child: expr,
+                percentiles,
+            } => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_approx_percentile(q={q})"))
+                FieldID::new(format!(
+                    "{child_id}.local_approx_percentiles(percentiles={:?})",
+                    percentiles
+                        .iter()
+                        .map(|&b| f64::from_be_bytes(b))
+                        .collect::<Vec<f64>>()
+                ))
             }
             MergeSketch(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -160,7 +174,7 @@ impl AggExpr {
             Count(expr, ..)
             | Sum(expr)
             | ApproxSketch(expr)
-            | ApproxPercentile(expr, _)
+            | ApproxPercentile { child: expr, .. }
             | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
@@ -193,7 +207,10 @@ impl AggExpr {
                 func: func.clone(),
                 inputs: children,
             },
-            ApproxPercentile(..) => ApproxPercentile(children[0].clone(), children[1].clone()),
+            ApproxPercentile { percentiles, .. } => ApproxPercentile {
+                child: children[0].clone(),
+                percentiles: percentiles.clone(),
+            },
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
         }
@@ -237,7 +254,7 @@ impl AggExpr {
                     },
                 ))
             }
-            ApproxPercentile(expr, _) => {
+            ApproxPercentile { child: expr, .. } => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
@@ -254,7 +271,7 @@ impl AggExpr {
                         | DataType::Float64 => DataType::List(Box::new(DataType::Float64)),
                         other => {
                             return Err(DaftError::TypeError(format!(
-                                "Expected input to approx_percentile() to be numeric but received dtype {} for column \"{}\"",
+                                "Expected input to approx_percentiles() to be numeric but received dtype {} for column \"{}\"",
                                 other, field.name,
                             )))
                         }
@@ -361,14 +378,20 @@ impl Expr {
         Expr::Agg(AggExpr::ApproxSketch(self)).into()
     }
 
-    pub fn approx_percentile(self: ExprRef, q: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::ApproxPercentile(self, q.clone())).into()
+    pub fn approx_percentiles(self: ExprRef, percentiles: &[f64]) -> ExprRef {
+        Expr::Agg(AggExpr::ApproxPercentile {
+            child: self,
+            percentiles: percentiles.iter().map(|&p| p.to_be_bytes()).collect(),
+        })
+        .into()
     }
 
-    pub fn sketch_percentile(self: ExprRef, q: ExprRef) -> ExprRef {
+    pub fn sketch_percentile(self: ExprRef, percentiles: &[f64]) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Sketch(SketchExpr::Percentile),
-            inputs: vec![self, q.clone()],
+            func: FunctionExpr::Sketch(SketchExpr::Percentile(
+                percentiles.iter().map(|&p| p.to_be_bytes()).collect(),
+            )),
+            inputs: vec![self],
         }
         .into()
     }
@@ -864,7 +887,10 @@ impl Display for AggExpr {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
             ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
-            ApproxPercentile(expr, q) => write!(f, "approx_percentile({expr}, q={q})"),
+            ApproxPercentile { child, percentiles } => write!(
+                f,
+                "approx_percentiles({child}, percentiles={percentiles:?})"
+            ),
             MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),

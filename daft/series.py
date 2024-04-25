@@ -515,10 +515,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
-    def approx_percentile(self, q: Series) -> Series:
+    def approx_percentiles(self, q: Series) -> Series:
         if not isinstance(q, Series):
             raise TypeError(f"expected another Series but got {type(q)}")
-        return Series._from_pyseries(self._series.approx_percentile(q._series))
+        return Series._from_pyseries(self._series.approx_percentiles(q._series))
 
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):

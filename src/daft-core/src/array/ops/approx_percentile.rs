@@ -13,7 +13,7 @@ use sketches_ddsketch::{Config, DDSketch};
 impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
     type Output = DaftResult<ListArray>;
 
-    fn approx_percentile(&self, q: &Series) -> Self::Output {
+    fn approx_percentiles(&self, percentiles: &Series) -> Self::Output {
         let primitive_arr = self.as_arrow();
         let percentiles = if primitive_arr.null_count() > 0 {
             let sketch = primitive_arr
@@ -31,7 +31,7 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                     }
                 });
             match sketch {
-                Some(s) => Some(compute_percentiles(&s, &convert_q_to_vec(q)?)?),
+                Some(s) => Some(compute_percentiles(&s, &convert_q_to_vec(percentiles)?)?),
                 None => None,
             }
         } else {
@@ -42,13 +42,20 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                     acc
                 },
             );
-            Some(compute_percentiles(&sketch, &convert_q_to_vec(q)?)?)
+            Some(compute_percentiles(
+                &sketch,
+                &convert_q_to_vec(percentiles)?,
+            )?)
         };
 
         ListArray::try_from((self.field.name.as_str(), [percentiles].as_slice()))
     }
 
-    fn grouped_approx_percentile(&self, groups: &GroupIndices, q: &Series) -> Self::Output {
+    fn grouped_approx_percentiles(
+        &self,
+        groups: &GroupIndices,
+        percentiles: &Series,
+    ) -> Self::Output {
         let arrow_array = self.as_arrow();
         let percentiles_per_group = if arrow_array.null_count() > 0 {
             groups
@@ -71,7 +78,10 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                     });
 
                     match sketch {
-                        Some(s) => Ok(Some(compute_percentiles(&s, &convert_q_to_vec(q)?)?)),
+                        Some(s) => Ok(Some(compute_percentiles(
+                            &s,
+                            &convert_q_to_vec(percentiles)?,
+                        )?)),
                         None => Ok(None),
                     }
                 })
@@ -88,7 +98,10 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
                                 acc
                             });
 
-                    Ok(Some(compute_percentiles(&sketch, &convert_q_to_vec(q)?)?))
+                    Ok(Some(compute_percentiles(
+                        &sketch,
+                        &convert_q_to_vec(percentiles)?,
+                    )?))
                 })
                 .collect::<DaftResult<Vec<Option<Vec<Option<f64>>>>>>()?
         };

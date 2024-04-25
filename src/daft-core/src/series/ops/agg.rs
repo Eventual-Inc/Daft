@@ -94,10 +94,10 @@ impl Series {
         }
     }
 
-    pub fn approx_percentile(
+    pub fn approx_percentiles(
         &self,
         groups: Option<&GroupIndices>,
-        q: &Series,
+        percentiles: &Series,
     ) -> DaftResult<Series> {
         use crate::array::ops::DaftApproxPercentileAggable;
         use crate::datatypes::DataType::*;
@@ -107,16 +107,17 @@ impl Series {
             Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
                 let casted = self.cast(&Float64)?;
                 match groups {
-                    Some(groups) => Ok(DaftApproxPercentileAggable::grouped_approx_percentile(
+                    Some(groups) => Ok(DaftApproxPercentileAggable::grouped_approx_percentiles(
                         &casted.f64()?,
                         groups,
-                        q,
+                        percentiles,
                     )?
                     .into_series()),
-                    None => Ok(
-                        DaftApproxPercentileAggable::approx_percentile(&casted.f64()?, q)?
-                            .into_series(),
-                    ),
+                    None => Ok(DaftApproxPercentileAggable::approx_percentiles(
+                        &casted.f64()?,
+                        percentiles,
+                    )?
+                    .into_series()),
                 }
             }
             other => Err(DaftError::TypeError(format!(

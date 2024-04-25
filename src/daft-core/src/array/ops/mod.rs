@@ -138,8 +138,12 @@ pub trait DaftApproxSketchAggable {
 
 pub trait DaftApproxPercentileAggable {
     type Output;
-    fn approx_percentile(&self, q: &Series) -> Self::Output;
-    fn grouped_approx_percentile(&self, groups: &GroupIndices, q: &Series) -> Self::Output;
+    fn approx_percentiles(&self, percentiles: &Series) -> Self::Output;
+    fn grouped_approx_percentiles(
+        &self,
+        groups: &GroupIndices,
+        percentiles: &Series,
+    ) -> Self::Output;
 }
 
 pub trait DaftMergeSketchAggable {

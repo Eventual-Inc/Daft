@@ -279,8 +279,8 @@ impl PySeries {
         Ok((self.series).sum(None)?.into())
     }
 
-    pub fn approx_percentile(&self, q: &Self) -> PyResult<Self> {
-        Ok(self.series.approx_percentile(None, &q.series)?.into())
+    pub fn approx_percentiles(&self, q: &Self) -> PyResult<Self> {
+        Ok(self.series.approx_percentiles(None, &q.series)?.into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {

@@ -419,8 +419,19 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def approx_percentile(self, q: builtins.float | builtins.list[builtins.float] | Expression) -> Expression:
-        expr = self._expr.approx_percentile(Expression._to_expression(q)._expr)
+    def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
+        """Calculates the approximate percentile(s) for a float column
+
+        Args:
+            percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
+                float or a list of floats.
+
+        Returns:
+            Expression: a new expression representing the approximate percentile(s). If `percentiles` was a single float,
+                this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression
+                with type: `FixedSizeList[Float64, len(percentiles)]`.
+        """
+        expr = self._expr.approx_percentiles(percentiles)
         return Expression._from_pyexpr(expr)
 
     def mean(self) -> Expression:

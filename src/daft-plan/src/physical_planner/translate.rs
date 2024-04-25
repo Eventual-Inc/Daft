@@ -323,7 +323,10 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(col(approx_id.clone()).alias(output_name));
                             }
-                            ApproxPercentile(e, q) => {
+                            ApproxPercentile {
+                                child: e,
+                                percentiles,
+                            } => {
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
                                 let approx_id =
                                     ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;
@@ -337,7 +340,13 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(
                                     col(approx_id.clone())
-                                        .sketch_percentile(q.clone())
+                                        .sketch_percentile(
+                                            percentiles
+                                                .iter()
+                                                .map(|&b| f64::from_be_bytes(b))
+                                                .collect::<Vec<f64>>()
+                                                .as_slice(),
+                                        )
                                         .alias(output_name),
                                 );
                             }

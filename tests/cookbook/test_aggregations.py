@@ -22,10 +22,10 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-def test_approx_percentile(daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_approx_percentiles(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Computes approx percentile across an entire column for the entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg(
-        col("Unique Key").alias("unique_key_median").approx_percentile(0.5)
+        col("Unique Key").alias("unique_key_median").approx_percentiles(0.5)
     )
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_median": [service_requests_csv_pd_df["Unique Key"].quantile(0.5)]}]
@@ -159,7 +159,7 @@ def test_approx_percentile_groupby(daft_df, service_requests_csv_pd_df, repartit
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
-        .agg(col("Unique Key").approx_percentile([0.25, 0.5, 0.75]))
+        .agg(col("Unique Key").approx_percentiles([0.25, 0.5, 0.75]))
     )
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.groupby(keys)["Unique Key"]
