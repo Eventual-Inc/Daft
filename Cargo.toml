@@ -114,9 +114,6 @@ rand = "^0.8"
 rayon = "1.7.0"
 regex = "1.10.4"
 rstest = "0.18.2"
-# NOTE: The "arrow2-0-17" feature is supposed to build serde_arrow against arrow2=0.17, but when building Daft
-# we respect a [patch.crates.io] which overrides this behavior to use our arrow2 fork
-serde_arrow = {version = "0.11.0", features = ["arrow2-0-17"]}
 serde_json = "1.0.116"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}

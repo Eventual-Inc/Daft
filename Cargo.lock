@@ -949,7 +949,6 @@ dependencies = [
  "bincode",
  "pyo3",
  "regex",
- "serde_arrow",
  "serde_json",
  "sketches-ddsketch",
 ]
@@ -1480,9 +1479,11 @@ name = "daft-sketch"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "common-error",
  "lazy_static",
  "serde_arrow",
  "sketches-ddsketch",
+ "snafu",
 ]
 
 [[package]]

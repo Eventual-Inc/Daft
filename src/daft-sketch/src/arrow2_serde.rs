@@ -1,10 +1,29 @@
 use arrow2::array::Array;
+use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 use serde_arrow::{
     schema::{SchemaLike, SerdeArrowSchema, TracingOptions},
     utils::{Item, Items},
 };
 use sketches_ddsketch::DDSketch;
+use snafu::{ResultExt, Snafu};
+
+#[derive(Debug, Snafu)]
+enum Error {
+    #[snafu(display("Unable to deserialize from arrow2"))]
+    DeserializationError { source: serde_arrow::Error },
+}
+
+impl From<Error> for DaftError {
+    fn from(value: Error) -> Self {
+        use Error::*;
+        match value {
+            DeserializationError { source } => {
+                DaftError::ComputeError(format!("Deserialization error: {}", source))
+            }
+        }
+    }
+}
 
 lazy_static! {
     static ref ARROW2_DDSKETCH_ITEM_FIELDS: Vec<arrow2::datatypes::Field> =
@@ -33,7 +52,7 @@ pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Ar
 /// Converts an arrow2 Array into a Vec<Option<DDSketch>>
 pub fn from_arrow2(
     arrow_array: Box<dyn arrow2::array::Array>,
-) -> serde_arrow::Result<Vec<Option<DDSketch>>> {
+) -> DaftResult<Vec<Option<DDSketch>>> {
     if arrow_array.is_empty() {
         return Ok(vec![]);
     }
@@ -42,16 +61,20 @@ pub fn from_arrow2(
         &ARROW2_DDSKETCH_ITEM_FIELDS,
         &[arrow_array],
     );
-    item_vec.map(|item_vec| item_vec.into_iter().map(|item| item.0).collect())
+    item_vec
+        .map(|item_vec| item_vec.into_iter().map(|item| item.0).collect())
+        .with_context(|_| DeserializationSnafu {})
+        .map_err(|e| e.into())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{from_arrow2, into_arrow2};
+    use common_error::DaftResult;
     use sketches_ddsketch::{Config, DDSketch};
 
     #[test]
-    fn test_roundtrip_single() -> serde_arrow::Result<()> {
+    fn test_roundtrip_single() -> DaftResult<()> {
         let mut sketch = DDSketch::new(Config::default());
 
         for i in 0..10 {
@@ -81,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn test_roundtrip_null() -> serde_arrow::Result<()> {
+    fn test_roundtrip_null() -> DaftResult<()> {
         let sketches = vec![None];
         let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
         assert_eq!(round_tripped.len(), 1);
@@ -90,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn test_roundtrip_some_null() -> serde_arrow::Result<()> {
+    fn test_roundtrip_some_null() -> DaftResult<()> {
         let sketches = vec![Some(DDSketch::new(Config::default())), None];
         let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
         assert_eq!(round_tripped.len(), 2);
@@ -101,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn test_roundtrip_empty() -> serde_arrow::Result<()> {
+    fn test_roundtrip_empty() -> DaftResult<()> {
         let sketches = vec![];
         let round_tripped = from_arrow2(into_arrow2(sketches))?;
         assert_eq!(round_tripped.len(), 0);

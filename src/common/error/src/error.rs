@@ -111,12 +111,6 @@ impl From<bincode::Error> for DaftError {
     }
 }
 
-impl From<serde_arrow::Error> for DaftError {
-    fn from(error: serde_arrow::Error) -> Self {
-        DaftError::ValueError(error.to_string())
-    }
-}
-
 pub type DaftResult<T> = std::result::Result<T, DaftError>;
 
 impl Display for DaftError {
