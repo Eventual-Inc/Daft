@@ -13,7 +13,7 @@ use crate::{
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, MapArray,
             TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
+        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, Int32Array,
         Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
@@ -431,30 +431,37 @@ impl DurationArray {
         }
     }
 
-    pub fn cast_to_days(&self) -> DaftResult<Series> {
-        let physical = self.physical.clone();
+    pub fn cast_to_days(&self) -> DaftResult<Int32Array> {
         let tu = match self.data_type() {
             DataType::Duration(tu) => tu,
             _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
         };
         let days = match tu {
-            TimeUnit::Seconds => {
-                physical.div(&Int64Array::from(("SecondsInDay", vec![60 * 60 * 24])))?
-            }
-            TimeUnit::Milliseconds => physical.div(&Int64Array::from((
+            TimeUnit::Seconds => self
+                .physical
+                .div(&Int64Array::from(("SecondsInDay", vec![60 * 60 * 24])))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
                 "MillisecondsInDay",
                 vec![1_000 * 60 * 60 * 24],
             )))?,
-            TimeUnit::Microseconds => physical.div(&Int64Array::from((
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
                 "MicrosecondsInDay",
                 vec![1_000_000 * 60 * 60 * 24],
             )))?,
-            TimeUnit::Nanoseconds => physical.div(&Int64Array::from((
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
                 "NanosecondsInDay",
                 vec![1_000_000_000 * 60 * 60 * 24],
             )))?,
         };
-        days.cast(&DataType::Int32)
+        let days_i32 = cast(
+            days.data(),
+            &arrow2::datatypes::DataType::Int32,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?;
+        Int32Array::from_arrow(Field::new(self.name(), DataType::Int32).into(), days_i32)
     }
 }
 

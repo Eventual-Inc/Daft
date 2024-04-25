@@ -239,7 +239,7 @@ impl SeriesBinaryOps for ArrayWrapper<DateArray> {
         match rhs.data_type() {
             Duration(..) => {
                 let days = rhs.duration()?.cast_to_days()?;
-                let physical_result = self.0.physical.add(days.i32()?)?;
+                let physical_result = self.0.physical.add(&days)?;
                 physical_result.cast(&output_type)
             }
             _ => binary_op_unimplemented!(self, "+", rhs, output_type),
@@ -255,7 +255,7 @@ impl SeriesBinaryOps for ArrayWrapper<DateArray> {
             }
             Duration(..) => {
                 let days = rhs.duration()?.cast_to_days()?;
-                let physical_result = self.0.physical.sub(days.i32()?)?;
+                let physical_result = self.0.physical.sub(&days)?;
                 physical_result.cast(&output_type)
             }
             _ => binary_op_unimplemented!(self, "-", rhs, output_type),
@@ -279,7 +279,7 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
             }
             Date => {
                 let days = self.0.cast_to_days()?;
-                let physical_result = days.i32()?.add(&rhs.date()?.physical)?;
+                let physical_result = days.add(&rhs.date()?.physical)?;
                 physical_result.cast(&output_type)
             }
             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
