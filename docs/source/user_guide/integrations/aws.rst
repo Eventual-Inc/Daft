@@ -18,7 +18,7 @@ Rely on Environment
 *******************
 
 You can configure the AWS `CLI <https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html>`_ to have Daft automatically discover credentials.
-Alternatively, you may specifiy your credentials in `environment variables <https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html>`_: ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``, and ``AWS_SESSION_TOKEN``.
+Alternatively, you may specify your credentials in `environment variables <https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html>`_: ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``, and ``AWS_SESSION_TOKEN``.
 
 Please be aware that when doing so in a distributed environment such as Ray, Daft will pick these credentials up from worker machines and thus each worker machine needs to be appropriately provisioned.
 

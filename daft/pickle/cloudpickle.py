@@ -572,7 +572,7 @@ else:
 
 
 def parametrized_type_hint_getinitargs(obj):
-    # The distorted type check sematic for typing construct becomes:
+    # The distorted type check semantic for typing construct becomes:
     # ``type(obj) is type(TypeHint)``, which means "obj is a
     # parametrized TypeHint"
     if type(obj) is type(Literal):  # pragma: no branch

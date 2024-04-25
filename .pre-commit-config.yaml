@@ -43,6 +43,13 @@ repos:
   - id: pretty-format-yaml
     args: [--autofix]
 
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.2.6
+  hooks:
+  - id: codespell
+    additional_dependencies:
+    - tomli
+
 - repo: https://github.com/astral-sh/ruff-pre-commit
   # Ruff version.
   rev: v0.3.7

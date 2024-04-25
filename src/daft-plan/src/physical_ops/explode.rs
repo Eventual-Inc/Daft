@@ -35,7 +35,7 @@ impl Explode {
     ) -> Arc<ClusteringSpec> {
         use crate::ClusteringSpec::*;
         match input_clustering_spec.as_ref() {
-            // If the scheme is vacuous, the result partiiton spec is the same.
+            // If the scheme is vacuous, the result partition spec is the same.
             Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
             Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {

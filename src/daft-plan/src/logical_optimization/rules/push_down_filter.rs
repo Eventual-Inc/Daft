@@ -158,7 +158,7 @@ impl OptimizerRule for PushDownFilter {
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
                 // TODO(Clark): Push Filters depending on Projection columns involving compute if those expressions are
-                // (1) determinstic && (pure || idempotent),
+                // (1) deterministic && (pure || idempotent),
                 // (2) inexpensive to recompute.
                 // This can be done by rewriting the Filter predicate expression to contain the relevant Projection expression.
                 let mut can_push: Vec<ExprRef> = vec![];

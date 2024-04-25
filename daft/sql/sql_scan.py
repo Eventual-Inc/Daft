@@ -73,7 +73,9 @@ class SQLScanOperator(ScanOperator):
         partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
-            warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
+            warnings.warn(
+                "Unable to partition the data using the specified column. Falling back to a single scan task."
+            )
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         size_bytes = math.ceil(total_size / num_scan_tasks) if strategy == PartitionBoundStrategy.PERCENTILE else None

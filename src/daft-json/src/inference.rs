@@ -96,7 +96,7 @@ fn infer_number(n: &Number) -> DataType {
     }
 }
 
-/// Convert each column's set of infered dtypes to a field with a consolidated dtype, following the coercion rules
+/// Convert each column's set of inferred dtypes to a field with a consolidated dtype, following the coercion rules
 /// defined in coerce_data_type.
 pub(crate) fn column_types_map_to_fields(
     column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>>,

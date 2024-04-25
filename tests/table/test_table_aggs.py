@@ -579,7 +579,7 @@ def test_groupby_floats_nan(dtype) -> None:
             "cookies": [2, 2, 4, 1, 2],
         }
     )
-    # have to sort and compare since `utils.pydict_to_rows` doesnt work on NaNs
+    # have to sort and compare since `utils.pydict_to_rows` doesn't work on NaNs
     for result_col, expected_col in zip(
         result_table.sort([col("group")]).to_pydict(), expected_table.sort([col("group")]).to_pydict()
     ):

@@ -176,7 +176,7 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
         for i in range(size)
     ]
 
-    # Artifically inject nulls if required as a top-level StructArray Null entry
+    # Artificially inject nulls if required as a top-level StructArray Null entry
     if with_nulls and size > 0:
         data = pa.array(pydata[:-1] + [None], type=dtype)
     else:

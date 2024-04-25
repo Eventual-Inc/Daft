@@ -45,7 +45,7 @@ Even with object spilling enabled, you may still sometimes see errors indicating
 2. On the RayRunner, you may notice Ray logs indicating that workers are aggressively being killed by the Raylet with log messages such as: ``Workers (tasks / actors) killed due to memory pressure (OOM)``
 3. If you are running in an environment such as Kubernetes, you may notice that your pods are being killed or restarted with an ``OOMKill`` reason
 
-These OOMKills are often recoverable (Daft-on-Ray will take care of retrying work after reviving the workers), however they may often significantly affect the runtime of your workload or if we simply canot recover, fail the workload entirely.
+These OOMKills are often recoverable (Daft-on-Ray will take care of retrying work after reviving the workers), however they may often significantly affect the runtime of your workload or if we simply cannot recover, fail the workload entirely.
 
 **Troubleshooting**
 

@@ -644,7 +644,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 Defaults to True.
 
         Returns:
-            Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
+            Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
         """
         if use_native_downloader:
             raise_on_error = False

@@ -95,7 +95,7 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
 
     -- The Problem --
 
-    Arrow2 represents struct array and fixed-size list array slices by slicing the valdity bitmap
+    Arrow2 represents struct array and fixed-size list array slices by slicing the validity bitmap
     and its children arrays; these slices will eventually propagate down to the underlying data
     buffers. When converting to the Arrow C Data Interface struct, these offsets exist on the
     validity bitmap and its children arrays, AND is also lifted to be a top-level offset on the

@@ -1,5 +1,5 @@
 // ****************************************************************************************
-// IMPLEMENTOR NOTE: This file will soon be deprecated and functionality should be moved to
+// IMPLEMENTER NOTE: This file will soon be deprecated and functionality should be moved to
 // src/array/ops/utf8.rs instead
 // ****************************************************************************************
 
