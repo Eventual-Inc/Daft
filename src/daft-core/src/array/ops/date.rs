@@ -63,7 +63,7 @@ macro_rules! datetime_to_timestamp {
             TimeUnit::Nanoseconds => {
                 $dt.timestamp_nanos_opt()
                     .ok_or(DaftError::ValueError(format!(
-                        "Error truncating timestamp, result is out of range : {{dt}}"
+                        "Error converting datetime to nanoseconds timestamp: {{dt}}"
                     )))
             }
         }
