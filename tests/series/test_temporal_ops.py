@@ -167,6 +167,19 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert input == years.to_pylist()
 
 
+def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
+    from datetime import datetime, timedelta, timezone
+
+    import pytz
+
+    if tz is None:
+        return datetime(y, m, d, h, mi, s, us)
+    elif tz.startswith("+") or tz.startswith("-"):
+        return datetime(y, m, d, h, mi, s, us, timezone(offset=timedelta(hours=int(tz[1:3]))))
+    else:
+        return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
+
+
 @pytest.mark.skipif(
     sys.version_info < (3, 8),
     reason="Timezone conversions via PyArrow are supported in Python 3.8+",
@@ -195,24 +208,12 @@ def test_series_timestamp_year_operation(tz) -> None:
         ((2024, 1, 1, 1, 1, 1, 1), "500 microsecond", (2024, 1, 1, 1, 1, 1, 0)),
     ],
 )
-@pytest.mark.parametrize("tz", [None, "UTC", "+09:00"])
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> None:
-    from datetime import datetime, timedelta, timezone
-
-    import pytz
-
-    def ts_maker(y, m, d, h, mi, s, us):
-        if tz is None:
-            return datetime(y, m, d, h, mi, s, us)
-        elif tz.startswith("+"):
-            return datetime(y, m, d, h, mi, s, us, timezone(offset=timedelta(hours=int(tz[1:3]))))
-        else:
-            return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
-
-    input_dt = [ts_maker(*input)]
+    input_dt = [ts_with_tz_maker(*input, tz)]
     input_series = Series.from_pylist(input_dt)
 
-    expected_dt = [ts_maker(*expected)]
+    expected_dt = [ts_with_tz_maker(*expected, tz)]
     expected_series = Series.from_pylist(expected_dt)
 
     truncated = input_series.dt.truncate(interval).to_pylist()
@@ -223,7 +224,7 @@ def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> N
     sys.version_info < (3, 8),
     reason="Timezone conversions via PyArrow are supported in Python 3.8+",
 )
-@pytest.mark.parametrize("tz", [None, "UTC", "+09:00"])
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 @pytest.mark.parametrize(
     ["input", "interval", "expected", "start_time"],
     [
@@ -248,26 +249,51 @@ def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> N
     ],
 )
 def test_series_timestamp_truncate_operation_with_start_time(tz, input, interval, expected, start_time) -> None:
-    from datetime import datetime, timedelta, timezone
-
-    import pytz
-
-    def ts_maker(y, m, d, h, mi, s, us):
-        if tz is None:
-            return datetime(y, m, d, h, mi, s, us)
-        elif tz.startswith("+"):
-            return datetime(y, m, d, h, mi, s, us, timezone(offset=timedelta(hours=int(tz[1:3]))))
-        else:
-            return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
-
-    input_dt = [ts_maker(*input)]
+    input_dt = [ts_with_tz_maker(*input, tz)]
     input_series = Series.from_pylist(input_dt)
 
-    expected_dt = [ts_maker(*expected)]
+    expected_dt = [ts_with_tz_maker(*expected, tz)]
     expected_series = Series.from_pylist(expected_dt)
 
     if start_time is not None:
-        start_time = Series.from_pylist([ts_maker(*start_time)])
+        start_time = Series.from_pylist([ts_with_tz_maker(*start_time, tz)])
+    truncated = input_series.dt.truncate(interval, start_time).to_pylist()
+    assert expected_series.to_pylist() == truncated
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 8),
+    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
+)
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
+@pytest.mark.parametrize(
+    ["input", "interval", "expected", "start_time"],
+    [
+        (
+            (1970, 1, 1, 0, 0, 0, 0),
+            "1 hour",
+            (1970, 1, 1, 0, 0, 0, 0),
+            None,
+        ),
+        (
+            (2023, 12, 31, 12, 0, 0, 0),
+            "1 day",
+            (2024, 1, 1, 0, 0, 0, 0),
+            (2024, 1, 1, 0, 0, 0, 0),
+        ),
+    ],
+)
+def test_series_timestamp_truncate_operation_with_times_before_start_time(
+    input, interval, expected, start_time, tz
+) -> None:
+    input_dt = [ts_with_tz_maker(*input, tz)]
+    input_series = Series.from_pylist(input_dt)
+
+    expected_dt = [ts_with_tz_maker(*expected, tz)]
+    expected_series = Series.from_pylist(expected_dt)
+
+    if start_time is not None:
+        start_time = Series.from_pylist([ts_with_tz_maker(*start_time, tz)])
     truncated = input_series.dt.truncate(interval, start_time).to_pylist()
     assert expected_series.to_pylist() == truncated
 
@@ -291,7 +317,3 @@ def test_series_timestamp_truncate_operation_invalid_start_time() -> None:
     with pytest.raises(ValueError):
         # Start time must be a series of timestamps
         input_series.dt.truncate("1 second", Series.from_pylist([1]))
-
-    with pytest.raises(ValueError):
-        # Start time must be less than the input series
-        input_series.dt.truncate("1 second", Series.from_pylist([datetime(2024, 1, 2)]))

@@ -791,8 +791,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╰───────────────────────────────┴───────────────────────────────╯
 
         Args:
-            interval: The interval to truncate to. Must be a string representing a valid interval, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
-            start_time: Optional start time for truncation. If provided, truncation will be done from this start time, otherwise truncation will be done from the beginning of the epoch.
+            interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
+            start_time: Optional start time for truncation. If provided, truncation will be done from this start time, otherwise truncation will be done from the Unix epoch (00:00:00 on 1 January 1970).
 
         Returns:
             Expression: a DateTime expression truncated to the specified interval

@@ -6,31 +6,33 @@ use crate::{
     DataType,
 };
 use arrow2::compute::arithmetics::ArraySub;
-use chrono::{Duration, DurationRound, NaiveDate, NaiveTime, RoundingError, Timelike};
+use chrono::{Duration, DurationRound, NaiveDate, NaiveTime, RoundingError, TimeZone, Timelike};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
 
 fn process_interval(interval: &str) -> DaftResult<Duration> {
-    let (count_str, unit) = interval
-        .split_once(' ')
-        .ok_or_else(|| DaftError::ValueError(format!("Invalid interval string: {interval}")))?;
+    let (count_str, unit) = interval.split_once(' ').ok_or_else(|| {
+        DaftError::ValueError(format!(
+            "Invalid interval string: {interval}. Expected format: <count> <unit>"
+        ))
+    })?;
 
     let count = count_str
         .parse::<i64>()
         .map_err(|e| DaftError::ValueError(format!("Invalid interval count: {e}")))?;
 
     match unit {
-        "week" => Ok(Duration::weeks(count)),
-        "day" => Ok(Duration::days(count)),
-        "hour" => Ok(Duration::hours(count)),
-        "minute" => Ok(Duration::minutes(count)),
-        "second" => Ok(Duration::seconds(count)),
-        "millisecond" => Ok(Duration::milliseconds(count)),
-        "microsecond" => Ok(Duration::microseconds(count)),
-        "nanosecond" => Ok(Duration::nanoseconds(count)),
+        "week" | "weeks" => Ok(Duration::weeks(count)),
+        "day" | "days" => Ok(Duration::days(count)),
+        "hour" | "hours" => Ok(Duration::hours(count)),
+        "minute" | "minutes" => Ok(Duration::minutes(count)),
+        "second" | "seconds" => Ok(Duration::seconds(count)),
+        "millisecond" | "milliseconds" => Ok(Duration::milliseconds(count)),
+        "microsecond" | "microseconds" => Ok(Duration::microseconds(count)),
+        "nanosecond" | "nanoseconds" => Ok(Duration::nanoseconds(count)),
         _ => Err(DaftError::ValueError(format!(
-            "Invalid interval unit: {unit}"
+            "Invalid interval unit: {unit}. Expected one of: week, day, hour, minute, second, millisecond, microsecond, nanosecond"
         ))),
     }
 }
@@ -228,41 +230,27 @@ impl TimestampArray {
         let tu = timeunit.to_arrow();
         let duration = process_interval(interval)?;
 
-        macro_rules! truncate_dt {
-            ($dt:expr, $duration:expr) => {
-                match $dt.duration_trunc($duration) {
-                    Ok(dt) => match tu {
-                        arrow2::datatypes::TimeUnit::Second => Ok(dt.timestamp()),
-                        arrow2::datatypes::TimeUnit::Millisecond => Ok(dt.timestamp_millis()),
-                        arrow2::datatypes::TimeUnit::Microsecond => Ok(dt.timestamp_micros()),
-                        arrow2::datatypes::TimeUnit::Nanosecond => {
-                            dt.timestamp_nanos_opt()
-                                .ok_or(DaftError::ValueError(format!(
-                                    "Error truncating timestamp, result is out of range : {{dt}}"
-                                )))
-                        }
-                    },
-                    Err(RoundingError::DurationExceedsTimestamp) => Ok(0),
-                    Err(e) => Err(DaftError::ValueError(format!(
-                        "Error truncating timestamp: {e}"
-                    ))),
+        macro_rules! datetime_to_timestamp {
+            ($dt:expr) => {{
+                match tu {
+                    arrow2::datatypes::TimeUnit::Second => Ok($dt.timestamp()),
+                    arrow2::datatypes::TimeUnit::Millisecond => Ok($dt.timestamp_millis()),
+                    arrow2::datatypes::TimeUnit::Microsecond => Ok($dt.timestamp_micros()),
+                    arrow2::datatypes::TimeUnit::Nanosecond => {
+                        $dt.timestamp_nanos_opt()
+                            .ok_or(DaftError::ValueError(format!(
+                                "Error truncating timestamp, result is out of range : {{dt}}"
+                            )))
+                    }
                 }
-            };
+            }};
         }
 
         let result_timestamps = physical
             .iter()
             .map(|ts| {
                 ts.map_or(Ok(None), |ts| {
-                    let adjusted_ts = match start_time {
-                        Some(st) if *st > *ts => {
-                            return Err(DaftError::ValueError(format!(
-                                "Start time is greater than timestamp: {st} > {ts}"
-                            )));
-                        }
-                        Some(st) => ts - st,
-                        None => *ts,
-                    };
+                    let adjusted_ts = start_time.map_or(*ts, |st| ts - st);
                     let truncated_ts = match tz {
                         Some(tz) => {
                             if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
@@ -271,7 +259,22 @@ impl TimestampArray {
                                     tu,
                                     &tz,
                                 );
-                                truncate_dt!(dt, duration)
+                                let default = start_time.unwrap_or(datetime_to_timestamp!(tz
+                                    .with_ymd_and_hms(1970, 1, 1, 0, 0, 0)
+                                    .unwrap())?);
+                                match dt.duration_trunc(duration) {
+                                    Ok(dt) => {
+                                        let ts = datetime_to_timestamp!(dt)?;
+                                        match start_time {
+                                            Some(st) => Ok(ts + st),
+                                            None => Ok(ts),
+                                        }
+                                    }
+                                    Err(RoundingError::DurationExceedsTimestamp) => Ok(default),
+                                    Err(e) => Err(DaftError::ValueError(format!(
+                                        "Error truncating timestamp: {e}"
+                                    ))),
+                                }
                             } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz)
                             {
                                 let dt = arrow2::temporal_conversions::timestamp_to_datetime(
@@ -279,7 +282,22 @@ impl TimestampArray {
                                     tu,
                                     &tz,
                                 );
-                                truncate_dt!(dt, duration)
+                                let default = start_time.unwrap_or(datetime_to_timestamp!(tz
+                                    .with_ymd_and_hms(1970, 1, 1, 0, 0, 0)
+                                    .unwrap())?);
+                                match dt.duration_trunc(duration) {
+                                    Ok(dt) => {
+                                        let ts = datetime_to_timestamp!(dt)?;
+                                        match start_time {
+                                            Some(st) => Ok(ts + st),
+                                            None => Ok(ts),
+                                        }
+                                    }
+                                    Err(RoundingError::DurationExceedsTimestamp) => Ok(default),
+                                    Err(e) => Err(DaftError::ValueError(format!(
+                                        "Error truncating timestamp: {e}"
+                                    ))),
+                                }
                             } else {
                                 Err(DaftError::TypeError(format!(
                                     "Cannot parse timezone in Timestamp datatype: {}",
@@ -292,13 +310,28 @@ impl TimestampArray {
                                 adjusted_ts,
                                 tu,
                             );
-                            truncate_dt!(dt, duration)
+                            let default = start_time.unwrap_or(datetime_to_timestamp!(
+                                NaiveDate::from_ymd_opt(1970, 1, 1)
+                                    .unwrap()
+                                    .and_hms_opt(0, 0, 0)
+                                    .unwrap()
+                            )?);
+                            match dt.duration_trunc(duration) {
+                                Ok(dt) => {
+                                    let ts = datetime_to_timestamp!(dt)?;
+                                    match start_time {
+                                        Some(st) => Ok(ts + st),
+                                        None => Ok(ts),
+                                    }
+                                }
+                                Err(RoundingError::DurationExceedsTimestamp) => Ok(default),
+                                Err(e) => Err(DaftError::ValueError(format!(
+                                    "Error truncating timestamp: {e}"
+                                ))),
+                            }
                         }
                     };
-                    match start_time {
-                        Some(st) => truncated_ts.map(|ts| Some(ts + st)),
-                        None => truncated_ts.map(Some),
-                    }
+                    truncated_ts.map(Some)
                 })
             })
             .collect::<DaftResult<arrow2::array::PrimitiveArray<i64>>>()?;
