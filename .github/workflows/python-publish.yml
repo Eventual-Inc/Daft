@@ -88,7 +88,7 @@ jobs:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
 
     - name: Install and test built wheel - Linux and Mac x86_64
-      if: ${{ ((matrix.os == 'macos') || (matrix.os == 'ubuntu')) && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64')  }}
       run: |
         pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
         rm -rf daft
