@@ -97,7 +97,7 @@ impl Series {
     pub fn approx_percentiles(
         &self,
         groups: Option<&GroupIndices>,
-        percentiles: &Series,
+        percentiles: &[f64],
     ) -> DaftResult<Series> {
         use crate::array::ops::DaftApproxPercentileAggable;
         use crate::datatypes::DataType::*;

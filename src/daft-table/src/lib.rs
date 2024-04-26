@@ -12,7 +12,7 @@ use num_traits::ToPrimitive;
 use daft_core::array::ops::GroupIndices;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::{BooleanArray, DataType, Field, Float64Array, UInt64Array};
+use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
@@ -326,16 +326,11 @@ impl Table {
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
-            }) => {
-                // Convert `percentiles` into a proper Series of Vec<f64>
-                let percentiles_series =
-                    Float64Array::from(("percentiles", percentiles.as_slice())).into_series();
-                Series::approx_percentiles(
-                    &self.eval_expression(expr)?,
-                    groups,
-                    &percentiles_series,
-                )
-            }
+            }) => Series::approx_percentiles(
+                &self.eval_expression(expr)?,
+                groups,
+                percentiles.as_slice(),
+            ),
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),

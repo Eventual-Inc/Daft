@@ -279,10 +279,15 @@ impl PySeries {
         Ok((self.series).sum(None)?.into())
     }
 
-    pub fn approx_percentiles(&self, percentiles: &Self) -> PyResult<Self> {
+    pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {
+        let percentiles = match percentiles {
+            ApproxPercentileInput::Single(p) => vec![p],
+            ApproxPercentileInput::Many(p) => p,
+        };
+
         Ok(self
             .series
-            .approx_percentiles(None, &percentiles.series)?
+            .approx_percentiles(None, percentiles.as_slice())?
             .into())
     }
 
@@ -543,6 +548,12 @@ impl From<PySeries> for series::Series {
     fn from(item: PySeries) -> Self {
         item.series
     }
+}
+
+#[derive(FromPyObject)]
+pub enum ApproxPercentileInput {
+    Single(f64),
+    Many(Vec<f64>),
 }
 
 fn infer_daft_dtype_for_sequence(

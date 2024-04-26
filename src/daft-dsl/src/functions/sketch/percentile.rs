@@ -1,6 +1,4 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::Float64Array;
-use daft_core::IntoSeries;
 use daft_core::{datatypes::DataType, datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
@@ -39,25 +37,14 @@ impl FunctionEvaluator for PercentileEvaluator {
 
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
-            [input] => {
-                let percentiles_series = match expr {
-                    FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)) => {
-                        Float64Array::from((
-                            "percentiles",
-                            percentiles
-                                .iter()
-                                .map(|&b| f64::from_be_bytes(b))
-                                .collect::<Vec<_>>()
-                                .as_slice(),
-                        ))
-                        .into_series()
-                    }
-                    _ => unreachable!(
-                        "PercentileEvaluator must evaluate a SketchExpr::Percentile expression"
-                    ),
-                };
-                input.sketch_percentile(&percentiles_series)
-            }
+            [input] => match expr {
+                FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)) => {
+                    input.sketch_percentile(percentiles.0.as_slice())
+                }
+                _ => unreachable!(
+                    "PercentileEvaluator must evaluate a SketchExpr::Percentile expression"
+                ),
+            },
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

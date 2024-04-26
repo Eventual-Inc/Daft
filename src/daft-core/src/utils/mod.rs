@@ -1,4 +1,3 @@
-pub mod approx_percentile;
 pub mod arrow;
 pub mod display_table;
 pub mod hashable_float_wrapper;

@@ -7,7 +7,9 @@ use daft_core::{
 
 use crate::{
     functions::{
-        function_display, function_semantic_id, sketch::SketchExpr, struct_::StructExpr,
+        function_display, function_semantic_id,
+        sketch::{HashableVecPercentiles, SketchExpr},
+        struct_::StructExpr,
         FunctionEvaluator,
     },
     lit,
@@ -399,9 +401,9 @@ impl Expr {
 
     pub fn sketch_percentile(self: ExprRef, percentiles: &[f64]) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Sketch(SketchExpr::Percentile(
-                percentiles.iter().map(|&p| p.to_be_bytes()).collect(),
-            )),
+            func: FunctionExpr::Sketch(SketchExpr::Percentile(HashableVecPercentiles(
+                percentiles.to_vec(),
+            ))),
             inputs: vec![self],
         }
         .into()

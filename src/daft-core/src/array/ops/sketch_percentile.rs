@@ -1,9 +1,6 @@
-use crate::{
-    array::{ListArray, StructArray},
-    utils::approx_percentile::compute_percentiles,
-};
+use crate::array::{ListArray, StructArray};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 impl StructArray {
     pub fn sketch_percentile(&self, percentiles: &[f64]) -> DaftResult<ListArray> {
@@ -13,7 +10,19 @@ impl StructArray {
             .iter()
             .map(|sketch| match sketch {
                 None => Ok(None),
-                Some(s) => Ok(Some(compute_percentiles(s, percentiles)?)),
+                Some(s) => Ok(Some(
+                    percentiles
+                        .iter()
+                        .map(|percentile| {
+                            s.quantile(*percentile).map_err(|err| {
+                                DaftError::ComputeError(format!(
+                                    "Error with calculating percentile {}: {}",
+                                    percentile, err
+                                ))
+                            })
+                        })
+                        .collect::<DaftResult<Vec<Option<f64>>>>()?,
+                )),
             })
             .collect::<DaftResult<Vec<Option<Vec<Option<f64>>>>>>()?;
 

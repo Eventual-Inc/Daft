@@ -53,7 +53,7 @@ pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 use common_error::DaftResult;
 
-use crate::{count_mode::CountMode, Series};
+use crate::count_mode::CountMode;
 
 pub trait DaftCompare<Rhs> {
     type Output;
@@ -138,11 +138,11 @@ pub trait DaftApproxSketchAggable {
 
 pub trait DaftApproxPercentileAggable {
     type Output;
-    fn approx_percentiles(&self, percentiles: &Series) -> Self::Output;
+    fn approx_percentiles(&self, percentiles: &[f64]) -> Self::Output;
     fn grouped_approx_percentiles(
         &self,
         groups: &GroupIndices,
-        percentiles: &Series,
+        percentiles: &[f64],
     ) -> Self::Output;
 }
 
