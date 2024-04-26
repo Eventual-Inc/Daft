@@ -444,6 +444,13 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .dt_truncate(interval, &relative_to.series)?
+            .into())
+    }
+
     pub fn partitioning_days(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_days()?.into())
     }

@@ -778,6 +778,43 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_day_of_week())
 
+    def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
+        """Truncates the datetime column to the specified interval
+
+        Example:
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
+            ...             datetime.datetime(2021, 1, 1, 0, 2, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("truncated", df["datetime"].dt.truncate("1 minute")).collect()
+            ╭───────────────────────────────┬───────────────────────────────╮
+            │ datetime                      ┆ truncated                     │
+            │ ---                           ┆ ---                           │
+            │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+            ╞═══════════════════════════════╪═══════════════════════════════╡
+            │ 2021-01-01T00:01:01.000000    ┆ 2021-01-01T00:01:00.000000    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01T00:01:59.000000    ┆ 2021-01-01T00:01:00.000000    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01T00:02:00.000000    ┆ 2021-01-01T00:02:00.000000    │
+            ╰───────────────────────────────┴───────────────────────────────╯
+
+        Args:
+            interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
+            relative_to: Optional timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
+
+        Returns:
+            Expression: a DateTime expression truncated to the specified interval
+        """
+        relative_to = Expression._to_expression(relative_to)
+        return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
+
 
 class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str | Expression) -> Expression:
