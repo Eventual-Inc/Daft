@@ -7,7 +7,10 @@ impl Series {
         use crate::series::array_impl::IntoSeries;
         use DataType::*;
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => Ok(self.clone()),
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => {
+                let s = self.cast(&DataType::Float64)?;
+                Ok(s.f64()?.log2()?.into_series())
+            }
             Float32 => Ok(self.f32()?.log2()?.into_series()),
             Float64 => Ok(self.f64()?.log2()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -21,7 +24,10 @@ impl Series {
         use crate::series::array_impl::IntoSeries;
         use DataType::*;
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => Ok(self.clone()),
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => {
+                let s = self.cast(&DataType::Float64)?;
+                Ok(s.f64()?.log10()?.into_series())
+            }
             Float32 => Ok(self.f32()?.log10()?.into_series()),
             Float64 => Ok(self.f64()?.log10()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -35,7 +41,10 @@ impl Series {
         use crate::series::array_impl::IntoSeries;
         use DataType::*;
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => Ok(self.clone()),
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 => {
+                let s = self.cast(&DataType::Float64)?;
+                Ok(s.f64()?.ln()?.into_series())
+            }
             Float32 => Ok(self.f32()?.ln()?.into_series()),
             Float64 => Ok(self.f64()?.ln()?.into_series()),
             dt => Err(DaftError::TypeError(format!(

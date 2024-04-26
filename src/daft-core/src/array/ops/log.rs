@@ -1,15 +1,12 @@
 use num_traits::Float;
 
-use crate::{
-    array::DataArray,
-    datatypes::{DaftFloatType, DaftNumericType},
-};
+use crate::{array::DataArray, datatypes::DaftFloatType};
 
 use common_error::DaftResult;
 
-impl<T: DaftFloatType> DataArray<T>
+impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftFloatType,
     T::Native: Float,
 {
     pub fn log2(&self) -> DaftResult<Self> {

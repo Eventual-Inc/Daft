@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::{datatypes::Field, schema::Schema, series::Series, DataType};
 
 use crate::functions::FunctionExpr;
 use crate::ExprRef;
@@ -30,13 +30,17 @@ impl FunctionEvaluator for LogEvaluator {
             )));
         }
         let field = inputs.first().unwrap().to_field(schema)?;
-        if !field.dtype.is_numeric() {
-            return Err(DaftError::TypeError(format!(
-                "Expected input to log to be numeric, got {}",
-                field.dtype
-            )));
-        }
-        Ok(field)
+        let dtype = match field.dtype {
+            DataType::Float32 => DataType::Float32,
+            dt if dt.is_numeric() => DataType::Float64,
+            _ => {
+                return Err(DaftError::TypeError(format!(
+                    "Expected input to log to be numeric, got {}",
+                    field.dtype
+                )))
+            }
+        };
+        Ok(Field::new(field.name, dtype))
     }
 
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
