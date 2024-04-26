@@ -631,6 +631,28 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class Pivot(SingleOutputInstruction):
+    group_by: Expression
+    pivot_col: Expression
+    value_col: Expression
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._pivot(inputs)
+
+    def _pivot(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.pivot(self.group_by, self.pivot_col, self.value_col)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection

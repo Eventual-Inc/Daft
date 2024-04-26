@@ -306,6 +306,9 @@ class Table:
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
         return Table._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
 
+    def pivot(self, group_by: Expression, pivot_column: Expression, values_column: Expression) -> Table:
+        return Table._from_pytable(self._table.pivot(group_by._expr, pivot_column._expr, values_column._expr))
+
     def quantiles(self, num: int) -> Table:
         return Table._from_pytable(self._table.quantiles(num))
 

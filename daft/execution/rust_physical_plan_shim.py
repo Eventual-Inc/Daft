@@ -114,6 +114,25 @@ def local_aggregate(
     )
 
 
+def pivot(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    group_by: PyExpr,
+    pivot_col: PyExpr,
+    value_col: PyExpr,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    pivot_step = execution_step.Pivot(
+        group_by=Expression._from_pyexpr(group_by),
+        pivot_col=Expression._from_pyexpr(pivot_col),
+        value_col=Expression._from_pyexpr(value_col),
+    )
+
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=pivot_step,
+        resource_request=ResourceRequest(),
+    )
+
+
 def sample(
     input: physical_plan.InProgressPhysicalPlan[PartitionT], fraction: float, with_replacement: bool, seed: int | None
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:

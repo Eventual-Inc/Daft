@@ -1266,6 +1266,22 @@ class DataFrame:
         """
         return GroupedDataFrame(self, ExpressionsProjection(self._inputs_to_expressions(group_by)))
 
+    @DataframePublicAPI
+    def pivot(
+        self,
+        group_by: ColumnInputType,
+        pivot_col: ColumnInputType,
+        value_col: ColumnInputType,
+        agg_fn: str,
+    ) -> "DataFrame":
+        group_by, pivot_col, value_col = self.__column_input_to_expression([group_by, pivot_col, value_col])
+        pivoted_col_names = (
+            self.select(pivot_col).distinct().select(pivot_col.cast(DataType.string())).to_pydict()[pivot_col.name()]
+        )
+        agg_expr = self._agg_tuple_to_expression((value_col, agg_fn))
+        builder = self._builder.pivot(group_by, pivot_col, value_col, agg_expr, pivoted_col_names)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()

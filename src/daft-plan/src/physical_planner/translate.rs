@@ -9,6 +9,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
 use daft_core::count_mode::CountMode;
+use daft_core::schema::SchemaRef;
 use daft_core::DataType;
 use daft_dsl::col;
 use daft_dsl::ExprRef;
@@ -18,9 +19,9 @@ use daft_scan::ScanExternalInfo;
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
     Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
-    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Project as LogicalProject,
-    Repartition as LogicalRepartition, Sample as LogicalSample, Sink as LogicalSink,
-    Sort as LogicalSort, Source,
+    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
+    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
+    Sink as LogicalSink, Sort as LogicalSort, Source,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
@@ -253,223 +254,42 @@ pub(super) fn translate_single_logical_node(
             groupby,
             ..
         }) => {
-            use daft_dsl::AggExpr::{self, *};
-
             let input_physical = physical_children.pop().expect("requires 1 input");
-
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
-
-            let result_plan = match num_input_partitions {
-                1 => PhysicalPlan::Aggregate(Aggregate::new(
-                    input_physical,
-                    aggregations.clone(),
-                    groupby.clone(),
-                )),
-                _ => {
-                    let schema = logical_plan.schema();
-
-                    // Aggregations to apply in the first and second stages.
-                    // Semantic column name -> AggExpr
-                    let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<ExprRef> = groupby.clone();
-
-                    for agg_expr in aggregations {
-                        let output_name = agg_expr.name().unwrap();
-                        match agg_expr {
-                            Count(e, mode) => {
-                                let count_id = agg_expr.semantic_id(&schema).id;
-                                let sum_of_count_id =
-                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(count_id.clone())
-                                    .or_insert(Count(e.alias(count_id.clone()).clone(), *mode));
-                                second_stage_aggs
-                                    .entry(sum_of_count_id.clone())
-                                    .or_insert(Sum(
-                                        col(count_id.clone()).alias(sum_of_count_id.clone())
-                                    ));
-                                final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
-                            }
-                            Sum(e) => {
-                                let sum_id = agg_expr.semantic_id(&schema).id;
-                                let sum_of_sum_id =
-                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(sum_of_sum_id.clone())
-                                    .or_insert(Sum(
-                                        col(sum_id.clone()).alias(sum_of_sum_id.clone())
-                                    ));
-                                final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
-                            }
-                            Mean(e) => {
-                                let sum_id = Sum(e.clone()).semantic_id(&schema).id;
-                                let count_id =
-                                    Count(e.clone(), CountMode::Valid).semantic_id(&schema).id;
-                                let sum_of_sum_id =
-                                    Sum(col(sum_id.clone())).semantic_id(&schema).id;
-                                let sum_of_count_id =
-                                    Sum(col(count_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(sum_id.clone())
-                                    .or_insert(Sum(e.alias(sum_id.clone()).clone()));
-                                first_stage_aggs.entry(count_id.clone()).or_insert(Count(
-                                    e.alias(count_id.clone()).clone(),
-                                    CountMode::Valid,
-                                ));
-                                second_stage_aggs
-                                    .entry(sum_of_sum_id.clone())
-                                    .or_insert(Sum(
-                                        col(sum_id.clone()).alias(sum_of_sum_id.clone())
-                                    ));
-                                second_stage_aggs
-                                    .entry(sum_of_count_id.clone())
-                                    .or_insert(Sum(
-                                        col(count_id.clone()).alias(sum_of_count_id.clone())
-                                    ));
-                                final_exprs.push(
-                                    (col(sum_of_sum_id.clone()).div(col(sum_of_count_id.clone())))
-                                        .alias(output_name),
-                                );
-                            }
-                            Min(e) => {
-                                let min_id = agg_expr.semantic_id(&schema).id;
-                                let min_of_min_id =
-                                    Min(col(min_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(min_id.clone())
-                                    .or_insert(Min(e.alias(min_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(min_of_min_id.clone())
-                                    .or_insert(Min(
-                                        col(min_id.clone()).alias(min_of_min_id.clone())
-                                    ));
-                                final_exprs.push(col(min_of_min_id.clone()).alias(output_name));
-                            }
-                            Max(e) => {
-                                let max_id = agg_expr.semantic_id(&schema).id;
-                                let max_of_max_id =
-                                    Max(col(max_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(max_id.clone())
-                                    .or_insert(Max(e.alias(max_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(max_of_max_id.clone())
-                                    .or_insert(Max(
-                                        col(max_id.clone()).alias(max_of_max_id.clone())
-                                    ));
-                                final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
-                            }
-                            AnyValue(e, ignore_nulls) => {
-                                let any_id = agg_expr.semantic_id(&schema).id;
-                                let any_of_any_id = AnyValue(col(any_id.clone()), *ignore_nulls)
-                                    .semantic_id(&schema)
-                                    .id;
-                                first_stage_aggs.entry(any_id.clone()).or_insert(AnyValue(
-                                    e.alias(any_id.clone()).clone(),
-                                    *ignore_nulls,
-                                ));
-                                second_stage_aggs
-                                    .entry(any_of_any_id.clone())
-                                    .or_insert(AnyValue(
-                                        col(any_id.clone()).alias(any_of_any_id.clone()),
-                                        *ignore_nulls,
-                                    ));
-                            }
-                            List(e) => {
-                                let list_id = agg_expr.semantic_id(&schema).id;
-                                let concat_of_list_id =
-                                    Concat(col(list_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(list_id.clone())
-                                    .or_insert(List(e.alias(list_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(concat_of_list_id.clone())
-                                    .or_insert(Concat(
-                                        col(list_id.clone()).alias(concat_of_list_id.clone()),
-                                    ));
-                                final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
-                            }
-                            Concat(e) => {
-                                let concat_id = agg_expr.semantic_id(&schema).id;
-                                let concat_of_concat_id =
-                                    Concat(col(concat_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(concat_id.clone())
-                                    .or_insert(Concat(e.alias(concat_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(concat_of_concat_id.clone())
-                                    .or_insert(Concat(
-                                        col(concat_id.clone()).alias(concat_of_concat_id.clone()),
-                                    ));
-                                final_exprs
-                                    .push(col(concat_of_concat_id.clone()).alias(output_name));
-                            }
-                            MapGroups { func, inputs } => {
-                                let func_id = agg_expr.semantic_id(&schema).id;
-                                // No first stage aggregation for MapGroups, do all the work in the second stage.
-                                second_stage_aggs
-                                    .entry(func_id.clone())
-                                    .or_insert(MapGroups {
-                                        func: func.clone(),
-                                        inputs: inputs.to_vec(),
-                                    });
-                                final_exprs.push(col(output_name));
-                            }
-                        }
-                    }
-
-                    let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_physical
-                    } else {
-                        PhysicalPlan::Aggregate(Aggregate::new(
-                            input_physical,
-                            first_stage_aggs.values().cloned().collect(),
-                            groupby.clone(),
-                        ))
-                        .arced()
-                    };
-                    let gather_plan = if groupby.is_empty() {
-                        PhysicalPlan::Coalesce(Coalesce::new(
-                            first_stage_agg,
-                            num_input_partitions,
-                            1,
-                        ))
-                        .arced()
-                    } else {
-                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            first_stage_agg,
-                            min(
-                                num_input_partitions,
-                                cfg.shuffle_aggregation_default_partitions,
-                            ),
-                            groupby.clone(),
-                        ))
-                        .arced();
-                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
-                    };
-
-                    let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
-                        gather_plan,
-                        second_stage_aggs.values().cloned().collect(),
-                        groupby.clone(),
-                    ));
-
-                    let clustering_spec = second_stage_agg.clustering_spec().clone();
-                    PhysicalPlan::Project(Project::try_new(
-                        second_stage_agg.into(),
-                        final_exprs,
-                        Default::default(),
-                        clustering_spec,
-                    )?)
-                }
-            };
-
+            let result_plan = create_aggregation_physical_plan(
+                num_input_partitions,
+                input_physical,
+                aggregations,
+                groupby,
+                logical_plan.schema(),
+                cfg.shuffle_aggregation_default_partitions,
+            )?;
             Ok(result_plan.arced())
+        }
+        LogicalPlan::Pivot(LogicalPivot {
+            group_by,
+            pivot_column,
+            value_column,
+            aggregation,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            let num_input_partitions = input_physical.clustering_spec().num_partitions();
+            let aggregation_plan = create_aggregation_physical_plan(
+                num_input_partitions,
+                input_physical,
+                &vec![aggregation.clone()],
+                &vec![group_by.clone(), pivot_column.clone()],
+                logical_plan.schema(),
+                1,
+            )?;
+            Ok(PhysicalPlan::Pivot(Pivot::new(
+                aggregation_plan.into(),
+                group_by.clone(),
+                pivot_column.clone(),
+                value_column.clone(),
+            ))
+            .arced())
         }
         LogicalPlan::Concat(..) => {
             let other_physical = physical_children.pop().expect("requires 1 inputs");
@@ -740,6 +560,195 @@ pub(super) fn translate_single_logical_node(
                 ))
                 .arced(),
             )
+        }
+    }
+}
+
+fn create_aggregation_physical_plan(
+    num_input_partitions: usize,
+    input_physical: PhysicalPlanRef,
+    aggregations: &Vec<daft_dsl::AggExpr>,
+    groupby: &Vec<ExprRef>,
+    schema: SchemaRef,
+    shuffle_aggregation_default_partitions: usize,
+) -> DaftResult<PhysicalPlan> {
+    use daft_dsl::AggExpr::{self, *};
+    match num_input_partitions {
+        1 => Ok(PhysicalPlan::Aggregate(Aggregate::new(
+            input_physical,
+            aggregations.clone(),
+            groupby.clone(),
+        ))),
+        _ => {
+            // Aggregations to apply in the first and second stages.
+            // Semantic column name -> AggExpr
+            let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
+            let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
+            // Project the aggregation results to their final output names
+            let mut final_exprs: Vec<ExprRef> = groupby.clone();
+
+            for agg_expr in aggregations {
+                let output_name = agg_expr.name().unwrap();
+                match agg_expr {
+                    Count(e, mode) => {
+                        let count_id = agg_expr.semantic_id(&schema).id;
+                        let sum_of_count_id = Sum(col(count_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(count_id.clone())
+                            .or_insert(Count(e.alias(count_id.clone()).clone(), *mode));
+                        second_stage_aggs
+                            .entry(sum_of_count_id.clone())
+                            .or_insert(Sum(col(count_id.clone()).alias(sum_of_count_id.clone())));
+                        final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+                    }
+                    Sum(e) => {
+                        let sum_id = agg_expr.semantic_id(&schema).id;
+                        let sum_of_sum_id = Sum(col(sum_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(sum_id.clone())
+                            .or_insert(Sum(e.alias(sum_id.clone()).clone()));
+                        second_stage_aggs
+                            .entry(sum_of_sum_id.clone())
+                            .or_insert(Sum(col(sum_id.clone()).alias(sum_of_sum_id.clone())));
+                        final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
+                    }
+                    Mean(e) => {
+                        let sum_id = Sum(e.clone()).semantic_id(&schema).id;
+                        let count_id = Count(e.clone(), CountMode::Valid).semantic_id(&schema).id;
+                        let sum_of_sum_id = Sum(col(sum_id.clone())).semantic_id(&schema).id;
+                        let sum_of_count_id = Sum(col(count_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(sum_id.clone())
+                            .or_insert(Sum(e.alias(sum_id.clone()).clone()));
+                        first_stage_aggs
+                            .entry(count_id.clone())
+                            .or_insert(Count(e.alias(count_id.clone()).clone(), CountMode::Valid));
+                        second_stage_aggs
+                            .entry(sum_of_sum_id.clone())
+                            .or_insert(Sum(col(sum_id.clone()).alias(sum_of_sum_id.clone())));
+                        second_stage_aggs
+                            .entry(sum_of_count_id.clone())
+                            .or_insert(Sum(col(count_id.clone()).alias(sum_of_count_id.clone())));
+                        final_exprs.push(
+                            (col(sum_of_sum_id.clone()).div(col(sum_of_count_id.clone())))
+                                .alias(output_name),
+                        );
+                    }
+                    Min(e) => {
+                        let min_id = agg_expr.semantic_id(&schema).id;
+                        let min_of_min_id = Min(col(min_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(min_id.clone())
+                            .or_insert(Min(e.alias(min_id.clone()).clone()));
+                        second_stage_aggs
+                            .entry(min_of_min_id.clone())
+                            .or_insert(Min(col(min_id.clone()).alias(min_of_min_id.clone())));
+                        final_exprs.push(col(min_of_min_id.clone()).alias(output_name));
+                    }
+                    Max(e) => {
+                        let max_id = agg_expr.semantic_id(&schema).id;
+                        let max_of_max_id = Max(col(max_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(max_id.clone())
+                            .or_insert(Max(e.alias(max_id.clone()).clone()));
+                        second_stage_aggs
+                            .entry(max_of_max_id.clone())
+                            .or_insert(Max(col(max_id.clone()).alias(max_of_max_id.clone())));
+                        final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
+                    }
+                    AnyValue(e, ignore_nulls) => {
+                        let any_id = agg_expr.semantic_id(&schema).id;
+                        let any_of_any_id = AnyValue(col(any_id.clone()), *ignore_nulls)
+                            .semantic_id(&schema)
+                            .id;
+                        first_stage_aggs
+                            .entry(any_id.clone())
+                            .or_insert(AnyValue(e.alias(any_id.clone()).clone(), *ignore_nulls));
+                        second_stage_aggs
+                            .entry(any_of_any_id.clone())
+                            .or_insert(AnyValue(
+                                col(any_id.clone()).alias(any_of_any_id.clone()),
+                                *ignore_nulls,
+                            ));
+                    }
+                    List(e) => {
+                        let list_id = agg_expr.semantic_id(&schema).id;
+                        let concat_of_list_id =
+                            Concat(col(list_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(list_id.clone())
+                            .or_insert(List(e.alias(list_id.clone()).clone()));
+                        second_stage_aggs
+                            .entry(concat_of_list_id.clone())
+                            .or_insert(Concat(
+                                col(list_id.clone()).alias(concat_of_list_id.clone()),
+                            ));
+                        final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
+                    }
+                    Concat(e) => {
+                        let concat_id = agg_expr.semantic_id(&schema).id;
+                        let concat_of_concat_id =
+                            Concat(col(concat_id.clone())).semantic_id(&schema).id;
+                        first_stage_aggs
+                            .entry(concat_id.clone())
+                            .or_insert(Concat(e.alias(concat_id.clone()).clone()));
+                        second_stage_aggs
+                            .entry(concat_of_concat_id.clone())
+                            .or_insert(Concat(
+                                col(concat_id.clone()).alias(concat_of_concat_id.clone()),
+                            ));
+                        final_exprs.push(col(concat_of_concat_id.clone()).alias(output_name));
+                    }
+                    MapGroups { func, inputs } => {
+                        let func_id = agg_expr.semantic_id(&schema).id;
+                        // No first stage aggregation for MapGroups, do all the work in the second stage.
+                        second_stage_aggs
+                            .entry(func_id.clone())
+                            .or_insert(MapGroups {
+                                func: func.clone(),
+                                inputs: inputs.to_vec(),
+                            });
+                        final_exprs.push(col(output_name));
+                    }
+                }
+            }
+
+            let first_stage_agg = if first_stage_aggs.is_empty() {
+                input_physical
+            } else {
+                PhysicalPlan::Aggregate(Aggregate::new(
+                    input_physical,
+                    first_stage_aggs.values().cloned().collect(),
+                    groupby.clone(),
+                ))
+                .arced()
+            };
+            let gather_plan = if groupby.is_empty() {
+                PhysicalPlan::Coalesce(Coalesce::new(first_stage_agg, num_input_partitions, 1))
+                    .arced()
+            } else {
+                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    first_stage_agg,
+                    min(num_input_partitions, shuffle_aggregation_default_partitions),
+                    groupby.clone(),
+                ))
+                .arced();
+                PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
+            };
+
+            let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
+                gather_plan,
+                second_stage_aggs.values().cloned().collect(),
+                groupby.clone(),
+            ));
+
+            let clustering_spec = second_stage_agg.clustering_spec().clone();
+            Ok(PhysicalPlan::Project(Project::try_new(
+                second_stage_agg.into(),
+                final_exprs,
+                Default::default(),
+                clustering_spec,
+            )?))
         }
     }
 }
