@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNodeRewriter, TreeNodeVisitor};
+use common_treenode::{Transformed, TreeNode, TreeNodeRewriter, TreeNodeVisitor};
 
 use crate::logical_ops::Source;
 use crate::logical_plan::LogicalPlan;
 
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::source_info::{PlaceHolderInfo, SourceInfo};
+use crate::LogicalPlanRef;
 
 use common_treenode::TreeNodeRecursion;
 
@@ -59,5 +60,41 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
         }
         Ok(Transformed::no(node))
 
+    }
+}
+
+enum QueryStageOutput {
+    Partial{physical_plan: PhysicalPlanRef },
+    Final{physical_plan: PhysicalPlanRef}
+}
+
+
+struct AdaptivePlanner {
+    logical_plan: LogicalPlanRef,
+    cfg: Arc<DaftExecutionConfig>
+}
+
+impl AdaptivePlanner {
+    pub fn new(logical_plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
+        AdaptivePlanner { logical_plan, cfg}
+    }
+
+
+    pub fn next(&mut self) -> DaftResult<QueryStageOutput> {
+        let mut rewriter = QueryStagePhysicalPlanTranslator {
+            physical_children: vec![],
+            cfg: self.cfg.clone(),
+        };
+    
+        let output = self.logical_plan.clone().rewrite(&mut rewriter)?;
+
+        let physical_plan = rewriter.physical_children.pop().expect("should have 1 child");
+
+        if output.transformed {
+            self.logical_plan = output.data;
+            Ok(QueryStageOutput::Partial { physical_plan })
+        } else {
+            Ok(QueryStageOutput::Final { physical_plan })
+        }
     }
 }

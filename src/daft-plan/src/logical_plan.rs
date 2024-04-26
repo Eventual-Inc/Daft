@@ -27,6 +27,8 @@ pub enum LogicalPlan {
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
 }
 
+pub type LogicalPlanRef = Arc<LogicalPlan>;
+
 impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)

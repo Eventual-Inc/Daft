@@ -22,7 +22,7 @@ mod treenode;
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_scan::file_format::FileFormat;
 pub use join::{JoinStrategy, JoinType};
-pub use logical_plan::LogicalPlan;
+pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
 pub use physical_plan::PhysicalPlanScheduler;
 pub use resource_request::ResourceRequest;
