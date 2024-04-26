@@ -25,21 +25,6 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
 def test_approx_percentiles(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Computes approx percentile across an entire column for the entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg(
-        col("Unique Key").alias("unique_key_median").approx_percentiles(0.5)
-    )
-    service_requests_csv_pd_df = pd.DataFrame.from_records(
-        [{"unique_key_median": service_requests_csv_pd_df["Unique Key"].quantile(0.5)}]
-    )
-    daft_pd_df = daft_df.to_pandas()
-    # Assert approximate median to be at 2% of exact median
-    pd.testing.assert_series_equal(
-        daft_pd_df["unique_key_median"], service_requests_csv_pd_df["unique_key_median"], check_exact=False, rtol=0.02
-    )
-
-
-def test_approx_percentiles_multiple(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Computes approx percentile across an entire column for the entire table"""
-    daft_df = daft_df.repartition(repartition_nparts).agg(
         col("Unique Key").alias("unique_key_median").approx_percentiles([0.25, 0.5, 0.75])
     )
     service_requests_csv_pd_df = pd.DataFrame.from_records(

@@ -309,20 +309,12 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
                             }
-                            ApproxSketch(e) => {
-                                let sketch_id = agg_expr.semantic_id(&schema).id;
-                                let approx_id =
-                                    ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(sketch_id.clone())
-                                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(approx_id.clone())
-                                    .or_insert(MergeSketch(
-                                        col(sketch_id.clone()).alias(approx_id.clone()),
-                                    ));
-                                final_exprs.push(col(approx_id.clone()).alias(output_name));
-                            }
+                            ApproxSketch(_) => unimplemented!(
+                                "User-facing approx_sketch aggregation is not implemented"
+                            ),
+                            MergeSketch(_) => unimplemented!(
+                                "User-facing merge_sketch aggregation is not implemented"
+                            ),
                             ApproxPercentile(ApproxPercentileParams {
                                 child: e,
                                 percentiles,
@@ -343,20 +335,6 @@ pub(super) fn translate_single_logical_node(
                                         .sketch_percentile(percentiles.as_slice())
                                         .alias(output_name),
                                 );
-                            }
-                            MergeSketch(e) => {
-                                let sketch_id = agg_expr.semantic_id(&schema).id;
-                                let merge_id =
-                                    MergeSketch(col(sketch_id.clone())).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(sketch_id.clone())
-                                    .or_insert(MergeSketch(e.alias(sketch_id.clone()).clone()));
-                                second_stage_aggs
-                                    .entry(merge_id.clone())
-                                    .or_insert(MergeSketch(
-                                        col(sketch_id.clone()).alias(merge_id.clone()),
-                                    ));
-                                final_exprs.push(col(merge_id.clone()).alias(output_name));
                             }
                             Mean(e) => {
                                 let sum_id = Sum(e.clone()).semantic_id(&schema).id;

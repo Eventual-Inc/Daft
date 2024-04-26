@@ -98,7 +98,6 @@ impl Series {
         use crate::array::ops::DaftMergeSketchAggable;
         use crate::datatypes::DataType::*;
 
-        // Upcast all numeric types to float64 and compute merge_sketch.
         match self.data_type() {
             Struct(_) => match groups {
                 Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
