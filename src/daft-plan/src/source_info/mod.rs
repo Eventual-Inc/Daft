@@ -17,17 +17,16 @@ use {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
-    #[cfg(feature = "python")]
     InMemoryInfo(InMemoryInfo),
     ExternalInfo(ScanExternalInfo),
     PlaceHolderInfo(PlaceHolderInfo)
 }
 
-#[cfg(feature = "python")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
+    #[cfg(feature = "python")]
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
@@ -59,33 +58,17 @@ impl InMemoryInfo {
     }
 }
 
-#[cfg(feature = "python")]
 impl PartialEq for InMemoryInfo {
     fn eq(&self, other: &Self) -> bool {
-        self.cache_key == other.cache_key
-            && Python::with_gil(|py| {
-                self.cache_entry
-                    .as_ref(py)
-                    .eq(other.cache_entry.as_ref(py))
-                    .unwrap()
-            })
+        self.cache_key == other.cache_key    
     }
 }
 
-#[cfg(feature = "python")]
 impl Eq for InMemoryInfo {}
 
-#[cfg(feature = "python")]
 impl Hash for InMemoryInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.cache_key.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.cache_entry.as_ref(py).hash());
-        match py_obj_hash {
-            // If Python object is hashable, hash the Python-side hash.
-            Ok(py_obj_hash) => py_obj_hash.hash(state),
-            // Fall back to hashing the pickled Python object.
-            Err(_) => serde_json::to_vec(self).unwrap().hash(state),
-        }
     }
 }
 
