@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     array::{FixedSizeListArray, StructArray},
     datatypes::{Field, Float64Array},
-    DataType, IntoSeries,
+    DataType, IntoSeries, Series,
 };
 
 use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};
@@ -12,7 +12,7 @@ use common_error::DaftResult;
 use super::from_arrow::FromArrow;
 
 impl StructArray {
-    pub fn sketch_percentile(&self, percentiles: &[f64]) -> DaftResult<FixedSizeListArray> {
+    pub fn sketch_percentile(&self, percentiles: &[f64]) -> DaftResult<Series> {
         let output_len = percentiles.len();
         let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), output_len);
         let output_field = Field::new(self.field.name.as_str(), output_dtype);
@@ -31,15 +31,18 @@ impl StructArray {
             });
         let flat_child: PrimitiveArray<f64> = flat_child.into();
         let flat_child = Float64Array::from_arrow(
-            Arc::new(Field::new("percentiles", DataType::Float64)),
+            Arc::new(Field::new(self.name(), DataType::Float64)),
             flat_child.boxed(),
         )?
         .into_series();
 
-        Ok(FixedSizeListArray::new(
-            output_field,
-            flat_child,
-            self.validity().cloned(),
-        ))
+        if output_len == 1 {
+            Ok(flat_child)
+        } else {
+            Ok(
+                FixedSizeListArray::new(output_field, flat_child, self.validity().cloned())
+                    .into_series(),
+            )
+        }
     }
 }

@@ -28,7 +28,14 @@ impl FunctionEvaluator for PercentileEvaluator {
                         FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)),
                     ) => Ok(Field::new(
                         input_field.name,
-                        DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.0.len()),
+                        if percentiles.0.len() == 1 {
+                            DataType::Float64
+                        } else {
+                            DataType::FixedSizeList(
+                                Box::new(DataType::Float64),
+                                percentiles.0.len(),
+                            )
+                        },
                     )),
                     (input_field_dtype, FunctionExpr::Sketch(SketchExpr::Percentile(_))) => {
                         Err(DaftError::TypeError(format!(

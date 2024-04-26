@@ -284,7 +284,11 @@ impl AggExpr {
                         | DataType::UInt32
                         | DataType::UInt64
                         | DataType::Float32
-                        | DataType::Float64 => DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len()),
+                        | DataType::Float64 => if percentiles.len() == 1 {
+                            DataType::Float64
+                        } else {
+                            DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len())
+                        },
                         other => {
                             return Err(DaftError::TypeError(format!(
                                 "Expected input to approx_percentiles() to be numeric but received dtype {} for column \"{}\"",
