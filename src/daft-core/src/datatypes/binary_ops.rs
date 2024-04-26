@@ -93,6 +93,13 @@ impl Add for &DataType {
                 | (du @ Duration(..), ts @ Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
+                (Date, Duration(..)) | (Duration(..), Date) => Ok(Date),
+                (Duration(d_unit_self), Duration(d_unit_other)) if d_unit_self == d_unit_other => {
+                    Ok(Duration(*d_unit_self))
+                },
+                (du_self @ &Duration(..), du_other @ &Duration(..)) => Err(DaftError::TypeError(
+                    format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
+                )),
                 (Null, other) | (other, Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
@@ -140,6 +147,19 @@ impl Sub for &DataType {
                     if t_unit == d_unit => Ok(Timestamp(*t_unit, tz.clone())),
                 (ts @ Timestamp(..), du @ Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
+                )),
+                (Timestamp(t_unit_self, tz_self), Timestamp(t_unit_other, tz_other))
+                    if t_unit_self == t_unit_other && tz_self == tz_other => Ok(Duration(*t_unit_self)),
+                (ts @ Timestamp(..), ts_other @ Timestamp(..)) => Err(DaftError::TypeError(
+                    format!("Cannot subtract due to differing precision or timezone: {}, {}. Please explicitly cast to the precision or timezone you wish to add in.", ts, ts_other)
+                )),
+                (Date, Duration(..)) => Ok(Date),
+                (Date, Date) => Ok(Duration(crate::datatypes::TimeUnit::Seconds)),
+                (Duration(d_unit_self), Duration(d_unit_other)) if d_unit_self == d_unit_other => {
+                    Ok(Duration(*d_unit_self))
+                },
+                (du_self @ &Duration(..), du_other @ &Duration(..)) => Err(DaftError::TypeError(
+                    format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
                 _ => Err(DaftError::TypeError(
                     format!("Cannot subtract types: {}, {}", self, other)
