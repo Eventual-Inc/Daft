@@ -1,6 +1,5 @@
 mod abs;
 mod apply;
-mod approx_percentile;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -134,16 +133,6 @@ pub trait DaftApproxSketchAggable {
     type Output;
     fn approx_sketch(&self) -> Self::Output;
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
-}
-
-pub trait DaftApproxPercentileAggable {
-    type Output;
-    fn approx_percentiles(&self, percentiles: &[f64]) -> Self::Output;
-    fn grouped_approx_percentiles(
-        &self,
-        groups: &GroupIndices,
-        percentiles: &[f64],
-    ) -> Self::Output;
 }
 
 pub trait DaftMergeSketchAggable {

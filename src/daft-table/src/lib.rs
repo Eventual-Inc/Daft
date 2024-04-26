@@ -326,11 +326,8 @@ impl Table {
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
-            }) => Series::approx_percentiles(
-                &self.eval_expression(expr)?,
-                groups,
-                percentiles.as_slice(),
-            ),
+            }) => Series::approx_sketch(&self.eval_expression(expr)?, groups)?
+                .sketch_percentile(percentiles),
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
