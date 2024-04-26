@@ -187,7 +187,7 @@ fn replace_column_with_semantic_id(
     schema: &Schema,
 ) -> Transformed<ExprRef> {
     // Constructs a new copy of this expression
-    // with all occurences of subexprs_to_replace replaced with a column selection.
+    // with all occurrences of subexprs_to_replace replaced with a column selection.
     // e.g. e := (a+b)+c, subexprs := {FieldID("(a + b)")}
     //  -> Col("(a + b)") + c
 
@@ -346,7 +346,7 @@ fn replace_column_with_semantic_id_aggexpr(
     schema: &Schema,
 ) -> Transformed<AggExpr> {
     // Constructs a new copy of this expression
-    // with all occurences of subexprs_to_replace replaced with a column selection.
+    // with all occurrences of subexprs_to_replace replaced with a column selection.
     // e.g. e := (a+b)+c, subexprs := {FieldID("(a + b)")}
     //  -> Col("(a + b)") + c
 

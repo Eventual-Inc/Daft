@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     logical_ops,
@@ -16,7 +16,7 @@ use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_dsl::{ApproxPercentileParams, Expr, ExprRef};
+use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -63,6 +63,19 @@ fn check_for_agg(expr: &ExprRef) -> bool {
             predicate,
         } => check_for_agg(if_true) || check_for_agg(if_false) || check_for_agg(predicate),
     }
+}
+
+fn err_if_agg(fn_name: &str, exprs: &Vec<ExprRef>) -> DaftResult<()> {
+    for e in exprs {
+        if check_for_agg(e) {
+            return Err(DaftError::ValueError(format!(
+                "Aggregation expressions are not currently supported in {fn_name}: {e}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                fn_name=fn_name,
+                e=e
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
@@ -177,30 +190,69 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn project(
-        &self,
-        projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
-    ) -> DaftResult<Self> {
-        for expr in &projection {
-            if check_for_agg(expr) {
-                return Err(DaftError::ValueError(format!(
-                    "Aggregation expressions are not currently supported in projection: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                )));
-            }
-        }
+    pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
+        err_if_agg("project", &to_select)?;
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), projection, resource_request)?.into();
+            logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn with_columns(
+        &self,
+        columns: Vec<ExprRef>,
+        resource_request: ResourceRequest,
+    ) -> DaftResult<Self> {
+        err_if_agg("with_columns", &columns)?;
+
+        let new_col_names = columns
+            .iter()
+            .map(|e| e.name())
+            .collect::<DaftResult<HashSet<&str>>>()?;
+
+        let mut exprs = self
+            .schema()
+            .fields
+            .iter()
+            .filter_map(|(name, _)| {
+                if new_col_names.contains(name.as_str()) {
+                    None
+                } else {
+                    Some(col(name.clone()))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        exprs.extend(columns);
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
+        let to_exclude = HashSet::<_>::from_iter(to_exclude.iter());
+
+        let exprs = self
+            .schema()
+            .fields
+            .iter()
+            .filter_map(|(name, _)| {
+                if to_exclude.contains(name) {
+                    None
+                } else {
+                    Some(col(name.clone()))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Project::try_new(self.plan.clone(), exprs, Default::default())?.into();
         Ok(logical_plan.into())
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        if check_for_agg(&predicate) {
-            return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are not currently supported in filter: {predicate}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-            )));
-        }
+        err_if_agg("filter", &vec![predicate.to_owned()])?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
@@ -214,13 +266,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
-        for expr in &to_explode {
-            if check_for_agg(expr) {
-                return Err(DaftError::ValueError(format!(
-                    "Aggregation expressions are not currently supported in explode: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                )));
-            }
-        }
+        err_if_agg("explode", &to_explode)?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
@@ -228,13 +274,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
-        for expr in &sort_by {
-            if check_for_agg(expr) {
-                return Err(DaftError::ValueError(format!(
-                    "Aggregation expressions are not currently supported in sort: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                )));
-            }
-        }
+        err_if_agg("sort", &sort_by)?;
 
         let logical_plan: LogicalPlan =
             logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
@@ -246,13 +286,7 @@ impl LogicalPlanBuilder {
         num_partitions: Option<usize>,
         partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        for expr in &partition_by {
-            if check_for_agg(expr) {
-                return Err(DaftError::ValueError(format!(
-                    "Aggregation expressions are not currently supported in hash repartition: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                )));
-            }
-        }
+        err_if_agg("hash_repartition", &partition_by)?;
 
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
@@ -320,15 +354,8 @@ impl LogicalPlanBuilder {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
-        for side in [&left_on, &right_on] {
-            for expr in side {
-                if check_for_agg(expr) {
-                    return Err(DaftError::ValueError(format!(
-                        "Aggregation expressions are not currently supported in join: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                    )));
-                }
-            }
-        }
+        err_if_agg("join", &left_on)?;
+        err_if_agg("join", &right_on)?;
 
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -363,13 +390,7 @@ impl LogicalPlanBuilder {
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
         if let Some(partition_cols) = &partition_cols {
-            for expr in partition_cols {
-                if check_for_agg(expr) {
-                    return Err(DaftError::ValueError(format!(
-                        "Aggregation expressions are not currently supported in table write: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-                    )));
-                }
-            }
+            err_if_agg("table_write", partition_cols)?;
         }
 
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
@@ -452,6 +473,11 @@ impl PyLogicalPlanBuilder {
 }
 
 #[cfg(feature = "python")]
+fn pyexprs_to_exprs(vec: Vec<PyExpr>) -> Vec<ExprRef> {
+    vec.into_iter().map(|e| e.into()).collect()
+}
+
+#[cfg(feature = "python")]
 #[pymethods]
 impl PyLogicalPlanBuilder {
     #[staticmethod]
@@ -477,19 +503,23 @@ impl PyLogicalPlanBuilder {
         Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
 
-    pub fn project(
+    pub fn select(&self, to_select: Vec<PyExpr>) -> PyResult<Self> {
+        Ok(self.builder.select(pyexprs_to_exprs(to_select))?.into())
+    }
+
+    pub fn with_columns(
         &self,
-        projection: Vec<PyExpr>,
+        columns: Vec<PyExpr>,
         resource_request: ResourceRequest,
     ) -> PyResult<Self> {
-        let projection_exprs = projection
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<ExprRef>>();
         Ok(self
             .builder
-            .project(projection_exprs, resource_request)?
+            .with_columns(pyexprs_to_exprs(columns), resource_request)?
             .into())
+    }
+
+    pub fn exclude(&self, to_exclude: Vec<String>) -> PyResult<Self> {
+        Ok(self.builder.exclude(to_exclude)?.into())
     }
 
     pub fn filter(&self, predicate: PyExpr) -> PyResult<Self> {
@@ -501,16 +531,14 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let to_explode_exprs = to_explode
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<ExprRef>>();
-        Ok(self.builder.explode(to_explode_exprs)?.into())
+        Ok(self.builder.explode(pyexprs_to_exprs(to_explode))?.into())
     }
 
     pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
-        let sort_by_exprs: Vec<ExprRef> = sort_by.iter().map(|expr| expr.clone().into()).collect();
-        Ok(self.builder.sort(sort_by_exprs, descending)?.into())
+        Ok(self
+            .builder
+            .sort(pyexprs_to_exprs(sort_by), descending)?
+            .into())
     }
 
     pub fn hash_repartition(
@@ -518,13 +546,9 @@ impl PyLogicalPlanBuilder {
         partition_by: Vec<PyExpr>,
         num_partitions: Option<usize>,
     ) -> PyResult<Self> {
-        let partition_by_exprs: Vec<ExprRef> = partition_by
-            .iter()
-            .map(|expr| expr.clone().into())
-            .collect();
         Ok(self
             .builder
-            .hash_repartition(num_partitions, partition_by_exprs)?
+            .hash_repartition(num_partitions, pyexprs_to_exprs(partition_by))?
             .into())
     }
 
@@ -553,15 +577,10 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn aggregate(&self, agg_exprs: Vec<PyExpr>, groupby_exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let agg_exprs = agg_exprs
-            .iter()
-            .map(|expr| expr.clone().into())
-            .collect::<Vec<ExprRef>>();
-        let groupby_exprs = groupby_exprs
-            .iter()
-            .map(|expr| expr.clone().into())
-            .collect::<Vec<ExprRef>>();
-        Ok(self.builder.aggregate(agg_exprs, groupby_exprs)?.into())
+        Ok(self
+            .builder
+            .aggregate(pyexprs_to_exprs(agg_exprs), pyexprs_to_exprs(groupby_exprs))?
+            .into())
     }
 
     pub fn join(
@@ -572,17 +591,15 @@ impl PyLogicalPlanBuilder {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> PyResult<Self> {
-        let left_on = left_on
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<ExprRef>>();
-        let right_on = right_on
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<ExprRef>>();
         Ok(self
             .builder
-            .join(&right.builder, left_on, right_on, join_type, join_strategy)?
+            .join(
+                &right.builder,
+                pyexprs_to_exprs(left_on),
+                pyexprs_to_exprs(right_on),
+                join_type,
+                join_strategy,
+            )?
             .into())
     }
 
@@ -605,17 +622,12 @@ impl PyLogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
-        let partition_cols = partition_cols.map(|cols| {
-            cols.iter()
-                .map(|e| e.clone().into())
-                .collect::<Vec<ExprRef>>()
-        });
         Ok(self
             .builder
             .table_write(
                 root_dir,
                 file_format,
-                partition_cols,
+                partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
             )?

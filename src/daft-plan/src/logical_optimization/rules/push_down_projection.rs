@@ -532,9 +532,7 @@ mod tests {
         let a8 = a4.clone().add(a4);
         let expressions = vec![a8.alias("x")];
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-        let plan = dummy_scan_node(scan_op)
-            .project(expressions, Default::default())?
-            .build();
+        let plan = dummy_scan_node(scan_op).select(expressions)?.build();
 
         assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
@@ -555,8 +553,8 @@ mod tests {
         ];
         let proj2 = vec![col("a").add(lit(3)), col("b"), col("c").add(lit(4))];
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj1, Default::default())?
-            .project(proj2, Default::default())?
+            .select(proj1)?
+            .select(proj2)?
             .build();
 
         let merged_proj = vec![
@@ -564,9 +562,7 @@ mod tests {
             col("b").add(lit(2)),
             col("a").alias("c").add(lit(4)),
         ];
-        let expected = dummy_scan_node(scan_op)
-            .project(merged_proj, Default::default())?
-            .build();
+        let expected = dummy_scan_node(scan_op).select(merged_proj)?.build();
 
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
@@ -580,7 +576,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .project(vec![col("a"), col("b")], Default::default())?
+            .select(vec![col("a"), col("b")])?
             .build();
 
         let expected = dummy_scan_node(scan_op).build();
@@ -599,12 +595,10 @@ mod tests {
         ]);
         let proj = vec![col("b"), col("a")];
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .build();
 
-        let expected = dummy_scan_node(scan_op)
-            .project(proj, Default::default())?
-            .build();
+        let expected = dummy_scan_node(scan_op).select(proj)?.build();
 
         assert_optimized_plan_eq(plan, expected)?;
 
@@ -620,7 +614,7 @@ mod tests {
         ]);
         let proj = vec![col("b").add(lit(3))];
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .build();
 
         let proj_pushdown = vec!["b".to_string()];
@@ -628,7 +622,7 @@ mod tests {
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
         )
-        .project(proj, Default::default())?
+        .select(proj)?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;
@@ -646,14 +640,14 @@ mod tests {
         let proj1 = vec![col("b").add(lit(3)), col("a"), col("a").alias("x")];
         let proj2 = vec![col("a"), col("b"), col("b").alias("c")];
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj1, Default::default())?
-            .project(proj2.clone(), Default::default())?
+            .select(proj1)?
+            .select(proj2.clone())?
             .build();
 
         let new_proj1 = vec![col("b").add(lit(3)), col("a")];
         let expected = dummy_scan_node(scan_op)
-            .project(new_proj1, Default::default())?
-            .project(proj2, Default::default())?
+            .select(new_proj1)?
+            .select(proj2)?
             .build();
 
         assert_optimized_plan_eq(plan, expected)?;
@@ -674,7 +668,7 @@ mod tests {
         let proj = vec![col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(agg, group_by.clone())?
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "c".to_string()];
@@ -684,7 +678,7 @@ mod tests {
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
         )
         .aggregate(new_agg, group_by)?
-        .project(proj, Default::default())?
+        .select(proj)?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;
@@ -704,7 +698,7 @@ mod tests {
         let proj = vec![col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .filter(pred.clone())?
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "b".to_string()];
@@ -713,7 +707,7 @@ mod tests {
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
         )
         .filter(pred)?
-        .project(proj, Default::default())?
+        .select(proj)?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;

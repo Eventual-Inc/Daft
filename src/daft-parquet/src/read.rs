@@ -152,7 +152,7 @@ async fn read_parquet_single(
     let metadata_num_columns = metadata.schema().fields().len();
 
     if let Some(predicate) = predicate {
-        // TODO ideally pipeline this with IO and before concating, rather than after
+        // TODO ideally pipeline this with IO and before concatenating, rather than after
         table = table.filter(&[predicate])?;
         if let Some(oc) = original_columns {
             table = table.get_columns(oc)?;

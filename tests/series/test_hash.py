@@ -36,10 +36,10 @@ def test_hash_int_array_with_reference(nbytes, dtype):
 
     hashed_again = arr.hash(hashed)
 
-    for v, hv, hav in zip(arr.to_pylist(), hashed.to_pylist(), hashed_again.to_pylist()):
+    for v, hashed_value, hashed_again_value in zip(arr.to_pylist(), hashed.to_pylist(), hashed_again.to_pylist()):
         vbytes = v.to_bytes(nbytes, "little")
-        ref_value = xxhash.xxh3_64_intdigest(vbytes, seed=hv)
-        assert hav == ref_value
+        ref_value = xxhash.xxh3_64_intdigest(vbytes, seed=hashed_value)
+        assert hashed_again_value == ref_value
 
 
 def test_hash_bool_array_with_reference():

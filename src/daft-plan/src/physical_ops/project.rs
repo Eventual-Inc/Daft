@@ -46,7 +46,7 @@ impl Project {
 
         use crate::partitioning::ClusteringSpec::*;
         match input_clustering_spec.as_ref() {
-            // If the scheme is vacuous, the result partiiton spec is the same.
+            // If the scheme is vacuous, the result partition spec is the same.
             Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
             Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
@@ -240,7 +240,7 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]))
         .hash_repartition(Some(3), vec![col("a"), col("b")])?
-        .project(expressions, Default::default())?
+        .select(expressions)?
         .build();
 
         let physical_plan = plan(logical_plan, cfg)?;
@@ -277,7 +277,7 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]))
         .hash_repartition(Some(3), vec![col("a"), col("b")])?
-        .project(projection, Default::default())?
+        .select(projection)?
         .build();
 
         let physical_plan = plan(logical_plan, cfg)?;
@@ -304,7 +304,7 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]))
         .hash_repartition(Some(3), vec![col("a"), col("b")])?
-        .project(expressions, Default::default())?
+        .select(expressions)?
         .build();
 
         let physical_plan = plan(logical_plan, cfg)?;

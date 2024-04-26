@@ -173,7 +173,7 @@ where
                 })?;
             infer_records_schema(&parsed_record).context(ArrowSnafu)
         });
-    // Collect all infered dtypes for each column.
+    // Collect all inferred dtypes for each column.
     let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> = IndexMap::new();
     while let Some(schema) = schema_stream.next().await.transpose()? {
         for field in schema.fields {

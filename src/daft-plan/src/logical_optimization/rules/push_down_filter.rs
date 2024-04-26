@@ -158,7 +158,7 @@ impl OptimizerRule for PushDownFilter {
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
                 // TODO(Clark): Push Filters depending on Projection columns involving compute if those expressions are
-                // (1) determinstic && (pure || idempotent),
+                // (1) deterministic && (pure || idempotent),
                 // (2) inexpensive to recompute.
                 // This can be done by rewriting the Filter predicate expression to contain the relevant Projection expression.
                 let mut can_push: Vec<ExprRef> = vec![];
@@ -386,7 +386,7 @@ mod tests {
         let pred = col("a").lt(lit(2));
         let proj = vec![col("a")];
         let plan = scan_plan
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
@@ -394,9 +394,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_scan_filter
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_scan_filter.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -417,7 +415,7 @@ mod tests {
         let pred = col("a").lt(lit(2)).and(col("b").eq(lit("foo")));
         let proj = vec![col("a"), col("b")];
         let plan = scan_plan
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
@@ -425,9 +423,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_scan_filter
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_scan_filter.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -440,7 +436,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         // Projection involves compute on filtered column "a".
-        .project(vec![col("a").add(lit(1))], Default::default())?
+        .select(vec![col("a").add(lit(1))])?
         .filter(col("a").lt(lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
@@ -468,7 +464,7 @@ mod tests {
         let proj = vec![col("a").add(lit(1))];
         let plan = scan_plan
             // Projection involves compute on filtered column "a".
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
@@ -476,9 +472,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_filter_scan
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_filter_scan.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

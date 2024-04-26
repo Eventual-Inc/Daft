@@ -86,7 +86,7 @@ pub struct CountingWriter<W> {
 }
 
 impl<W> CountingWriter<W> {
-    /// The number of bytes successfull written so far.
+    /// The number of bytes successful written so far.
     pub fn count(&self) -> u64 {
         self.count
     }

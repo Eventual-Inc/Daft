@@ -11,16 +11,14 @@ import daft
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
-# TODO(Colin): these tests were being skipped!
-# https://github.com/Eventual-Inc/Daft/issues/2098
-@pytest.mark.skip()
-def test_temporal_arithmetic() -> None:
+def test_temporal_arithmetic_with_same_type() -> None:
     now = datetime.now()
     now_tz = datetime.now(timezone.utc)
     df = daft.from_pydict(
         {
             "dt_us": [datetime.min, now],
             "dt_us_tz": [datetime.min.replace(tzinfo=timezone.utc), now_tz],
+            "date": [datetime.min.date(), now.date()],
             "duration": [timedelta(days=1), timedelta(microseconds=1)],
         }
     )
@@ -28,20 +26,17 @@ def test_temporal_arithmetic() -> None:
     df = df.select(
         (df["dt_us"] - df["dt_us"]).alias("zero1"),
         (df["dt_us_tz"] - df["dt_us_tz"]).alias("zero2"),
-        (df["dt_us"] + (2 * df["duration"]) - df["duration"]).alias("addsub"),
-        (df["dt_us_tz"] + (2 * df["duration"]) - df["duration"]).alias("addsub_tz"),
+        (df["date"] - df["date"]).alias("zero3"),
         (df["duration"] + df["duration"]).alias("add_dur"),
+        (df["duration"] - df["duration"]).alias("sub_dur"),
     )
 
     result = df.to_pydict()
     assert result["zero1"] == [timedelta(0), timedelta(0)]
     assert result["zero2"] == [timedelta(0), timedelta(0)]
-    assert result["addsub"] == [datetime.min + timedelta(days=1), now + timedelta(microseconds=1)]
-    assert result["addsub_tz"] == [
-        (datetime.min + timedelta(days=1)).replace(tzinfo=timezone.utc),
-        now_tz + timedelta(microseconds=1),
-    ]
+    assert result["zero3"] == [timedelta(0), timedelta(0)]
     assert result["add_dur"] == [timedelta(days=2), timedelta(microseconds=2)]
+    assert result["sub_dur"] == [timedelta(0), timedelta(0)]
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
@@ -113,7 +108,10 @@ def test_arrow_timestamp(timeunit, timezone) -> None:
     assert df.to_arrow() == pa_table
 
 
-@pytest.mark.skipif(not PYARROW_GE_7_0_0, reason="PyArrow conversion of timezoned datetime is broken in 6.0.1")
+@pytest.mark.skipif(
+    not PYARROW_GE_7_0_0,
+    reason="PyArrow conversion of timezoned datetime is broken in 6.0.1",
+)
 @pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
 def test_python_timestamp(timezone) -> None:
     # Test roundtrip of Python timestamps.
@@ -154,7 +152,7 @@ def test_python_duration() -> None:
     "timezone",
     [None, "UTC"],
 )
-def test_temporal_arithmetic_parameterized(timeunit, timezone) -> None:
+def test_temporal_arithmetic_timestamp_with_duration(timeunit, timezone) -> None:
     pa_table = pa.Table.from_pydict(
         {
             "timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, timezone)),
@@ -182,6 +180,53 @@ def test_temporal_arithmetic_parameterized(timeunit, timezone) -> None:
                 "ladd": pa.array([2, 0, -2], pa.timestamp(timeunit, timezone)),
                 "radd": pa.array([2, 0, -2], pa.timestamp(timeunit, timezone)),
                 "sub": pa.array([0, 0, 0], pa.timestamp(timeunit, timezone)),
+            }
+        )
+    ).to_pydict()
+
+    assert df.to_pydict() == expected_result
+
+
+def test_temporal_arithmetic_date_with_duration() -> None:
+    day_in_seconds = 60 * 60 * 24
+    pa_table = pa.Table.from_pydict(
+        {
+            "date": pa.array([1, 1, 1, 0, -1, -1, -1], pa.date32()),
+            "duration": pa.array(
+                [
+                    day_in_seconds,
+                    day_in_seconds - 1,
+                    day_in_seconds + 1,
+                    0,
+                    -day_in_seconds,
+                    -day_in_seconds + 1,
+                    -day_in_seconds - 1,
+                ],
+                pa.duration("s"),
+            ),
+        }
+    )
+    df = daft.from_arrow(pa_table)
+
+    df = df.select(
+        (df["date"] + df["duration"]).alias("ladd"),
+        (df["duration"] + df["date"]).alias("radd"),
+        (df["date"] - df["duration"]).alias("sub"),
+    ).collect()
+
+    # Check that the result dtypes are correct.
+    expected_daft_dtype = daft.DataType.date()
+    assert df.schema()["ladd"].dtype == expected_daft_dtype
+    assert df.schema()["radd"].dtype == expected_daft_dtype
+    assert df.schema()["sub"].dtype == expected_daft_dtype
+
+    # Check that the result values are correct.
+    expected_result = daft.from_arrow(
+        pa.Table.from_pydict(
+            {
+                "ladd": pa.array([2, 1, 2, 0, -2, -1, -2], pa.date32()),
+                "radd": pa.array([2, 1, 2, 0, -2, -1, -2], pa.date32()),
+                "sub": pa.array([0, 1, 0, 0, 0, -1, 0], pa.date32()),
             }
         )
     ).to_pydict()

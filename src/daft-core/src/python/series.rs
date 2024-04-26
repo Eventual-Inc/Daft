@@ -193,6 +193,18 @@ impl PySeries {
             .into())
     }
 
+    pub fn log2(&self) -> PyResult<Self> {
+        Ok(self.series.log2()?.into())
+    }
+
+    pub fn log10(&self) -> PyResult<Self> {
+        Ok(self.series.log10()?.into())
+    }
+
+    pub fn ln(&self) -> PyResult<Self> {
+        Ok(self.series.ln()?.into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
     }

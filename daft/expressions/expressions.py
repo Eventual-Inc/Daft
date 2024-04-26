@@ -400,6 +400,21 @@ class Expression:
         expr = self._expr.degrees()
         return Expression._from_pyexpr(expr)
 
+    def log2(self) -> Expression:
+        """The elementwise log base 2 of a numeric expression (``expr.log2()``)"""
+        expr = self._expr.log2()
+        return Expression._from_pyexpr(expr)
+
+    def log10(self) -> Expression:
+        """The elementwise log base 10 of a numeric expression (``expr.log10()``)"""
+        expr = self._expr.log10()
+        return Expression._from_pyexpr(expr)
+
+    def ln(self) -> Expression:
+        """The elementwise natural log of a numeric expression (``expr.ln()``)"""
+        expr = self._expr.ln()
+        return Expression._from_pyexpr(expr)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression (``expr.exp()``)"""
         expr = self._expr.exp()
@@ -659,7 +674,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 Defaults to True.
 
         Returns:
-            Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
+            Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
         """
         if use_native_downloader:
             raise_on_error = False

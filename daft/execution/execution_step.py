@@ -271,7 +271,7 @@ class Instruction(Protocol):
     Most instructions take one partition and return another partition.
     However, some instructions take one partition and return many partitions (fanouts),
     and others take many partitions and return one partition (reduces).
-    To accomodate these, instructions are typed as list[Table] -> list[Table].
+    To accommodate these, instructions are typed as list[Table] -> list[Table].
     """
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:

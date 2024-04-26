@@ -265,6 +265,21 @@ impl PyExpr {
         Ok(degrees(self.into()).into())
     }
 
+    pub fn log2(&self) -> PyResult<Self> {
+        use functions::numeric::log2;
+        Ok(log2(self.into()).into())
+    }
+
+    pub fn log10(&self) -> PyResult<Self> {
+        use functions::numeric::log10;
+        Ok(log10(self.into()).into())
+    }
+
+    pub fn ln(&self) -> PyResult<Self> {
+        use functions::numeric::ln;
+        Ok(ln(self.into()).into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         use functions::numeric::exp;
         Ok(exp(self.into()).into())

@@ -279,7 +279,7 @@ def test_table_numeric_arc_trigonometry_oor() -> None:
 
 
 def test_table_numeric_cot() -> None:
-    table = MicroPartition.from_pydict({"a": [0.0, None, math.nan]})
+    table = MicroPartition.from_pydict({"a": [0, None, math.nan]})
     cot_table = table.eval_expression_list([col("a").cot()])
     expected = [math.inf, None, math.nan]
     assert (
@@ -318,6 +318,60 @@ def test_table_round_bad_input() -> None:
 
     with pytest.raises(ValueError, match="decimal can not be negative: -2"):
         table.eval_expression_list([col("a").round(-2)])
+
+
+def test_table_numeric_log2() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    log2_table = table.eval_expression_list([col("a").log2(), col("b").log2()])
+    assert [math.log2(v) if v is not None else v for v in table.get_column("a").to_pylist()] == log2_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.log2(v) if v is not None else v for v in table.get_column("b").to_pylist()] == log2_table.get_column(
+        "b"
+    ).to_pylist()
+
+
+def test_table_log2_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to log to be numeric"):
+        table.eval_expression_list([col("a").log2()])
+
+
+def test_table_numeric_log10() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    log10_table = table.eval_expression_list([col("a").log10(), col("b").log10()])
+    assert [math.log10(v) if v is not None else v for v in table.get_column("a").to_pylist()] == log10_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.log10(v) if v is not None else v for v in table.get_column("b").to_pylist()] == log10_table.get_column(
+        "b"
+    ).to_pylist()
+
+
+def test_table_log10_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to log to be numeric"):
+        table.eval_expression_list([col("a").log10()])
+
+
+def test_table_numeric_ln() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    ln_table = table.eval_expression_list([col("a").ln(), col("b").ln()])
+    assert [math.log(v) if v is not None else v for v in table.get_column("a").to_pylist()] == ln_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.log(v) if v is not None else v for v in table.get_column("b").to_pylist()] == ln_table.get_column(
+        "b"
+    ).to_pylist()
+
+
+def test_table_ln_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to log to be numeric"):
+        table.eval_expression_list([col("a").ln()])
 
 
 def test_table_exp() -> None:

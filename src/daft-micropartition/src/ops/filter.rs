@@ -26,7 +26,7 @@ impl MicroPartition {
                 return Ok(Self::empty(Some(self.schema.clone())));
             }
         }
-        // TODO figure out defered IOStats
+        // TODO figure out deferred IOStats
         let tables = self
             .tables_or_read(io_stats)?
             .iter()
