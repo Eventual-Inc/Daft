@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
-use crate::array::ops::from_arrow::FromArrow;
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field, NullArray,
     Utf8Array, Utf8Type,
 };
 
 use crate::array::DataArray;
-
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
-
-use super::ListArray;
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
     for DataArray<T>
@@ -208,53 +203,5 @@ impl
     ) -> DaftResult<Self> {
         let (name, array) = item;
         DataArray::new(Field::new(name, DataType::Python).into(), Box::new(array))
-    }
-}
-
-impl TryFrom<(&str, &[Option<Vec<Option<f64>>>])> for ListArray {
-    type Error = DaftError;
-
-    fn try_from(item: (&str, &[Option<Vec<Option<f64>>>])) -> DaftResult<Self> {
-        let (name, slice) = item;
-
-        let values_vec = slice
-            .iter()
-            .flatten()
-            .flatten()
-            .cloned()
-            .collect::<Vec<Option<f64>>>();
-
-        let mut offsets_vec = Vec::with_capacity(slice.len() + 1);
-        offsets_vec.push(0i64);
-
-        let mut current_offset = 0i64;
-        for list in slice {
-            if let Some(l) = list {
-                current_offset += l.len() as i64;
-            }
-            offsets_vec.push(current_offset);
-        }
-
-        let validity_vec = slice
-            .iter()
-            .map(|list| list.is_some())
-            .collect::<Vec<bool>>();
-
-        let datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-            arrow2::datatypes::Field::new("item", arrow2::datatypes::DataType::Float64, true),
-        ));
-
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets_vec)?;
-        let values = Box::new(arrow2::array::PrimitiveArray::from_trusted_len_iter(
-            values_vec.into_iter(),
-        ));
-        let validity = Some(arrow2::bitmap::Bitmap::from(&validity_vec));
-
-        let arrow_arr = arrow2::array::ListArray::<i64>::new(datatype, offsets, values, validity);
-
-        ListArray::from_arrow(
-            Field::new(name, arrow_arr.data_type().into()).into(),
-            Box::new(arrow_arr),
-        )
     }
 }
