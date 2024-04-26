@@ -114,6 +114,36 @@ def test_round(unary_data_fixture):
     )
 
 
+def test_log2(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log2(),
+        run_kernel=lambda: arg.log2(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_log10(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log10(),
+        run_kernel=lambda: arg.log10(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_ln(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).ln(),
+        run_kernel=lambda: arg.ln(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
 @pytest.mark.parametrize(
     "fun",
     [
