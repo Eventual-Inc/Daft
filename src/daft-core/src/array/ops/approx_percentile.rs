@@ -5,13 +5,17 @@ use crate::array::ListArray;
 use crate::{array::DataArray, datatypes::*};
 use arrow2;
 use arrow2::array::Array;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use sketches_ddsketch::{Config, DDSketch};
 
 fn compute_percentiles(sketch: &DDSketch, percentiles: &[f64]) -> DaftResult<Vec<Option<f64>>> {
     percentiles
         .iter()
-        .map(|q| Ok(sketch.quantile(*q)?))
+        .map(|percentile| {
+            sketch.quantile(*percentile).map_err(|err| {
+                DaftError::ComputeError(format!("Error computing percentiles: {}", err))
+            })
+        })
         .collect()
 }
 

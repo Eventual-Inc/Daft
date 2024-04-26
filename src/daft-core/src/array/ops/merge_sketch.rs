@@ -16,7 +16,9 @@ impl DaftMergeSketchAggable for &StructArray {
                     (acc, None) => Ok::<_, DaftError>(acc),
                     (None, Some(v)) => Ok(Some(v)),
                     (Some(mut acc), Some(v)) => {
-                        acc.merge(&v)?;
+                        acc.merge(&v).map_err(|err| {
+                            DaftError::ComputeError(format!("Error merging sketches: {}", err))
+                        })?;
                         Ok(Some(acc))
                     }
                 })?;
@@ -44,7 +46,13 @@ impl DaftMergeSketchAggable for &StructArray {
                         (acc, true) => Ok::<_, DaftError>(acc),
                         (None, false) => Ok(sketches_array[idx].clone()),
                         (Some(mut acc), false) => {
-                            acc.merge(sketches_array[idx].as_ref().unwrap())?;
+                            acc.merge(sketches_array[idx].as_ref().unwrap())
+                                .map_err(|err| {
+                                    DaftError::ComputeError(format!(
+                                        "Error merging sketches: {}",
+                                        err
+                                    ))
+                                })?;
                             Ok(Some(acc))
                         }
                     }
