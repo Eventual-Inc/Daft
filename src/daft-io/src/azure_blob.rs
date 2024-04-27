@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
+    blob::operations::{GetBlobResponse, GetBlockListResponse},
     container::{operations::BlobItem, Container},
     prelude::*,
 };
@@ -448,7 +449,7 @@ impl ObjectSource for AzureBlobSource {
 
         let owned_string = uri.to_string();
         let stream = blob_stream
-            .and_then(async move |v| v.data.collect().await)
+            .and_then(async move |v: GetBlobResponse| v.data.collect().await)
             .map_err(move |e| {
                 UnableToReadBytesSnafu::<String> {
                     path: owned_string.clone(),

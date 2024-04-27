@@ -53,8 +53,14 @@ impl StructArray {
                         panic!("StructArray::new expects all children to have the same length, but received: {} vs {}", s.len(), len)
                     }
                 }
-                if let Some(some_validity) = &validity && some_validity.len() != len {
-                    panic!("StructArray::new expects validity to have length {} but received: {}", len, some_validity.len())
+                if let Some(some_validity) = &validity
+                    && some_validity.len() != len
+                {
+                    panic!(
+                        "StructArray::new expects validity to have length {} but received: {}",
+                        len,
+                        some_validity.len()
+                    )
                 }
 
                 StructArray {
@@ -157,12 +163,14 @@ impl StructArray {
     }
 
     pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity && v.len() != self.len() {
+        if let Some(v) = &validity
+            && v.len() != self.len()
+        {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match StructArray length, {} vs {}",
                 v.len(),
                 self.len()
-            )))
+            )));
         }
 
         Ok(Self::new(

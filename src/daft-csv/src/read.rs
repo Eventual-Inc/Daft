@@ -302,7 +302,9 @@ async fn read_csv_single_into_table(
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
-    if let Some(limit) = limit && concated_table.len() > limit {
+    if let Some(limit) = limit
+        && concated_table.len() > limit
+    {
         // apply head in case that last chunk went over limit
         concated_table.head(limit)
     } else {
@@ -599,7 +601,14 @@ mod tests {
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
         if !has_header && let Some(column_names) = column_names {
-            fields = fields.into_iter().zip(column_names).map(|(field, name)| arrow2::datatypes::Field::new(name, field.data_type, true).with_metadata(field.metadata)).collect::<Vec<_>>();
+            fields = fields
+                .into_iter()
+                .zip(column_names)
+                .map(|(field, name)| {
+                    arrow2::datatypes::Field::new(name, field.data_type, true)
+                        .with_metadata(field.metadata)
+                })
+                .collect::<Vec<_>>();
         }
         let mut rows = vec![ByteRecord::default(); limit.unwrap_or(100)];
         let rows_read = read_rows(&mut reader, 0, &mut rows).unwrap();

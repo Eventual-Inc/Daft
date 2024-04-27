@@ -83,9 +83,12 @@ impl PushDownProjection {
                     .flat_map(|expr| {
                         // If it's a reference for a column that requires computation,
                         // record it.
-                        if okay_to_merge && let Expr::Column(name) = expr.as_ref() && upstream_computations.contains(name.as_ref()) {
-                            okay_to_merge = okay_to_merge
-                                && upstream_computations_used.insert(name.to_string())
+                        if okay_to_merge
+                            && let Expr::Column(name) = expr.as_ref()
+                            && upstream_computations.contains(name.as_ref())
+                        {
+                            okay_to_merge =
+                                okay_to_merge && upstream_computations_used.insert(name.to_string())
                         };
                         if okay_to_merge {
                             expr.children()

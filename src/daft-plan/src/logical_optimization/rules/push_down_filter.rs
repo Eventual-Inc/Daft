@@ -78,8 +78,7 @@ impl OptimizerRule for PushDownFilter {
                     SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::ExternalInfo(external_info)
-                        if let Some(existing_limit) =
-                            external_info.pushdowns.limit =>
+                        if let Some(existing_limit) = external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }
@@ -87,7 +86,12 @@ impl OptimizerRule for PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.clone().and(f.clone())).unwrap_or(predicate.clone());
+                        let new_predicate = external_info
+                            .pushdowns
+                            .filters
+                            .as_ref()
+                            .map(|f| predicate.clone().and(f.clone()))
+                            .unwrap_or(predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -98,10 +102,25 @@ impl OptimizerRule for PushDownFilter {
                         // 3. Filters needing their own dedicated filter op (unable to be pushed into scan); this
                         //    includes predicates involving both partition and data columns, and predicates containing
                         //    UDFs.
-                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(&new_predicate, external_info.scan_op.0.partitioning_keys())?;
-                        assert!(partition_only_filter.len() + data_only_filter.len() + needing_filter_op.len() > 0);
+                        let PredicateGroups {
+                            partition_only_filter,
+                            data_only_filter,
+                            needing_filter_op,
+                        } = rewrite_predicate_for_partitioning(
+                            &new_predicate,
+                            external_info.scan_op.0.partitioning_keys(),
+                        )?;
+                        assert!(
+                            partition_only_filter.len()
+                                + data_only_filter.len()
+                                + needing_filter_op.len()
+                                > 0
+                        );
 
-                        if !needing_filter_op.is_empty() && partition_only_filter.is_empty() && data_only_filter.is_empty() {
+                        if !needing_filter_op.is_empty()
+                            && partition_only_filter.is_empty()
+                            && data_only_filter.is_empty()
+                        {
                             // If the filter predicate consists of only expressions that rely on both a partition
                             // column and a data column (or contain a UDF), then no pushdown into the scan is possible,
                             // so we short-circuit.
@@ -132,8 +151,11 @@ impl OptimizerRule for PushDownFilter {
                         if !needing_filter_op.is_empty() {
                             // We need to apply any filter predicates that reference both partition and data columns after the scan.
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
-                            let filter_op: LogicalPlan =
-                                Filter::try_new(new_source.into(), conjuct(needing_filter_op).unwrap())?.into();
+                            let filter_op: LogicalPlan = Filter::try_new(
+                                new_source.into(),
+                                conjuct(needing_filter_op).unwrap(),
+                            )?
+                            .into();
                             return Ok(Transformed::Yes(filter_op.into()));
                         } else {
                             return Ok(Transformed::Yes(new_source.into()));

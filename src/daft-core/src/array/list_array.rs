@@ -31,7 +31,9 @@ impl ListArray {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::List(child_dtype) => {
-                if let Some(validity) = validity.as_ref() && validity.len() != offsets.len_proxy() {
+                if let Some(validity) = validity.as_ref()
+                    && validity.len() != offsets.len_proxy()
+                {
                     panic!("ListArray::new validity length does not match computed length from offsets")
                 }
                 if child_dtype.as_ref() != flat_child.data_type() {
@@ -166,12 +168,14 @@ impl ListArray {
     }
 
     pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity && v.len() != self.len() {
+        if let Some(v) = &validity
+            && v.len() != self.len()
+        {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match ListArray length, {} vs {}",
                 v.len(),
                 self.len()
-            )))
+            )));
         }
 
         Ok(Self::new(
@@ -206,7 +210,9 @@ impl Iterator for ListArrayIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
-            if let Some(validity) = self.array.validity() && !validity.get_bit(self.idx) {
+            if let Some(validity) = self.array.validity()
+                && !validity.get_bit(self.idx)
+            {
                 self.idx += 1;
                 Some(None)
             } else {

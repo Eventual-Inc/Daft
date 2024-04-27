@@ -97,7 +97,9 @@ where
     }
 
     pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity && v.len() != self.data.len() {
+        if let Some(v) = &validity
+            && v.len() != self.data.len()
+        {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match DataArray length, {} vs {}",
                 v.len(),

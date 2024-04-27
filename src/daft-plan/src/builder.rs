@@ -171,13 +171,16 @@ impl LogicalPlanBuilder {
             pushdowns.clone().unwrap_or_default(),
         ));
         // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
-        let output_schema = if let Some(Pushdowns { columns: Some(columns), .. }) = &pushdowns && columns.len() < schema.fields.len() {
+        let output_schema = if let Some(Pushdowns {
+            columns: Some(columns),
+            ..
+        }) = &pushdowns
+            && columns.len() < schema.fields.len()
+        {
             let pruned_upstream_schema = schema
                 .fields
                 .iter()
-                .filter_map(|(name, field)| {
-                    columns.contains(name).then(|| field.clone())
-                })
+                .filter_map(|(name, field)| columns.contains(name).then(|| field.clone()))
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema)?)
         } else {

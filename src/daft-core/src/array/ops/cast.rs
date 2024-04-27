@@ -1420,9 +1420,9 @@ impl TensorArray {
                             // If image is 2 dimensions, 8-bit grayscale is assumed.
                             return false;
                         }
-                        if let Some(mode) = mode && s.u64().unwrap().as_arrow()
-                            .get(s.len() - 1)
-                            .unwrap() != mode.num_channels() as u64
+                        if let Some(mode) = mode
+                            && s.u64().unwrap().as_arrow().get(s.len() - 1).unwrap()
+                                != mode.num_channels() as u64
                         {
                             // If type-level mode is defined, each image must have the implied number of channels.
                             return false;
