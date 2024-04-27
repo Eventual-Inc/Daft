@@ -11,8 +11,12 @@ PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeri
 pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="hudi only supported if pyarrow >= 8.0.0")
 
 
-def test_hudi_read_table(test_table_path):
-    df = daft.read_hudi(test_table_path)
+def test_hudi_read_table(get_testing_table_for_supported_cases):
+    table_path = get_testing_table_for_supported_cases
+    df = daft.read_hudi(table_path)
+
+    # when it's case `v6_simplekeygen_hivestyle_no_metafields`
+    # hoodie.populate.meta.fields=false, meta fields are still present in schema
     assert df.schema().column_names()[:8] == [
         "_hoodie_commit_time",
         "_hoodie_commit_seqno",

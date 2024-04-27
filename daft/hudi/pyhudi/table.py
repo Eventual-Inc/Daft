@@ -10,7 +10,6 @@ import pyarrow.fs as pafs
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
 from daft.hudi.pyhudi.utils import (
-    FsFileMetadata,
     list_full_sub_dirs,
     list_leaf_dirs,
     list_relative_file_paths,
@@ -102,6 +101,8 @@ class HudiTableProps:
                     continue
                 key, value = line.split("=")
                 self._props[key] = value
+        self._validate()
+        self.is_partitioned = not self.keygen_classname.endswith("NonpartitionedKeyGenerator")
 
     @property
     def name(self) -> str:
@@ -114,8 +115,24 @@ class HudiTableProps:
 
         return self._props["hoodie.table.partition.fields"].split(",")
 
+    @property
+    def keygen_classname(self) -> str:
+        return self._props["hoodie.table.keygenerator.class"]
+
+    @property
+    def is_hive_style_partitioning(self):
+        return self._props["hoodie.datasource.write.hive_style_partitioning"]
+
     def get_config(self, key: str) -> str:
         return self._props[key]
+
+    def _validate(self):
+        if self.get_config("hoodie.table.type") != "COPY_ON_WRITE":
+            raise UnsupportedException("Only support COPY_ON_WRITE table")
+        if self.get_config("hoodie.table.version") not in ["5", "6"]:
+            raise UnsupportedException("Only support table version 5 and 6")
+        if self.get_config("hoodie.timeline.layout.version") != "1":
+            raise UnsupportedException("Only support timeline layout version 1")
 
 
 @dataclass
@@ -136,25 +153,17 @@ class HudiTable:
         base_path = HudiTable._sanitize_path(resolved_base_path)
         self._meta_client = MetaClient(fs, base_path, timeline=None)
         self._props = HudiTableProps(fs, base_path)
-        self._validate_table_props()
 
     @staticmethod
     def _sanitize_path(path: str) -> str:
         return path.rstrip("/")
-
-    def _validate_table_props(self):
-        if self._props.get_config("hoodie.table.type") != "COPY_ON_WRITE":
-            raise UnsupportedException("Only support COPY_ON_WRITE table")
-        if self._props.get_config("hoodie.table.version") not in ["5", "6"]:
-            raise UnsupportedException("Only support table version 5 and 6")
-        if self._props.get_config("hoodie.timeline.layout.version") != "1":
-            raise UnsupportedException("Only support timeline layout version 1")
 
     def latest_table_metadata(self) -> HudiTableMetadata:
         file_slices = FileSystemView(self._meta_client).get_latest_file_slices()
         files_metadata = []
         min_vals_arr = []
         max_vals_arr = []
+        colstats_schema = file_slices[0].colstats_schema if file_slices else pa.schema([])
         for file_slice in file_slices:
             files_metadata.append(file_slice.files_metadata)
             min_vals, max_vals = file_slice.colstats_min_max
@@ -163,9 +172,6 @@ class HudiTable:
         metadata_arrays = [pa.array(column) for column in list(zip(*files_metadata))]
         min_value_arrays = [pa.array(column) for column in list(zip(*min_vals_arr))]
         max_value_arrays = [pa.array(column) for column in list(zip(*max_vals_arr))]
-        colstats_schema = FsFileMetadata.get_colstats_schema(
-            self._meta_client.get_active_timeline().get_latest_commit_schema()
-        )
         return HudiTableMetadata(
             pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.FILES_METADATA_SCHEMA),
             pa.RecordBatch.from_arrays(min_value_arrays, schema=colstats_schema),
@@ -182,7 +188,7 @@ class HudiTable:
 
     @property
     def is_partitioned(self) -> bool:
-        return bool(self._props.partition_fields)
+        return self._props.is_partitioned
 
     @property
     def props(self) -> HudiTableProps:

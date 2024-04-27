@@ -35,6 +35,10 @@ class BaseFile:
         return self.metadata.schema
 
     @property
+    def colstats_schema(self) -> pa.Schema:
+        return self.metadata.colstats_schema
+
+    @property
     def min_values(self):
         return self.metadata.min_values
 
@@ -66,6 +70,10 @@ class FileSlice:
     @property
     def colstats_min_max(self):
         return self.base_file.min_values, self.base_file.max_values
+
+    @property
+    def colstats_schema(self):
+        return self.base_file.colstats_schema
 
 
 @dataclass
