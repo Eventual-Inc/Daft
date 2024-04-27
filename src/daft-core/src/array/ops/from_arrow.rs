@@ -110,7 +110,7 @@ impl FromArrow for ListArray {
                 Ok(ListArray::new(
                     field.clone(),
                     child_series,
-                    map_arr.offsets().try_into().unwrap(),
+                    map_arr.offsets().into(),
                     arrow_arr.validity().cloned(),
                 ))
             }

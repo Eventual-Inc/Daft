@@ -228,8 +228,7 @@ async fn read_json_single_into_table(
             .unwrap_or(NonZeroUsize::new(2).unwrap())
             .checked_mul(2.try_into().unwrap())
             .unwrap()
-            .try_into()
-            .unwrap()
+            .into()
     });
     let tables = table_stream
         // Limit the number of chunks we have in flight at any given time.

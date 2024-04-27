@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
-    blob::operations::{GetBlobResponse, GetBlockListResponse},
+    blob::operations::GetBlobResponse,
     container::{operations::BlobItem, Container},
     prelude::*,
 };

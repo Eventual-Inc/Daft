@@ -156,7 +156,7 @@ pub fn split_by_row_groups(
                         t.file_format_config.as_ref(),
                         t.storage_config.as_ref(),
                         &t.sources[..],
-                        t.sources.get(0).map(DataFileSource::get_chunk_spec),
+                        t.sources.first().map(DataFileSource::get_chunk_spec),
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()

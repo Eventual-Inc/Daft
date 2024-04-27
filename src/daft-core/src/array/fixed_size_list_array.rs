@@ -69,7 +69,7 @@ impl FixedSizeListArray {
             ));
         }
 
-        let first_array = arrays.get(0).unwrap();
+        let first_array = arrays.first().unwrap();
         let mut growable = <Self as GrowableArray>::make_growable(
             first_array.field.name.as_str(),
             &first_array.field.dtype,

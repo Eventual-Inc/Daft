@@ -238,8 +238,7 @@ async fn read_csv_single_into_table(
             .unwrap_or(NonZeroUsize::new(2).unwrap())
             .checked_mul(2.try_into().unwrap())
             .unwrap()
-            .try_into()
-            .unwrap()
+            .into()
     });
     // Collect all chunks in chunk x column form.
     let tables = chunk_stream

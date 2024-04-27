@@ -150,9 +150,8 @@ impl PushDownProjection {
                             let pruned_upstream_schema = upstream_schema
                                 .fields
                                 .iter()
-                                .filter_map(|(name, field)| {
-                                    required_columns.contains(name).then(|| field.clone())
-                                })
+                                .filter(|&(name, field)| required_columns.contains(name))
+                                .map(|(name, field)| field.clone())
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema)?;
                             let new_source: LogicalPlan = Source::new(
@@ -185,11 +184,8 @@ impl PushDownProjection {
                     let pruned_upstream_projections = upstream_projection
                         .projection
                         .iter()
-                        .filter_map(|e| {
-                            required_columns
-                                .contains(e.name().unwrap())
-                                .then(|| e.clone())
-                        })
+                        .filter(|&e| required_columns.contains(e.name().unwrap()))
+                        .cloned()
                         .collect::<Vec<_>>();
 
                     let new_upstream: LogicalPlan = Project::try_new(
@@ -215,11 +211,8 @@ impl PushDownProjection {
                 let pruned_aggregate_exprs = aggregate
                     .aggregations
                     .iter()
-                    .filter_map(|e| {
-                        required_columns
-                            .contains(e.name().unwrap())
-                            .then(|| e.clone())
-                    })
+                    .filter(|&e| required_columns.contains(e.name().unwrap()))
+                    .cloned()
                     .collect::<Vec<_>>();
 
                 if pruned_aggregate_exprs.len() < aggregate.aggregations.len() {
