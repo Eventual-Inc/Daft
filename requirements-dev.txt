@@ -11,7 +11,7 @@ viztracer==0.15.6
 
 # Testing frameworks
 hypothesis==6.79.2
-pytest==7.4.3
+pytest==8.1.2
 pytest-benchmark==4.0.0
 pytest-cov==4.1.0
 pytest-lazy-fixture==0.6.3
