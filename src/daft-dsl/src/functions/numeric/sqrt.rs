@@ -35,7 +35,7 @@ impl FunctionEvaluator for SqrtEvaluator {
             DataType::Float64 => DataType::Float64,
             _ => {
                 return Err(DaftError::TypeError(format!(
-                    "Expected input to compute exp to be numeric, got {}",
+                    "Expected input to sqrt to be numeric, got {}",
                     field.dtype
                 )))
             }
