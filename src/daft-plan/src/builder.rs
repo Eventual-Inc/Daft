@@ -180,8 +180,8 @@ impl LogicalPlanBuilder {
             let pruned_upstream_schema = schema
                 .fields
                 .iter()
-                .filter(|&(name, field)| columns.contains(name))
-                .map(|(name, field)| field.clone())
+                .filter(|&(name, _)| columns.contains(name))
+                .map(|(_, field)| field.clone())
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema)?)
         } else {

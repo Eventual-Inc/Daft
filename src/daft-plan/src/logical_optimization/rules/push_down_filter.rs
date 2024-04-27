@@ -78,7 +78,7 @@ impl OptimizerRule for PushDownFilter {
                     SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::ExternalInfo(external_info)
-                        if let Some(existing_limit) = external_info.pushdowns.limit =>
+                        if let Some(_) = external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }

@@ -101,14 +101,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult>;
-    async fn get_range(
-        &self,
-        uri: &str,
-        range: Range<usize>,
-        io_stats: Option<IOStatsRef>,
-    ) -> super::Result<GetResult> {
-        self.get(uri, Some(range), io_stats).await
-    }
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize>;
 
     async fn glob(

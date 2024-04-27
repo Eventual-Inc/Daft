@@ -32,9 +32,6 @@ use crate::source_info::SourceInfo;
 use crate::FileFormat;
 use crate::{physical_ops::*, JoinStrategy};
 
-#[cfg(feature = "python")]
-use crate::physical_ops::InMemoryScan;
-
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
     physical_children: &mut Vec<PhysicalPlanRef>,

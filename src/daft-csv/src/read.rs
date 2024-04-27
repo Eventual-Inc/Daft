@@ -532,7 +532,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 fn fields_to_projection_indices(
-    fields: &Vec<arrow2::datatypes::Field>,
+    fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields

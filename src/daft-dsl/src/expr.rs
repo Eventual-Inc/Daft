@@ -835,7 +835,6 @@ impl Operator {
 mod tests {
 
     use super::*;
-    use crate::lit;
     #[test]
     fn check_comparison_type() -> DaftResult<()> {
         let x = lit(10.);

@@ -150,8 +150,8 @@ impl PushDownProjection {
                             let pruned_upstream_schema = upstream_schema
                                 .fields
                                 .iter()
-                                .filter(|&(name, field)| required_columns.contains(name))
-                                .map(|(name, field)| field.clone())
+                                .filter(|&(name, _)| required_columns.contains(name))
+                                .map(|(_, field)| field.clone())
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema)?;
                             let new_source: LogicalPlan = Source::new(

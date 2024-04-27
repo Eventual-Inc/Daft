@@ -69,12 +69,6 @@ enum Error {
         source: SdkError<ListObjectsV2Error, Response>,
     },
 
-    #[snafu(display("Unable to query the region for {}: {}", path, source))]
-    UnableToQueryRegion {
-        path: String,
-        source: reqwest::Error,
-    },
-
     #[snafu(display("Unable missing header: {header} when performing request for: {path}"))]
     MissingHeader { path: String, header: String },
 
@@ -97,9 +91,6 @@ enum Error {
 
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
-
-    #[snafu(display("Unable to create http client. {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
 
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
@@ -177,10 +168,6 @@ impl From<Error> for super::Error {
             }
             NotAFile { path } => super::Error::NotAFile { path },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
-                store: SourceType::S3,
-                source: source.into(),
-            },
-            UnableToCreateClient { source } => super::Error::UnableToCreateClient {
                 store: SourceType::S3,
                 source: source.into(),
             },

@@ -525,7 +525,6 @@ pub fn read_parquet_into_pyarrow_bulk(
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
-                let schema_infer_options = schema_infer_options;
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
 
                 let io_client = io_client.clone();
