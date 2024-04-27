@@ -6,7 +6,8 @@ from daft.expressions.expressions import col
 from daft.table.micropartition import MicroPartition
 
 
-def test_pivot_empty_table() -> None:
+@pytest.mark.parametrize("names", [[], ["1", "2", "3"]])
+def test_pivot_empty_table(names) -> None:
     daft_table = MicroPartition.from_pydict(
         {
             "group": [],
@@ -14,11 +15,13 @@ def test_pivot_empty_table() -> None:
             "value": [],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"))
+    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), names)
 
     expected = {
         "group": [],
     }
+    for name in names:
+        expected[name] = []
     assert daft_table.to_pydict() == expected
 
 
@@ -43,7 +46,7 @@ def test_pivot_empty_table() -> None:
     ],
 )
 def test_pivot_multipartition(input: MicroPartition) -> None:
-    daft_table = input.pivot(col("group"), col("pivot"), col("value"))
+    daft_table = input.pivot(col("group"), col("pivot"), col("value"), ["1", "2"])
 
     expected = {
         "group": ["A", "B"],
@@ -61,12 +64,13 @@ def test_pivot_missing_pivot() -> None:
             "value": [1, 2, 3],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"))
+    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "2", "3"])
 
     expected = {
         "group": ["A", "B"],
         "1": [1, 3],
         "2": [2, None],
+        "3": [None, None],
     }
     assert daft_table.to_pydict() == expected
 
@@ -81,7 +85,20 @@ def test_pivot_extra_pivot() -> None:
     )
 
     with pytest.raises(ValueError, match="Pivot column has more than one unique value"):
-        daft_table.pivot(col("group"), col("pivot"), col("value"))
+        daft_table.pivot(col("group"), col("pivot"), col("value"), ["1"])
+
+
+def test_pivot_missing_names() -> None:
+    daft_table = MicroPartition.from_pydict(
+        {
+            "group": ["A", "A"],
+            "pivot": [1, 2],
+            "value": [1, 2],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Pivot column has more values"):
+        daft_table.pivot(col("group"), col("pivot"), col("value"), ["1"])
 
 
 def test_pivot_nulls_in_group() -> None:
@@ -92,7 +109,7 @@ def test_pivot_nulls_in_group() -> None:
             "value": [1, 2, 3, 4],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"))
+    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "2"])
 
     expected = {
         "group": ["A", "B", None],
@@ -110,7 +127,7 @@ def test_pivot_nulls_in_pivot() -> None:
             "value": [1, 2, 3, 4],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"))
+    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "None"])
 
     expected = {
         "group": ["A", "B"],

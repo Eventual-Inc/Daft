@@ -635,13 +635,14 @@ class Pivot(SingleOutputInstruction):
     group_by: Expression
     pivot_col: Expression
     value_col: Expression
+    names: list[str]
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._pivot(inputs)
 
     def _pivot(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
-        return [input.pivot(self.group_by, self.pivot_col, self.value_col)]
+        return [input.pivot(self.group_by, self.pivot_col, self.value_col, self.names)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         return [
@@ -724,7 +725,7 @@ class MergeJoin(SingleOutputInstruction):
             PartialPartitionMetadata(
                 num_rows=None if is_nonempty else 0,
                 size_bytes=None,
-                boundaries=left_meta.boundaries if self.preserve_left_bounds else right_meta.boundaries,
+                boundaries=(left_meta.boundaries if self.preserve_left_bounds else right_meta.boundaries),
             )
         ]
 
@@ -745,8 +746,8 @@ class ReduceMerge(ReduceInstruction):
         input_sizes = [_.size_bytes for _ in input_metadatas]
         return [
             PartialPartitionMetadata(
-                num_rows=sum(input_rows) if all(_ is not None for _ in input_rows) else None,
-                size_bytes=sum(input_sizes) if all(_ is not None for _ in input_sizes) else None,
+                num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
+                size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
             )
         ]
 
@@ -769,8 +770,8 @@ class ReduceMergeAndSort(ReduceInstruction):
         input_sizes = [_.size_bytes for _ in input_metadatas]
         return [
             PartialPartitionMetadata(
-                num_rows=sum(input_rows) if all(_ is not None for _ in input_rows) else None,
-                size_bytes=sum(input_sizes) if all(_ is not None for _ in input_sizes) else None,
+                num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
+                size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
                 boundaries=Boundaries(list(self.sort_by), self.bounds),
             )
         ]

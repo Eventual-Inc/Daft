@@ -16,7 +16,7 @@ pub struct Pivot {
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
     pub aggregation: AggExpr,
-    pub pivoted_col_names: Vec<String>,
+    pub names: Vec<String>,
     pub output_schema: SchemaRef,
 }
 
@@ -27,7 +27,7 @@ impl Pivot {
         pivot_column: ExprRef,
         value_column: ExprRef,
         aggregation: AggExpr,
-        pivoted_col_names: Vec<String>,
+        names: Vec<String>,
     ) -> logical_plan::Result<Self> {
         let output_schema = {
             let upstream_schema = input.schema();
@@ -37,7 +37,7 @@ impl Pivot {
                 .to_field(&upstream_schema)
                 .context(CreationSnafu)?;
             let value_col_dtype = value_col_field.dtype;
-            let pivot_value_fields = pivoted_col_names
+            let pivot_value_fields = names
                 .iter()
                 .map(|f| Field::new(f, value_col_dtype.clone()))
                 .collect::<Vec<_>>();
@@ -54,7 +54,7 @@ impl Pivot {
             pivot_column,
             value_column,
             aggregation,
-            pivoted_col_names,
+            names,
             output_schema,
         })
     }

@@ -354,7 +354,7 @@ impl LogicalPlanBuilder {
         pivot_column: ExprRef,
         value_column: ExprRef,
         agg_expr: ExprRef,
-        pivoted_col_names: Vec<String>,
+        names: Vec<String>,
     ) -> DaftResult<Self> {
         let agg_expr = extract_and_check_agg_expr(agg_expr.as_ref())?;
         let pivot_logical_plan: LogicalPlan = logical_ops::Pivot::try_new(
@@ -363,7 +363,7 @@ impl LogicalPlanBuilder {
             pivot_column,
             value_column,
             agg_expr,
-            pivoted_col_names,
+            names,
         )?
         .into();
         Ok(pivot_logical_plan.into())
@@ -612,7 +612,7 @@ impl PyLogicalPlanBuilder {
         pivot_column: PyExpr,
         value_column: PyExpr,
         agg_expr: PyExpr,
-        pivoted_col_names: Vec<String>,
+        names: Vec<String>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -621,7 +621,7 @@ impl PyLogicalPlanBuilder {
                 pivot_column.into(),
                 value_column.into(),
                 agg_expr.into(),
-                pivoted_col_names,
+                names,
             )?
             .into())
     }

@@ -11,6 +11,7 @@ impl MicroPartition {
         group_by: ExprRef,
         pivot_col: ExprRef,
         values_col: ExprRef,
+        names: Vec<String>,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::pivot");
 
@@ -19,7 +20,8 @@ impl MicroPartition {
         match tables.as_slice() {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
-                let pivoted = empty_table.pivot(group_by, pivot_col, values_col)?;
+                let pivoted = empty_table.pivot(group_by, pivot_col, values_col, names)?;
+                println!("Pivoted: {}", pivoted);
                 Ok(MicroPartition::new_loaded(
                     pivoted.schema.clone(),
                     vec![pivoted].into(),
@@ -27,7 +29,8 @@ impl MicroPartition {
                 ))
             }
             [t] => {
-                let pivoted = t.pivot(group_by, pivot_col, values_col)?;
+                let pivoted = t.pivot(group_by, pivot_col, values_col, names)?;
+                println!("Pivoted: {}", pivoted);
                 Ok(MicroPartition::new_loaded(
                     pivoted.schema.clone(),
                     vec![pivoted].into(),

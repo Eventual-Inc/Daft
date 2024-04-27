@@ -826,6 +826,7 @@ impl PhysicalPlan {
                 group_by,
                 pivot_column,
                 value_column,
+                names,
             }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let group_by_pyexpr = PyExpr::from(group_by.clone());
@@ -839,6 +840,7 @@ impl PhysicalPlan {
                         group_by_pyexpr,
                         pivot_column_pyexpr,
                         value_column_pyexpr,
+                        names.clone(),
                     ))?;
                 Ok(py_iter.into())
             }

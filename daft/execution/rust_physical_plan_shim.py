@@ -119,11 +119,13 @@ def pivot(
     group_by: PyExpr,
     pivot_col: PyExpr,
     value_col: PyExpr,
+    names: list[str],
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     pivot_step = execution_step.Pivot(
         group_by=Expression._from_pyexpr(group_by),
         pivot_col=Expression._from_pyexpr(pivot_col),
         value_col=Expression._from_pyexpr(value_col),
+        names=names,
     )
 
     return physical_plan.pipeline_instruction(

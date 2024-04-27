@@ -229,6 +229,7 @@ impl PyMicroPartition {
         group_by: PyExpr,
         pivot_col: PyExpr,
         values_col: PyExpr,
+        names: Vec<String>,
     ) -> PyResult<Self> {
         let converted_group_by: daft_dsl::ExprRef = group_by.into();
         let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
@@ -240,6 +241,7 @@ impl PyMicroPartition {
                     converted_group_by,
                     converted_pivot_col,
                     converted_values_col,
+                    names,
                 )?
                 .into())
         })

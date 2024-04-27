@@ -1,4 +1,5 @@
 use daft_dsl::ExprRef;
+use itertools::Itertools;
 
 use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ pub struct Pivot {
     pub group_by: ExprRef,
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
+    pub names: Vec<String>,
 }
 
 impl Pivot {
@@ -19,12 +21,14 @@ impl Pivot {
         group_by: ExprRef,
         pivot_column: ExprRef,
         value_column: ExprRef,
+        names: Vec<String>,
     ) -> Self {
         Self {
             input,
             group_by,
             pivot_column,
             value_column,
+            names,
         }
     }
 
@@ -34,6 +38,7 @@ impl Pivot {
         res.push(format!("Group by: {}", self.group_by));
         res.push(format!("Pivot column: {}", self.pivot_column));
         res.push(format!("Value column: {}", self.value_column));
+        res.push(format!("Pivoted columns: {}", self.names.iter().join(", ")));
         res
     }
 }

@@ -172,9 +172,9 @@ class LogicalPlanBuilder:
         pivot_col: Expression,
         value_col: Expression,
         agg_fn: Expression,
-        pivoted_col_names: list[str],
+        names: list[str],
     ) -> LogicalPlanBuilder:
-        builder = self._builder.pivot(group_by._expr, pivot_col._expr, value_col._expr, agg_fn._expr, pivoted_col_names)
+        builder = self._builder.pivot(group_by._expr, pivot_col._expr, value_col._expr, agg_fn._expr, names)
         return LogicalPlanBuilder(builder)
 
     def join(  # type: ignore[override]

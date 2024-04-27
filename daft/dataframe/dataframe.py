@@ -1273,13 +1273,14 @@ class DataFrame:
         pivot_col: ColumnInputType,
         value_col: ColumnInputType,
         agg_fn: str,
+        names: Optional[List[str]] = None,
     ) -> "DataFrame":
         group_by, pivot_col, value_col = self.__column_input_to_expression([group_by, pivot_col, value_col])
-        pivoted_col_names = (
-            self.select(pivot_col).distinct().select(pivot_col.cast(DataType.string())).to_pydict()[pivot_col.name()]
-        )
         agg_expr = self._agg_tuple_to_expression((value_col, agg_fn))
-        builder = self._builder.pivot(group_by, pivot_col, value_col, agg_expr, pivoted_col_names)
+        if names is None:
+            names = self.select(pivot_col).distinct().to_pydict()[pivot_col.name()]
+            names = [str(x) for x in names]
+        builder = self._builder.pivot(group_by, pivot_col, value_col, agg_expr, names)
         return DataFrame(builder)
 
     def _materialize_results(self) -> None:
