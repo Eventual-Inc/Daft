@@ -120,19 +120,27 @@ class HudiTableProps:
         return self._props["hoodie.table.keygenerator.class"]
 
     @property
-    def is_hive_style_partitioning(self):
-        return self._props["hoodie.datasource.write.hive_style_partitioning"]
+    def is_hive_style_partitioning(self) -> bool:
+        return bool(self._props["hoodie.datasource.write.hive_style_partitioning"])
 
-    def get_config(self, key: str) -> str:
+    @property
+    def populates_meta_fields(self) -> bool:
+        return bool(self._props.get("hoodie.populate.meta.fields", "True"))
+
+    def get_required_config(self, key: str) -> str:
+        if key not in self._props:
+            raise UnsupportedException(f"Missing required table config: {key}")
         return self._props[key]
 
     def _validate(self):
-        if self.get_config("hoodie.table.type") != "COPY_ON_WRITE":
+        if self.get_required_config("hoodie.table.type") != "COPY_ON_WRITE":
             raise UnsupportedException("Only support COPY_ON_WRITE table")
-        if self.get_config("hoodie.table.version") not in ["5", "6"]:
+        if self.get_required_config("hoodie.table.version") not in ["5", "6"]:
             raise UnsupportedException("Only support table version 5 and 6")
-        if self.get_config("hoodie.timeline.layout.version") != "1":
+        if self.get_required_config("hoodie.timeline.layout.version") != "1":
             raise UnsupportedException("Only support timeline layout version 1")
+        if self.get_required_config("hoodie.datasource.write.drop.partition.columns") == "true":
+            raise UnsupportedException("Only support when `hoodie.datasource.write.drop.partition.columns` is disabled")
 
 
 @dataclass
@@ -189,6 +197,10 @@ class HudiTable:
     @property
     def is_partitioned(self) -> bool:
         return self._props.is_partitioned
+
+    @property
+    def supports_partition_values(self) -> bool:
+        return self._props.is_partitioned and self._props.populates_meta_fields
 
     @property
     def props(self) -> HudiTableProps:

@@ -77,7 +77,7 @@ class HudiScanOperator(ScanOperator):
                 size_bytes = None
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
-            if self._table.is_partitioned:
+            if self._table.supports_partition_values:
                 try:
                     arrow_arr = pa.array([files_metadata["partition_path"][task_idx]], type=pa.string())
                 except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
