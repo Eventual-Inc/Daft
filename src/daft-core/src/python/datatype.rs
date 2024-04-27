@@ -296,6 +296,14 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
+    #[staticmethod]
+    pub fn from_arrow(arrow_dtype: &PyAny) -> PyResult<Self> {
+        let arrow2_dtype = ffi::dtype_to_rust(arrow_dtype)?;
+        Ok(Self {
+            dtype: (&arrow2_dtype).into(),
+        })
+    }
+
     pub fn to_arrow(
         &self,
         py: Python,

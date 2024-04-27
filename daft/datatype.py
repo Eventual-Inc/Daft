@@ -339,72 +339,8 @@ class DataType:
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
-        if pa.types.is_int8(arrow_type):
-            return cls.int8()
-        elif pa.types.is_int16(arrow_type):
-            return cls.int16()
-        elif pa.types.is_int32(arrow_type):
-            return cls.int32()
-        elif pa.types.is_int64(arrow_type):
-            return cls.int64()
-        elif pa.types.is_uint8(arrow_type):
-            return cls.uint8()
-        elif pa.types.is_uint16(arrow_type):
-            return cls.uint16()
-        elif pa.types.is_uint32(arrow_type):
-            return cls.uint32()
-        elif pa.types.is_uint64(arrow_type):
-            return cls.uint64()
-        elif pa.types.is_float32(arrow_type):
-            return cls.float32()
-        elif pa.types.is_float64(arrow_type):
-            return cls.float64()
-        elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
-            return cls.string()
-        elif (
-            pa.types.is_binary(arrow_type)
-            or pa.types.is_large_binary(arrow_type)
-            or pa.types.is_fixed_size_binary(arrow_type)
-        ):
-            return cls.binary()
-        elif pa.types.is_boolean(arrow_type):
-            return cls.bool()
-        elif pa.types.is_null(arrow_type):
-            return cls.null()
-        elif pa.types.is_decimal128(arrow_type):
-            return cls.decimal128(arrow_type.precision, arrow_type.scale)
-        elif pa.types.is_date32(arrow_type):
-            return cls.date()
-        elif pa.types.is_date64(arrow_type):
-            return cls.timestamp(TimeUnit.ms())
-        elif pa.types.is_time64(arrow_type):
-            timeunit = TimeUnit.from_str(pa.type_for_alias(str(arrow_type)).unit)
-            return cls.time(timeunit)
-        elif pa.types.is_timestamp(arrow_type):
-            timeunit = TimeUnit.from_str(arrow_type.unit)
-            return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
-        elif pa.types.is_duration(arrow_type):
-            timeunit = TimeUnit.from_str(arrow_type.unit)
-            return cls.duration(timeunit=timeunit)
-        elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
-            assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
-            field = arrow_type.value_field
-            return cls.list(cls.from_arrow_type(field.type))
-        elif pa.types.is_fixed_size_list(arrow_type):
-            assert isinstance(arrow_type, pa.FixedSizeListType)
-            field = arrow_type.value_field
-            return cls.fixed_size_list(cls.from_arrow_type(field.type), arrow_type.list_size)
-        elif pa.types.is_struct(arrow_type):
-            assert isinstance(arrow_type, pa.StructType)
-            fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
-            return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
-        elif pa.types.is_map(arrow_type):
-            assert isinstance(arrow_type, pa.MapType)
-            return cls.map(
-                key_type=cls.from_arrow_type(arrow_type.key_type),
-                value_type=cls.from_arrow_type(arrow_type.item_type),
-            )
-        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
+
+        if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
             scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
             shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
             return cls.tensor(scalar_dtype, shape)
@@ -443,10 +379,8 @@ class DataType:
                     cls.from_arrow_type(arrow_type.storage_type),
                     metadata,
                 )
-        else:
-            # Fall back to a Python object type.
-            # TODO(Clark): Add native support for remaining Arrow types.
-            return cls.python()
+
+        return cls._from_pydatatype(PyDataType.from_arrow(arrow_type))
 
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype) -> DataType:

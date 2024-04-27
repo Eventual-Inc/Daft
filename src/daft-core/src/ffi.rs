@@ -9,6 +9,24 @@ use pyo3::{PyAny, PyObject, PyResult, Python};
 
 pub type ArrayRef = Box<dyn Array>;
 
+pub fn dtype_to_rust(arrow_dtype: &PyAny) -> PyResult<arrow2::datatypes::DataType> {
+    // prepare a pointer to receive the dtype enum
+    let schema = Box::new(ffi::ArrowSchema::empty());
+    let schema_ptr = &*schema as *const ffi::ArrowSchema;
+
+    // make the conversion through PyArrow's private API
+    // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
+    arrow_dtype.call_method1(
+        pyo3::intern!(arrow_dtype.py(), "_export_to_c"),
+        (schema_ptr as Py_uintptr_t,),
+    )?;
+
+    unsafe {
+        let dtype = ffi::import_field_from_c(schema.as_ref()).unwrap();
+        Ok(dtype.data_type)
+    }
+}
+
 pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
     let array = Box::new(ffi::ArrowArray::empty());
