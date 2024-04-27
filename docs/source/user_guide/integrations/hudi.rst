@@ -86,6 +86,7 @@ Currently there are limitations of reading Hudi tables
 
 - Only support snapshot read of Copy-on-Write tables
 - Only support reading table version 5 & 6 (tables created using release 0.12.x - 0.15.x)
+- Table must not have ``hoodie.datasource.write.drop.partition.columns=true``
 
 Support for more Hudi features are tracked as below:
 

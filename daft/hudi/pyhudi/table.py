@@ -125,7 +125,7 @@ class HudiTableProps:
 
     @property
     def populates_meta_fields(self) -> bool:
-        return bool(self._props.get("hoodie.populate.meta.fields", "True"))
+        return bool(self._props.get("hoodie.populate.meta.fields", "true"))
 
     def get_required_config(self, key: str) -> str:
         if key not in self._props:
