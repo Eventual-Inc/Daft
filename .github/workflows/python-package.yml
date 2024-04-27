@@ -78,8 +78,8 @@ jobs:
       run: pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
-      if: ${{ (matrix.pyarrow-version == '6.0.1') }}
-      run: pip install deltalake==0.5.8
+      if: ${{ (matrix.pyarrow-version == '7.0.0') }}
+      run: pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
       if: ${{ (matrix.os != 'windows') }}
