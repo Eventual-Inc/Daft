@@ -1,9 +1,7 @@
 use std::{iter::repeat, sync::Arc};
 
-use arrow2;
-
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{ListArray, StructArray},
     count_mode::CountMode,
     datatypes::*,
 };

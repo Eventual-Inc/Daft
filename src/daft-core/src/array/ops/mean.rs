@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use arrow2;
-
 use crate::count_mode::CountMode;
 use crate::{array::DataArray, datatypes::*};
 

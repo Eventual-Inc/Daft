@@ -39,7 +39,6 @@ use {
     crate::datatypes::PythonArray,
     crate::ffi,
     crate::with_match_numeric_daft_types,
-    log,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn},

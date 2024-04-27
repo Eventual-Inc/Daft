@@ -1,7 +1,6 @@
 use std::sync::Mutex;
 
 use crate::datatypes::Utf8Array;
-use arrow2;
 
 use super::as_arrow::AsArrow;
 use common_error::{DaftError, DaftResult};

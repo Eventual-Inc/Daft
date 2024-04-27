@@ -1,4 +1,3 @@
-use arrow2;
 use arrow2::array;
 
 use crate::{

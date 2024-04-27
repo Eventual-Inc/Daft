@@ -1,11 +1,11 @@
 use super::full::FullNull;
 use super::{DaftCompareAggable, GroupIndices};
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{ListArray, StructArray},
     datatypes::*,
 };
+use arrow2::array::Array;
 use arrow2::array::PrimitiveArray;
-use arrow2::{self, array::Array};
 
 use common_error::DaftResult;
 

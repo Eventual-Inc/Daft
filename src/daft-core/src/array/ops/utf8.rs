@@ -8,7 +8,7 @@ use crate::{
     },
     DataType, Series,
 };
-use arrow2::{self, array::Array};
+use arrow2::array::Array;
 
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
