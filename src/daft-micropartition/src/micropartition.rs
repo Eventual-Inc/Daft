@@ -864,8 +864,12 @@ pub(crate) fn read_parquet_into_micropartition(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
-    if let Some(so) = start_offset && so > 0 {
-        return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
+    if let Some(so) = start_offset
+        && so > 0
+    {
+        return Err(common_error::DaftError::ValueError(
+            "Micropartition Parquet Reader does not support non-zero start offsets".to_string(),
+        ));
     }
 
     // Run the required I/O to retrieve all the Parquet FileMetaData

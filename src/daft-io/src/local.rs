@@ -16,7 +16,6 @@ use futures::TryStreamExt;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use url::ParseError;
 
 /// NOTE: We hardcode this even for Windows
 ///
@@ -60,14 +59,8 @@ enum Error {
     #[snafu(display("Unexpected symlink when processing directory {}: {}", path, source))]
     UnexpectedSymlink { path: String, source: DaftError },
 
-    #[snafu(display("Unable to parse URL \"{}\"", url.to_string_lossy()))]
-    InvalidUrl { url: PathBuf, source: ParseError },
-
     #[snafu(display("Unable to convert URL \"{}\" to local file path", path))]
     InvalidFilePath { path: String },
-
-    #[snafu(display("Attempted to Read Directory as File {}", path))]
-    IsADirectory { path: String },
 }
 
 impl From<Error> for super::Error {
@@ -101,10 +94,6 @@ impl From<Error> for super::Error {
                 }
             }
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
-            InvalidUrl { url, source } => super::Error::InvalidUrl {
-                path: url.to_string_lossy().into_owned(),
-                source,
-            },
             _ => super::Error::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
@@ -383,7 +372,7 @@ mod tests {
         assert_eq!(try_all_bytes, bytes);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 0..10, None)
+            .get(&parquet_file_path, Some(0..10), None)
             .await?
             .bytes()
             .await?;
@@ -391,7 +380,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &bytes[..10]);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 10..100, None)
+            .get(&parquet_file_path, Some(10..100), None)
             .await?
             .bytes()
             .await?;
@@ -399,9 +388,9 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &bytes[10..100]);
 
         let last_bytes = client
-            .get_range(
+            .get(
                 &parquet_file_path,
-                (bytes.len() - 10)..(bytes.len() + 10),
+                Some((bytes.len() - 10)..(bytes.len() + 10)),
                 None,
             )
             .await?

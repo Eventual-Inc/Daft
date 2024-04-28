@@ -40,7 +40,7 @@ impl Table {
                     if inputs.len() != 1 {
                         return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
                     }
-                    let expr = inputs.get(0).unwrap();
+                    let expr = inputs.first().unwrap();
                     let exploded_name = expr.name()?;
                     let evaluated = self.eval_expression(expr)?;
                     if !matches!(

@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
-use std::string::ToString;
 
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};

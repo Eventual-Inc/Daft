@@ -69,12 +69,6 @@ enum Error {
         source: SdkError<ListObjectsV2Error, Response>,
     },
 
-    #[snafu(display("Unable to query the region for {}: {}", path, source))]
-    UnableToQueryRegion {
-        path: String,
-        source: reqwest::Error,
-    },
-
     #[snafu(display("Unable missing header: {header} when performing request for: {path}"))]
     MissingHeader { path: String, header: String },
 
@@ -97,9 +91,6 @@ enum Error {
 
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
-
-    #[snafu(display("Unable to create http client. {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
 
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
@@ -177,10 +168,6 @@ impl From<Error> for super::Error {
             }
             NotAFile { path } => super::Error::NotAFile { path },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
-                store: SourceType::S3,
-                source: source.into(),
-            },
-            UnableToCreateClient { source } => super::Error::UnableToCreateClient {
                 store: SourceType::S3,
                 source: source.into(),
             },
@@ -1045,7 +1032,7 @@ mod tests {
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10, None)
+            .get(parquet_file_path, Some(0..10), None)
             .await?
             .bytes()
             .await?;
@@ -1053,7 +1040,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100, None)
+            .get(parquet_file_path, Some(10..100), None)
             .await?
             .bytes()
             .await?;
@@ -1061,9 +1048,9 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
 
         let last_bytes = client
-            .get_range(
+            .get(
                 parquet_file_path,
-                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
                 None,
             )
             .await?

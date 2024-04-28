@@ -1,4 +1,4 @@
-use crate::array::{FixedSizeListArray, ListArray, StructArray};
+use crate::array::{ListArray, StructArray};
 use crate::datatypes::logical::{
     DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray,
 };

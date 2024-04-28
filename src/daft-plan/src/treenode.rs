@@ -4,10 +4,6 @@ use crate::{physical_plan::PhysicalPlan, LogicalPlan};
 use common_error::DaftResult;
 use common_treenode::DynTreeNode;
 
-trait HasChildren {}
-impl HasChildren for LogicalPlan {}
-impl HasChildren for PhysicalPlan {}
-
 impl DynTreeNode for LogicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {
         self.children()

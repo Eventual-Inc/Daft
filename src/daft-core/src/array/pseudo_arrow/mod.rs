@@ -206,7 +206,6 @@ use arrow2::{
     buffer::Buffer,
     datatypes::DataType,
 };
-use std::marker::{Send, Sync};
 
 use common_error::{DaftError, DaftResult};
 

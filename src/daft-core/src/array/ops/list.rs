@@ -12,8 +12,6 @@ use crate::{CountMode, DataType};
 
 use crate::series::Series;
 
-use arrow2;
-
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;

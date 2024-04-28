@@ -228,8 +228,7 @@ async fn read_json_single_into_table(
             .unwrap_or(NonZeroUsize::new(2).unwrap())
             .checked_mul(2.try_into().unwrap())
             .unwrap()
-            .try_into()
-            .unwrap()
+            .into()
     });
     let tables = table_stream
         // Limit the number of chunks we have in flight at any given time.
@@ -274,7 +273,9 @@ async fn read_json_single_into_table(
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
-    if let Some(limit) = limit && concated_table.len() > limit {
+    if let Some(limit) = limit
+        && concated_table.len() > limit
+    {
         // apply head in case that last chunk went over limit
         concated_table.head(limit)
     } else {

@@ -8,7 +8,7 @@ where
 {
     pub fn from_iter(
         name: &str,
-        iter: impl Iterator<Item = Option<T::Native>> + arrow2::trusted_len::TrustedLen,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<T::Native>>,
     ) -> Self {
         let arrow_array =
             Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_iter(iter));
@@ -19,7 +19,7 @@ where
 impl Utf8Array {
     pub fn from_iter<S: AsRef<str>>(
         name: &str,
-        iter: impl Iterator<Item = Option<S>> + arrow2::trusted_len::TrustedLen,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(iter));
         DataArray::new(Field::new(name, crate::DataType::Utf8).into(), arrow_array).unwrap()
@@ -29,7 +29,7 @@ impl Utf8Array {
 impl BinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
-        iter: impl Iterator<Item = Option<S>> + arrow2::trusted_len::TrustedLen,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
             iter,
@@ -45,7 +45,7 @@ impl BinaryArray {
 impl BooleanArray {
     pub fn from_iter(
         name: &str,
-        iter: impl Iterator<Item = Option<bool>> + arrow2::trusted_len::TrustedLen,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<bool>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(iter));
         DataArray::new(
