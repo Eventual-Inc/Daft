@@ -444,34 +444,34 @@ impl Expr {
             // no children
             Column(..) | Literal(..) => self.clone(),
             // 1 child
-            Not(..) => Not(children.get(0).expect("Should have 1 child").clone()),
+            Not(..) => Not(children.first().expect("Should have 1 child").clone()),
             Alias(.., name) => Alias(
-                children.get(0).expect("Should have 1 child").clone(),
+                children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
-            IsNull(..) => IsNull(children.get(0).expect("Should have 1 child").clone()),
-            NotNull(..) => NotNull(children.get(0).expect("Should have 1 child").clone()),
+            IsNull(..) => IsNull(children.first().expect("Should have 1 child").clone()),
+            NotNull(..) => NotNull(children.first().expect("Should have 1 child").clone()),
             Cast(.., dtype) => Cast(
-                children.get(0).expect("Should have 1 child").clone(),
+                children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
             ),
             // 2 children
             BinaryOp { op, .. } => BinaryOp {
                 op: *op,
-                left: children.get(0).expect("Should have 1 child").clone(),
+                left: children.first().expect("Should have 1 child").clone(),
                 right: children.get(1).expect("Should have 2 child").clone(),
             },
             IsIn(..) => IsIn(
-                children.get(0).expect("Should have 1 child").clone(),
+                children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
             FillNull(..) => FillNull(
-                children.get(0).expect("Should have 1 child").clone(),
+                children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
             // ternary
             IfElse { .. } => IfElse {
-                if_true: children.get(0).expect("Should have 1 child").clone(),
+                if_true: children.first().expect("Should have 1 child").clone(),
                 if_false: children.get(1).expect("Should have 2 child").clone(),
                 predicate: children.get(2).expect("Should have 3 child").clone(),
             },
@@ -835,7 +835,6 @@ impl Operator {
 mod tests {
 
     use super::*;
-    use crate::lit;
     #[test]
     fn check_comparison_type() -> DaftResult<()> {
         let x = lit(10.);

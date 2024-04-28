@@ -29,6 +29,7 @@ mod json;
 mod len;
 mod list;
 mod list_agg;
+mod log;
 mod mean;
 mod null;
 mod pairwise;

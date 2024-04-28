@@ -1,11 +1,9 @@
-use arrow2;
-
 use super::DaftSumAggable;
 
 use super::as_arrow::AsArrow;
 
 use crate::array::ops::GroupIndices;
-use crate::{array::DataArray, datatypes::*};
+use crate::datatypes::*;
 
 use common_error::DaftResult;
 

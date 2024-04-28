@@ -106,17 +106,22 @@ impl Series {
         let indices = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
-                    Box::new(PrimitiveArray::new_null(arrow2::datatypes::DataType::UInt64, groups.len()))
+                    Box::new(PrimitiveArray::new_null(
+                        arrow2::datatypes::DataType::UInt64,
+                        groups.len(),
+                    ))
                 } else if ignore_nulls && let Some(validity) = self.validity() {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| {
-                        g.iter().find(|i| validity.get_bit(**i as usize)).copied()
-                    })))
+                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
+                        |g| g.iter().find(|i| validity.get_bit(**i as usize)).copied(),
+                    )))
                 } else {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().cloned())))
+                    Box::new(PrimitiveArray::from_trusted_len_iter(
+                        groups.iter().map(|g| g.first().cloned()),
+                    ))
                 }
-            },
+            }
             None => {
-                let idx = if self.data_type().is_null() || self.is_empty(){
+                let idx = if self.data_type().is_null() || self.is_empty() {
                     None
                 } else if ignore_nulls && let Some(validity) = self.validity() {
                     validity.iter().position(|v| v).map(|i| i as u64)

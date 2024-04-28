@@ -274,7 +274,10 @@ pub mod pylib {
             partition_values: Option<PyTable>,
             stats: Option<PyTable>,
         ) -> PyResult<Option<Self>> {
-            if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
+            if let Some(ref pvalues) = partition_values
+                && let Some(Some(ref partition_filters)) =
+                    pushdowns.as_ref().map(|p| &p.0.partition_filters)
+            {
                 let table = &pvalues.table;
                 let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);

@@ -78,7 +78,7 @@ pub fn infer_join_schema(
         }
     }
 
-    let zipped_names: Vec<_> = left_names.zip(right_names).map(|(l, r)| (l, r)).collect();
+    let zipped_names: Vec<_> = left_names.zip(right_names).collect();
     let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
 
     // Then Add Right Table non-join-key columns

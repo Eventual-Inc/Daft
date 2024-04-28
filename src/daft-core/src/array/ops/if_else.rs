@@ -128,7 +128,7 @@ where
             other.len(),
         )?
         .downcast::<DataArray<T>>()
-        .map(|arr| arr.clone())
+        .cloned()
     }
 }
 

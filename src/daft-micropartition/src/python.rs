@@ -17,7 +17,7 @@ use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
 use daft_stats::TableStatistics;
 use daft_table::python::PyTable;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, Python};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 
 use crate::micropartition::{MicroPartition, TableState};
 

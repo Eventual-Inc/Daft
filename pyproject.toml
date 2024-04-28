@@ -5,8 +5,8 @@ requires = ["maturin>=1.2.0,<1.3.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 6.0.1",
-  "fsspec[http]",
+  "pyarrow >= 7.0.0",
+  "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.10'",
   "pickle5 >= 0.0.12; python_version < '3.8'"
@@ -33,7 +33,8 @@ numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  "ray[data, client]>=2.0.0",
+  'ray[data, client]>=2.0.0 ; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]

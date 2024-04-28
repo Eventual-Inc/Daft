@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
+    blob::operations::GetBlobResponse,
     container::{operations::BlobItem, Container},
     prelude::*,
 };
@@ -33,18 +34,8 @@ enum Error {
     // Generic client errors.
     #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
     StorageAccountNotSet,
-    #[snafu(display("Unable to create Azure Client {}", source))]
-    UnableToCreateClient { source: azure_storage::Error },
     #[snafu(display("Azure client generic error: {}", source))]
     AzureGeneric { source: azure_storage::Error },
-
-    // Parameterized client errors.
-    #[snafu(display("Unable to connect to {}: {}", path, source))]
-    UnableToConnect {
-        path: String,
-        source: reqwest::Error,
-    },
-
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
@@ -66,11 +57,6 @@ enum Error {
     #[snafu(display("Not Found: \"{}\"", path))]
     NotFound { path: String },
 
-    #[snafu(display("Unable to access container: {}: {}", path, source))]
-    ContainerAccess {
-        path: String,
-        source: azure_storage::Error,
-    },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 }
@@ -448,7 +434,7 @@ impl ObjectSource for AzureBlobSource {
 
         let owned_string = uri.to_string();
         let stream = blob_stream
-            .and_then(async move |v| v.data.collect().await)
+            .and_then(async move |v: GetBlobResponse| v.data.collect().await)
             .map_err(move |e| {
                 UnableToReadBytesSnafu::<String> {
                     path: owned_string.clone(),

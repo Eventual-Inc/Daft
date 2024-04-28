@@ -25,6 +25,7 @@ pub mod is_in;
 pub mod json;
 pub mod len;
 pub mod list;
+pub mod log;
 pub mod not;
 pub mod null;
 pub mod partitioning;

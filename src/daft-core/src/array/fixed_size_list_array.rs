@@ -29,7 +29,9 @@ impl FixedSizeListArray {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::FixedSizeList(child_dtype, size) => {
-                if let Some(validity) = validity.as_ref() && (validity.len() * size) != flat_child.len() {
+                if let Some(validity) = validity.as_ref()
+                    && (validity.len() * size) != flat_child.len()
+                {
                     panic!(
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity * size: {}",
                         flat_child.len(),
@@ -67,7 +69,7 @@ impl FixedSizeListArray {
             ));
         }
 
-        let first_array = arrays.get(0).unwrap();
+        let first_array = arrays.first().unwrap();
         let mut growable = <Self as GrowableArray>::make_growable(
             first_array.field.name.as_str(),
             &first_array.field.dtype,
@@ -154,12 +156,14 @@ impl FixedSizeListArray {
     }
 
     pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity && v.len() != self.len() {
+        if let Some(v) = &validity
+            && v.len() != self.len()
+        {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match FixedSizeListArray length, {} vs {}",
                 v.len(),
                 self.len()
-            )))
+            )));
         }
 
         Ok(Self::new(
@@ -193,7 +197,9 @@ impl Iterator for FixedSizeListArrayIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
-            if let Some(validity) = self.array.validity() && !validity.get_bit(self.idx) {
+            if let Some(validity) = self.array.validity()
+                && !validity.get_bit(self.idx)
+            {
                 self.idx += 1;
                 Some(None)
             } else {

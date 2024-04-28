@@ -101,14 +101,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult>;
-    async fn get_range(
-        &self,
-        uri: &str,
-        range: Range<usize>,
-        io_stats: Option<IOStatsRef>,
-    ) -> super::Result<GetResult> {
-        self.get(uri, Some(range), io_stats).await
-    }
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize>;
 
     async fn glob(
@@ -146,7 +139,7 @@ pub(crate) trait ObjectSource: Sync + Send {
             let mut continuation_token = lsr.continuation_token.clone();
             while continuation_token.is_some() {
                 let lsr = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await?;
-                continuation_token = lsr.continuation_token.clone();
+                continuation_token.clone_from(&lsr.continuation_token);
                 for fm in lsr.files {
                     yield Ok(fm);
                 }

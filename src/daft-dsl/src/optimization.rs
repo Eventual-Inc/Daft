@@ -40,13 +40,17 @@ pub fn replace_columns_with_expressions(
     expr: ExprRef,
     replace_map: &HashMap<String, ExprRef>,
 ) -> ExprRef {
-    let transformed = expr.transform(&|e: ExprRef| {
-        if let Expr::Column(ref name) = e.as_ref() && let Some(tgt) = replace_map.get(name.as_ref()) {
+    let transformed = expr
+        .transform(&|e: ExprRef| {
+            if let Expr::Column(ref name) = e.as_ref()
+                && let Some(tgt) = replace_map.get(name.as_ref())
+            {
                 Ok(Transformed::yes(tgt.clone()))
             } else {
                 Ok(Transformed::no(e))
             }
-    }).expect("Error occurred when rewriting column expressions");
+        })
+        .expect("Error occurred when rewriting column expressions");
     transformed.data
 }
 

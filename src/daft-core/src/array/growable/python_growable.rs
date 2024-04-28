@@ -1,7 +1,5 @@
 use std::{mem::swap, sync::Arc};
 
-use pyo3;
-
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{Field, PythonArray, PythonType},

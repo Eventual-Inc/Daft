@@ -232,7 +232,36 @@ impl SeriesBinaryOps for ArrayWrapper<StructArray> {}
 impl SeriesBinaryOps for ArrayWrapper<MapArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ExtensionArray> {}
 impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
-impl SeriesBinaryOps for ArrayWrapper<DateArray> {}
+impl SeriesBinaryOps for ArrayWrapper<DateArray> {
+    fn add(&self, rhs: &Series) -> DaftResult<Series> {
+        use DataType::*;
+        let output_type = (self.data_type() + rhs.data_type())?;
+        match rhs.data_type() {
+            Duration(..) => {
+                let days = rhs.duration()?.cast_to_days()?;
+                let physical_result = self.0.physical.add(&days)?;
+                physical_result.cast(&output_type)
+            }
+            _ => binary_op_unimplemented!(self, "+", rhs, output_type),
+        }
+    }
+    fn sub(&self, rhs: &Series) -> DaftResult<Series> {
+        use DataType::*;
+        let output_type = (self.data_type() - rhs.data_type())?;
+        match rhs.data_type() {
+            Date => {
+                let physical_result = self.0.physical.sub(&rhs.date()?.physical)?;
+                physical_result.cast(&output_type)
+            }
+            Duration(..) => {
+                let days = rhs.duration()?.cast_to_days()?;
+                let physical_result = self.0.physical.sub(&days)?;
+                physical_result.cast(&output_type)
+            }
+            _ => binary_op_unimplemented!(self, "-", rhs, output_type),
+        }
+    }
+}
 impl SeriesBinaryOps for ArrayWrapper<TimeArray> {}
 impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
@@ -241,42 +270,60 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
         let lhs = self.0.clone().into_series();
         match rhs.data_type() {
             Timestamp(..) => {
-                let lhs = lhs.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
+                let physical_result = self.0.physical.add(&rhs.timestamp()?.physical)?;
+                physical_result.cast(&output_type)
+            }
+            Duration(..) => {
+                let physical_result = self.0.physical.add(&rhs.duration()?.physical)?;
+                physical_result.cast(&output_type)
+            }
+            Date => {
+                let days = self.0.cast_to_days()?;
+                let physical_result = days.add(&rhs.date()?.physical)?;
                 physical_result.cast(&output_type)
             }
             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
         }
     }
+
+    fn sub(&self, rhs: &Series) -> DaftResult<Series> {
+        use DataType::*;
+        let output_type = (self.data_type() - rhs.data_type())?;
+        match rhs.data_type() {
+            Duration(..) => {
+                let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;
+                physical_result.cast(&output_type)
+            }
+            _ => binary_op_unimplemented!(self, "-", rhs, output_type),
+        }
+    }
 }
+
 impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
         let output_type = (self.data_type() + rhs.data_type())?;
-        let lhs = self.0.clone().into_series();
         match rhs.data_type() {
             Duration(..) => {
-                let lhs = lhs.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
+                let physical_result = self.0.physical.add(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
+            _ => binary_op_unimplemented!(self, "+", rhs, output_type),
         }
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
         let output_type = (self.data_type() - rhs.data_type())?;
-        let lhs = self.0.clone().into_series();
         match rhs.data_type() {
             Duration(..) => {
-                let lhs = lhs.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.sub(rhs)?;
+                let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            _ => binary_op_unimplemented!(lhs, "-", rhs, output_type),
+            Timestamp(..) => {
+                let physical_result = self.0.physical.sub(&rhs.timestamp()?.physical)?;
+                physical_result.cast(&output_type)
+            }
+            _ => binary_op_unimplemented!(self, "-", rhs, output_type),
         }
     }
 }
