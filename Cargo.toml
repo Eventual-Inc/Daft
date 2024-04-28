@@ -47,7 +47,7 @@ publish = false
 version = "0.2.0-dev0"
 
 [patch.crates-io]
-arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "632245989dc00a708f426ccface728d2d701d990"}
+arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "4a893a1d05e643273c984c6ccc21f4904d6e9e3b"}
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
 
 [profile.dev]
@@ -125,7 +125,7 @@ url = "2.4.0"
 # branch = "daft-fork"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "632245989dc00a708f426ccface728d2d701d990"
+rev = "4a893a1d05e643273c984c6ccc21f4904d6e9e3b"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
