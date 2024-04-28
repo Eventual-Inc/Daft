@@ -112,7 +112,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.4"
-source = "git+https://github.com/Eventual-Inc/arrow2?rev=c0764b00cc05126c80c7ce17ebd7a95d87f815c1#c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990#632245989dc00a708f426ccface728d2d701d990"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -142,6 +142,26 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+]
+
+[[package]]
+name = "arrow2"
+version = "0.17.4"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=c0764b00cc05126c80c7ce17ebd7a95d87f815c1#c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
+dependencies = [
+ "ahash",
+ "bytemuck",
+ "chrono",
+ "dyn-clone",
+ "either",
+ "ethnum",
+ "foreign_vec",
+ "getrandom 0.2.10",
+ "hash_hasher",
+ "hashbrown 0.14.3",
+ "num-traits",
+ "rustc_version",
+ "simdutf8",
 ]
 
 [[package]]
@@ -945,7 +965,7 @@ dependencies = [
 name = "common-error"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "pyo3",
  "regex",
  "serde_json",
@@ -1179,7 +1199,7 @@ dependencies = [
 name = "daft-core"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "base64 0.22.0",
  "bincode",
  "chrono",
@@ -1216,7 +1236,7 @@ dependencies = [
 name = "daft-csv"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "async-compat",
  "async-compression",
  "async-stream",
@@ -1252,7 +1272,7 @@ dependencies = [
 name = "daft-decoding"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "async-compression",
  "atoi_simd",
  "chrono",
@@ -1329,7 +1349,7 @@ dependencies = [
 name = "daft-json"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "async-compat",
  "async-compression",
  "async-stream",
@@ -1367,7 +1387,7 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "bincode",
  "common-error",
  "daft-core",
@@ -1393,7 +1413,7 @@ dependencies = [
 name = "daft-parquet"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "async-compat",
  "async-stream",
  "bytes",
@@ -1422,7 +1442,7 @@ dependencies = [
 name = "daft-plan"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "bincode",
  "common-daft-config",
  "common-error",
@@ -1473,7 +1493,7 @@ dependencies = [
 name = "daft-sketch"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "lazy_static",
  "serde_arrow",
  "sketches-ddsketch",
@@ -1498,7 +1518,7 @@ dependencies = [
 name = "daft-table"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=632245989dc00a708f426ccface728d2d701d990)",
  "comfy-table",
  "common-error",
  "daft-core",
@@ -3475,7 +3495,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de32260963d91270b8bec1fbc685474e753410a00c102d6e0aa6188c9a6f92f"
 dependencies = [
- "arrow2",
+ "arrow2 0.17.4 (git+https://github.com/Eventual-Inc/arrow2?rev=c0764b00cc05126c80c7ce17ebd7a95d87f815c1)",
  "bytemuck",
  "chrono",
  "half",

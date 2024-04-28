@@ -125,7 +125,7 @@ url = "2.4.0"
 # branch = "daft-fork"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
+rev = "632245989dc00a708f426ccface728d2d701d990"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
