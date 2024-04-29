@@ -1,35 +1,21 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::py_object_serde;
+use crate::py_object_serde::{deserialize_py_object, serialize_py_object};
 
 /// A Python function that produces a ScanTask
-#[derive(Debug, Clone)]
-pub struct PythonScanTaskFactoryFunction(pub PyObject);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonScanTaskFactoryFunction(
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub PyObject,
+);
 
 impl PartialEq for PythonScanTaskFactoryFunction {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
-    }
-}
-
-impl Serialize for PythonScanTaskFactoryFunction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        py_object_serde::serialize_py_object(&self.0, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PythonScanTaskFactoryFunction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(PythonScanTaskFactoryFunction(
-            py_object_serde::deserialize_py_object(deserializer)?,
-        ))
     }
 }
 
