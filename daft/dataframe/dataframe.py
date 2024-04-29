@@ -1275,6 +1275,40 @@ class DataFrame:
         agg_fn: str,
         names: Optional[List[str]] = None,
     ) -> "DataFrame":
+        """Pivots a column of the DataFrame and performs an aggregation on the values.
+
+        .. NOTE::
+            You may wish to provide a list of distinct values to pivot on, which is more efficient as it avoids
+            a distinct operation. Without this list, Daft will perform a distinct operation on the pivot column to
+            determine the unique values to pivot on.
+
+        Example:
+            >>> df = daft.from_pydict(
+                    {"group": ["A", "A", "B", "B"], "pivot": [1, 1, 1, 2], "value": [1, 2, 3, 4]}
+                )
+            >>> df = df.pivot("group", "pivot", "value", "sum")
+            >>> df.collect()
+            ╭───────┬───────┬───────╮
+            │ group ┆ 2     ┆ 1     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Utf8  ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ A     ┆ None  ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ B     ┆ 4     ┆ 3     │
+            ╰───────┴───────┴───────╯
+
+        Args:
+            group_by (Union[str, Expression]): column to group by
+            pivot_col (Union[str, Expression]): column to pivot
+            value_col (Union[str, Expression]): column to aggregate
+            agg_fn (str): aggregation function to apply
+            names (Optional[List[str]]): names of the pivoted columns
+
+        Returns:
+            DataFrame: DataFrame with pivoted columns
+
+        """
         group_by, pivot_col, value_col = self.__column_input_to_expression([group_by, pivot_col, value_col])
         agg_expr = self._agg_tuple_to_expression((value_col, agg_fn))
         if names is None:
