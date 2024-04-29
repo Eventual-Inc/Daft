@@ -6,21 +6,23 @@ import lance
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyMicroPartition, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, Pushdowns, PyTable, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+from daft.table import Table
 
 if TYPE_CHECKING:
     pass
 
 
-def _lancedb_factory_function(fragment: lance.LanceFragment, pushdowns: Pushdowns) -> Callable[[], PyMicroPartition]:
-    def f() -> PyMicroPartition:
-        batches = fragment.to_batches(columns=pushdowns.columns)
-        return MicroPartition.from_arrow_record_batches(batches, fragment.schema)._micropartition
+def _lancedb_factory_function(fragment: lance.LanceFragment, pushdowns: Pushdowns) -> Callable[[], List[PyTable]]:
+    def f() -> List[PyTable]:
+        return [
+            Table.from_arrow_record_batches([rb], fragment.schema)._table
+            for rb in fragment.to_batches(columns=pushdowns.columns)
+        ]
 
     return f
 

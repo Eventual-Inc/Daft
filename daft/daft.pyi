@@ -637,7 +637,7 @@ class ScanTask:
         ...
     @staticmethod
     def python_factory_func_scan_task(
-        func: Callable[[], PyMicroPartition],
+        func: Callable[[], list[PyTable]],
         descriptor: str,
         schema: PySchema,
         num_rows: int | None,

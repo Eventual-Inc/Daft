@@ -60,7 +60,7 @@ pub mod pylib {
 
     use crate::anonymous::AnonymousScanOperator;
     use crate::file_format::FileFormatConfig;
-    use crate::storage_config::NativeStorageConfig;
+    use crate::storage_config::PythonStorageConfig;
     use crate::DataFileSource;
     use crate::PartitionField;
     use crate::Pushdowns;
@@ -423,8 +423,8 @@ pub mod pylib {
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here
-                Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
-                    NativeStorageConfig::new(true, None),
+                Arc::new(crate::storage_config::StorageConfig::Python(Arc::new(
+                    PythonStorageConfig { io_config: None },
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
