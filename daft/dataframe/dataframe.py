@@ -1117,7 +1117,6 @@ class DataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ z    ┆ 5     ┆ 6     │
             ╰──────┴───────┴───────╯
-
             (Showing first 3 of 3 rows)
             >>> df = df.unpivot("id", ["a", (col("a") + col("b")).alias("a_plus_b")])
             >>> df.show()
@@ -1138,7 +1137,6 @@ class DataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ z    ┆ a_plus_b ┆ 11    │
             ╰──────┴──────────┴───────╯
-
             (Showing first 6 of 6 rows)
 
         Args:
@@ -1149,12 +1147,30 @@ class DataFrame:
 
         Returns:
             DataFrame: Unpivoted DataFrame
+
+        See also:
+            `melt`
         """
         ids_exprs = self._column_inputs_to_expressions(ids)
         values_exprs = self._column_inputs_to_expressions(values)
 
         builder = self._builder.unpivot(ids_exprs, values_exprs, variable_name, value_name)
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def melt(
+        self,
+        ids: ManyColumnsInputType,
+        values: ManyColumnsInputType = [],
+        variable_name: str = "variable",
+        value_name: str = "value",
+    ) -> "DataFrame":
+        """Alias for unpivot
+
+        See also:
+            `unpivot`
+        """
+        return self.unpivot(ids, values, variable_name, value_name)
 
     def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
         builder = self._builder.agg(to_agg, list(group_by) if group_by is not None else None)
