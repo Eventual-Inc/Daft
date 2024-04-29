@@ -17,10 +17,21 @@ if TYPE_CHECKING:
 
 
 def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdowns) -> Callable[[], List[PyTable]]:
+    required_columns: Optional[List[str]]
+    if pushdowns.columns is None:
+        required_columns = None
+    else:
+        filter_required_column_names = pushdowns.filter_required_column_names()
+        required_columns = (
+            pushdowns.columns
+            if filter_required_column_names is None
+            else pushdowns.columns + filter_required_column_names
+        )
+
     def f() -> List[PyTable]:
         return [
-            Table.from_arrow_record_batches([rb], fragment.schema)._table
-            for rb in fragment.to_batches(columns=pushdowns.columns)
+            Table.from_arrow_record_batches([rb], rb.schema)._table
+            for rb in fragment.to_batches(columns=required_columns)
         ]
 
     return f

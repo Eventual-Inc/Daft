@@ -27,3 +27,16 @@ def lance_dataset_path(tmp_path_factory):
 def test_lancedb_read(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path)
     assert df.to_pydict() == data
+
+
+def test_lancedb_read_column_selection(lance_dataset_path):
+    df = daft.read_lance(lance_dataset_path)
+    df = df.select("vector")
+    assert df.to_pydict() == {"vector": data["vector"]}
+
+
+def test_lancedb_read_filter(lance_dataset_path):
+    df = daft.read_lance(lance_dataset_path)
+    df = df.where(df["lat"] > 45)
+    df = df.select("vector")
+    assert df.to_pydict() == {"vector": data["vector"][:1]}

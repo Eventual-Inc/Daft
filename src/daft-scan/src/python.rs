@@ -561,6 +561,13 @@ pub mod pylib {
         pub fn columns(&self) -> Option<Vec<String>> {
             self.0.columns.as_deref().cloned()
         }
+
+        pub fn filter_required_column_names(&self) -> Option<Vec<String>> {
+            self.0
+                .filters
+                .as_ref()
+                .map(daft_dsl::optimization::get_required_columns)
+        }
     }
 }
 

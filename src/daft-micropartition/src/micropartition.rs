@@ -349,6 +349,7 @@ fn materialize_scan_task(
                 }
                 FileFormatConfig::PythonFunction => {
                     let tables = scan_task.sources.iter().map(|source| {
+                        // Materialize the Tables by calling the Python function
                         match source {
                             DataFileSource::PythonFactoryFunction {
                                 func,
@@ -362,7 +363,16 @@ fn materialize_scan_task(
                             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
                         }
                     }).flat_map(|result| match result {
-                        Ok(pytables) => pytables.map(Ok).collect::<Vec<_>>(),
+                        // Apply filters and limits to each Table
+                        Ok(pytables) => pytables.map(|mut tbl| {
+                            if let Some(filters) = scan_task.pushdowns.filters.as_ref() {
+                                tbl = tbl.filter(&[filters.clone()])?;
+                            }
+                            if let Some(limit) = scan_task.pushdowns.limit {
+                                tbl = tbl.slice(0, limit)?;
+                            }
+                            Ok(tbl)
+                        }).collect::<Vec<_>>(),
                         Err(e) => vec![Err(e)],
                     });
 

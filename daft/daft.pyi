@@ -713,6 +713,10 @@ class Pushdowns:
     partition_filters: PyExpr | None
     limit: int | None
 
+    def filter_required_column_names(self) -> list[str]:
+        """List of field names that are required by the filter predicate."""
+        ...
+
 def read_parquet(
     uri: str,
     columns: list[str] | None = None,
