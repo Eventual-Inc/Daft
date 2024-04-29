@@ -1,5 +1,7 @@
 use pyo3::create_exception;
 
+use pyo3::prelude::*;
+
 use crate::DaftError;
 
 impl From<pyo3::PyErr> for DaftError {
@@ -27,4 +29,10 @@ impl std::convert::From<DaftError> for pyo3::PyErr {
             _ => DaftCoreException::new_err(err.to_string()),
         }
     }
+}
+
+#[cfg(feature = "python")]
+pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add("DaftCoreException", py.get_type::<DaftCoreException>())?;
+    Ok(())
 }

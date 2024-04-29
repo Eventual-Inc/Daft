@@ -48,7 +48,9 @@ pub mod pylib {
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         pyo3_log::init();
-
+        common_daft_config::register_modules(_py, m)?;
+        common_system_info::register_modules(_py, m)?;
+        common_error::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;
@@ -60,9 +62,6 @@ pub mod pylib {
         daft_plan::register_modules(_py, m)?;
         daft_micropartition::register_modules(_py, m)?;
         daft_scan::register_modules(_py, m)?;
-        common_daft_config::register_modules(_py, m)?;
-        common_system_info::register_modules(_py, m)?;
-
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         Ok(())

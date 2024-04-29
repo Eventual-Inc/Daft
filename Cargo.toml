@@ -1,5 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
+common-error = {path = "src/common/error", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
