@@ -731,6 +731,12 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and substr._series is not None
         return Series._from_pyseries(self._series.utf8_find(substr._series))
 
+    def repeat(self, n: Series) -> Series:
+        if not isinstance(n, Series):
+            raise ValueError(f"expected another Series but got {type(n)}")
+        assert self._series is not None and n._series is not None
+        return Series._from_pyseries(self._series.utf8_repeat(n._series))
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:

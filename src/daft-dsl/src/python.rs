@@ -560,6 +560,11 @@ impl PyExpr {
         Ok(find(self.into(), substr.into()).into())
     }
 
+    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::repeat;
+        Ok(repeat(self.into(), n.into()).into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(self.into(), raise_error_on_failure).into())

@@ -416,6 +416,10 @@ impl PySeries {
         Ok(self.series.utf8_find(&substr.series)?.into())
     }
 
+    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_repeat(&n.series)?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

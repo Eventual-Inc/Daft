@@ -9,6 +9,7 @@ mod length;
 mod lower;
 mod lstrip;
 mod match_;
+mod repeat;
 mod replace;
 mod reverse;
 mod right;
@@ -27,6 +28,7 @@ use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
 use lstrip::LstripEvaluator;
+use repeat::RepeatEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
@@ -60,6 +62,7 @@ pub enum Utf8Expr {
     Left,
     Right,
     Find,
+    Repeat,
 }
 
 impl Utf8Expr {
@@ -85,6 +88,7 @@ impl Utf8Expr {
             Left => &LeftEvaluator {},
             Right => &RightEvaluator {},
             Find => &FindEvaluator {},
+            Repeat => &RepeatEvaluator {},
         }
     }
 }
@@ -229,6 +233,14 @@ pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Find),
         inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn repeat(data: ExprRef, count: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Repeat),
+        inputs: vec![data, count],
     }
     .into()
 }
