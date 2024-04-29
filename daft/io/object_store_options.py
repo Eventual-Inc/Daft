@@ -2,24 +2,17 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from daft.daft import StorageConfig
 from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
-def storage_config_to_storage_options(storage_config: StorageConfig, table_uri: str) -> dict[str, str] | None:
+def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
     """
-    Converts the Daft storage config to a storage options dict that the object_store crate
+    Converts the Daft IOConfig to a storage options dict that the object_store crate
     understands. The object_store crate is used by many Rust-backed Python libraries such as
     delta-rs and lance.
 
     This function takes as input the table_uri, which it uses to determine the backend to be used.
     """
-    config = storage_config.config
-    io_config = config.io_config
-    return _io_config_to_storage_options(io_config, table_uri)
-
-
-def _io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
     scheme = urlparse(table_uri).scheme
     if scheme == "s3" or scheme == "s3a":
         return _s3_config_to_storage_options(io_config.s3)

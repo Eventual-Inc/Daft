@@ -14,7 +14,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.io.object_store_options import storage_config_to_storage_options
+from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class DeltaLakeScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
-        storage_options = storage_config_to_storage_options(storage_config, table_uri)
+        storage_options = io_config_to_storage_options(storage_config.config.io_config, table_uri)
         self._table = DeltaTable(table_uri, storage_options=storage_options)
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())
