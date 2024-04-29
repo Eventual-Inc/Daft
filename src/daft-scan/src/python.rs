@@ -59,7 +59,6 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
-    use crate::file_format::DatabaseSourceConfig;
     use crate::file_format::FileFormatConfig;
     use crate::storage_config::NativeStorageConfig;
     use crate::DataFileSource;
@@ -420,12 +419,7 @@ pub mod pylib {
 
             let scan_task = ScanTask::new(
                 vec![data_source],
-                // HACK: No FileFormatConfig available, but this is a required arg so we just put in a placeholder for now
-                // until ScanTask can be refactored to not require FileFormats
-                Arc::new(FileFormatConfig::Database(DatabaseSourceConfig {
-                    sql: "".to_string(),
-                    conn: py.None(),
-                })),
+                Arc::new(FileFormatConfig::PythonFunction),
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here

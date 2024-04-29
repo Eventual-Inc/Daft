@@ -237,6 +237,13 @@ fn materialize_scan_task(
                     ))
                     .context(DaftCoreComputeSnafu);
                 }
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for PythonFunction file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
             }
         }
         #[cfg(feature = "python")]
@@ -339,6 +346,29 @@ fn materialize_scan_task(
                         .context(PyIOSnafu)?;
                         Ok(vec![table])
                     })?
+                }
+                FileFormatConfig::PythonFunction => {
+                    let tables = scan_task.sources.iter().map(|source| {
+                        match source {
+                            DataFileSource::PythonFactoryFunction {
+                                func,
+                                ..
+                            } => {
+                                Python::with_gil(|py| {
+                                    let pytables = crate::python::py_func_into_tables(py, &func.0);
+                                    pytables.map(|pytable_vec| pytable_vec.into_iter().map(|t| t.table))
+                                })
+                            },
+                            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+                        }
+                    }).flat_map(|result| match result {
+                        Ok(pytables) => pytables.map(Ok).collect::<Vec<_>>(),
+                        Err(e) => vec![Err(e)],
+                    });
+
+                    tables
+                        .collect::<pyo3::PyResult<Vec<Table>>>()
+                        .context(PyIOSnafu)?
                 }
             }
         }

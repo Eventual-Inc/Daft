@@ -826,6 +826,10 @@ pub(crate) fn read_sql_into_py_table(
         .extract()
 }
 
+pub(crate) fn py_func_into_tables(py: Python, func: &PyObject) -> PyResult<Vec<PyTable>> {
+    func.call0(py)?.extract::<Vec<PyTable>>(py)
+}
+
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
         PyMicroPartition {

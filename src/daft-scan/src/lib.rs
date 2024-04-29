@@ -508,6 +508,8 @@ impl ScanTask {
                         }
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 0.0,
+                        #[cfg(feature = "python")]
+                        FileFormatConfig::PythonFunction => 0.0,
                     };
 
                     // estimate number of rows from read schema
