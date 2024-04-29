@@ -122,7 +122,7 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Pivot(pivot) => {
-                let exprs = vec![
+                let exprs = [
                     pivot.group_by.clone(),
                     pivot.pivot_column.clone(),
                     pivot.value_column.clone(),
