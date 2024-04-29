@@ -94,7 +94,14 @@ class LanceDBScanOperator(ScanOperator):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
             stats = None
-            num_rows = fragment.count_rows()
+
+            # NOTE: `fragment.count_rows()` should result in 1 IO call for the data file
+            # (1 fragment = 1 data file) and 1 more IO call for the deletion file (if present).
+            # This could potentially be expensive to perform serially if there are thousands of files.
+            # Given that num_rows isn't leveraged for much at the moment, and without statistics
+            # we will probably end up materializing the data anyways for any operations, we leave this
+            # as None.
+            num_rows = None
 
             yield ScanTask.python_factory_func_scan_task(
                 func=_lancedb_factory_function(fragment, pushdowns),
