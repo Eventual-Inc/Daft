@@ -1,4 +1,37 @@
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::py_object_serde;
+
+/// A Python function that produces a ScanTask
+#[derive(Debug, Clone)]
+pub struct PythonScanTaskFactoryFunction(pub PyObject);
+
+impl PartialEq for PythonScanTaskFactoryFunction {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
+    }
+}
+
+impl Serialize for PythonScanTaskFactoryFunction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        py_object_serde::serialize_py_object(&self.0, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PythonScanTaskFactoryFunction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(PythonScanTaskFactoryFunction(
+            py_object_serde::deserialize_py_object(deserializer)?,
+        ))
+    }
+}
 
 pub mod pylib {
     use common_error::DaftResult;
@@ -26,6 +59,9 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
+    use crate::file_format::DatabaseSourceConfig;
+    use crate::file_format::FileFormatConfig;
+    use crate::storage_config::NativeStorageConfig;
     use crate::DataFileSource;
     use crate::PartitionField;
     use crate::Pushdowns;
@@ -351,6 +387,51 @@ pub mod pylib {
                 file_format.into(),
                 schema.schema,
                 storage_config.into(),
+                pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+            );
+            Ok(PyScanTask(scan_task.into()))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        #[staticmethod]
+        pub fn python_factory_func_scan_task(
+            py: Python,
+            func: &PyAny,
+            descriptor: String,
+            schema: PySchema,
+            num_rows: Option<i64>,
+            size_bytes: Option<u64>,
+            pushdowns: Option<PyPushdowns>,
+            stats: Option<PyTable>,
+        ) -> PyResult<Self> {
+            let statistics = stats
+                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .transpose()?;
+            let data_source = DataFileSource::PythonFactoryFunction {
+                func: super::PythonScanTaskFactoryFunction(func.to_object(py)),
+                descriptor,
+                size_bytes,
+                metadata: num_rows.map(|num_rows| TableMetadata {
+                    length: num_rows as usize,
+                }),
+                statistics,
+                partition_spec: None,
+            };
+
+            let scan_task = ScanTask::new(
+                vec![data_source],
+                // HACK: No FileFormatConfig available, but this is a required arg so we just put in a placeholder for now
+                // until ScanTask can be refactored to not require FileFormats
+                Arc::new(FileFormatConfig::Database(DatabaseSourceConfig {
+                    sql: "".to_string(),
+                    conn: py.None(),
+                })),
+                schema.schema,
+                // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
+                // ScanTask creation, so we just put in a placeholder here
+                Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
+                    NativeStorageConfig::new(true, None),
+                ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
             Ok(PyScanTask(scan_task.into()))

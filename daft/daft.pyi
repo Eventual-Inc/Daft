@@ -635,6 +635,20 @@ class ScanTask:
         Create a SQL Scan Task
         """
         ...
+    @staticmethod
+    def python_factory_func_scan_task(
+        func: Callable[[], PyMicroPartition],
+        descriptor: str,
+        schema: PySchema,
+        num_rows: int | None,
+        size_bytes: int | None,
+        pushdowns: Pushdowns | None,
+        stats: PyTable | None,
+    ) -> ScanTask:
+        """
+        Create a Python factory function Scan Task
+        """
+        ...
 
 class ScanOperatorHandle:
     """
