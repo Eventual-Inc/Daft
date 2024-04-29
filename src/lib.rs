@@ -50,7 +50,6 @@ pub mod pylib {
         pyo3_log::init();
         common_daft_config::register_modules(_py, m)?;
         common_system_info::register_modules(_py, m)?;
-        common_error::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;

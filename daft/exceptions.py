@@ -1,3 +1,4 @@
-from daft.daft import DaftCoreException
+class DaftCoreException(ValueError):
+    """DaftCore Base Exception"""
 
-__all__ = ["DaftCoreException"]
+    pass

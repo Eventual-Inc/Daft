@@ -1,6 +1,4 @@
-use pyo3::create_exception;
-
-use pyo3::prelude::*;
+use pyo3::import_exception;
 
 use crate::DaftError;
 
@@ -10,12 +8,14 @@ impl From<pyo3::PyErr> for DaftError {
     }
 }
 
-create_exception!(
-    daft.daft,
-    DaftCoreException,
-    pyo3::exceptions::PyValueError,
-    "DaftCore Base Exception"
-);
+// create_exception!(
+//     daft.daft,
+//     DaftCoreException,
+//     pyo3::exceptions::PyValueError,
+//     "DaftCore Base Exception"
+// );
+
+import_exception!(daft.exceptions, DaftCoreException);
 
 impl std::convert::From<DaftError> for pyo3::PyErr {
     fn from(err: DaftError) -> pyo3::PyErr {
@@ -29,10 +29,4 @@ impl std::convert::From<DaftError> for pyo3::PyErr {
             _ => DaftCoreException::new_err(err.to_string()),
         }
     }
-}
-
-#[cfg(feature = "python")]
-pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add("DaftCoreException", py.get_type::<DaftCoreException>())?;
-    Ok(())
 }
