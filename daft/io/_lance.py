@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyTable, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, Pushdowns, PyTable, PythonStorageConfig, ScanOperatorHandle, ScanTask, StorageConfig
 from daft.dataframe import DataFrame
+from daft.io.object_store_options import storage_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
@@ -43,9 +44,9 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
     import lance
 
-    # TODO: Convert this to LanceDB-compatible storage options instead of defaulting to `None`
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = None
+    storage_config = StorageConfig.python(PythonStorageConfig(io_config))
+    storage_options = storage_config_to_storage_options(storage_config, url)
 
     ds = lance.dataset(url, storage_options=storage_options)
     iceberg_operator = LanceDBScanOperator(ds)
