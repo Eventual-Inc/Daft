@@ -1,6 +1,7 @@
 #![feature(let_chains)]
 #![feature(assert_matches)]
 #![feature(if_let_guard)]
+#![feature(iterator_try_reduce)]
 
 mod builder;
 mod display;

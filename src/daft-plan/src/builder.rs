@@ -275,6 +275,44 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn unpivot(
+        &self,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> DaftResult<Self> {
+        let values = if values.is_empty() {
+            let ids_set = HashSet::<_>::from_iter(ids.iter());
+
+            self.schema()
+                .fields
+                .iter()
+                .filter_map(|(name, _)| {
+                    let column = col(name.clone());
+
+                    if ids_set.contains(&column) {
+                        None
+                    } else {
+                        Some(column)
+                    }
+                })
+                .collect()
+        } else {
+            values
+        };
+
+        let logical_plan: LogicalPlan = logical_ops::Unpivot::try_new(
+            self.plan.clone(),
+            ids,
+            values,
+            variable_name,
+            value_name,
+        )?
+        .into();
+        Ok(logical_plan.into())
+    }
+
     pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
         err_if_agg("sort", &sort_by)?;
 
@@ -534,6 +572,27 @@ impl PyLogicalPlanBuilder {
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         Ok(self.builder.explode(pyexprs_to_exprs(to_explode))?.into())
+    }
+
+    pub fn unpivot(
+        &self,
+        ids: Vec<PyExpr>,
+        values: Vec<PyExpr>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> PyResult<Self> {
+        let ids_exprs = ids
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<ExprRef>>();
+        let values_exprs = values
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<ExprRef>>();
+        Ok(self
+            .builder
+            .unpivot(ids_exprs, values_exprs, variable_name, value_name)?
+            .into())
     }
 
     pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {

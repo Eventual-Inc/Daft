@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{binary_op, Expr, ExprRef};
-use indexmap::IndexMap;
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 use crate::{
-    partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
-    physical_plan::PhysicalPlanRef,
-    ClusteringSpec, ResourceRequest,
+    partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,
+    ResourceRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +26,7 @@ impl Project {
         resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
-        let clustering_spec = Self::translate_clustering_spec(clustering_spec, &projection);
+        let clustering_spec = translate_clustering_spec(clustering_spec, &projection);
         Ok(Self {
             input,
             projection,

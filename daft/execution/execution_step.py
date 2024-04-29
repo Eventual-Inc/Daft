@@ -631,6 +631,30 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class Unpivot(SingleOutputInstruction):
+    ids: ExpressionsProjection
+    values: ExpressionsProjection
+    variable_name: str
+    value_name: str
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._unpivot(inputs)
+
+    def _unpivot(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.unpivot(self.ids, self.values, self.variable_name, self.value_name)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection

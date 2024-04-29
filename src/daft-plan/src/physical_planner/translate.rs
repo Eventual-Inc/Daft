@@ -20,7 +20,7 @@ use crate::logical_ops::{
     Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Project as LogicalProject,
     Repartition as LogicalRepartition, Sample as LogicalSample, Sink as LogicalSink,
-    Sort as LogicalSort, Source,
+    Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
@@ -126,6 +126,24 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
                     .arced(),
             )
+        }
+        LogicalPlan::Unpivot(LogicalUnpivot {
+            ids,
+            values,
+            variable_name,
+            value_name,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+
+            Ok(PhysicalPlan::Unpivot(Unpivot::new(
+                input_physical,
+                ids.clone(),
+                values.clone(),
+                variable_name,
+                value_name,
+            ))
+            .arced())
         }
         LogicalPlan::Sort(LogicalSort {
             sort_by,

@@ -8,3 +8,4 @@ mod partition;
 mod slice;
 mod sort;
 mod take;
+mod unpivot;

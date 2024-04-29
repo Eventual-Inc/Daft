@@ -18,6 +18,7 @@ use crate::{
 use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;
+pub use ops::match_types_on_series;
 
 pub(crate) use self::series_like::SeriesLike;
 
