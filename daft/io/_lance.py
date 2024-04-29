@@ -93,8 +93,8 @@ class LanceDBScanOperator(ScanOperator):
         for i, fragment in enumerate(fragments):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
-            num_rows = None
             stats = None
+            num_rows = fragment.count_rows()
 
             yield ScanTask.python_factory_func_scan_task(
                 func=_lancedb_factory_function(fragment, pushdowns),
