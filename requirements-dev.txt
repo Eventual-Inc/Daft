@@ -36,6 +36,8 @@ pyarrow==12
 ray[data, client]==2.7.1; python_version < '3.8'
 ray[data, client]==2.10.0; python_version >= '3.8'
 
+# Lance
+lancedb>=0.6.10
 
 #Iceberg
 pyiceberg==0.6.0; python_version >= '3.8'

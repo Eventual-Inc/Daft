@@ -1,8 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional
-
-import lance
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -14,10 +12,10 @@ from daft.logical.schema import Schema
 from daft.table import Table
 
 if TYPE_CHECKING:
-    pass
+    import lance
 
 
-def _lancedb_factory_function(fragment: lance.LanceFragment, pushdowns: Pushdowns) -> Callable[[], List[PyTable]]:
+def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdowns) -> Callable[[], List[PyTable]]:
     def f() -> List[PyTable]:
         return [
             Table.from_arrow_record_batches([rb], fragment.schema)._table
@@ -43,11 +41,14 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
     """
 
+    import lance
+
     # TODO: Convert this to LanceDB-compatible storage options instead of defaulting to `None`
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = None
 
-    iceberg_operator = LanceDBScanOperator(url, storage_options=storage_options)
+    ds = lance.dataset(url, storage_options=storage_options)
+    iceberg_operator = LanceDBScanOperator(ds)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
@@ -55,14 +56,11 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
 
 class LanceDBScanOperator(ScanOperator):
-    def __init__(self, uri: str, storage_options: Optional[Dict[str, Any]] = None):
-        self.uri = uri
-
-        # TODO: If not pickleable, we can make this ephemeral and just the URI
-        self._ds = lance.dataset(self.uri, storage_options=storage_options)
+    def __init__(self, ds: "lance.LanceDataset"):
+        self._ds = ds
 
     def display_name(self) -> str:
-        return f"LanceDBScanOperator({self.uri})"
+        return f"LanceDBScanOperator({self._ds.uri})"
 
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._ds.schema)
