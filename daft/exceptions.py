@@ -1,0 +1,2 @@
+class DaftException(Exception):
+    pass
