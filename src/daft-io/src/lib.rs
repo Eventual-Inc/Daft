@@ -132,6 +132,7 @@ impl From<Error> for DaftError {
             ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
             ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
             UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
+            SocketError { .. } => DaftError::SocketError(err.into()),
             _ => DaftError::External(err.into()),
         }
     }

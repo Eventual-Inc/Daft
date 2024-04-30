@@ -13,6 +13,7 @@ import_exception!(daft.exceptions, DaftTypeError);
 import_exception!(daft.exceptions, ConnectTimeoutError);
 import_exception!(daft.exceptions, ReadTimeoutError);
 import_exception!(daft.exceptions, ByteStreamError);
+import_exception!(daft.exceptions, SocketError);
 
 impl std::convert::From<DaftError> for pyo3::PyErr {
     fn from(err: DaftError) -> pyo3::PyErr {
@@ -27,6 +28,7 @@ impl std::convert::From<DaftError> for pyo3::PyErr {
             DaftError::ConnectTimeout(err) => ConnectTimeoutError::new_err(err.to_string()),
             DaftError::ReadTimeout(err) => ReadTimeoutError::new_err(err.to_string()),
             DaftError::ByteStreamError(err) => ByteStreamError::new_err(err.to_string()),
+            DaftError::SocketError(err) => SocketError::new_err(err.to_string()),
             _ => DaftCoreException::new_err(err.to_string()),
         }
     }

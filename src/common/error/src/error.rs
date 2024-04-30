@@ -24,6 +24,7 @@ pub enum DaftError {
     ConnectTimeout(GenericError),
     ReadTimeout(GenericError),
     ByteStreamError(GenericError),
+    SocketError(GenericError),
     External(GenericError),
 }
 
@@ -39,6 +40,7 @@ impl std::error::Error for DaftError {
             | DaftError::InternalError(_) => None,
             DaftError::IoError(io_error) => Some(io_error),
             DaftError::FileNotFound { source, .. }
+            | DaftError::SocketError(source)
             | DaftError::External(source)
             | DaftError::ReadTimeout(source)
             | DaftError::ConnectTimeout(source)
@@ -102,6 +104,7 @@ impl Display for DaftError {
             Self::ByteStreamError(e) => write!(f, "ByteStreamError: {}", e),
             Self::ConnectTimeout(e) => write!(f, "ConnectTimeout: {}", e),
             Self::ReadTimeout(e) => write!(f, "ReadTimeout: {}", e),
+            Self::SocketError(e) => write!(f, "SocketError: {}", e),
         }
     }
 }

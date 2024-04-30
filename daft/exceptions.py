@@ -44,3 +44,11 @@ class ByteStreamError(DaftTransientError):
     """
 
     pass
+
+
+class SocketError(DaftTransientError):
+    """Daft Socket Error
+    Daft client had a socket error while reading bytes in a stream from the server.
+    """
+
+    pass
