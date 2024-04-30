@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     import lance
 
 
-def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdowns) -> Callable[[], List[PyTable]]:
+def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdowns) -> Callable[[], List["PyTable"]]:
     required_columns: Optional[List[str]]
     if pushdowns.columns is None:
         required_columns = None
@@ -28,7 +28,7 @@ def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdo
             else pushdowns.columns + filter_required_column_names
         )
 
-    def f() -> List[PyTable]:
+    def f() -> List["PyTable"]:
         return [
             Table.from_arrow_record_batches([rb], rb.schema)._table
             for rb in fragment.to_batches(columns=required_columns)
