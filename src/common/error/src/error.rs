@@ -21,6 +21,9 @@ pub enum DaftError {
         source: GenericError,
     },
     InternalError(String),
+    ConnectTimeout(GenericError),
+    ReadTimeout(GenericError),
+    ByteStreamError(GenericError),
     External(GenericError),
 }
 
@@ -35,7 +38,11 @@ impl std::error::Error for DaftError {
             | DaftError::ValueError(_)
             | DaftError::InternalError(_) => None,
             DaftError::IoError(io_error) => Some(io_error),
-            DaftError::FileNotFound { source, .. } | DaftError::External(source) => Some(&**source),
+            DaftError::FileNotFound { source, .. }
+            | DaftError::External(source)
+            | DaftError::ReadTimeout(source)
+            | DaftError::ConnectTimeout(source)
+            | DaftError::ByteStreamError(source) => Some(&**source),
             #[cfg(feature = "python")]
             DaftError::PyO3Error(pyerr) => Some(pyerr),
         }
@@ -92,6 +99,9 @@ impl Display for DaftError {
             Self::FileNotFound { path, source } => {
                 write!(f, "DaftError::FileNotFound {path}: {source}")
             }
+            Self::ByteStreamError(e) => write!(f, "ByteStreamError: {}", e),
+            Self::ConnectTimeout(e) => write!(f, "ConnectTimeout: {}", e),
+            Self::ReadTimeout(e) => write!(f, "ReadTimeout: {}", e),
         }
     }
 }
