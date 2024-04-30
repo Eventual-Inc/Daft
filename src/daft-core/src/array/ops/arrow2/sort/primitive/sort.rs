@@ -167,7 +167,6 @@ mod tests {
 
     use arrow2::array::ord;
     use arrow2::array::Array;
-    use arrow2::array::PrimitiveArray;
     use arrow2::datatypes::DataType;
 
     fn test_sort_primitive_arrays<T>(
