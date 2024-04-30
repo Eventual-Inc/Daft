@@ -1161,6 +1161,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "libc",
+ "lzma-sys",
  "pyo3",
  "pyo3-log",
  "tikv-jemallocator",
