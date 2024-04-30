@@ -21,6 +21,10 @@ pub enum DaftError {
         source: GenericError,
     },
     InternalError(String),
+    ConnectTimeout(GenericError),
+    ReadTimeout(GenericError),
+    ByteStreamError(GenericError),
+    SocketError(GenericError),
     External(GenericError),
 }
 
@@ -35,7 +39,12 @@ impl std::error::Error for DaftError {
             | DaftError::ValueError(_)
             | DaftError::InternalError(_) => None,
             DaftError::IoError(io_error) => Some(io_error),
-            DaftError::FileNotFound { source, .. } | DaftError::External(source) => Some(&**source),
+            DaftError::FileNotFound { source, .. }
+            | DaftError::SocketError(source)
+            | DaftError::External(source)
+            | DaftError::ReadTimeout(source)
+            | DaftError::ConnectTimeout(source)
+            | DaftError::ByteStreamError(source) => Some(&**source),
             #[cfg(feature = "python")]
             DaftError::PyO3Error(pyerr) => Some(pyerr),
         }
@@ -45,13 +54,6 @@ impl std::error::Error for DaftError {
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         DaftError::ArrowError(error.to_string())
-    }
-}
-
-#[cfg(feature = "python")]
-impl From<pyo3::PyErr> for DaftError {
-    fn from(error: pyo3::PyErr) -> Self {
-        DaftError::PyO3Error(error)
     }
 }
 
@@ -70,20 +72,6 @@ impl From<io::Error> for DaftError {
 impl From<regex::Error> for DaftError {
     fn from(error: regex::Error) -> Self {
         DaftError::ValueError(error.to_string())
-    }
-}
-
-#[cfg(feature = "python")]
-impl std::convert::From<DaftError> for pyo3::PyErr {
-    fn from(err: DaftError) -> pyo3::PyErr {
-        use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
-        match err {
-            DaftError::PyO3Error(pyerr) => pyerr,
-            DaftError::FileNotFound { path, source } => {
-                PyFileNotFoundError::new_err(format!("File: {path} not found\n{source}"))
-            }
-            _ => PyValueError::new_err(err.to_string()),
-        }
     }
 }
 
@@ -113,6 +101,10 @@ impl Display for DaftError {
             Self::FileNotFound { path, source } => {
                 write!(f, "DaftError::FileNotFound {path}: {source}")
             }
+            Self::ByteStreamError(e) => write!(f, "ByteStreamError: {}", e),
+            Self::ConnectTimeout(e) => write!(f, "ConnectTimeout: {}", e),
+            Self::ReadTimeout(e) => write!(f, "ReadTimeout: {}", e),
+            Self::SocketError(e) => write!(f, "SocketError: {}", e),
         }
     }
 }

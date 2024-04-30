@@ -108,47 +108,120 @@ enum Error {
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
+
         match error {
-            UnableToOpenFile { path, source } => match source.into_service_error() {
-                GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+            UnableToOpenFile { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                GetObjectError::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    GetObjectError::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
-            UnableToHeadFile { path, source } => match source.into_service_error() {
-                HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+            UnableToHeadFile { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                HeadObjectError::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    HeadObjectError::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
-            UnableToListObjects { path, source } => match source.into_service_error() {
-                ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+            UnableToListObjects { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
