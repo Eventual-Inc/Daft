@@ -713,6 +713,9 @@ pub(super) fn translate_single_logical_node(
                         FileFormat::Database => Err(common_error::DaftError::ValueError(
                             "Database sink not yet implemented".to_string(),
                         )),
+                        FileFormat::Python => Err(common_error::DaftError::ValueError(
+                            "Cannot write to PythonFunction file format".to_string(),
+                        )),
                     }
                 }
                 #[cfg(feature = "python")]

@@ -635,6 +635,21 @@ class ScanTask:
         Create a SQL Scan Task
         """
         ...
+    @staticmethod
+    def python_factory_func_scan_task(
+        module: str,
+        func_name: str,
+        func_args: tuple[Any, ...],
+        schema: PySchema,
+        num_rows: int | None,
+        size_bytes: int | None,
+        pushdowns: Pushdowns | None,
+        stats: PyTable | None,
+    ) -> ScanTask:
+        """
+        Create a Python factory function Scan Task
+        """
+        ...
 
 class ScanOperatorHandle:
     """
@@ -698,6 +713,10 @@ class Pushdowns:
     filters: PyExpr | None
     partition_filters: PyExpr | None
     limit: int | None
+
+    def filter_required_column_names(self) -> list[str]:
+        """List of field names that are required by the filter predicate."""
+        ...
 
 def read_parquet(
     uri: str,

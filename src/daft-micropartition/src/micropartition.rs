@@ -237,6 +237,13 @@ fn materialize_scan_task(
                     ))
                     .context(DaftCoreComputeSnafu);
                 }
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for PythonFunction file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
             }
         }
         #[cfg(feature = "python")]
@@ -339,6 +346,103 @@ fn materialize_scan_task(
                         .context(PyIOSnafu)?;
                         Ok(vec![table])
                     })?
+                }
+                FileFormatConfig::PythonFunction => {
+                    use pyo3::ToPyObject;
+
+                    let table_iterators = scan_task.sources.iter().map(|source| {
+                        // Call Python function to create an Iterator (Grabs the GIL and then releases it)
+                        match source {
+                            DataFileSource::PythonFactoryFunction {
+                                module,
+                                func_name,
+                                func_args,
+                                ..
+                            } => {
+                                Python::with_gil(|py| {
+                                    let func = py.import(pyo3::types::PyString::new(py, module)).unwrap_or_else(|_| panic!("Cannot import factory function from module {module}")).getattr(pyo3::types::PyString::new(py, func_name)).unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                                    Ok(func.call(func_args.to_pytuple(py), None).with_context(|_| PyIOSnafu)?.downcast::<pyo3::types::PyIterator>().expect("Function must return an iterator of tables")).map(|it| it.to_object(py))
+                                })
+                            },
+                            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+                        }
+                    });
+
+                    let mut tables = Vec::new();
+                    let mut rows_seen_so_far = 0;
+                    for iterator in table_iterators {
+                        let iterator = iterator?;
+
+                        // Iterate on this iterator to exhaustion, or until the limit is met
+                        while scan_task
+                            .pushdowns
+                            .limit
+                            .map(|limit| rows_seen_so_far < limit)
+                            .unwrap_or(true)
+                        {
+                            // Grab the GIL to call next() on the iterator, and then release it once we have the Table
+                            let table = match Python::with_gil(|py| {
+                                iterator
+                                    .downcast::<pyo3::types::PyIterator>(py)
+                                    .unwrap()
+                                    .next()
+                                    .map(|result| {
+                                        result
+                                            .map(|tbl| {
+                                                tbl.extract::<daft_table::python::PyTable>()
+                                                    .expect("Must be a PyTable")
+                                                    .table
+                                            })
+                                            .with_context(|_| PyIOSnafu)
+                                    })
+                            }) {
+                                Some(table) => table,
+                                None => break,
+                            }?;
+
+                            // Apply filters
+                            let table = if let Some(filters) = scan_task.pushdowns.filters.as_ref()
+                            {
+                                table
+                                    .filter(&[filters.clone()])
+                                    .with_context(|_| DaftCoreComputeSnafu)?
+                            } else {
+                                table
+                            };
+
+                            // Apply limit if necessary, and update `&mut remaining`
+                            let table = if let Some(limit) = scan_task.pushdowns.limit {
+                                let limited_table = if rows_seen_so_far + table.len() > limit {
+                                    table
+                                        .slice(0, limit - rows_seen_so_far)
+                                        .with_context(|_| DaftCoreComputeSnafu)?
+                                } else {
+                                    table
+                                };
+
+                                // Update the rows_seen_so_far
+                                rows_seen_so_far += limited_table.len();
+
+                                limited_table
+                            } else {
+                                table
+                            };
+
+                            tables.push(table);
+                        }
+
+                        // If seen enough rows, early-terminate
+                        if scan_task
+                            .pushdowns
+                            .limit
+                            .map(|limit| rows_seen_so_far >= limit)
+                            .unwrap_or(false)
+                        {
+                            break;
+                        }
+                    }
+
+                    tables
                 }
             }
         }
