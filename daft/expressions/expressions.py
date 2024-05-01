@@ -440,6 +440,56 @@ class Expression:
         For numeric columns, we use the sketches_ddsketch crate (https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html).
         This is a Rust implementation of the paper `DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.) <https://arxiv.org/pdf/1908.10693>`_
 
+        1. Null values are ignored in the computation of the percentiles
+        2. If all values are Null then the result will also be Null
+        3. If ``percentiles`` are supplied as a single float, then the resultant column is a ``Float64`` column
+        4. If ``percentiles`` is supplied as a list, then the resultant column is a ``FixedSizeList[Float64; N]`` column,
+            where ``N`` is the length of the supplied list.
+
+        Example of a global calculation of approximate percentiles:
+
+            >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
+            >>> df = df.agg(
+            >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+            >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            >>> )
+            >>> df.show()
+            ╭─────────────────────┬────────────────────────────────╮
+            │ approx_median_score ┆ approx_percentiles_scores      │
+            │ ---                 ┆ ---                            │
+            │ Float64             ┆ FixedSizeList[Float64; 3]      │
+            ╞═════════════════════╪════════════════════════════════╡
+            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
+            ╰─────────────────────┴────────────────────────────────╯
+
+            (Showing first 1 of 1 rows)
+
+        Example of a grouped calculation of approximate percentiles:
+
+            >>> df = daft.from_pydict({
+            >>>     "class":  ["a", "a", "a", "b", "c"],
+            >>>     "scores": [1, 2, 3, 1, None],
+            >>> })
+            >>> df = df.groupby("class").agg(
+            >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+            >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            >>> )
+            >>> df.show()
+            ╭───────┬─────────────────────┬────────────────────────────────╮
+            │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
+            │ ---   ┆ ---                 ┆ ---                            │
+            │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
+            ╞═══════╪═════════════════════╪════════════════════════════════╡
+            │ c     ┆ None                ┆ None                           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+            ╰───────┴─────────────────────┴────────────────────────────────╯
+
+            (Showing first 3 of 3 rows)
+
+
         Args:
             percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
                 float or a list of floats.
