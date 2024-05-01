@@ -148,6 +148,30 @@ impl AggExpr {
         }
     }
 
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
+        use AggExpr::*;
+
+        if let MapGroups { func: _, inputs } = &self {
+            assert_eq!(children.len(), inputs.len());
+        } else {
+            assert_eq!(children.len(), 1);
+        }
+        match self {
+            Count(_, count_mode) => Count(children[0].clone(), *count_mode),
+            Sum(_) => Sum(children[0].clone()),
+            Mean(_) => Mean(children[0].clone()),
+            Min(_) => Min(children[0].clone()),
+            Max(_) => Mean(children[0].clone()),
+            AnyValue(_, ignore_nulls) => AnyValue(children[0].clone(), *ignore_nulls),
+            List(_) => List(children[0].clone()),
+            Concat(_) => Concat(children[0].clone()),
+            MapGroups { func, inputs: _ } => MapGroups {
+                func: func.clone(),
+                inputs: children,
+            },
+        }
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use AggExpr::*;
         match self {
@@ -408,9 +432,55 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
-                vec![predicate.clone(), if_true.clone(), if_false.clone()]
+                vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
+        }
+    }
+
+    pub(super) fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+        use Expr::*;
+        match self {
+            // no children
+            Column(..) | Literal(..) => self.clone(),
+            // 1 child
+            Not(..) => Not(children.first().expect("Should have 1 child").clone()),
+            Alias(.., name) => Alias(
+                children.first().expect("Should have 1 child").clone(),
+                name.clone(),
+            ),
+            IsNull(..) => IsNull(children.first().expect("Should have 1 child").clone()),
+            NotNull(..) => NotNull(children.first().expect("Should have 1 child").clone()),
+            Cast(.., dtype) => Cast(
+                children.first().expect("Should have 1 child").clone(),
+                dtype.clone(),
+            ),
+            // 2 children
+            BinaryOp { op, .. } => BinaryOp {
+                op: *op,
+                left: children.first().expect("Should have 1 child").clone(),
+                right: children.get(1).expect("Should have 2 child").clone(),
+            },
+            IsIn(..) => IsIn(
+                children.first().expect("Should have 1 child").clone(),
+                children.get(1).expect("Should have 2 child").clone(),
+            ),
+            FillNull(..) => FillNull(
+                children.first().expect("Should have 1 child").clone(),
+                children.get(1).expect("Should have 2 child").clone(),
+            ),
+            // ternary
+            IfElse { .. } => IfElse {
+                if_true: children.first().expect("Should have 1 child").clone(),
+                if_false: children.get(1).expect("Should have 2 child").clone(),
+                predicate: children.get(2).expect("Should have 3 child").clone(),
+            },
+            // N-ary
+            Agg(agg_expr) => Agg(agg_expr.with_new_children(children)),
+            Function { func, .. } => Function {
+                func: func.clone(),
+                inputs: children,
+            },
         }
     }
 
@@ -551,7 +621,7 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
-    pub fn input_mapping(&self) -> Option<String> {
+    pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
 
@@ -559,7 +629,7 @@ impl Expr {
         //   1. There is only one required column
         //   2. No computation is run on this required column
         match (&required_columns[..], requires_computation) {
-            ([required_col], false) => Some(required_col.clone()),
+            ([required_col], false) => Some(required_col.to_string()),
             _ => None,
         }
     }
@@ -765,7 +835,6 @@ impl Operator {
 mod tests {
 
     use super::*;
-    use crate::lit;
     #[test]
     fn check_comparison_type() -> DaftResult<()> {
         let x = lit(10.);

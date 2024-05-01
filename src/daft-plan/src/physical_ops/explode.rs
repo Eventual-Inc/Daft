@@ -35,13 +35,13 @@ impl Explode {
     ) -> Arc<ClusteringSpec> {
         use crate::ClusteringSpec::*;
         match input_clustering_spec.as_ref() {
-            // If the scheme is vacuous, the result partiiton spec is the same.
+            // If the scheme is vacuous, the result partition spec is the same.
             Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
             Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 let required_cols_for_clustering_spec = by
                     .iter()
-                    .flat_map(|v| get_required_columns(v.as_ref()))
+                    .flat_map(get_required_columns)
                     .collect::<HashSet<String>>();
                 for expr in to_explode {
                     let newname = expr.name().unwrap().to_string();
@@ -100,7 +100,7 @@ mod tests {
         .explode(vec![col("b")])?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a")]));
@@ -127,7 +127,7 @@ mod tests {
         .explode(vec![col("b")])?
         .build();
 
-        let physical_plan = plan(&logical_plan, cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
 
         let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
 

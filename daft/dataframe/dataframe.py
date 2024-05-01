@@ -143,6 +143,10 @@ class DataFrame:
             print("\n== Physical Plan ==\n")
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
             print(physical_plan_scheduler.pretty_print(simple))
+        else:
+            print(
+                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer."
+            )
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config
@@ -642,7 +646,7 @@ class DataFrame:
             DataFrame: new DataFrame that will select the passed in columns
         """
         assert len(columns) > 0
-        builder = self._builder.project(self.__column_input_to_expression(columns))
+        builder = self._builder.select(self.__column_input_to_expression(columns))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -660,7 +664,12 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def sample(self, fraction: float, with_replacement: bool = False, seed: Optional[int] = None) -> "DataFrame":
+    def sample(
+        self,
+        fraction: float,
+        with_replacement: bool = False,
+        seed: Optional[int] = None,
+    ) -> "DataFrame":
         """Samples a fraction of rows from the DataFrame
 
         Example:
@@ -695,9 +704,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with some columns excluded.
         """
-        names_to_skip = set(names)
-        el = [col(e.name) for e in self._builder.schema() if e.name not in names_to_skip]
-        builder = self._builder.project(el)
+        builder = self._builder.exclude(list(names))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -718,7 +725,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_column(
-        self, column_name: str, expr: Expression, resource_request: ResourceRequest = ResourceRequest()
+        self,
+        column_name: str,
+        expr: Expression,
+        resource_request: ResourceRequest = ResourceRequest(),
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -734,19 +744,59 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
+        return self.with_columns({column_name: expr}, resource_request)
+
+    @DataframePublicAPI
+    def with_columns(
+        self,
+        columns: Dict[str, Expression],
+        resource_request: ResourceRequest = ResourceRequest(),
+    ) -> "DataFrame":
+        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
+        with all current columns and the new ones
+
+        Example:
+            >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
+            >>>
+            >>> new_df = df.with_columns({
+                    'foo': df['x'] + 1,
+                    'bar': df['y'] - df['x']
+                })
+
+            >>> new_df.show()
+            ╭───────┬───────┬───────┬───────╮
+            │ x     ┆ y     ┆ foo   ┆ bar   │
+            │ ---   ┆ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 3     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 4     ┆ 3     │
+            ╰───────┴───────┴───────┴───────╯
+            (Showing first 3 of 3 rows)
+
+        Args:
+            columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+
+        Returns:
+            DataFrame: DataFrame with new columns.
+        """
         if not isinstance(resource_request, ResourceRequest):
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
-        prev_schema_as_cols = ExpressionsProjection(
-            [col(field.name) for field in self._builder.schema() if field.name != column_name]
-        )
-        new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
-        builder = self._builder.project(list(new_schema), resource_request)
+        new_columns = [col.alias(name) for name, col in columns.items()]
+
+        builder = self._builder.with_columns(new_columns, resource_request)
         return DataFrame(builder)
 
     @DataframePublicAPI
     def sort(
-        self, by: Union[ColumnInputType, List[ColumnInputType]], desc: Union[bool, List[bool]] = False
+        self,
+        by: Union[ColumnInputType, List[ColumnInputType]],
+        desc: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
         """Sorts DataFrame globally
 
@@ -906,7 +956,11 @@ class DataFrame:
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
         builder = self._builder.join(
-            other._builder, left_on=left_exprs, right_on=right_exprs, how=join_type, strategy=join_strategy
+            other._builder,
+            left_on=left_exprs,
+            right_on=right_exprs,
+            how=join_type,
+            strategy=join_strategy,
         )
         return DataFrame(builder)
 
@@ -944,7 +998,7 @@ class DataFrame:
             >>> df.drop_na("a")  # drops rows where column a contains NaN values
 
         Args:
-            *cols (str): column names by which rows containings nans/NULLs should be filtered
+            *cols (str): column names by which rows containing nans/NULLs should be filtered
 
         Returns:
             DataFrame: DataFrame without NaNs in specified/all columns
@@ -980,7 +1034,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
             >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
         Args:
-            *cols (str): column names by which rows containings nans should be filtered
+            *cols (str): column names by which rows containing nans should be filtered
 
         Returns:
             DataFrame: DataFrame without missing values in specified/all columns
@@ -1279,7 +1333,10 @@ class DataFrame:
         elif len(preview_partition) > n:
             # Preview partition is cached but has more rows that we need, so use the appropriate slice.
             truncated_preview_partition = preview_partition.slice(0, n)
-            preview = DataFramePreview(preview_partition=truncated_preview_partition, dataframe_num_rows=total_rows)
+            preview = DataFramePreview(
+                preview_partition=truncated_preview_partition,
+                dataframe_num_rows=total_rows,
+            )
         else:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
@@ -1358,7 +1415,8 @@ class DataFrame:
         assert result is not None
 
         pd_df = result.to_pandas(
-            schema=self._builder.schema(), cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+            schema=self._builder.schema(),
+            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
         )
         return pd_df
 

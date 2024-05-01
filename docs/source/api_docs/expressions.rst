@@ -59,6 +59,9 @@ Numeric
     Expression.arctan
     Expression.radians
     Expression.degrees
+    Expression.log2
+    Expression.log10
+    Expression.ln
     Expression.exp
 
 .. _api-comparison-expression:
@@ -149,6 +152,7 @@ Temporal
    Expression.dt.month
    Expression.dt.year
    Expression.dt.day_of_week
+   Expression.dt.truncate
 
 List
 ####

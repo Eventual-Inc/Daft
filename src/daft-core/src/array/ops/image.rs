@@ -10,7 +10,7 @@ use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
     BinaryArray, DataType, Field, ImageFormat, ImageMode,
 };
-use crate::datatypes::{UInt16Array, UInt32Array, UInt8Array};
+use crate::datatypes::{DaftArrayType, UInt16Array, UInt32Array, UInt8Array};
 use crate::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
@@ -86,7 +86,7 @@ pub struct CountingWriter<W> {
 }
 
 impl<W> CountingWriter<W> {
-    /// The number of bytes successfull written so far.
+    /// The number of bytes successful written so far.
     pub fn count(&self) -> u64 {
         self.count
     }

@@ -193,6 +193,18 @@ impl PySeries {
             .into())
     }
 
+    pub fn log2(&self) -> PyResult<Self> {
+        Ok(self.series.log2()?.into())
+    }
+
+    pub fn log10(&self) -> PyResult<Self> {
+        Ok(self.series.log10()?.into())
+    }
+
+    pub fn ln(&self) -> PyResult<Self> {
+        Ok(self.series.ln()?.into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
     }
@@ -432,6 +444,13 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .dt_truncate(interval, &relative_to.series)?
+            .into())
+    }
+
     pub fn partitioning_days(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_days()?.into())
     }
@@ -560,7 +579,9 @@ fn infer_daft_dtype_for_sequence(
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
         let obj = obj.as_ref(py);
-        if let Ok(pil_image_type) = py_pil_image_type && obj.is_instance(pil_image_type)? {
+        if let Ok(pil_image_type) = py_pil_image_type
+            && obj.is_instance(pil_image_type)?
+        {
             let mode_str = obj
                 .getattr(pyo3::intern!(py, "mode"))?
                 .extract::<String>()?;
@@ -584,18 +605,33 @@ fn infer_daft_dtype_for_sequence(
                     break;
                 }
             }
-        } else if let Ok(np_ndarray_type) = np_ndarray_type && let Ok(np_generic_type) = np_generic_type && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?) {
+        } else if let Ok(np_ndarray_type) = np_ndarray_type
+            && let Ok(np_generic_type) = np_generic_type
+            && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
+        {
             let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
-            let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| dt.getattr(pyo3::intern!(py, "_dtype")).unwrap().extract::<PyDataType>().unwrap().dtype);
+            let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| {
+                dt.getattr(pyo3::intern!(py, "_dtype"))
+                    .unwrap()
+                    .extract::<PyDataType>()
+                    .unwrap()
+                    .dtype
+            });
             let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
             let inferred_dtype = match inferred_inner_dtype {
-                Ok(inferred_inner_dtype) if shape.len() == 1 => Some(DataType::List(Box::new(inferred_inner_dtype))),
-                Ok(inferred_inner_dtype) if shape.len() > 1 => Some(DataType::Tensor(Box::new(inferred_inner_dtype))),
+                Ok(inferred_inner_dtype) if shape.len() == 1 => {
+                    Some(DataType::List(Box::new(inferred_inner_dtype)))
+                }
+                Ok(inferred_inner_dtype) if shape.len() > 1 => {
+                    Some(DataType::Tensor(Box::new(inferred_inner_dtype)))
+                }
                 _ => None,
             };
             match (&dtype, &inferred_dtype) {
                 // Tensors with mixed inner dtypes is not supported, short-circuit.
-                (Some(existing_dtype), Some(inferred_dtype)) if existing_dtype != inferred_dtype => {
+                (Some(existing_dtype), Some(inferred_dtype))
+                    if existing_dtype != inferred_dtype =>
+                {
                     // TODO(Clark): Do some basic type promotion here, e.g. (u32, u64) --> u64.
                     dtype = None;
                     break;

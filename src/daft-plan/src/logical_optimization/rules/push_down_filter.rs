@@ -78,8 +78,7 @@ impl OptimizerRule for PushDownFilter {
                     SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::ExternalInfo(external_info)
-                        if let Some(existing_limit) =
-                            external_info.pushdowns.limit =>
+                        if let Some(_) = external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }
@@ -87,7 +86,12 @@ impl OptimizerRule for PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.clone().and(f.clone())).unwrap_or(predicate.clone());
+                        let new_predicate = external_info
+                            .pushdowns
+                            .filters
+                            .as_ref()
+                            .map(|f| predicate.clone().and(f.clone()))
+                            .unwrap_or(predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -98,10 +102,25 @@ impl OptimizerRule for PushDownFilter {
                         // 3. Filters needing their own dedicated filter op (unable to be pushed into scan); this
                         //    includes predicates involving both partition and data columns, and predicates containing
                         //    UDFs.
-                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(&new_predicate, external_info.scan_op.0.partitioning_keys())?;
-                        assert!(partition_only_filter.len() + data_only_filter.len() + needing_filter_op.len() > 0);
+                        let PredicateGroups {
+                            partition_only_filter,
+                            data_only_filter,
+                            needing_filter_op,
+                        } = rewrite_predicate_for_partitioning(
+                            &new_predicate,
+                            external_info.scan_op.0.partitioning_keys(),
+                        )?;
+                        assert!(
+                            partition_only_filter.len()
+                                + data_only_filter.len()
+                                + needing_filter_op.len()
+                                > 0
+                        );
 
-                        if !needing_filter_op.is_empty() && partition_only_filter.is_empty() && data_only_filter.is_empty() {
+                        if !needing_filter_op.is_empty()
+                            && partition_only_filter.is_empty()
+                            && data_only_filter.is_empty()
+                        {
                             // If the filter predicate consists of only expressions that rely on both a partition
                             // column and a data column (or contain a UDF), then no pushdown into the scan is possible,
                             // so we short-circuit.
@@ -132,8 +151,11 @@ impl OptimizerRule for PushDownFilter {
                         if !needing_filter_op.is_empty() {
                             // We need to apply any filter predicates that reference both partition and data columns after the scan.
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
-                            let filter_op: LogicalPlan =
-                                Filter::try_new(new_source.into(), conjuct(needing_filter_op).unwrap())?.into();
+                            let filter_op: LogicalPlan = Filter::try_new(
+                                new_source.into(),
+                                conjuct(needing_filter_op).unwrap(),
+                            )?
+                            .into();
                             return Ok(Transformed::Yes(filter_op.into()));
                         } else {
                             return Ok(Transformed::Yes(new_source.into()));
@@ -158,7 +180,7 @@ impl OptimizerRule for PushDownFilter {
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
                 // TODO(Clark): Push Filters depending on Projection columns involving compute if those expressions are
-                // (1) determinstic && (pure || idempotent),
+                // (1) deterministic && (pure || idempotent),
                 // (2) inexpensive to recompute.
                 // This can be done by rewriting the Filter predicate expression to contain the relevant Projection expression.
                 let mut can_push: Vec<ExprRef> = vec![];
@@ -171,10 +193,10 @@ impl OptimizerRule for PushDownFilter {
                     {
                         // Can push predicate through expression.
                         let new_predicate = replace_columns_with_expressions(
-                            predicate.as_ref().clone(),
+                            predicate.clone(),
                             &projection_input_mapping,
                         );
-                        can_push.push(new_predicate.arced());
+                        can_push.push(new_predicate);
                     } else {
                         // Can't push predicate expression through projection.
                         can_not_push.push(predicate.clone());
@@ -386,7 +408,7 @@ mod tests {
         let pred = col("a").lt(lit(2));
         let proj = vec![col("a")];
         let plan = scan_plan
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
@@ -394,9 +416,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_scan_filter
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_scan_filter.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -417,7 +437,7 @@ mod tests {
         let pred = col("a").lt(lit(2)).and(col("b").eq(lit("foo")));
         let proj = vec![col("a"), col("b")];
         let plan = scan_plan
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_scan_filter = if push_into_scan {
@@ -425,9 +445,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_scan_filter
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_scan_filter.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -440,7 +458,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         // Projection involves compute on filtered column "a".
-        .project(vec![col("a").add(lit(1))], Default::default())?
+        .select(vec![col("a").add(lit(1))])?
         .filter(col("a").lt(lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
@@ -468,7 +486,7 @@ mod tests {
         let proj = vec![col("a").add(lit(1))];
         let plan = scan_plan
             // Projection involves compute on filtered column "a".
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
@@ -476,9 +494,7 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_filter_scan
-            .project(proj, Default::default())?
-            .build();
+        let expected = expected_filter_scan.select(proj)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

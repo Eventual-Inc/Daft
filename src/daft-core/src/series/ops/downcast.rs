@@ -1,4 +1,4 @@
-use crate::array::{FixedSizeListArray, ListArray, StructArray};
+use crate::array::{ListArray, StructArray};
 use crate::datatypes::logical::{
     DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray,
 };
@@ -7,7 +7,7 @@ use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
 
-use self::logical::ImageArray;
+use self::logical::{DurationArray, ImageArray};
 
 impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
@@ -116,6 +116,10 @@ impl Series {
     }
 
     pub fn timestamp(&self) -> DaftResult<&TimestampArray> {
+        self.downcast()
+    }
+
+    pub fn duration(&self) -> DaftResult<&DurationArray> {
         self.downcast()
     }
 

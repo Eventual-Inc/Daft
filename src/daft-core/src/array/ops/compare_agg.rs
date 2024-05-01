@@ -1,11 +1,11 @@
 use super::full::FullNull;
 use super::{DaftCompareAggable, GroupIndices};
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{ListArray, StructArray},
     datatypes::*,
 };
+use arrow2::array::Array;
 use arrow2::array::PrimitiveArray;
-use arrow2::{self, array::Array};
 
 use common_error::DaftResult;
 
@@ -36,10 +36,7 @@ where
                     (Some(l), None) => Some(l),
                     (Some(l), Some(r)) => Some(op(l, r)),
                 });
-            match reduced_val {
-                None => None,
-                Some(v) => v,
-            }
+            reduced_val.unwrap_or_default()
         });
         Box::new(PrimitiveArray::from_trusted_len_iter(cmp_values_iter))
     } else {
@@ -137,10 +134,7 @@ where
                     (Some(l), None) => Some(l),
                     (Some(l), Some(r)) => Some(op(l, r)),
                 });
-            match reduced_val {
-                None => None,
-                Some(v) => v,
-            }
+            reduced_val.unwrap_or_default()
         });
         Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(
             cmp_values_iter,
@@ -218,10 +212,7 @@ where
                     (Some(l), None) => Some(l),
                     (Some(l), Some(r)) => Some(op(l, r)),
                 });
-            match reduced_val {
-                None => None,
-                Some(v) => v,
-            }
+            reduced_val.unwrap_or_default()
         });
         Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
             cmp_values_iter,
@@ -298,10 +289,7 @@ fn grouped_cmp_bool(
                     (Some(l), None) => Some(l),
                     (Some(l), Some(r)) => Some((l | r) ^ val_to_find),
                 });
-            match reduced_val {
-                None => None,
-                Some(v) => v,
-            }
+            reduced_val.unwrap_or_default()
         });
         Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(
             cmp_values_iter,

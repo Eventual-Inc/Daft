@@ -39,8 +39,12 @@ def test_plus(binary_data_fixture):
     )
 
 
-def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType) -> bool:
+def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
     """Checks whether these input types are resolvable for arithmetic operations"""
+    # (temporal - temporal = duration)
+    if lhs._is_temporal_type() and rhs._is_temporal_type() and lhs == rhs and op == ops.sub:
+        return True
+
     # (numeric <op> numeric = numeric)
     return is_numeric(lhs) and is_numeric(rhs) and has_supertype(lhs, rhs)
 
@@ -49,9 +53,9 @@ def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType) -> b
     "op",
     [
         pytest.param(ops.sub, id="sub"),
-        pytest.param(ops.sub, id="mul"),
-        pytest.param(ops.sub, id="truediv"),
-        pytest.param(ops.sub, id="mod"),
+        pytest.param(ops.mul, id="mul"),
+        pytest.param(ops.truediv, id="truediv"),
+        pytest.param(ops.mod, id="mod"),
     ],
 )
 def test_binary_numeric_arithmetic(binary_data_fixture, op):
@@ -60,7 +64,7 @@ def test_binary_numeric_arithmetic(binary_data_fixture, op):
         data=binary_data_fixture,
         expr=op(col(lhs.name()), col(rhs.name())),
         run_kernel=lambda: op(lhs, rhs),
-        resolvable=binary_numeric_arithmetic_type_validation(lhs.datatype(), rhs.datatype()),
+        resolvable=binary_numeric_arithmetic_type_validation(lhs.datatype(), rhs.datatype(), op),
     )
 
 
@@ -110,6 +114,36 @@ def test_round(unary_data_fixture):
         data=(unary_data_fixture,),
         expr=col(arg.name()).round(0),
         run_kernel=lambda: arg.round(0),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_log2(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log2(),
+        run_kernel=lambda: arg.log2(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_log10(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log10(),
+        run_kernel=lambda: arg.log10(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_ln(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).ln(),
+        run_kernel=lambda: arg.ln(),
         resolvable=is_numeric(arg.datatype()),
     )
 

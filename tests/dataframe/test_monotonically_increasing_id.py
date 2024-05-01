@@ -36,7 +36,7 @@ def test_monotonically_increasing_id_multiple_partitions_with_into_partition(mak
     assert set(df.column_names) == {"id", "a"}
     assert df.schema()["id"].dtype == DataType.uint64()
 
-    # we can predict the ids because into_partitions evenly distrubutes without shuffling the data,
+    # we can predict the ids because into_partitions evenly distributes without shuffling the data,
     # and the chosen repartition_nparts is a multiple of the number of items, so each partition will have the same number of items
     items_per_partition = len(ITEMS) // repartition_nparts
     ids = []

@@ -18,7 +18,7 @@ impl Table {
             )));
         }
         if sort_keys.len() == 1 {
-            self.eval_expression(sort_keys.get(0).unwrap())?
+            self.eval_expression(sort_keys.first().unwrap())?
                 .argsort(*descending.first().unwrap())
         } else {
             let expr_result = self.eval_expression_list(sort_keys)?;

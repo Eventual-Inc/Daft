@@ -23,11 +23,14 @@ use super::UnableToParseUtf8FromBinarySnafu;
 impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
     fn try_from(value: &BooleanStatistics) -> Result<Self, Self::Error> {
-        if let Some(lower) = value.min_value && let Some(upper) = value.max_value {
+        if let Some(lower) = value.min_value
+            && let Some(upper) = value.max_value
+        {
             Ok(ColumnRangeStatistics::new(
                 Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
                 Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
-            )?.into())
+            )?
+            .into())
         } else {
             Ok(ColumnRangeStatistics::Missing.into())
         }

@@ -38,7 +38,11 @@ impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
 
 #[derive(Snafu, Debug)]
 enum Error {
-    #[snafu(display("Glob path had no matches: \"{}\"", glob_path))]
+    #[snafu(display(
+        "Glob path had no matches: \"{}\". \nTo search for files recursively, use '{}/**'.",
+        glob_path,
+        glob_path.trim_end_matches('/'),
+    ))]
     GlobNoMatch { glob_path: String },
 }
 

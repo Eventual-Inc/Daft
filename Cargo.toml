@@ -13,6 +13,7 @@ daft-plan = {path = "src/daft-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 
@@ -47,7 +48,7 @@ publish = false
 version = "0.2.0-dev0"
 
 [patch.crates-io]
-arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"}
+arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "4a893a1d05e643273c984c6ccc21f4904d6e9e3b"}
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
 
 [profile.dev]
@@ -99,7 +100,7 @@ async-stream = "0.3.5"
 bytes = "1.6.0"
 chrono = "0.4.26"
 chrono-tz = "0.8.4"
-comfy-table = "7.1.0"
+comfy-table = "7.1.1"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
@@ -112,9 +113,9 @@ num-derive = "0.3.3"
 num-traits = "0.2"
 rand = "^0.8"
 rayon = "1.7.0"
-regex = "1.10.3"
+regex = "1.10.4"
 rstest = "0.18.2"
-serde_json = "1.0.108"
+serde_json = "1.0.116"
 snafu = {version = "0.7.4", features = ["futures"]}
 tokio = {version = "1.37.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
@@ -125,7 +126,7 @@ url = "2.4.0"
 # branch = "daft-fork"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
+rev = "4a893a1d05e643273c984c6ccc21f4904d6e9e3b"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"

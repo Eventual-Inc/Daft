@@ -28,19 +28,16 @@ use crate::partitioning::{
     ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
 use crate::physical_ops::*;
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::SourceInfo;
 use crate::FileFormat;
 
-#[cfg(feature = "python")]
-use crate::physical_ops::InMemoryScan;
-
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
-    physical_children: &mut Vec<PhysicalPlan>,
+    physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
-) -> DaftResult<PhysicalPlan> {
+) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::ExternalInfo(ScanExternalInfo {
@@ -72,16 +69,17 @@ pub(super) fn translate_single_logical_node(
                     Ok(PhysicalPlan::EmptyScan(EmptyScan::new(
                         source_schema.clone(),
                         clustering_spec,
-                    )))
+                    ))
+                    .arced())
                 } else {
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
 
-                    Ok(PhysicalPlan::TabularScan(TabularScan::new(
-                        scan_tasks,
-                        clustering_spec,
-                    )))
+                    Ok(
+                        PhysicalPlan::TabularScan(TabularScan::new(scan_tasks, clustering_spec))
+                            .arced(),
+                    )
                 }
             }
             #[cfg(feature = "python")]
@@ -91,7 +89,8 @@ pub(super) fn translate_single_logical_node(
                     mem_info.clone(),
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
                         .into(),
-                ));
+                ))
+                .arced();
                 Ok(scan)
             }
         },
@@ -103,35 +102,31 @@ pub(super) fn translate_single_logical_node(
             let input_physical = physical_children.pop().expect("requires 1 input");
             let clustering_spec = input_physical.clustering_spec().clone();
             Ok(PhysicalPlan::Project(Project::try_new(
-                input_physical.into(),
+                input_physical,
                 projection.clone(),
                 resource_request.clone(),
                 clustering_spec,
-            )?))
+            )?)
+            .arced())
         }
         LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Filter(Filter::new(
-                input_physical.into(),
-                predicate.clone(),
-            )))
+            Ok(PhysicalPlan::Filter(Filter::new(input_physical, predicate.clone())).arced())
         }
         LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(PhysicalPlan::Limit(Limit::new(
-                input_physical.into(),
-                *limit,
-                *eager,
-                num_partitions,
-            )))
+            Ok(
+                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
+                    .arced(),
+            )
         }
         LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Explode(Explode::try_new(
-                input_physical.into(),
-                to_explode.clone(),
-            )?))
+            Ok(
+                PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
+                    .arced(),
+            )
         }
         LogicalPlan::Sort(LogicalSort {
             sort_by,
@@ -141,11 +136,12 @@ pub(super) fn translate_single_logical_node(
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Sort(Sort::new(
-                input_physical.into(),
+                input_physical,
                 sort_by.clone(),
                 descending.clone(),
                 num_partitions,
-            )))
+            ))
+            .arced())
         }
         LogicalPlan::Repartition(LogicalRepartition {
             repartition_spec, ..
@@ -164,7 +160,6 @@ pub(super) fn translate_single_logical_node(
             {
                 return Ok(input_physical);
             }
-            let input_physical = Arc::new(input_physical);
             let repartitioned_plan = match clustering_spec {
                 ClusteringSpec::Unknown(_) => {
                     match num_partitions.cmp(&input_num_partitions) {
@@ -211,7 +206,7 @@ pub(super) fn translate_single_logical_node(
                     unreachable!("Repartitioning by range is not supported")
                 }
             };
-            Ok(repartitioned_plan)
+            Ok(repartitioned_plan.arced())
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -221,11 +216,8 @@ pub(super) fn translate_single_logical_node(
                 .iter()
                 .map(|name| daft_dsl::col(name.clone()))
                 .collect::<Vec<ExprRef>>();
-            let agg_op = PhysicalPlan::Aggregate(Aggregate::new(
-                input_physical.into(),
-                vec![],
-                col_exprs.clone(),
-            ));
+            let agg_op =
+                PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
@@ -234,13 +226,12 @@ pub(super) fn translate_single_logical_node(
                     col_exprs.clone(),
                 ));
                 let reduce_op = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
-                Ok(PhysicalPlan::Aggregate(Aggregate::new(
-                    reduce_op.into(),
-                    vec![],
-                    col_exprs,
-                )))
+                Ok(
+                    PhysicalPlan::Aggregate(Aggregate::new(reduce_op.into(), vec![], col_exprs))
+                        .arced(),
+                )
             } else {
-                Ok(agg_op)
+                Ok(agg_op.arced())
             }
         }
         LogicalPlan::Sample(LogicalSample {
@@ -251,11 +242,12 @@ pub(super) fn translate_single_logical_node(
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Sample(Sample::new(
-                input_physical.into(),
+                input_physical,
                 *fraction,
                 *with_replacement,
                 *seed,
-            )))
+            ))
+            .arced())
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,
@@ -270,7 +262,7 @@ pub(super) fn translate_single_logical_node(
 
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
-                    input_physical.into(),
+                    input_physical,
                     aggregations.clone(),
                     groupby.clone(),
                 )),
@@ -436,31 +428,34 @@ pub(super) fn translate_single_logical_node(
                         input_physical
                     } else {
                         PhysicalPlan::Aggregate(Aggregate::new(
-                            input_physical.into(),
+                            input_physical,
                             first_stage_aggs.values().cloned().collect(),
                             groupby.clone(),
                         ))
+                        .arced()
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
-                            first_stage_agg.into(),
+                            first_stage_agg,
                             num_input_partitions,
                             1,
                         ))
+                        .arced()
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            first_stage_agg.into(),
+                            first_stage_agg,
                             min(
                                 num_input_partitions,
                                 cfg.shuffle_aggregation_default_partitions,
                             ),
                             groupby.clone(),
-                        ));
-                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
+                        ))
+                        .arced();
+                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
-                        gather_plan.into(),
+                        gather_plan,
                         second_stage_aggs.values().cloned().collect(),
                         groupby.clone(),
                     ));
@@ -475,15 +470,12 @@ pub(super) fn translate_single_logical_node(
                 }
             };
 
-            Ok(result_plan)
+            Ok(result_plan.arced())
         }
         LogicalPlan::Concat(..) => {
             let other_physical = physical_children.pop().expect("requires 1 inputs");
             let input_physical = physical_children.pop().expect("requires 2 inputs");
-            Ok(PhysicalPlan::Concat(Concat::new(
-                input_physical.into(),
-                other_physical.into(),
-            )))
+            Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical)).arced())
         }
         LogicalPlan::Join(LogicalJoin {
             left_on,
@@ -561,26 +553,40 @@ pub(super) fn translate_single_logical_node(
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
-                let is_primitive = |exprs: &Vec<ExprRef>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
-                    let dtype = &output_schema.get_field(col).unwrap().dtype;
-                    dtype.is_integer() || dtype.is_floating() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
-                });
+                let is_primitive = |exprs: &Vec<ExprRef>| {
+                    exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                        let dtype = &output_schema.get_field(col).unwrap().dtype;
+                        dtype.is_integer()
+                            || dtype.is_floating()
+                            || matches!(
+                                dtype,
+                                DataType::Utf8 | DataType::Binary | DataType::Boolean
+                            )
+                    })
+                };
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
-                        && let Some(smaller_size_bytes) = smaller_size_bytes
-                        && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
-                        && (*join_type == JoinType::Inner || (*join_type == JoinType::Left && left_is_larger) || (*join_type == JoinType::Right && !left_is_larger)) {
+                    && let Some(smaller_size_bytes) = smaller_size_bytes
+                    && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
+                    && (*join_type == JoinType::Inner
+                        || (*join_type == JoinType::Left && left_is_larger)
+                        || (*join_type == JoinType::Right && !left_is_larger))
+                {
                     JoinStrategy::Broadcast
                 // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
                 // TODO(Clark): Support non-primitive dtypes for sort-merge join (e.g. temporal types).
                 // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
                 // TODO(Kevin): Support sort-merge join for other types of joins.
-                } else if is_primitive(left_on) && is_primitive(right_on) && (is_left_sort_partitioned || is_right_sort_partitioned) && *join_type == JoinType::Inner
-                && (!is_larger_partitioned
-                    || (left_is_larger && is_left_sort_partitioned
-                        || !left_is_larger && is_right_sort_partitioned)) {
-                            JoinStrategy::SortMerge
+                } else if is_primitive(left_on)
+                    && is_primitive(right_on)
+                    && (is_left_sort_partitioned || is_right_sort_partitioned)
+                    && *join_type == JoinType::Inner
+                    && (!is_larger_partitioned
+                        || (left_is_larger && is_left_sort_partitioned
+                            || !left_is_larger && is_right_sort_partitioned))
+                {
+                    JoinStrategy::SortMerge
                 // Otherwise, use a hash join.
                 } else {
                     JoinStrategy::Hash
@@ -604,13 +610,14 @@ pub(super) fn translate_single_logical_node(
                     }
 
                     Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
                         is_swapped,
-                    )))
+                    ))
+                    .arced())
                 }
                 JoinStrategy::SortMerge => {
                     if *join_type != JoinType::Inner {
@@ -629,32 +636,35 @@ pub(super) fn translate_single_logical_node(
                         // result in less efficient merge-joins (~all-to-all broadcast).
                         if !is_left_sort_partitioned {
                             left_physical = PhysicalPlan::Sort(Sort::new(
-                                left_physical.into(),
+                                left_physical,
                                 left_on.clone(),
                                 std::iter::repeat(false).take(left_on.len()).collect(),
                                 num_partitions,
                             ))
+                            .arced()
                         }
                         if !is_right_sort_partitioned {
                             right_physical = PhysicalPlan::Sort(Sort::new(
-                                right_physical.into(),
+                                right_physical,
                                 right_on.clone(),
                                 std::iter::repeat(false).take(right_on.len()).collect(),
                                 num_partitions,
                             ))
+                            .arced()
                         }
                         false
                     };
                     Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
                         num_partitions,
                         left_is_larger,
                         needs_presort,
-                    )))
+                    ))
+                    .arced())
                 }
                 JoinStrategy::Hash => {
                     if (num_partitions > 1
@@ -662,32 +672,33 @@ pub(super) fn translate_single_logical_node(
                         && !is_left_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            left_physical.into(),
+                            left_physical,
                             num_partitions,
                             left_on.clone(),
                         ));
                         left_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
                     if (num_partitions > 1
                         || right_clustering_spec.num_partitions() != num_partitions)
                         && !is_right_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            right_physical.into(),
+                            right_physical,
                             num_partitions,
                             right_on.clone(),
                         ));
                         right_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
                     Ok(PhysicalPlan::HashJoin(HashJoin::new(
-                        left_physical.into(),
-                        right_physical.into(),
+                        left_physical,
+                        right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
-                    )))
+                    ))
+                    .arced())
                 }
             }
         }
@@ -702,20 +713,23 @@ pub(super) fn translate_single_logical_node(
                             Ok(PhysicalPlan::TabularWriteParquet(TabularWriteParquet::new(
                                 schema.clone(),
                                 file_info.clone(),
-                                input_physical.into(),
-                            )))
+                                input_physical,
+                            ))
+                            .arced())
                         }
                         FileFormat::Csv => Ok(PhysicalPlan::TabularWriteCsv(TabularWriteCsv::new(
                             schema.clone(),
                             file_info.clone(),
-                            input_physical.into(),
-                        ))),
+                            input_physical,
+                        ))
+                        .arced()),
                         FileFormat::Json => {
                             Ok(PhysicalPlan::TabularWriteJson(TabularWriteJson::new(
                                 schema.clone(),
                                 file_info.clone(),
-                                input_physical.into(),
-                            )))
+                                input_physical,
+                            ))
+                            .arced())
                         }
                         FileFormat::Database => Err(common_error::DaftError::ValueError(
                             "Database sink not yet implemented".to_string(),
@@ -728,8 +742,9 @@ pub(super) fn translate_single_logical_node(
                         Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(
                             schema.clone(),
                             iceberg_info.clone(),
-                            input_physical.into(),
-                        )))
+                            input_physical,
+                        ))
+                        .arced())
                     }
                 },
             }
@@ -739,9 +754,13 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::MonotonicallyIncreasingId(
-                MonotonicallyIncreasingId::new(input_physical.into(), column_name),
-            ))
+            Ok(
+                PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(
+                    input_physical,
+                    column_name,
+                ))
+                .arced(),
+            )
         }
     }
 }
@@ -773,15 +792,15 @@ mod tests {
         .into_partitions(10)?
         .filter(col("a").lt(lit(2)))?;
         assert_eq!(
-            plan(builder.build().as_ref(), cfg.clone())?
+            plan(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             10
         );
         let logical_plan = builder.into_partitions(10)?.build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
+        let physical_plan = plan(logical_plan, cfg.clone())?;
         // Check that the last repartition was dropped (the last op should be the filter).
-        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
     }
 
@@ -797,14 +816,14 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]));
         assert_eq!(
-            plan(builder.build().as_ref(), cfg.clone())?
+            plan(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             1
         );
         let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
-        assert_matches!(physical_plan, PhysicalPlan::TabularScan(_));
+        let physical_plan = plan(logical_plan, cfg.clone())?;
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
     }
 
@@ -822,9 +841,9 @@ mod tests {
         .filter(col("a").lt(lit(2)))?
         .hash_repartition(Some(10), vec![col("a")])?
         .build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
-        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
     }
 
@@ -842,9 +861,9 @@ mod tests {
         .aggregate(vec![col("a").sum()], vec![col("b")])?
         .hash_repartition(Some(10), vec![col("b")])?
         .build();
-        let physical_plan = plan(logical_plan.as_ref(), cfg)?;
+        let physical_plan = plan(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
-        assert_matches!(physical_plan, PhysicalPlan::Project(_));
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
         Ok(())
     }
 }

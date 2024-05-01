@@ -55,22 +55,25 @@ impl OptimizerRule for PushDownLimit {
                             SourceInfo::InMemoryInfo(_) => Ok(Transformed::No(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::ExternalInfo(external_info)
-                                if let Some(existing_limit) =
-                                    external_info.pushdowns.limit && existing_limit <= limit =>
+                                if let Some(existing_limit) = external_info.pushdowns.limit
+                                    && existing_limit <= limit =>
                             {
                                 Ok(Transformed::No(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::ExternalInfo(external_info) => {
-                                let new_pushdowns =
-                                    external_info.pushdowns.with_limit(Some(limit));
+                                let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
                                     SourceInfo::ExternalInfo(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info.scan_op.0.can_absorb_limit() { new_source } else { plan.with_new_children(&[new_source]).into() };
+                                let out_plan = if external_info.scan_op.0.can_absorb_limit() {
+                                    new_source
+                                } else {
+                                    plan.with_new_children(&[new_source]).into()
+                                };
                                 Ok(Transformed::Yes(out_plan))
                             }
                         }
@@ -292,7 +295,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .project(proj.clone(), Default::default())?
+            .select(proj.clone())?
             .limit(limit, false)?
             .build();
         let expected = dummy_scan_node_with_pushdowns(
@@ -300,7 +303,7 @@ mod tests {
             Pushdowns::default().with_limit(Some(limit as usize)),
         )
         .limit(limit, false)?
-        .project(proj, Default::default())?
+        .select(proj)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

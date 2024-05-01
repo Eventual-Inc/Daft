@@ -7,6 +7,7 @@ import pytest
 from pyarrow import parquet as pq
 
 import daft
+from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
 from daft.table import MicroPartition, Table
 
@@ -413,7 +414,7 @@ def test_connect_timeout(multithreaded_io):
         )
     )
 
-    with pytest.raises(ValueError, match="HTTP connect timeout"):
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
         MicroPartition.read_parquet(url, io_config=connect_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
 
 
@@ -434,5 +435,5 @@ def test_read_timeout(multithreaded_io):
         )
     )
 
-    with pytest.raises(ValueError, match="HTTP read timeout"):
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()

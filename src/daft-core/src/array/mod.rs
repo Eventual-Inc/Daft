@@ -34,7 +34,11 @@ impl<T: DaftPhysicalType> Clone for DataArray<T> {
     }
 }
 
-impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {}
+impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
+    fn data_type(&self) -> &DataType {
+        &self.field.as_ref().dtype
+    }
+}
 
 impl<T> DataArray<T>
 where
@@ -93,7 +97,9 @@ where
     }
 
     pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity && v.len() != self.data.len() {
+        if let Some(v) = &validity
+            && v.len() != self.data.len()
+        {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match DataArray length, {} vs {}",
                 v.len(),

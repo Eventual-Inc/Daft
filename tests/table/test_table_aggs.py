@@ -579,12 +579,50 @@ def test_groupby_floats_nan(dtype) -> None:
             "cookies": [2, 2, 4, 1, 2],
         }
     )
-    # have to sort and compare since `utils.pydict_to_rows` doesnt work on NaNs
+    # have to sort and compare since `utils.pydict_to_rows` doesn't work on NaNs
     for result_col, expected_col in zip(
         result_table.sort([col("group")]).to_pydict(), expected_table.sort([col("group")]).to_pydict()
     ):
         for r, e in zip(result_col, expected_col):
             assert (r == e) or (math.isnan(r) and math.isnan(e))
+
+
+def test_groupby_timestamp() -> None:
+    daft_table = MicroPartition.from_pydict(
+        {
+            "group": Series.from_pylist(
+                [
+                    datetime.datetime(2020, 1, 1, 0, 0, 0),
+                    datetime.datetime(2020, 1, 1, 0, 30, 0),
+                    datetime.datetime(2020, 1, 1, 0, 59, 59),
+                    datetime.datetime(2020, 1, 1, 1, 0, 0),
+                    datetime.datetime(2020, 1, 1, 1, 30, 0),
+                    datetime.datetime(2020, 1, 1, 1, 59, 59),
+                    datetime.datetime(2020, 1, 1, 2, 0, 0),
+                    datetime.datetime(2020, 1, 1, 2, 30, 0),
+                    datetime.datetime(2020, 1, 1, 2, 59, 59),
+                ]
+            ),
+            "value": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+        }
+    )
+    result_table = daft_table.agg([col("value").sum()], group_by=[col("group").dt.truncate("1 hour")])
+    expected_table = MicroPartition.from_pydict(
+        {
+            "group": Series.from_pylist(
+                [
+                    datetime.datetime(2020, 1, 1, 0, 0, 0),
+                    datetime.datetime(2020, 1, 1, 1, 0, 0),
+                    datetime.datetime(2020, 1, 1, 2, 0, 0),
+                ]
+            ),
+            "value": [3, 6, 9],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
 
 
 @pytest.mark.parametrize(

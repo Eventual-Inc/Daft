@@ -122,4 +122,4 @@ Here are features of Iceberg that are works-in-progress.
 
 1. Iceberg V2 merge-on-read features
 2. Writing to partitioned Iceberg tables (this is currently pending functionality to be added to the PyIceberg library)
-3. More extensive usage of Iceberg-provided statistics to futher optimize queries
+3. More extensive usage of Iceberg-provided statistics to further optimize queries

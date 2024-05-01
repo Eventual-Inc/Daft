@@ -5,8 +5,8 @@ requires = ["maturin>=1.2.0,<1.3.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 6.0.1",
-  "fsspec[http]",
+  "pyarrow >= 7.0.0",
+  "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.10'",
   "pickle5 >= 0.0.12; python_version < '3.8'"
@@ -28,12 +28,14 @@ aws = ["boto3"]
 azure = []
 deltalake = ["deltalake"]
 gcp = []
+hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  "ray[data, client]>=2.0.0",
+  'ray[data, client]>=2.0.0 ; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
@@ -45,6 +47,14 @@ homepage = "https://www.getdaft.io"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
+
+[tool.codespell]
+check-filenames = true
+check-hidden = true
+ignore-words-list = "crate,arithmetics,ser"
+# Feel free to un-skip examples, and experimental, you will just need to
+# work through many typos (--write-changes and --interactive will help)
+skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb"
 
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']

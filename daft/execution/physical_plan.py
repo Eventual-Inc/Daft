@@ -1205,7 +1205,7 @@ def split(
         splits_per_partition[split_at] += 1
         rows_after_splitting[split_at] = float(rows_by_partitions[split_at] / splits_per_partition[split_at])
 
-    # Emit the splitted partitions.
+    # Emit the split partitions.
     for task, num_out, num_rows in zip(consume_deque(materializations), splits_per_partition, rows_by_partitions):
         if num_out == 1:
             yield PartitionTaskBuilder[PartitionT](
