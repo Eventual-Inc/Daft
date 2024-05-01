@@ -21,7 +21,7 @@ from daft.runners.partitioning import PartitionCacheEntry
 if TYPE_CHECKING:
     from pyiceberg.table import Table as IcebergTable
 
-    from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
+    from daft.plan_scheduler.physical_plan_scheduler import AdaptivePhysicalPlanScheduler, PhysicalPlanScheduler
 
 
 class LogicalPlanBuilder:
@@ -42,6 +42,11 @@ class LogicalPlanBuilder:
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
         return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler(daft_execution_config))
+
+    def to_adaptive_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> AdaptivePhysicalPlanScheduler:
+        from daft.plan_scheduler.physical_plan_scheduler import AdaptivePhysicalPlanScheduler
+
+        return AdaptivePhysicalPlanScheduler(self._builder.to_adaptive_physical_plan_scheduler(daft_execution_config))
 
     def schema(self) -> Schema:
         """

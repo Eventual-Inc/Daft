@@ -5,10 +5,12 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter, TreeNodeVisitor};
 
 use crate::logical_ops::Source;
+use crate::logical_optimization::Optimizer;
 use crate::logical_plan::LogicalPlan;
 
+use crate::physical_ops::InMemoryScan;
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
-use crate::source_info::{PlaceHolderInfo, SourceInfo};
+use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 use crate::LogicalPlanRef;
 
 use common_treenode::TreeNodeRecursion;
@@ -63,11 +65,55 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
     }
 }
 
-enum QueryStageOutput {
+struct ReplacePlaceholdersWithMaterializedResult {
+    mat_results: Option<MaterializedResults>
+}
+
+impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
+    type Node = Arc<LogicalPlan>;
+
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+        Ok(Transformed::no(node))
+    }
+
+    fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+        match node.as_ref() {
+            LogicalPlan::Source(Source { output_schema: _, source_info }) => match source_info.as_ref() {
+                SourceInfo::PlaceHolderInfo(phi) => {
+                    assert!(self.mat_results.is_some());
+                    let mut mat_results = self.mat_results.take().unwrap();
+
+                    // use the clustering spec from the original plan
+                    mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
+                    mat_results.in_memory_info.source_schema = phi.source_schema.clone();
+                    //TODO: check placeholder id here
+                    let new_source_node = LogicalPlan::Source(Source { output_schema: mat_results.in_memory_info.source_schema.clone() , source_info: SourceInfo::InMemoryInfo(mat_results.in_memory_info).into() }).arced();
+                    Ok(Transformed::new(new_source_node, true, TreeNodeRecursion::Stop))
+                }
+                _ => Ok(Transformed::no(node))
+            }
+            _ => Ok(Transformed::no(node))
+        }
+
+    }
+}
+
+
+
+
+pub(super) enum QueryStageOutput {
     Partial{physical_plan: PhysicalPlanRef },
     Final{physical_plan: PhysicalPlanRef}
 }
 
+
+impl QueryStageOutput {
+    pub fn unwrap(self) -> PhysicalPlanRef {
+        match self {
+            QueryStageOutput::Partial { physical_plan } | QueryStageOutput::Final { physical_plan } => physical_plan
+        }
+    }
+}
 #[derive(PartialEq, Debug)]
 enum AdaptivePlannerStatus {
     Ready,
@@ -75,8 +121,12 @@ enum AdaptivePlannerStatus {
     Done
 }
 
+pub(super) struct MaterializedResults {
+    pub in_memory_info: InMemoryInfo,
+}
 
-struct AdaptivePlanner {
+
+pub(super) struct AdaptivePlanner {
     logical_plan: LogicalPlanRef,
     cfg: Arc<DaftExecutionConfig>,
     status: AdaptivePlannerStatus
@@ -100,7 +150,7 @@ impl AdaptivePlanner {
 
         let physical_plan = rewriter.physical_children.pop().expect("should have 1 child");
 
-        if output.transformed {
+        if output.transformed{
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
             Ok(QueryStageOutput::Partial { physical_plan })
@@ -110,9 +160,46 @@ impl AdaptivePlanner {
         }
     }
 
+    pub fn is_done(&self) -> bool {
+        self.status == AdaptivePlannerStatus::Done
+    }
 
-    pub fn update(&mut self) -> DaftResult<()> {
+    pub fn update(&mut self, mat_results: MaterializedResults) -> DaftResult<()> {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
+
+        let mut rewriter = ReplacePlaceholdersWithMaterializedResult {
+            mat_results: Some(mat_results)
+        };
+        let result = self.logical_plan.clone().rewrite(&mut rewriter)?;
+
+        assert!(result.transformed);
+
+        self.logical_plan = result.data;
+
+        let optimizer = Optimizer::new(Default::default());
+
+        self.logical_plan = optimizer.optimize(
+            self.logical_plan.clone(),
+            |new_plan, rule_batch, pass, transformed, seen| {
+                if transformed {
+                    log::debug!(
+                        "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                        rule_batch,
+                        pass,
+                        if seen { "an already seen" } else { "a new" },
+                        new_plan.repr_ascii(true),
+                    );
+                } else {
+                    log::debug!(
+                        "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                        rule_batch,
+                        pass,
+                        new_plan.repr_ascii(true),
+                    );
+                }
+            },
+        )?;
+        self.status = AdaptivePlannerStatus::Ready;
 
         Ok(())
     }

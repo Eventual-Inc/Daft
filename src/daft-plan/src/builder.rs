@@ -7,7 +7,7 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    physical_planner::plan,
+    physical_planner::{plan, python::AdaptivePhysicalPlanScheduler},
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
@@ -713,6 +713,19 @@ impl PyLogicalPlanBuilder {
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
     }
+
+    pub fn to_adaptive_physical_plan_scheduler(
+        &self,
+        py: Python,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<AdaptivePhysicalPlanScheduler> {
+        py.allow_threads(|| {
+            let logical_plan = self.builder.build();
+            Ok(AdaptivePhysicalPlanScheduler::new(logical_plan, cfg.config.clone()))
+        })
+    }
+
+
 }
 
 impl From<LogicalPlanBuilder> for PyLogicalPlanBuilder {

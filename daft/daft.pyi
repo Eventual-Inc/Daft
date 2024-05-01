@@ -1263,6 +1263,17 @@ class PhysicalPlanScheduler:
     def repr_ascii(self, simple: bool) -> str: ...
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.InProgressPhysicalPlan: ...
 
+
+class AdaptivePhysicalPlanScheduler:
+    """
+    An adaptive Physical Plan Scheduler.
+    """
+    def next(self) -> PhysicalPlanScheduler: ...
+
+    def is_done(self) -> bool: ...
+    # Todo use in memory info here instead
+    def update(self, partition_key: str, cache_entry: PartitionCacheEntry, num_partitions: int, size_bytes: int) -> None: ...
+
 class LogicalPlanBuilder:
     """
     A logical plan builder, which simplifies constructing logical plans via

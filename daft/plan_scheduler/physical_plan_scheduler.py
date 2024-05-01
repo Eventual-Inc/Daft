@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from daft.daft import AdaptivePhysicalPlanScheduler as _AdaptivePhysicalPlanScheduler
 from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.execution import physical_plan
-from daft.runners.partitioning import PartitionT
+from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 
 
 class PhysicalPlanScheduler:
@@ -30,3 +31,21 @@ class PhysicalPlanScheduler:
 
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
         return physical_plan.materialize(self._scheduler.to_partition_tasks(psets))
+
+class AdaptivePhysicalPlanScheduler:
+    def __init__(self, scheduler: _AdaptivePhysicalPlanScheduler) -> None:
+        self._scheduler = scheduler
+
+    def next(self) -> PhysicalPlanScheduler:    
+        return PhysicalPlanScheduler(self._scheduler.next())
+
+    def is_done(self) -> bool:
+        return self._scheduler.is_done()
+
+    def update(self, cache_entry: PartitionCacheEntry):
+        self._scheduler.update(
+            cache_entry.key,
+            cache_entry,
+            num_partitions=cache_entry.num_partitions(),
+            size_bytes=cache_entry.size_bytes()
+        )

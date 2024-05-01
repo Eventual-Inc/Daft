@@ -42,6 +42,8 @@ use {
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     use daft_scan::file_format::DatabaseSourceConfig;
 
+    use crate::physical_planner::python::AdaptivePhysicalPlanScheduler;
+
     parent.add_class::<PyLogicalPlanBuilder>()?;
     parent.add_class::<FileFormat>()?;
     parent.add_class::<PyFileFormatConfig>()?;
@@ -52,6 +54,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<JoinType>()?;
     parent.add_class::<JoinStrategy>()?;
     parent.add_class::<PhysicalPlanScheduler>()?;
+    parent.add_class::<AdaptivePhysicalPlanScheduler>()?;
     parent.add_class::<ResourceRequest>()?;
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;

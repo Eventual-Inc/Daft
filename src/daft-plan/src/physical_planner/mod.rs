@@ -10,9 +10,11 @@ use crate::physical_planner::planner::{PhysicalPlanTranslator, QueryStagePhysica
 use common_treenode::TreeNode;
 mod planner;
 mod translate;
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Translate a logical plan to a physical plan.
-pub fn plan_old(
+pub fn plan(
     logical_plan: Arc<LogicalPlan>,
     cfg: Arc<DaftExecutionConfig>,
 ) -> DaftResult<PhysicalPlanRef> {
@@ -33,7 +35,7 @@ pub fn plan_old(
     Ok(pplan)
 }
 
-pub fn plan(
+pub fn plan_new(
     logical_plan: Arc<LogicalPlan>,
     cfg: Arc<DaftExecutionConfig>,
 ) -> DaftResult<PhysicalPlanRef> {
