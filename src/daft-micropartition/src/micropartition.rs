@@ -352,11 +352,19 @@ fn materialize_scan_task(
                         // Materialize the Tables by calling the Python function
                         match source {
                             DataFileSource::PythonFactoryFunction {
-                                func,
+                                func_import_path,
+                                func_args,
                                 ..
                             } => {
                                 Python::with_gil(|py| {
-                                    let pytables = crate::python::py_func_into_tables(py, &func.0);
+                                    let split_path = func_import_path.split('.').collect::<Vec<_>>();
+                                    let (module_path, func_name) = match split_path.as_slice() {
+                                        [module @ .., last] => (module.join("."), last),
+                                        _ => panic!("Cannot import from invalid function at path: {func_import_path}")
+                                    };
+
+                                    let func = py.import(pyo3::types::PyString::new(py, &module_path)).unwrap_or_else(|_| panic!("Cannot import factory function from module {module_path}")).getattr(pyo3::types::PyString::new(py, func_name)).unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module_path}"));
+                                    let pytables = func.call(func_args.to_pytuple(py), None)?.extract::<Vec<daft_table::python::PyTable>>();
                                     pytables.map(|pytable_vec| pytable_vec.into_iter().map(|t| t.table))
                                 })
                             },

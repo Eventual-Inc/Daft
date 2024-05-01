@@ -145,13 +145,8 @@ pub enum DataFileSource {
     },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
-        func: python::PythonScanTaskFactoryFunction,
-
-        /// Python functions don't need to have filepaths that Daft reads from, but we allow for attaching
-        /// a descriptor for debugging purposes. Descriptors can hold arbitrary information about this
-        /// method, for example filepaths etc.
-        descriptor: String,
-
+        func_import_path: String,
+        func_args: python::PythonTablesFactoryArgs,
         size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
         statistics: Option<TableStatistics>,
@@ -166,7 +161,9 @@ impl DataFileSource {
             | Self::CatalogDataFile { path, .. }
             | Self::DatabaseDataSource { path, .. } => path,
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { descriptor, .. } => descriptor,
+            Self::PythonFactoryFunction {
+                func_import_path, ..
+            } => func_import_path,
         }
     }
 
@@ -297,14 +294,14 @@ impl DataFileSource {
             }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
-                func: _func,
-                descriptor,
+                func_import_path,
+                func_args: _func_args,
                 size_bytes,
                 metadata,
                 statistics,
                 partition_spec,
             } => {
-                res.push(format!("Descriptor = {}", descriptor));
+                res.push(format!("Function = {}", func_import_path));
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {}", size_bytes));
                 }

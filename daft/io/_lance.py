@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -16,25 +16,12 @@ if TYPE_CHECKING:
     import lance
 
 
-def _lancedb_factory_function(fragment: "lance.LanceFragment", pushdowns: Pushdowns) -> Callable[[], List["PyTable"]]:
-    required_columns: Optional[List[str]]
-    if pushdowns.columns is None:
-        required_columns = None
-    else:
-        filter_required_column_names = pushdowns.filter_required_column_names()
-        required_columns = (
-            pushdowns.columns
-            if filter_required_column_names is None
-            else pushdowns.columns + filter_required_column_names
-        )
-
-    def f() -> List["PyTable"]:
-        return [
-            Table.from_arrow_record_batches([rb], rb.schema)._table
-            for rb in fragment.to_batches(columns=required_columns)
-        ]
-
-    return f
+def _lancedb_table_factory_function(
+    fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
+) -> List["PyTable"]:
+    return [
+        Table.from_arrow_record_batches([rb], rb.schema)._table for rb in fragment.to_batches(columns=required_columns)
+    ]
 
 
 @PublicAPI
@@ -95,11 +82,20 @@ class LanceDBScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+        required_columns: Optional[List[str]]
+        if pushdowns.columns is None:
+            required_columns = None
+        else:
+            filter_required_column_names = pushdowns.filter_required_column_names()
+            required_columns = (
+                pushdowns.columns
+                if filter_required_column_names is None
+                else pushdowns.columns + filter_required_column_names
+            )
+
         # TODO: figure out how to translate Pushdowns into LanceDB filters
         filters = None
-
         fragments = self._ds.get_fragments(filter=filters)
-
         for i, fragment in enumerate(fragments):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
@@ -114,8 +110,8 @@ class LanceDBScanOperator(ScanOperator):
             num_rows = None
 
             yield ScanTask.python_factory_func_scan_task(
-                func=_lancedb_factory_function(fragment, pushdowns),
-                descriptor=f"{self.display_name()}[{i}]",
+                func_import_path=f"{_lancedb_table_factory_function.__module__}.{_lancedb_table_factory_function.__name__}",
+                func_args=(fragment, required_columns),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,

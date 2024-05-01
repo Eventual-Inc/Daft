@@ -1,11 +1,10 @@
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
 use crate::py_object_serde::{deserialize_py_object, serialize_py_object};
 
-/// A Python function that produces a ScanTask
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PythonScanTaskFactoryFunction(
+struct PyObjectSerializableWrapper(
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
@@ -13,9 +12,31 @@ pub struct PythonScanTaskFactoryFunction(
     pub PyObject,
 );
 
-impl PartialEq for PythonScanTaskFactoryFunction {
+/// Python arguments to a Python function that produces Tables
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonTablesFactoryArgs(Vec<PyObjectSerializableWrapper>);
+
+impl PythonTablesFactoryArgs {
+    pub fn new(args: Vec<PyObject>) -> Self {
+        Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
+    }
+
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
+        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    }
+}
+
+impl PartialEq for PythonTablesFactoryArgs {
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        Python::with_gil(|py| {
+            self.0
+                .iter()
+                .zip(other.0.iter())
+                .all(|(s, o)| s.0.as_ref(py).eq(o.0.as_ref(py)).unwrap())
+        })
     }
 }
 
@@ -58,6 +79,8 @@ pub mod pylib {
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
     use common_daft_config::PyDaftExecutionConfig;
+
+    use super::PythonTablesFactoryArgs;
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -381,8 +404,8 @@ pub mod pylib {
         #[staticmethod]
         pub fn python_factory_func_scan_task(
             py: Python,
-            func: &PyAny,
-            descriptor: String,
+            func_import_path: String,
+            func_args: Vec<&PyAny>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -393,8 +416,10 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
             let data_source = DataFileSource::PythonFactoryFunction {
-                func: super::PythonScanTaskFactoryFunction(func.to_object(py)),
-                descriptor,
+                func_import_path,
+                func_args: PythonTablesFactoryArgs::new(
+                    func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
+                ),
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
