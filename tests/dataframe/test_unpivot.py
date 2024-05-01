@@ -1,6 +1,7 @@
 import pytest
 
 from daft import col
+from daft.datatype import DataType
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
@@ -190,6 +191,51 @@ def test_unpivot_expr(make_df, n_partitions):
         "id": ["x", "x", "x", "y", "y", "y", "z", "z", "z"],
         "variable": ["a", "b", "a_plus_b", "a", "b", "a_plus_b", "a", "b", "a_plus_b"],
         "value": [1, 2, 3, 3, 4, 7, 5, 6, 11],
+    }
+
+    assert df.to_pydict() == expected
+
+
+def test_unpivot_empty(make_df):
+    df = make_df(
+        {
+            "id": [],
+            "a": [],
+            "b": [],
+        }
+    )
+
+    df = df.unpivot("id", ["a", "b"])
+    df = df.collect()
+
+    expected = {
+        "id": [],
+        "variable": [],
+        "value": [],
+    }
+
+    assert df.to_pydict() == expected
+    assert df.schema()["variable"].dtype == DataType.string()
+
+
+def test_unpivot_empty_partition(make_df):
+    df = make_df(
+        {
+            "id": ["x", "y", "z"],
+            "a": [1, 3, 5],
+            "b": [2, 4, 6],
+        }
+    )
+
+    df = df.into_partitions(4)
+    df = df.unpivot("id", ["a", "b"])
+    df = df.sort("id")
+    df = df.collect()
+
+    expected = {
+        "id": ["x", "x", "y", "y", "z", "z"],
+        "variable": ["a", "b", "a", "b", "a", "b"],
+        "value": [1, 2, 3, 4, 5, 6],
     }
 
     assert df.to_pydict() == expected

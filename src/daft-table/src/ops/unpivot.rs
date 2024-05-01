@@ -47,20 +47,6 @@ impl Table {
         let variable_arr = Box::new(arrow2::array::Utf8Array::from_iter_values(variable_column));
         let variable_series = Utf8Array::from((variable_name, variable_arr)).into_series();
 
-        // let value_dtype = values_table
-        //     .schema
-        //     .fields
-        //     .iter()
-        //     .map(|(_, f)| f.dtype.clone())
-        //     .try_reduce(|a, b| try_get_supertype(&a, &b))?
-        //     .unwrap();
-
-        // let values_casted = values_table
-        //     .columns
-        //     .iter()
-        //     .map(|c| c.cast(&value_dtype))
-        //     .collect::<DaftResult<Vec<_>>>()?;
-
         let values_casted = match_types_on_series(values_table.columns.iter().collect())?;
 
         let value_series =
