@@ -54,3 +54,5 @@ Benchmark tests are located in `tests/benchmarks`. If you would like to run benc
 
 1. `pytest tests/benchmarks/[test_file.py] --benchmark-only`: Run all benchmarks in a file
 2. `pytest tests/benchmarks/[test_file.py] -k [test_name] --benchmark-only`: Run a specific benchmark in a file
+
+More information about writing and using benchmarks can be found on the [pytest-benchmark docs](https://pytest-benchmark.readthedocs.io/en/latest/).
