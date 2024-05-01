@@ -98,9 +98,11 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
                 ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
+                    force_list_output,
                 }) => ApproxPercentile(ApproxPercentileParams {
                     child: Alias(e, name.clone()).into(),
                     percentiles,
+                    force_list_output,
                 }),
                 MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),

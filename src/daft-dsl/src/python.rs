@@ -302,9 +302,9 @@ impl PyExpr {
     }
 
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {
-        let percentiles = match percentiles {
-            ApproxPercentileInput::Single(p) => vec![p],
-            ApproxPercentileInput::Many(p) => p,
+        let (percentiles, list_output) = match percentiles {
+            ApproxPercentileInput::Single(p) => (vec![p], false),
+            ApproxPercentileInput::Many(p) => (p, true),
         };
 
         for &p in percentiles.iter() {
@@ -319,7 +319,7 @@ impl PyExpr {
         Ok(self
             .expr
             .clone()
-            .approx_percentiles(percentiles.as_slice())
+            .approx_percentiles(percentiles.as_slice(), list_output)
             .into())
     }
 

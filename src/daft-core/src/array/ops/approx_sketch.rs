@@ -14,7 +14,9 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
     fn approx_sketch(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
-        let arrow_array = if primitive_arr.null_count() > 0 {
+        let arrow_array = if primitive_arr.is_empty() {
+            daft_sketch::into_arrow2(vec![])
+        } else if primitive_arr.null_count() > 0 {
             let sketch = primitive_arr
                 .iter()
                 .fold(None, |acc, value| match (acc, value) {
@@ -29,7 +31,6 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         Some(acc)
                     }
                 });
-
             daft_sketch::into_arrow2(vec![sketch])
         } else {
             let sketch = primitive_arr.values_iter().fold(
@@ -55,7 +56,9 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
-        let sketch_per_group = if arrow_array.null_count() > 0 {
+        let sketch_per_group = if arrow_array.is_empty() {
+            daft_sketch::into_arrow2(vec![])
+        } else if arrow_array.null_count() > 0 {
             let sketches: Vec<Option<DDSketch>> = groups
                 .iter()
                 .map(|g| {

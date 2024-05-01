@@ -318,6 +318,7 @@ pub(super) fn translate_single_logical_node(
                             ApproxPercentile(ApproxPercentileParams {
                                 child: e,
                                 percentiles,
+                                force_list_output,
                             }) => {
                                 let percentiles =
                                     percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
@@ -334,7 +335,10 @@ pub(super) fn translate_single_logical_node(
                                     ));
                                 final_exprs.push(
                                     col(approx_id.clone())
-                                        .sketch_percentile(percentiles.as_slice())
+                                        .sketch_percentile(
+                                            percentiles.as_slice(),
+                                            *force_list_output,
+                                        )
                                         .alias(output_name),
                                 );
                             }

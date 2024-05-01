@@ -326,10 +326,11 @@ impl Table {
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
+                force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 Series::approx_sketch(&self.eval_expression(expr)?, groups)?
-                    .sketch_percentile(&percentiles)
+                    .sketch_percentile(&percentiles, *force_list_output)
             }
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),

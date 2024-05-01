@@ -23,7 +23,10 @@ impl Eq for HashableVecPercentiles {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SketchExpr {
-    Percentile(HashableVecPercentiles),
+    Percentile {
+        percentiles: HashableVecPercentiles,
+        force_list_output: bool,
+    },
 }
 
 impl SketchExpr {
@@ -31,16 +34,17 @@ impl SketchExpr {
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use SketchExpr::*;
         match self {
-            Percentile(_) => &PercentileEvaluator {},
+            Percentile { .. } => &PercentileEvaluator {},
         }
     }
 }
 
-pub fn sketch_percentile(input: ExprRef, percentiles: &[f64]) -> ExprRef {
+pub fn sketch_percentile(input: ExprRef, percentiles: &[f64], force_list_output: bool) -> ExprRef {
     Expr::Function {
-        func: super::FunctionExpr::Sketch(SketchExpr::Percentile(HashableVecPercentiles(
-            percentiles.to_vec(),
-        ))),
+        func: super::FunctionExpr::Sketch(SketchExpr::Percentile {
+            percentiles: HashableVecPercentiles(percentiles.to_vec()),
+            force_list_output,
+        }),
         inputs: vec![input.clone()],
     }
     .into()

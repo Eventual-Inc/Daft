@@ -368,12 +368,14 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,
+            ref force_list_output,
         }) => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
             .map_yes_no(
                 |transformed_child| {
                     AggExpr::ApproxPercentile(ApproxPercentileParams {
                         child: transformed_child,
                         percentiles: percentiles.clone(),
+                        force_list_output: *force_list_output,
                     })
                 },
                 |_| e.clone(),

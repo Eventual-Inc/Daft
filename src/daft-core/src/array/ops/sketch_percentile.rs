@@ -12,12 +12,16 @@ use common_error::DaftResult;
 use super::from_arrow::FromArrow;
 
 impl StructArray {
-    pub fn sketch_percentile(&self, percentiles: &[f64]) -> DaftResult<Series> {
-        let output_len = percentiles.len();
-        let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), output_len);
+    pub fn sketch_percentile(
+        &self,
+        percentiles: &[f64],
+        force_list_output: bool,
+    ) -> DaftResult<Series> {
+        let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len());
         let output_field = Field::new(self.field.name.as_str(), output_dtype);
 
-        let mut flat_child = MutablePrimitiveArray::<f64>::with_capacity(output_len * self.len());
+        let mut flat_child =
+            MutablePrimitiveArray::<f64>::with_capacity(percentiles.len() * self.len());
         daft_sketch::from_arrow2(self.to_arrow())?
             .iter()
             .for_each(|sketch| match sketch {
@@ -36,13 +40,13 @@ impl StructArray {
         )?
         .into_series();
 
-        if output_len == 1 {
-            Ok(flat_child)
-        } else {
+        if percentiles.len() > 1 || force_list_output {
             Ok(
                 FixedSizeListArray::new(output_field, flat_child, self.validity().cloned())
                     .into_series(),
             )
+        } else {
+            Ok(flat_child)
         }
     }
 }

@@ -25,19 +25,22 @@ impl FunctionEvaluator for PercentileEvaluator {
                 match (input_field.dtype, expr) {
                     (
                         DataType::Struct(_),
-                        FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)),
+                        FunctionExpr::Sketch(SketchExpr::Percentile {
+                            percentiles,
+                            force_list_output,
+                        }),
                     ) => Ok(Field::new(
                         input_field.name,
-                        if percentiles.0.len() == 1 {
-                            DataType::Float64
-                        } else {
+                        if percentiles.0.len() > 1 || *force_list_output {
                             DataType::FixedSizeList(
                                 Box::new(DataType::Float64),
                                 percentiles.0.len(),
                             )
+                        } else {
+                            DataType::Float64
                         },
                     )),
-                    (input_field_dtype, FunctionExpr::Sketch(SketchExpr::Percentile(_))) => {
+                    (input_field_dtype, FunctionExpr::Sketch(SketchExpr::Percentile { .. })) => {
                         Err(DaftError::TypeError(format!(
                             "Expected input to be a struct type, received: {}",
                             input_field_dtype
@@ -59,9 +62,10 @@ impl FunctionEvaluator for PercentileEvaluator {
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
             [input] => match expr {
-                FunctionExpr::Sketch(SketchExpr::Percentile(percentiles)) => {
-                    input.sketch_percentile(percentiles.0.as_slice())
-                }
+                FunctionExpr::Sketch(SketchExpr::Percentile {
+                    percentiles,
+                    force_list_output,
+                }) => input.sketch_percentile(percentiles.0.as_slice(), *force_list_output),
                 _ => unreachable!(
                     "PercentileEvaluator must evaluate a SketchExpr::Percentile expression"
                 ),

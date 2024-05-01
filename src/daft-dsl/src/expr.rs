@@ -61,6 +61,7 @@ pub enum Expr {
 pub struct ApproxPercentileParams {
     pub child: ExprRef,
     pub percentiles: Vec<daft_core::utils::hashable_float_wrapper::FloatWrapper<f64>>,
+    pub force_list_output: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -127,10 +128,11 @@ impl AggExpr {
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
+                force_list_output,
             }) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
-                    "{child_id}.local_approx_percentiles(percentiles={:?})",
+                    "{child_id}.local_approx_percentiles(percentiles={:?},force_list_output={force_list_output})",
                     percentiles,
                 ))
             }
@@ -207,12 +209,15 @@ impl AggExpr {
                 func: func.clone(),
                 inputs: children,
             },
-            ApproxPercentile(ApproxPercentileParams { percentiles, .. }) => {
-                ApproxPercentile(ApproxPercentileParams {
-                    child: children[0].clone(),
-                    percentiles: percentiles.clone(),
-                })
-            }
+            ApproxPercentile(ApproxPercentileParams {
+                percentiles,
+                force_list_output,
+                ..
+            }) => ApproxPercentile(ApproxPercentileParams {
+                child: children[0].clone(),
+                percentiles: percentiles.clone(),
+                force_list_output: *force_list_output,
+            }),
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
         }
@@ -259,15 +264,16 @@ impl AggExpr {
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
+                force_list_output,
             }) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
                     match &field.dtype {
-                        dt if dt.is_numeric() => if percentiles.len() == 1 {
-                            DataType::Float64
-                        } else {
+                        dt if dt.is_numeric() => if percentiles.len() > 1 || *force_list_output {
                             DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len())
+                        } else {
+                            DataType::Float64
                         },
                         other => {
                             return Err(DaftError::TypeError(format!(
@@ -378,22 +384,32 @@ impl Expr {
         Expr::Agg(AggExpr::ApproxSketch(self)).into()
     }
 
-    pub fn approx_percentiles(self: ExprRef, percentiles: &[f64]) -> ExprRef {
+    pub fn approx_percentiles(
+        self: ExprRef,
+        percentiles: &[f64],
+        force_list_output: bool,
+    ) -> ExprRef {
         Expr::Agg(AggExpr::ApproxPercentile(ApproxPercentileParams {
             child: self,
             percentiles: percentiles
                 .iter()
                 .map(|f| daft_core::utils::hashable_float_wrapper::FloatWrapper(*f))
                 .collect(),
+            force_list_output,
         }))
         .into()
     }
 
-    pub fn sketch_percentile(self: ExprRef, percentiles: &[f64]) -> ExprRef {
+    pub fn sketch_percentile(
+        self: ExprRef,
+        percentiles: &[f64],
+        force_list_output: bool,
+    ) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Sketch(SketchExpr::Percentile(HashableVecPercentiles(
-                percentiles.to_vec(),
-            ))),
+            func: FunctionExpr::Sketch(SketchExpr::Percentile {
+                percentiles: HashableVecPercentiles(percentiles.to_vec()),
+                force_list_output,
+            }),
             inputs: vec![self],
         }
         .into()
@@ -890,9 +906,9 @@ impl Display for AggExpr {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
             ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
-            ApproxPercentile(ApproxPercentileParams { child, percentiles }) => write!(
+            ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(
                 f,
-                "approx_percentiles({child}, percentiles={percentiles:?})"
+                "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
             ),
             MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),
