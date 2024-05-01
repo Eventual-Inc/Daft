@@ -18,10 +18,10 @@ if TYPE_CHECKING:
 
 def _lancedb_table_factory_function(
     fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
-) -> List["PyTable"]:
-    return [
+) -> Iterator["PyTable"]:
+    return (
         Table.from_arrow_record_batches([rb], rb.schema)._table for rb in fragment.to_batches(columns=required_columns)
-    ]
+    )
 
 
 @PublicAPI
@@ -40,7 +40,12 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
     """
 
-    import lance
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install getdaft[lance]`"
+        ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = io_config_to_storage_options(io_config, url)
@@ -110,7 +115,8 @@ class LanceDBScanOperator(ScanOperator):
             num_rows = None
 
             yield ScanTask.python_factory_func_scan_task(
-                func_import_path=f"{_lancedb_table_factory_function.__module__}.{_lancedb_table_factory_function.__name__}",
+                module=_lancedb_table_factory_function.__module__,
+                func_name=_lancedb_table_factory_function.__name__,
                 func_args=(fragment, required_columns),
                 schema=self.schema()._schema,
                 num_rows=num_rows,

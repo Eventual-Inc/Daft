@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, types::PyTuple};
+use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
 use serde::{Deserialize, Serialize};
 
 use crate::py_object_serde::{deserialize_py_object, serialize_py_object};
@@ -31,12 +31,10 @@ impl PartialEq for PythonTablesFactoryArgs {
         if self.0.len() != other.0.len() {
             return false;
         }
-        Python::with_gil(|py| {
-            self.0
-                .iter()
-                .zip(other.0.iter())
-                .all(|(s, o)| s.0.as_ref(py).eq(o.0.as_ref(py)).unwrap())
-        })
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .all(|(s, o)| (s.0.as_ptr() as isize) == (o.0.as_ptr() as isize))
     }
 }
 
@@ -404,7 +402,8 @@ pub mod pylib {
         #[staticmethod]
         pub fn python_factory_func_scan_task(
             py: Python,
-            func_import_path: String,
+            module: String,
+            func_name: String,
             func_args: Vec<&PyAny>,
             schema: PySchema,
             num_rows: Option<i64>,
@@ -416,7 +415,8 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
             let data_source = DataFileSource::PythonFactoryFunction {
-                func_import_path,
+                module,
+                func_name,
                 func_args: PythonTablesFactoryArgs::new(
                     func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
                 ),

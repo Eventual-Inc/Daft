@@ -637,7 +637,8 @@ class ScanTask:
         ...
     @staticmethod
     def python_factory_func_scan_task(
-        func_import_path: str,
+        module: str,
+        func_name: str,
         func_args: tuple[Any, ...],
         schema: PySchema,
         num_rows: int | None,

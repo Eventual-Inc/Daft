@@ -145,7 +145,8 @@ pub enum DataFileSource {
     },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
-        func_import_path: String,
+        module: String,
+        func_name: String,
         func_args: python::PythonTablesFactoryArgs,
         size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
@@ -161,9 +162,7 @@ impl DataFileSource {
             | Self::CatalogDataFile { path, .. }
             | Self::DatabaseDataSource { path, .. } => path,
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction {
-                func_import_path, ..
-            } => func_import_path,
+            Self::PythonFactoryFunction { module, .. } => module,
         }
     }
 
@@ -294,14 +293,15 @@ impl DataFileSource {
             }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
-                func_import_path,
+                module,
+                func_name,
                 func_args: _func_args,
                 size_bytes,
                 metadata,
                 statistics,
                 partition_spec,
             } => {
-                res.push(format!("Function = {}", func_import_path));
+                res.push(format!("Function = {module}.{func_name}"));
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {}", size_bytes));
                 }

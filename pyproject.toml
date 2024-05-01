@@ -30,6 +30,7 @@ deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.4.0", "packaging"]
+lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
