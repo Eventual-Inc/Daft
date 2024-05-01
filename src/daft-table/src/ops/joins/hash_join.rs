@@ -2,11 +2,8 @@ use std::iter::repeat;
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use daft_core::{
-    array::{
-        growable::make_growable,
-        ops::{arrow2::comparison::build_multi_array_is_equal, full::FullNull},
-    },
-    datatypes::UInt64Array,
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, full::FullNull},
+    datatypes::{BooleanArray, UInt64Array},
     DataType, IntoSeries,
 };
 use daft_dsl::ExprRef;
@@ -323,32 +320,47 @@ pub(super) fn hash_outer_join(
         }
     };
 
-    let mut join_series = lkeys
+    let mut join_series = if lkeys
         .column_names()
         .iter()
         .zip(rkeys.column_names().iter())
-        .map(|(l, r)| {
-            if l == r {
-                let lcol = left.get_column(l)?;
-                let rcol = right.get_column(r)?;
-
-                let mut growable =
-                    make_growable(l, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
-
-                for (li, ri) in lidx.u64()?.into_iter().zip(ridx.u64()?) {
-                    match (li, ri) {
-                        (Some(i), _) => growable.extend(0, *i as usize, 1),
-                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+        .any(|(l, r)| l == r)
+    {
+        let join_key_predicate = BooleanArray::from((
+            "join_key_predicate",
+            arrow2::array::BooleanArray::from_trusted_len_values_iter(
+                lidx.u64()?
+                    .into_iter()
+                    .zip(ridx.u64()?)
+                    .map(|(l, r)| match (l, r) {
+                        (Some(_), _) => true,
+                        (None, Some(_)) => false,
                         (None, None) => unreachable!("Join should not have None for both sides"),
-                    }
-                }
+                    }),
+            ),
+        ))
+        .into_series();
 
-                growable.build()
-            } else {
-                left.get_column(l)?.take(&lidx)
-            }
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
+        lkeys
+            .column_names()
+            .iter()
+            .zip(rkeys.column_names().iter())
+            .map(|(l, r)| {
+                if l == r {
+                    let lcol = left.get_column(l)?.take(&lidx)?;
+                    let rcol = right.get_column(r)?.take(&ridx)?;
+
+                    lcol.if_else(&rcol, &join_key_predicate)
+                } else {
+                    left.get_column(l)?.take(&lidx)
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    } else {
+        left.get_columns(lkeys.column_names().as_slice())?
+            .take(&lidx)?
+            .columns
+    };
 
     drop(lkeys);
     drop(rkeys);
