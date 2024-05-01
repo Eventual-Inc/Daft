@@ -4,12 +4,12 @@ use common_daft_config::DaftExecutionConfig;
 use daft_core::schema::Schema;
 use serde::{Deserialize, Serialize};
 
-use pyo3::prelude::*;
+use crate::physical_planner::planner::MaterializedResults;
+use crate::source_info::InMemoryInfo;
 use crate::LogicalPlan;
 use crate::{physical_planner::planner::AdaptivePlanner, PhysicalPlanScheduler};
 use daft_core::python::schema::PySchema;
-use crate::source_info::InMemoryInfo;
-use crate::physical_planner::planner::MaterializedResults;
+use pyo3::prelude::*;
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct AdaptivePhysicalPlanScheduler {
@@ -18,26 +18,26 @@ pub struct AdaptivePhysicalPlanScheduler {
 
 impl AdaptivePhysicalPlanScheduler {
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePhysicalPlanScheduler {planner: AdaptivePlanner::new(logical_plan, cfg)}
+        AdaptivePhysicalPlanScheduler {
+            planner: AdaptivePlanner::new(logical_plan, cfg),
+        }
     }
 }
-
-
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl AdaptivePhysicalPlanScheduler {
-
     pub fn next(&mut self) -> PyResult<PhysicalPlanScheduler> {
         let output = self.planner.next()?;
         Ok(output.unwrap().into())
     }
-    
+
     pub fn is_done(&self) -> PyResult<bool> {
         Ok(self.planner.is_done())
     }
 
-    pub fn update(&mut self,
+    pub fn update(
+        &mut self,
         partition_key: &str,
         cache_entry: &PyAny,
         num_partitions: usize,
@@ -52,7 +52,8 @@ impl AdaptivePhysicalPlanScheduler {
             None, // TODO(sammy) thread through clustering spec to Python
         );
 
-        self.planner.update(MaterializedResults {in_memory_info })?;
+        self.planner
+            .update(MaterializedResults { in_memory_info })?;
         Ok(())
     }
 }

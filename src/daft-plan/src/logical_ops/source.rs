@@ -9,7 +9,6 @@ use crate::source_info::SourceInfo;
 use crate::source_info::InMemoryInfo;
 use crate::source_info::PlaceHolderInfo;
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
@@ -53,7 +52,11 @@ impl Source {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
             }
-            SourceInfo::PlaceHolderInfo(PlaceHolderInfo {source_id, clustering_spec, ..}) => {
+            SourceInfo::PlaceHolderInfo(PlaceHolderInfo {
+                source_id,
+                clustering_spec,
+                ..
+            }) => {
                 res.push("PlaceHolder:".to_string());
                 res.push(format!("Source ID = {}", source_id));
                 res.extend(clustering_spec.multiline_display());

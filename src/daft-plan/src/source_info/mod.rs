@@ -19,7 +19,7 @@ use {
 pub enum SourceInfo {
     InMemoryInfo(InMemoryInfo),
     ExternalInfo(ScanExternalInfo),
-    PlaceHolderInfo(PlaceHolderInfo)
+    PlaceHolderInfo(PlaceHolderInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +34,7 @@ pub struct InMemoryInfo {
     pub cache_entry: PyObject,
     pub num_partitions: usize,
     pub size_bytes: usize,
-    pub clustering_spec: Option<ClusteringSpecRef>
+    pub clustering_spec: Option<ClusteringSpecRef>,
 }
 
 #[cfg(feature = "python")]
@@ -45,7 +45,7 @@ impl InMemoryInfo {
         cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
-        clustering_spec: Option<ClusteringSpecRef>
+        clustering_spec: Option<ClusteringSpecRef>,
     ) -> Self {
         Self {
             source_schema,
@@ -53,14 +53,14 @@ impl InMemoryInfo {
             cache_entry,
             num_partitions,
             size_bytes,
-            clustering_spec
+            clustering_spec,
         }
     }
 }
 
 impl PartialEq for InMemoryInfo {
     fn eq(&self, other: &Self) -> bool {
-        self.cache_key == other.cache_key    
+        self.cache_key == other.cache_key
     }
 }
 
@@ -78,7 +78,7 @@ static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
     pub clustering_spec: ClusteringSpecRef,
-    pub source_id: usize
+    pub source_id: usize,
 }
 
 impl PlaceHolderInfo {
@@ -86,7 +86,7 @@ impl PlaceHolderInfo {
         PlaceHolderInfo {
             source_schema,
             clustering_spec,
-            source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         }
     }
 }

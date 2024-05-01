@@ -721,11 +721,12 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<AdaptivePhysicalPlanScheduler> {
         py.allow_threads(|| {
             let logical_plan = self.builder.build();
-            Ok(AdaptivePhysicalPlanScheduler::new(logical_plan, cfg.config.clone()))
+            Ok(AdaptivePhysicalPlanScheduler::new(
+                logical_plan,
+                cfg.config.clone(),
+            ))
         })
     }
-
-
 }
 
 impl From<LogicalPlanBuilder> for PyLogicalPlanBuilder {

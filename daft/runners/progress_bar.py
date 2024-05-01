@@ -53,10 +53,6 @@ class ProgressBar:
                 task_pbar = self.pbars[-1]
                 task_pbar.total += 1
 
-        if not hasattr(step, "stage_id"):
-            import ipdb
-            ipdb.set_trace()
-
         stage_id = step.stage_id
 
         if stage_id not in self.pbars:

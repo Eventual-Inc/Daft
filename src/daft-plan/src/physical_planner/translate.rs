@@ -84,18 +84,19 @@ pub(super) fn translate_single_logical_node(
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => {
                 let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions)).into()
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
+                        .into()
                 });
 
                 let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
-                    clustering_spec
+                    clustering_spec,
                 ))
                 .arced();
                 Ok(scan)
             }
-            SourceInfo::PlaceHolderInfo(PlaceHolderInfo {source_id, ..}) => {
+            SourceInfo::PlaceHolderInfo(PlaceHolderInfo { source_id, .. }) => {
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },

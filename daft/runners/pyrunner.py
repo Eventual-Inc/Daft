@@ -150,7 +150,7 @@ class PyRunner(Runner[MicroPartition]):
 
         if ENABLE_AQE:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
-            while not adaptive_planner.is_done(): 
+            while not adaptive_planner.is_done():
                 plan_scheduler = adaptive_planner.next()
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 tasks = plan_scheduler.to_partition_tasks(psets)
@@ -163,8 +163,6 @@ class PyRunner(Runner[MicroPartition]):
                         intermediate.set_partition(i, rg)
 
                     cache_entry = self._part_set_cache.put_partition_set(intermediate)
-                    import ipdb
-                    ipdb.set_trace()
                     adaptive_planner.update(cache_entry)
         else:
             plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)

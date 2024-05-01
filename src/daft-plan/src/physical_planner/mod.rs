@@ -9,9 +9,9 @@ use crate::LogicalPlan;
 use crate::physical_planner::planner::{PhysicalPlanTranslator, QueryStagePhysicalPlanTranslator};
 use common_treenode::TreeNode;
 mod planner;
-mod translate;
 #[cfg(feature = "python")]
 pub mod python;
+mod translate;
 
 /// Translate a logical plan to a physical plan.
 pub fn plan(
