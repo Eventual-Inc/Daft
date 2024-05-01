@@ -133,6 +133,18 @@ impl From<Error> for DaftError {
             ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
             UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
             SocketError { .. } => DaftError::SocketError(err.into()),
+            // We have to repeat everything above for the case we have an Arc since we can't move the error.
+            CachedError { ref source } => match source.as_ref() {
+                NotFound { path, source: _ } => DaftError::FileNotFound {
+                    path: path.clone(),
+                    source: err.into(),
+                },
+                ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
+                ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
+                UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
+                SocketError { .. } => DaftError::SocketError(err.into()),
+                _ => DaftError::External(err.into()),
+            },
             _ => DaftError::External(err.into()),
         }
     }

@@ -31,10 +31,10 @@ where
         None => Ok(first),
         Some(second) => {
             let size_hint = size_hint.unwrap_or_else(|| first.len() + second.len());
-
             let mut buf = Vec::with_capacity(size_hint);
             buf.extend_from_slice(&first);
             buf.extend_from_slice(&second);
+
             while let Some(maybe_bytes) = stream.next().await {
                 buf.extend_from_slice(&maybe_bytes?);
             }
