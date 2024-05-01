@@ -15,6 +15,22 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         pytest.skip("Broadcast join does not support outer joins")
 
 
+def test_invalid_join_strategies(make_df):
+    df = make_df(
+        {
+            "A": [1, 2, 3],
+            "B": ["a", "b", "c"],
+        },
+    )
+
+    for join_type in ["left", "right", "outer"]:
+        with pytest.raises(ValueError):
+            df.join(df, on="A", strategy="sort_merge", how=join_type)
+
+    with pytest.raises(ValueError):
+        df.join(df, on="A", strategy="broadcast", how="outer")
+
+
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",

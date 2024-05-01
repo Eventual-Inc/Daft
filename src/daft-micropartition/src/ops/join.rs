@@ -19,12 +19,15 @@ impl MicroPartition {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
 
-        if (how == JoinType::Inner && (self.len() == 0 || right.len() == 0))
-            || (how == JoinType::Left && self.len() == 0)
-            || (how == JoinType::Right && right.len() == 0)
-            || (how == JoinType::Outer && (self.len() == 0 && right.len() == 0))
-        {
-            return Ok(Self::empty(Some(join_schema.into())));
+        match (how, self.len(), right.len()) {
+            (JoinType::Inner, 0, _)
+            | (JoinType::Inner, _, 0)
+            | (JoinType::Left, 0, _)
+            | (JoinType::Right, _, 0)
+            | (JoinType::Outer, 0, 0) => {
+                return Ok(Self::empty(Some(join_schema.into())));
+            }
+            _ => {}
         }
 
         if how == JoinType::Inner {

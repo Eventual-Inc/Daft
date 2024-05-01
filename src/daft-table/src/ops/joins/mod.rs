@@ -10,6 +10,8 @@ use daft_dsl::ExprRef;
 
 use crate::Table;
 
+use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
+
 mod hash_join;
 mod merge_join;
 
@@ -106,6 +108,68 @@ pub fn infer_join_schema(
     Schema::new(join_fields)
 }
 
+fn add_non_join_key_columns(
+    left: &Table,
+    right: &Table,
+    lidx: Series,
+    ridx: Series,
+    left_on: &[ExprRef],
+    right_on: &[ExprRef],
+    mut join_series: Vec<Series>,
+) -> DaftResult<Vec<Series>> {
+    let mut names_so_far = join_series
+        .iter()
+        .map(|s| s.name().to_string())
+        .collect::<HashSet<_>>();
+
+    // TODO(Clark): Parallelize with rayon.
+    for field in left.schema.fields.values() {
+        if names_so_far.contains(&field.name) {
+            continue;
+        } else {
+            join_series.push(left.get_column(&field.name)?.take(&lidx)?);
+            names_so_far.insert(field.name.clone());
+        }
+    }
+
+    drop(lidx);
+
+    // Zip the names of the left and right expressions into a HashMap
+    let left_names = left_on.iter().map(|e| e.name());
+    let right_names = right_on.iter().map(|e| e.name());
+    let zipped_names: DaftResult<_> = left_names
+        .zip(right_names)
+        .map(|(l, r)| Ok((l?, r?)))
+        .collect();
+    let zipped_names: Vec<(&str, &str)> = zipped_names?;
+    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
+
+    // TODO(Clark): Parallelize with Rayon.
+    for field in right.schema.fields.values() {
+        // Skip fields if they were used in the join and have the same name as the corresponding left field
+        match right_to_left_keys.get(field.name.as_str()) {
+            Some(val) if val.eq(&field.name.as_str()) => {
+                continue;
+            }
+            _ => (),
+        }
+
+        let mut curr_name = field.name.clone();
+        while names_so_far.contains(&curr_name) {
+            curr_name = "right.".to_string() + curr_name.as_str();
+        }
+        join_series.push(
+            right
+                .get_column(&field.name)?
+                .rename(curr_name.clone())
+                .take(&ridx)?,
+        );
+        names_so_far.insert(curr_name.clone());
+    }
+
+    Ok(join_series)
+}
+
 impl Table {
     pub fn hash_join(
         &self,
@@ -114,9 +178,26 @@ impl Table {
         right_on: &[ExprRef],
         how: JoinType,
     ) -> DaftResult<Self> {
-        self.join(right, left_on, right_on, |l, r| {
-            hash_join::hash_join(l, r, how)
-        })
+        if left_on.len() != right_on.len() {
+            return Err(DaftError::ValueError(format!(
+                "Mismatch of join on clauses: left: {:?} vs right: {:?}",
+                left_on.len(),
+                right_on.len()
+            )));
+        }
+
+        if left_on.is_empty() {
+            return Err(DaftError::ValueError(
+                "No columns were passed in to join on".to_string(),
+            ));
+        }
+
+        match how {
+            JoinType::Inner => hash_inner_join(self, right, left_on, right_on),
+            JoinType::Left => hash_left_right_join(self, right, left_on, right_on, true),
+            JoinType::Right => hash_left_right_join(self, right, left_on, right_on, false),
+            JoinType::Outer => hash_outer_join(self, right, left_on, right_on),
+        }
     }
 
     pub fn sort_merge_join(
@@ -126,9 +207,8 @@ impl Table {
         right_on: &[ExprRef],
         is_sorted: bool,
     ) -> DaftResult<Self> {
-        if is_sorted {
-            self.join(right, left_on, right_on, merge_join::merge_inner_join)
-        } else {
+        // sort first and then call join recursively
+        if !is_sorted {
             if left_on.is_empty() {
                 return Err(DaftError::ValueError(
                     "No columns were passed in to join on".to_string(),
@@ -153,29 +233,16 @@ impl Table {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )?;
-            left.join(&right, left_on, right_on, merge_join::merge_inner_join)
-        }
-    }
 
-    fn join(
-        &self,
-        right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
-        join_fn: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
-    ) -> DaftResult<Self> {
+            return left.sort_merge_join(&right, left_on, right_on, true);
+        }
+
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
-        let (lidx, ridx) = join_fn(&ltable, &rtable)?;
-
-        let mut join_fields = ltable
-            .column_names()
-            .iter()
-            .map(|s| self.schema.get_field(s).cloned())
-            .collect::<DaftResult<Vec<_>>>()?;
+        let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
         let mut join_series = vec![];
 
@@ -208,61 +275,9 @@ impl Table {
         drop(ltable);
         drop(rtable);
 
-        let mut names_so_far = HashSet::new();
+        join_series =
+            add_non_join_key_columns(self, right, lidx, ridx, left_on, right_on, join_series)?;
 
-        join_fields.iter().for_each(|f| {
-            names_so_far.insert(f.name.clone());
-        });
-
-        // TODO(Clark): Parallelize with rayon.
-        for field in self.schema.fields.values() {
-            if names_so_far.contains(&field.name) {
-                continue;
-            } else {
-                join_fields.push(field.clone());
-                join_series.push(self.get_column(&field.name)?.take(&lidx)?);
-                names_so_far.insert(field.name.clone());
-            }
-        }
-
-        drop(lidx);
-
-        // Zip the names of the left and right expressions into a HashMap
-        let left_names = left_on.iter().map(|e| e.name());
-        let right_names = right_on.iter().map(|e| e.name());
-        let zipped_names: DaftResult<_> = left_names
-            .zip(right_names)
-            .map(|(l, r)| Ok((l?, r?)))
-            .collect();
-        let zipped_names: Vec<(&str, &str)> = zipped_names?;
-        let right_to_left_keys: HashMap<&str, &str> =
-            HashMap::from_iter(zipped_names.iter().copied());
-
-        // TODO(Clark): Parallelize with Rayon.
-        for field in right.schema.fields.values() {
-            // Skip fields if they were used in the join and have the same name as the corresponding left field
-            match right_to_left_keys.get(field.name.as_str()) {
-                Some(val) if val.eq(&field.name.as_str()) => {
-                    continue;
-                }
-                _ => (),
-            }
-
-            let mut curr_name = field.name.clone();
-            while names_so_far.contains(&curr_name) {
-                curr_name = "right.".to_string() + curr_name.as_str();
-            }
-            join_fields.push(field.rename(curr_name.clone()));
-            join_series.push(
-                right
-                    .get_column(&field.name)?
-                    .rename(curr_name.clone())
-                    .take(&ridx)?,
-            );
-            names_so_far.insert(curr_name.clone());
-        }
-
-        drop(ridx);
         Table::new(join_schema, join_series)
     }
 }
