@@ -21,11 +21,7 @@ impl MicroPartition {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
                 let pivoted = empty_table.pivot(group_by, pivot_col, values_col, names)?;
-                Ok(MicroPartition::new_loaded(
-                    pivoted.schema.clone(),
-                    vec![pivoted].into(),
-                    None,
-                ))
+                Ok(Self::empty(Some(pivoted.schema.clone())))
             }
             [t] => {
                 let pivoted = t.pivot(group_by, pivot_col, values_col, names)?;
