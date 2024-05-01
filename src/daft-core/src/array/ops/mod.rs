@@ -38,6 +38,7 @@ mod round;
 mod search_sorted;
 mod sign;
 mod sort;
+mod sqrt;
 mod struct_;
 mod sum;
 mod take;

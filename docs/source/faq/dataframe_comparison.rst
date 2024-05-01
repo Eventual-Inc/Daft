@@ -45,6 +45,26 @@ Spark excels at large scale tabular analytics, with support for running Python c
 * **Lack of granular execution control:** with heavy processing of multimodal data, users often need more control around the execution and scheduling of their work. For example, users may need to ensure that Spark runs a single executor per GPU, but Spark's programming model makes this very difficult.
 * **Compatibility with downstream Machine Learning tasks:** Spark itself is not well suited for performing distributed ML training which is increasingly becoming the domain of frameworks such as Ray and Horovod. Integrating with such a solution is difficult and requires expert tuning of intermediate storage and data engineering solutions.
 
+Dask Dataframes
+---------------
+
+Dask and Daft are both DataFrame frameworks built for distributed computing. Both libraries enable you to process large, tabular datasets in parallel, either locally or on remote instances on-prem or in the cloud.
+
+If you are currently using Dask, you may want to consider migrating to Daft if you:
+
+- Are working with **multimodal data types**, such as nested JSON, tensors, Images, URLs, etc.,
+- Need faster computations through **query planning and optimization**,
+- Are executing **machine learning workloads** at scale,
+- Need deep support for **data catalogs, predicate pushdowns and metadata pruning** from Iceberg, Delta, and Hudi
+- Want to benefit from **native Rust concurrency**
+
+You may want to stick with using Dask if you:
+
+- Want to only write **pandas-like syntax**,
+- Need to parallelize **array-based workloads** or arbitrary **Python code that does not involve DataFrames** (with Dask Array, Dask Delayed and/or Dask Futures)
+
+Read more detailed comparisons in the :doc:`Dask Migration Guide <../migration_guides/coming_from_dask>`.
+
 Ray Datasets
 ------------
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 
 
 @pytest.mark.integration()
@@ -81,7 +82,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_with_connect_timeou
         )
     )
 
-    with pytest.raises(ValueError, match="HTTP connect timeout"):
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match="timed out when trying to connect to"):
         df = df.with_column(
             "data", df["urls"].url.download(io_config=connect_timeout_config, use_native_downloader=True)
         ).collect()
@@ -101,7 +102,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_with_read_timeout(s
         )
     )
 
-    with pytest.raises(ValueError, match="HTTP read timeout"):
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match="timed out when trying to connect to"):
         df = df.with_column(
             "data", df["urls"].url.download(io_config=read_timeout_config, use_native_downloader=True)
         ).collect()
