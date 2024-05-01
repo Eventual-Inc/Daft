@@ -463,8 +463,6 @@ jobs:
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
-        cache-from: type=gha
-        cache-to: type=gha,mode=min
     - name: Spin up services
       run: |
         pushd ./tests/integration/iceberg/docker-compose/
