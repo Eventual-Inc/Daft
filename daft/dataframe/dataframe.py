@@ -1283,20 +1283,24 @@ class DataFrame:
             determine the unique values to pivot on.
 
         Example:
-            >>> df = daft.from_pydict(
-                    {"group": ["A", "A", "B", "B"], "pivot": [1, 1, 1, 2], "value": [1, 2, 3, 4]}
-                )
-            >>> df = df.pivot("group", "pivot", "value", "sum")
-            >>> df.collect()
-            ╭───────┬───────┬───────╮
-            │ group ┆ 2     ┆ 1     │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Utf8  ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ A     ┆ None  ┆ 3     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ B     ┆ 4     ┆ 3     │
-            ╰───────┴───────┴───────╯
+            >>> data = {
+                "id": [1, 2, 3, 4],
+                "version": ["3.8", "3.8", "3.9", "3.9"],
+                "platform": ["macos", "macos", "macos", "windows"],
+                "downloads": [100, 200, 150, 250],
+            }
+            >>> df = daft.from_pydict(data)
+            >>> df = df.pivot("version", "platform", "downloads", "sum")
+            >>> df.show()
+            ╭─────────┬─────────┬───────╮
+            │ version ┆ windows ┆ macos │
+            │ ---     ┆ ---     ┆ ---   │
+            │ Utf8    ┆ Int64   ┆ Int64 │
+            ╞═════════╪═════════╪═══════╡
+            │ 3.9     ┆ 250     ┆ 150   │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3.8     ┆ None    ┆ 300   │
+            ╰─────────┴─────────┴───────╯
 
         Args:
             group_by (Union[str, Expression]): column to group by

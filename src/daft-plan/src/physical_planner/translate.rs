@@ -254,8 +254,6 @@ pub(super) fn translate_single_logical_node(
             groupby,
             ..
         }) => {
-            use daft_dsl::AggExpr::{self};
-
             let input_physical = physical_children.pop().expect("requires 1 input");
 
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
@@ -269,20 +267,8 @@ pub(super) fn translate_single_logical_node(
                 _ => {
                     let schema = logical_plan.schema();
 
-                    // Aggregations to apply in the first and second stages.
-                    // Semantic column name -> AggExpr
-                    let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<ExprRef> = groupby.clone();
-
-                    populate_aggregation_stages(
-                        aggregations,
-                        &schema,
-                        &mut first_stage_aggs,
-                        &mut second_stage_aggs,
-                        &mut final_exprs,
-                    );
+                    let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                        populate_aggregation_stages(aggregations, &schema, groupby);
 
                     let first_stage_agg = if first_stage_aggs.is_empty() {
                         input_physical
@@ -339,12 +325,11 @@ pub(super) fn translate_single_logical_node(
             names,
             ..
         }) => {
-            use daft_dsl::AggExpr::{self};
-
             let input_physical = physical_children.pop().expect("requires 1 input");
-
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
 
+            // NOTE: For the aggregation stages of the pivot operation, we need to group by the group_by column and pivot column together.
+            // This is because the resulting pivoted columns correspond to the unique pairs of group_by and pivot column values.
             let group_by_with_pivot = vec![group_by.clone(), pivot_column.clone()];
             let aggregations = vec![aggregation.clone()];
 
@@ -357,20 +342,8 @@ pub(super) fn translate_single_logical_node(
                 _ => {
                     let schema = logical_plan.schema();
 
-                    // Aggregations to apply in the first and second stages.
-                    // Semantic column name -> AggExpr
-                    let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
-                    // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<ExprRef> = group_by_with_pivot.clone();
-
-                    populate_aggregation_stages(
-                        &aggregations,
-                        &schema,
-                        &mut first_stage_aggs,
-                        &mut second_stage_aggs,
-                        &mut final_exprs,
-                    );
+                    let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                        populate_aggregation_stages(&aggregations, &schema, &group_by_with_pivot);
 
                     let first_stage_agg = if first_stage_aggs.is_empty() {
                         input_physical
@@ -396,6 +369,8 @@ pub(super) fn translate_single_logical_node(
                                 num_input_partitions,
                                 cfg.shuffle_aggregation_default_partitions,
                             ),
+                            // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
+                            // to ensure that all rows with the same group_by column values are hashed to the same partition.
                             vec![group_by.clone()],
                         ))
                         .arced();
@@ -700,14 +675,27 @@ pub(super) fn translate_single_logical_node(
     }
 }
 
+/// Given a list of aggregation expressions, return the aggregation expressions to apply in the first and second stages,
+/// as well as the final expressions to project.
+#[allow(clippy::type_complexity)]
 fn populate_aggregation_stages(
-    aggregations: &Vec<daft_dsl::AggExpr>,
+    aggregations: &[daft_dsl::AggExpr],
     schema: &SchemaRef,
-    first_stage_aggs: &mut HashMap<Arc<str>, daft_dsl::AggExpr>,
-    second_stage_aggs: &mut HashMap<Arc<str>, daft_dsl::AggExpr>,
-    final_exprs: &mut Vec<ExprRef>,
+    group_by: &[ExprRef],
+) -> (
+    HashMap<Arc<str>, daft_dsl::AggExpr>,
+    HashMap<Arc<str>, daft_dsl::AggExpr>,
+    Vec<ExprRef>,
 ) {
-    use daft_dsl::AggExpr::*;
+    use daft_dsl::AggExpr::{self, *};
+
+    // Aggregations to apply in the first and second stages.
+    // Semantic column name -> AggExpr
+    let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
+    let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
+    // Project the aggregation results to their final output names
+    let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
+
     for agg_expr in aggregations {
         let output_name = agg_expr.name().unwrap();
         match agg_expr {
@@ -831,6 +819,7 @@ fn populate_aggregation_stages(
             }
         }
     }
+    (first_stage_aggs, second_stage_aggs, final_exprs)
 }
 
 #[cfg(test)]

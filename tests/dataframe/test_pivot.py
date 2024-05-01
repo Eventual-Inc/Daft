@@ -1,7 +1,7 @@
 import pytest
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot(make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -22,7 +22,7 @@ def test_pivot(make_df, repartition_nparts):
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_col_names(make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -49,7 +49,7 @@ def test_pivot_with_col_names(make_df, repartition_nparts):
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_col_names_subset(make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -75,7 +75,7 @@ def test_pivot_with_col_names_subset(make_df, repartition_nparts):
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_col_names_superset(make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -103,7 +103,7 @@ def test_pivot_with_col_names_superset(make_df, repartition_nparts):
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_nulls(make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -125,7 +125,7 @@ def test_pivot_with_nulls(make_df, repartition_nparts):
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 @pytest.mark.parametrize(
     "agg_fn, expected",
     [
@@ -150,7 +150,7 @@ def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected
     assert daft_df.sort("group").to_pydict() == expected
 
 
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_downstream_ops(make_df, repartition_nparts):
     daft_df = make_df(
         {

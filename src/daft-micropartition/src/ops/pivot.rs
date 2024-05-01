@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_table::Table;
@@ -35,7 +35,9 @@ impl MicroPartition {
                     None,
                 ))
             }
-            _ => unreachable!(),
+            _ => Err(DaftError::ComputeError(
+                "Pivot operation is not supported on multiple tables".to_string(),
+            )),
         }
     }
 }

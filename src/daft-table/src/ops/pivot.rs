@@ -77,6 +77,16 @@ impl Table {
         values_col: ExprRef,
         names: Vec<String>,
     ) -> DaftResult<Table> {
+        // This function pivots the table based on the given group_by, pivot, and values column.
+        //
+        // At a high level this function does two things:
+        //  1. Map each unique value in the pivot column to a list of the corresponding indices of values in the values column.
+        //  2. Do a .take() operation on the values column for each list of indices to create the new pivoted columns.
+        //
+        // Notes:
+        // - This function assumes that there are no duplicate values in the pivot column.
+        // - If a name in the names vector does not exist in the pivot column, a new column with null values is created.
+
         let groupby_series = self.eval_expression(&group_by)?;
         let pivot_series = self.eval_expression(&pivot_col)?;
         let value_series = self.eval_expression(&values_col)?;
