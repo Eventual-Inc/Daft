@@ -180,3 +180,13 @@ def test_exp(unary_data_fixture):
         run_kernel=lambda: arg.exp(),
         resolvable=is_numeric(arg.datatype()),
     )
+
+
+def test_sqrt(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).sqrt(),
+        run_kernel=lambda: arg.sqrt(),
+        resolvable=is_numeric(arg.datatype()),
+    )

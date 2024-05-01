@@ -78,6 +78,7 @@ from daft.io import (
     read_json,
     read_parquet,
     read_sql,
+    read_lance,
 )
 from daft.series import Series
 from daft.udf import udf
@@ -98,6 +99,7 @@ __all__ = [
     "read_iceberg",
     "read_delta_lake",
     "read_sql",
+    "read_lance",
     "DataCatalogType",
     "DataCatalogTable",
     "DataFrame",

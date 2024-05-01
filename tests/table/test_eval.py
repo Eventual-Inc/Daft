@@ -379,3 +379,14 @@ def test_table_exp() -> None:
     exp_table = table.eval_expression_list([col("a").exp(), col("b").exp()])
     assert [1.1051709180756477, 1.010050167084168, None] == exp_table.get_column("a").to_pylist()
     assert [2.718281828459045, 22026.465794806718, None] == exp_table.get_column("b").to_pylist()
+
+
+def test_table_numeric_sqrt() -> None:
+    table = MicroPartition.from_pydict({"a": [4, 9, None, 16, 25, None], "b": [2.25, 0.81, None, 1, 10.24, None]})
+    sqrt_table = table.eval_expression_list([col("a").sqrt(), col("b").sqrt()])
+    assert [math.sqrt(v) if v is not None else v for v in table.get_column("a").to_pylist()] == sqrt_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.sqrt(v) if v is not None else v for v in table.get_column("b").to_pylist()] == sqrt_table.get_column(
+        "b"
+    ).to_pylist()

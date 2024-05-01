@@ -24,6 +24,7 @@ pub enum FileFormat {
     Csv,
     Json,
     Database,
+    Python,
 }
 
 impl FromStr for FileFormat {
@@ -59,6 +60,8 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Json(_) => Self::Json,
             #[cfg(feature = "python")]
             FileFormatConfig::Database(_) => Self::Database,
+            #[cfg(feature = "python")]
+            FileFormatConfig::PythonFunction => Self::Python,
         }
     }
 }
@@ -71,6 +74,8 @@ pub enum FileFormatConfig {
     Json(JsonSourceConfig),
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
+    #[cfg(feature = "python")]
+    PythonFunction,
 }
 
 impl FileFormatConfig {
@@ -83,6 +88,8 @@ impl FileFormatConfig {
             Json(_) => "Json",
             #[cfg(feature = "python")]
             Database(_) => "Database",
+            #[cfg(feature = "python")]
+            PythonFunction => "PythonFunction",
         }
     }
 
@@ -93,6 +100,8 @@ impl FileFormatConfig {
             Self::Json(source) => source.multiline_display(),
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::PythonFunction => vec![],
         }
     }
 }
@@ -401,6 +410,7 @@ impl PyFileFormatConfig {
             Csv(config) => config.clone().into_py(py),
             Json(config) => config.clone().into_py(py),
             Database(config) => config.clone().into_py(py),
+            PythonFunction => py.None(),
         }
     }
 

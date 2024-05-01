@@ -211,6 +211,8 @@ pub fn split_by_row_groups(
                                         *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                         *size_bytes = Some(curr_size_bytes as u64);
                                     }
+                                    #[cfg(feature = "python")]
+                                    DataFileSource::PythonFactoryFunction { .. } => unreachable!("DataFileSource::PythonFactoryFunction should never return Parquet formats"),
                                 };
                                 match &mut new_source {
                                     DataFileSource::AnonymousDataFile {

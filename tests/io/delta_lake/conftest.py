@@ -19,7 +19,7 @@ from pytest_lazyfixture import lazy_fixture
 
 import daft
 from daft import DataCatalogTable, DataCatalogType
-from daft.delta_lake.delta_lake_scan import _io_config_to_storage_options
+from daft.io.object_store_options import io_config_to_storage_options
 from tests.io.delta_lake.mock_aws_server import start_service, stop_process
 
 deltalake = pytest.importorskip("deltalake")
@@ -423,7 +423,7 @@ def deltalake_table(
 ) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
     partition_generator, _ = partition_generator
     path, io_config, catalog_table = request.param
-    storage_options = _io_config_to_storage_options(io_config, path) if io_config is not None else None
+    storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     parts = []
     for i in range(num_partitions):
         # Generate partition value and add partition column.
