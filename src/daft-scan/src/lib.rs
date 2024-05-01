@@ -504,9 +504,9 @@ impl ScanTask {
                             config.csv_inflation_factor
                         }
                         #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) => 0.0,
+                        FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction => 0.0,
+                        FileFormatConfig::PythonFunction => 1.0,
                     };
 
                     // estimate number of rows from read schema
