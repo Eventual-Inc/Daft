@@ -56,6 +56,7 @@ pub enum PhysicalPlan {
     FanoutByRange(FanoutByRange),
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
+    Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
     SortMergeJoin(SortMergeJoin),
@@ -156,6 +157,7 @@ impl PhysicalPlan {
                     .into()
                 }
             }
+            Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
             Self::Concat(Concat { input, other }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                     input.clustering_spec().num_partitions()
@@ -249,7 +251,8 @@ impl PhysicalPlan {
             | Self::Flatten(Flatten { input, .. })
             | Self::ReduceMerge(ReduceMerge { input, .. })
             | Self::Sort(Sort { input, .. })
-            | Self::Split(Split { input, .. }) => input.approximate_size_bytes(),
+            | Self::Split(Split { input, .. })
+            | Self::Pivot(Pivot { input, .. }) => input.approximate_size_bytes(),
             Self::Concat(Concat { input, other }) => {
                 input.approximate_size_bytes().and_then(|input_size| {
                     other
@@ -303,6 +306,7 @@ impl PhysicalPlan {
             Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input.clone()],
             Self::ReduceMerge(ReduceMerge { input }) => vec![input.clone()],
             Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
+            Self::Pivot(Pivot { input, .. }) => vec![input.clone()],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input.clone()],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input.clone()],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input.clone()],
@@ -395,6 +399,7 @@ impl PhysicalPlan {
             Self::FanoutByRange(..) => "FanoutByRange",
             Self::ReduceMerge(..) => "ReduceMerge",
             Self::Aggregate(..) => "Aggregate",
+            Self::Pivot(..) => "Pivot",
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
             Self::SortMergeJoin(..) => "SortMergeJoin",
@@ -429,6 +434,7 @@ impl PhysicalPlan {
             Self::FanoutByRange(fanout_by_range) => fanout_by_range.multiline_display(),
             Self::ReduceMerge(reduce_merge) => reduce_merge.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Pivot(pivot) => pivot.multiline_display(),
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),
             Self::SortMergeJoin(sort_merge_join) => sort_merge_join.multiline_display(),
@@ -813,6 +819,29 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "local_aggregate"))?
                     .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Pivot(Pivot {
+                input,
+                group_by,
+                pivot_column,
+                value_column,
+                names,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let group_by_pyexpr = PyExpr::from(group_by.clone());
+                let pivot_column_pyexpr = PyExpr::from(pivot_column.clone());
+                let value_column_pyexpr = PyExpr::from(value_column.clone());
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "pivot"))?
+                    .call1((
+                        upstream_iter,
+                        group_by_pyexpr,
+                        pivot_column_pyexpr,
+                        value_column_pyexpr,
+                        names.clone(),
+                    ))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::Coalesce(Coalesce {

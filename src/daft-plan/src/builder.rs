@@ -348,6 +348,27 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn pivot(
+        &self,
+        group_by: ExprRef,
+        pivot_column: ExprRef,
+        value_column: ExprRef,
+        agg_expr: ExprRef,
+        names: Vec<String>,
+    ) -> DaftResult<Self> {
+        let agg_expr = extract_and_check_agg_expr(agg_expr.as_ref())?;
+        let pivot_logical_plan: LogicalPlan = logical_ops::Pivot::try_new(
+            self.plan.clone(),
+            group_by,
+            pivot_column,
+            value_column,
+            agg_expr,
+            names,
+        )?
+        .into();
+        Ok(pivot_logical_plan.into())
+    }
+
     pub fn join(
         &self,
         right: &Self,
@@ -582,6 +603,26 @@ impl PyLogicalPlanBuilder {
         Ok(self
             .builder
             .aggregate(pyexprs_to_exprs(agg_exprs), pyexprs_to_exprs(groupby_exprs))?
+            .into())
+    }
+
+    pub fn pivot(
+        &self,
+        group_by: PyExpr,
+        pivot_column: PyExpr,
+        value_column: PyExpr,
+        agg_expr: PyExpr,
+        names: Vec<String>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .pivot(
+                group_by.into(),
+                pivot_column.into(),
+                value_column.into(),
+                agg_expr.into(),
+                names,
+            )?
             .into())
     }
 
