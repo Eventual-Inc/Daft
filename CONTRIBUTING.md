@@ -47,3 +47,10 @@ To use a remote Ray cluster, run the following steps on the same operating syste
 2. `ln -s daft wd/daft`: create a symbolic link from the Python module to the working directory
 3. `make build-release`: an optimized build to ensure that the module is small enough to be successfully uploaded to Ray. Run this after modifying any Rust code in `src/`
 4. `ray job submit --working-dir wd --address "http://<head_node_host>:8265" -- python script.py`: submit `wd/script.py` to be run on Ray
+
+### Benchmarking
+
+Benchmark tests are located in `tests/benchmarks`. If you would like to run benchmarks, make sure to first do `make build-release` instead of `make build` in order to compile an optimized build of Daft.
+
+1. `pytest tests/benchmarks/[test_file.py] --benchmark-only`: Run all benchmarks in a file
+2. `pytest tests/benchmarks/[test_file.py] -k [test_name] --benchmark-only`: Run a specific benchmark in a file
