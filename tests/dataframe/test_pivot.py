@@ -23,7 +23,7 @@ def test_pivot(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_pivot_with_provided_col_names(make_df, repartition_nparts):
+def test_pivot_with_col_names(make_df, repartition_nparts):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -50,8 +50,7 @@ def test_pivot_with_provided_col_names(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.parametrize("names", [[], ["3"]])
-def test_pivot_with_non_matching_col_names(make_df, repartition_nparts, names):
+def test_pivot_with_col_names_subset(make_df, repartition_nparts):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -60,15 +59,48 @@ def test_pivot_with_non_matching_col_names(make_df, repartition_nparts, names):
         },
         repartition=repartition_nparts,
     )
+    daft_df = daft_df.pivot(
+        group_by="group",
+        pivot_col="pivot",
+        value_col="value",
+        agg_fn="sum",
+        names=["1"],
+    )
 
-    with pytest.raises(ValueError):
-        daft_df.pivot(
-            group_by="group",
-            pivot_col="pivot",
-            value_col="value",
-            agg_fn="sum",
-            names=names,
-        ).to_pydict()
+    expected = {
+        "group": ["A", "B"],
+        "1": [10, 30],
+    }
+
+    assert daft_df.sort("group").to_pydict() == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_pivot_with_col_names_superset(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": ["A", "A", "B", "B"],
+            "pivot": [1, 2, 1, 2],
+            "value": [10, 20, 30, 40],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.pivot(
+        group_by="group",
+        pivot_col="pivot",
+        value_col="value",
+        agg_fn="sum",
+        names=["1", "2", "3"],
+    )
+
+    expected = {
+        "group": ["A", "B"],
+        "1": [10, 30],
+        "2": [20, 40],
+        "3": [None, None],
+    }
+
+    assert daft_df.sort("group").to_pydict() == expected
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
