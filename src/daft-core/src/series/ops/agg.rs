@@ -74,7 +74,7 @@ impl Series {
 
         // Upcast all numeric types to float64 and compute approx_sketch.
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+            dt if dt.is_numeric() => {
                 let casted = self.cast(&Float64)?;
                 match groups {
                     Some(groups) => Ok(DaftApproxSketchAggable::grouped_approx_sketch(
@@ -120,7 +120,7 @@ impl Series {
 
         // Upcast all numeric types to float64 and use f64 mean kernel.
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+            dt if dt.is_numeric() => {
                 let casted = self.cast(&Float64)?;
                 match groups {
                     Some(groups) => {

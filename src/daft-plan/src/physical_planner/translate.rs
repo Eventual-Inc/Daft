@@ -319,6 +319,8 @@ pub(super) fn translate_single_logical_node(
                                 child: e,
                                 percentiles,
                             }) => {
+                                let percentiles =
+                                    percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                                 let sketch_id = agg_expr.semantic_id(&schema).id;
                                 let approx_id =
                                     ApproxSketch(col(sketch_id.clone())).semantic_id(&schema).id;

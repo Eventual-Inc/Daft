@@ -435,7 +435,10 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
-        """Calculates the approximate percentile(s) for a float column
+        """Calculates the approximate percentile(s) for a column of numeric values
+
+        For numeric columns, we use the sketches_ddsketch crate (https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html).
+        This is a Rust implementation of the paper `DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.) <https://arxiv.org/pdf/1908.10693>`_
 
         Args:
             percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single

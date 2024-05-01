@@ -57,22 +57,11 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct ApproxPercentileParams {
     pub child: ExprRef,
-    pub percentiles: Vec<f64>,
+    pub percentiles: Vec<daft_core::utils::hashable_float_wrapper::FloatWrapper<f64>>,
 }
-
-impl std::hash::Hash for ApproxPercentileParams {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.percentiles
-            .iter()
-            .for_each(|f| f.to_be_bytes().iter().for_each(|b| state.write_u8(*b)));
-    }
-}
-
-impl Eq for ApproxPercentileParams {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
@@ -275,16 +264,7 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     match &field.dtype {
-                        DataType::Int8
-                        | DataType::Int16
-                        | DataType::Int32
-                        | DataType::Int64
-                        | DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64
-                        | DataType::Float32
-                        | DataType::Float64 => if percentiles.len() == 1 {
+                        dt if dt.is_numeric() => if percentiles.len() == 1 {
                             DataType::Float64
                         } else {
                             DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len())
@@ -306,7 +286,7 @@ impl AggExpr {
                       DataType::Struct(fields) => DataType::Struct(fields.clone()),
                       other => {
                           return Err(DaftError::TypeError(format!(
-                              "Expected input to merge_sketch() to be binary but received dtype {} for column \"{}\"",
+                              "Expected input to merge_sketch() to be struct but received dtype {} for column \"{}\"",
                               other, field.name,
                           )))
                         }
@@ -401,7 +381,10 @@ impl Expr {
     pub fn approx_percentiles(self: ExprRef, percentiles: &[f64]) -> ExprRef {
         Expr::Agg(AggExpr::ApproxPercentile(ApproxPercentileParams {
             child: self,
-            percentiles: percentiles.to_vec(),
+            percentiles: percentiles
+                .iter()
+                .map(|f| daft_core::utils::hashable_float_wrapper::FloatWrapper(*f))
+                .collect(),
         }))
         .into()
     }

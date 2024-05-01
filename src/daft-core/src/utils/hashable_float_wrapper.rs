@@ -3,7 +3,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use serde::{Deserialize, Serialize};
+
 // An float newtype wrapper that implements basic hashability.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FloatWrapper<T>(pub T);
 
 macro_rules! impl_hash_for_float_wrapper {
