@@ -427,6 +427,13 @@ impl PySeries {
             .into())
     }
 
+    pub fn utf8_lpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .utf8_lpad(&length.series, &character.series)?
+            .into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

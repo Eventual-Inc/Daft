@@ -1240,6 +1240,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pad_expr = Expression._to_expression(pad)
         return Expression._from_pyexpr(self._expr.utf8_rpad(length_expr._expr, pad_expr._expr))
 
+    def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
+        """Left-pads each string by truncating on the right or padding with the character
+
+        .. NOTE::
+            If the string is longer than the specified length, it will be truncated on the right.
+            The pad character must be a single character.
+
+        Example:
+            >>> col("x").str.lpad(5, "0")
+
+        Returns:
+            Expression: a String expression which is `self` truncated or left-padded with the pad character
+        """
+        length_expr = Expression._to_expression(length)
+        pad_expr = Expression._to_expression(pad)
+        return Expression._from_pyexpr(self._expr.utf8_lpad(length_expr._expr, pad_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

@@ -7,6 +7,7 @@ mod find;
 mod left;
 mod length;
 mod lower;
+mod lpad;
 mod lstrip;
 mod match_;
 mod replace;
@@ -27,6 +28,7 @@ use find::FindEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
+use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
@@ -63,6 +65,7 @@ pub enum Utf8Expr {
     Right,
     Find,
     Rpad,
+    Lpad,
 }
 
 impl Utf8Expr {
@@ -89,6 +92,7 @@ impl Utf8Expr {
             Right => &RightEvaluator {},
             Find => &FindEvaluator {},
             Rpad => &RpadEvaluator {},
+            Lpad => &LpadEvaluator {},
         }
     }
 }
@@ -240,6 +244,14 @@ pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
 pub fn rpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Rpad),
+        inputs: vec![data, length, pad],
+    }
+    .into()
+}
+
+pub fn lpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Lpad),
         inputs: vec![data, length, pad],
     }
     .into()
