@@ -32,6 +32,13 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         This function requires the use of `LanceDB <https://lancedb.github.io/lancedb/>`_, which is the Python
         library for the LanceDB project.
 
+        To ensure that this is installed with Daft, you may install: ``pip install getdaft[lance]``
+
+    Example:
+
+    >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+    >>> df.show()
+
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
