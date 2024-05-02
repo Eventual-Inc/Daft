@@ -27,9 +27,11 @@ impl AdaptivePhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pymethods]
 impl AdaptivePhysicalPlanScheduler {
-    pub fn next(&mut self) -> PyResult<PhysicalPlanScheduler> {
-        let output = self.planner.next()?;
-        Ok(output.unwrap().into())
+    pub fn next(&mut self, py: Python) -> PyResult<PhysicalPlanScheduler> {
+        py.allow_threads(|| {
+            let output = self.planner.next()?;
+            Ok(output.unwrap().into())
+        })
     }
 
     pub fn is_done(&self) -> PyResult<bool> {
@@ -42,18 +44,22 @@ impl AdaptivePhysicalPlanScheduler {
         cache_entry: &PyAny,
         num_partitions: usize,
         size_bytes: usize,
+        py: Python,
     ) -> PyResult<()> {
-        let in_memory_info = InMemoryInfo::new(
-            Schema::empty().into(), // TODO thread in schema from in memory scan
-            partition_key.into(),
-            cache_entry.into(),
-            num_partitions,
-            size_bytes,
-            None, // TODO(sammy) thread through clustering spec to Python
-        );
+        let cache_entry = cache_entry.into();
+        py.allow_threads(|| {
+            let in_memory_info = InMemoryInfo::new(
+                Schema::empty().into(), // TODO thread in schema from in memory scan
+                partition_key.into(),
+                cache_entry,
+                num_partitions,
+                size_bytes,
+                None, // TODO(sammy) thread through clustering spec to Python
+            );
 
-        self.planner
-            .update(MaterializedResults { in_memory_info })?;
-        Ok(())
+            self.planner
+                .update(MaterializedResults { in_memory_info })?;
+            Ok(())
+        })
     }
 }

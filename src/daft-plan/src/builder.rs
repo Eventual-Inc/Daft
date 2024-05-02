@@ -667,32 +667,34 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self) -> PyResult<Self> {
-        let optimizer = Optimizer::new(Default::default());
-        let unoptimized_plan = self.builder.build();
-        let optimized_plan = optimizer.optimize(
-            unoptimized_plan,
-            |new_plan, rule_batch, pass, transformed, seen| {
-                if transformed {
-                    log::debug!(
-                        "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
-                        rule_batch,
-                        pass,
-                        if seen { "an already seen" } else { "a new" },
-                        new_plan.repr_ascii(true),
-                    );
-                } else {
-                    log::debug!(
-                        "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
-                        rule_batch,
-                        pass,
-                        new_plan.repr_ascii(true),
-                    );
-                }
-            },
-        )?;
-        let builder = LogicalPlanBuilder::new(optimized_plan);
-        Ok(builder.into())
+    pub fn optimize(&self, py: Python) -> PyResult<Self> {
+        py.allow_threads(|| {
+            let optimizer = Optimizer::new(Default::default());
+            let unoptimized_plan = self.builder.build();
+            let optimized_plan = optimizer.optimize(
+                unoptimized_plan,
+                |new_plan, rule_batch, pass, transformed, seen| {
+                    if transformed {
+                        log::debug!(
+                            "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                            rule_batch,
+                            pass,
+                            if seen { "an already seen" } else { "a new" },
+                            new_plan.repr_ascii(true),
+                        );
+                    } else {
+                        log::debug!(
+                            "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                            rule_batch,
+                            pass,
+                            new_plan.repr_ascii(true),
+                        );
+                    }
+                },
+            )?;
+            let builder = LogicalPlanBuilder::new(optimized_plan);
+            Ok(builder.into())
+        })
     }
 
     /// Finalize the logical plan, translate the logical plan to a physical plan, and return
