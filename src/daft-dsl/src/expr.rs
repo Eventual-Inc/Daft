@@ -730,8 +730,8 @@ impl Expr {
                 let predicate_field = predicate.to_field(schema)?;
                 if predicate_field.dtype != DataType::Boolean {
                     return Err(DaftError::TypeError(format!(
-                                "Expected predicate for if_else to be boolean but received {predicate_field}",
-                            )));
+                        "Expected predicate for if_else to be boolean but received {predicate_field}",
+                    )));
                 }
                 match predicate.as_ref() {
                     Expr::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
