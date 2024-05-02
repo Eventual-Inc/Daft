@@ -219,7 +219,8 @@ class DataFrame:
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield from self._result.values()
+            for mat_result in self._result.values():
+                yield mat_result.partition()
 
         else:
             # Execute the dataframe in a streaming fashion.
@@ -238,8 +239,9 @@ class DataFrame:
         )
         if preview_partition_invalid:
             preview_parts = self._result._get_preview_vpartition(self._num_preview_rows)
-            preview_results = LocalPartitionSet({i: part for i, part in enumerate(preview_parts)})
-
+            preview_results = LocalPartitionSet()
+            for i, part in enumerate(preview_parts):
+                preview_results.set_partition_from_table(i, part)
             preview_partition = preview_results._get_merged_vpartition()
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
@@ -314,7 +316,10 @@ class DataFrame:
         if not parts:
             raise ValueError("Can't create a DataFrame from an empty list of tables.")
 
-        result_pset = LocalPartitionSet({i: part for i, part in enumerate(parts)})
+        result_pset = LocalPartitionSet()
+
+        for i, part in enumerate(parts):
+            result_pset.set_partition_from_table(i, part)
 
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
