@@ -735,7 +735,9 @@ impl Expr {
                 }
                 match predicate.as_ref() {
                     Expr::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
-                    Expr::Literal(lit::LiteralValue::Boolean(false)) => if_false.to_field(schema),
+                    Expr::Literal(lit::LiteralValue::Boolean(false)) => {
+                        Ok(if_false.to_field(schema)?.rename(if_true.name()?))
+                    }
                     _ => {
                         let if_true_field = if_true.to_field(schema)?;
                         let if_false_field = if_false.to_field(schema)?;

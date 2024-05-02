@@ -38,4 +38,4 @@ def test_table_expr_if_else_literal_predicate(if_else_expr) -> None:
     daft_table = daft_table.eval_expression_list([if_else_expr])
     pydict = daft_table.to_pydict()
 
-    assert pydict == {"key": ["value"]}
+    assert pydict == {if_else_expr.name(): ["value"]}
