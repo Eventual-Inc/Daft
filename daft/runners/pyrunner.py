@@ -15,6 +15,7 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     MaterializedResult,
+    PartialPartitionMetadata,
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocalPartitionSet(PartitionSet[MicroPartition]):
-    _partitions: dict[PartID, PyMaterializedResult]
+    _partitions: dict[PartID, MaterializedResult[MicroPartition]]
 
     def __init__(self) -> None:
         super().__init__()
@@ -47,8 +48,8 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
-        for _, part in ids_and_partitions:
-            part = part.partition()
+        for _, mat_result in ids_and_partitions:
+            part: MicroPartition = mat_result.partition()
             part_len = len(part)
             if part_len >= num_rows:  # if this part has enough rows, take what we need and break
                 preview_parts.append(part.slice(0, num_rows))
@@ -311,8 +312,10 @@ class PyRunner(Runner[MicroPartition]):
 
     @staticmethod
     def build_partitions(
-        instruction_stack: list[Instruction], partitions: list[MicroPartition], final_metadata: PartitionMetadata
-    ) -> list[PyMaterializedResult]:
+        instruction_stack: list[Instruction],
+        partitions: list[MicroPartition],
+        final_metadata: list[PartialPartitionMetadata],
+    ) -> list[MaterializedResult[MicroPartition]]:
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
         return [

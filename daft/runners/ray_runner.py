@@ -547,7 +547,23 @@ class Scheduler:
                             elif len(next_step.instructions) == 0:
                                 logger.debug("Running task synchronously in main thread: %s", next_step)
                                 assert isinstance(next_step, SingleOutputPartitionTask)
-                                accessor = PartitionMetadataAccessor.from_metadata_list(next_step.partial_metadatas)
+                                [single_partial] = next_step.partial_metadatas
+                                if single_partial.num_rows is None:
+                                    [single_meta] = ray.get(get_metas.remote(next_step.inputs))
+                                    accessor = PartitionMetadataAccessor.from_metadata_list(
+                                        [single_meta.merge_with_partial(single_partial)]
+                                    )
+                                else:
+                                    accessor = PartitionMetadataAccessor.from_metadata_list(
+                                        [
+                                            PartitionMetadata(
+                                                num_rows=single_partial.num_rows,
+                                                size_bytes=single_partial.size_bytes,
+                                                boundaries=single_partial.boundaries,
+                                            )
+                                        ]
+                                    )
+
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
