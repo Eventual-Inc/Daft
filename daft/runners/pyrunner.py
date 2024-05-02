@@ -40,7 +40,6 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
 
     def _get_merged_vpartition(self) -> MicroPartition:
         ids_and_partitions = self.items()
-
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         return MicroPartition.concat([part.partition() for id, part in ids_and_partitions])
