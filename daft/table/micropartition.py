@@ -222,6 +222,16 @@ class MicroPartition:
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
 
+    def pivot(
+        self, group_by: Expression, pivot_column: Expression, values_column: Expression, names: list[str]
+    ) -> MicroPartition:
+        group_by_pyexpr = group_by._expr
+        pivot_column_pyexpr = pivot_column._expr
+        values_column_pyexpr = values_column._expr
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.pivot(group_by_pyexpr, pivot_column_pyexpr, values_column_pyexpr, names)
+        )
+
     def quantiles(self, num: int) -> MicroPartition:
         return MicroPartition._from_pymicropartition(self._micropartition.quantiles(num))
 

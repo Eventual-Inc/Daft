@@ -635,6 +635,21 @@ class ScanTask:
         Create a SQL Scan Task
         """
         ...
+    @staticmethod
+    def python_factory_func_scan_task(
+        module: str,
+        func_name: str,
+        func_args: tuple[Any, ...],
+        schema: PySchema,
+        num_rows: int | None,
+        size_bytes: int | None,
+        pushdowns: Pushdowns | None,
+        stats: PyTable | None,
+    ) -> ScanTask:
+        """
+        Create a Python factory function Scan Task
+        """
+        ...
 
 class ScanOperatorHandle:
     """
@@ -698,6 +713,10 @@ class Pushdowns:
     filters: PyExpr | None
     partition_filters: PyExpr | None
     limit: int | None
+
+    def filter_required_column_names(self) -> list[str]:
+        """List of field names that are required by the filter predicate."""
+        ...
 
 def read_parquet(
     uri: str,
@@ -1129,6 +1148,7 @@ class PyTable:
     def sort(self, sort_keys: list[PyExpr], descending: list[bool]) -> PyTable: ...
     def argsort(self, sort_keys: list[PyExpr], descending: list[bool]) -> PySeries: ...
     def agg(self, to_agg: list[PyExpr], group_by: list[PyExpr]) -> PyTable: ...
+    def pivot(self, group_by: PyExpr, pivot_column: PyExpr, values_column: PyExpr, names: list[str]) -> PyTable: ...
     def hash_join(self, right: PyTable, left_on: list[PyExpr], right_on: list[PyExpr]) -> PyTable: ...
     def sort_merge_join(
         self, right: PyTable, left_on: list[PyExpr], right_on: list[PyExpr], is_sorted: bool
@@ -1188,6 +1208,9 @@ class PyMicroPartition:
     def sort(self, sort_keys: list[PyExpr], descending: list[bool]) -> PyMicroPartition: ...
     def argsort(self, sort_keys: list[PyExpr], descending: list[bool]) -> PySeries: ...
     def agg(self, to_agg: list[PyExpr], group_by: list[PyExpr]) -> PyMicroPartition: ...
+    def pivot(
+        self, group_by: PyExpr, pivot_column: PyExpr, values_column: PyExpr, names: list[str]
+    ) -> PyMicroPartition: ...
     def hash_join(self, right: PyMicroPartition, left_on: list[PyExpr], right_on: list[PyExpr]) -> PyMicroPartition: ...
     def sort_merge_join(
         self, right: PyMicroPartition, left_on: list[PyExpr], right_on: list[PyExpr], is_sorted: bool
@@ -1307,6 +1330,14 @@ class LogicalPlanBuilder:
     def distinct(self) -> LogicalPlanBuilder: ...
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder: ...
     def aggregate(self, agg_exprs: list[PyExpr], groupby_exprs: list[PyExpr]) -> LogicalPlanBuilder: ...
+    def pivot(
+        self,
+        groupby_expr: PyExpr,
+        pivot_expr: PyExpr,
+        values_expr: PyExpr,
+        agg_expr: PyExpr,
+        names: list[str],
+    ) -> LogicalPlanBuilder: ...
     def join(
         self,
         right: LogicalPlanBuilder,

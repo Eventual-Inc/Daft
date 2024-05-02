@@ -4,6 +4,7 @@ mod groups;
 mod hash;
 mod joins;
 mod partition;
+mod pivot;
 mod search_sorted;
 mod sort;
 

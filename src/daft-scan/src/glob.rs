@@ -213,6 +213,12 @@ impl GlobScanOperator {
                     "Cannot glob a database source".to_string(),
                 ))
             }
+            #[cfg(feature = "python")]
+            FileFormatConfig::PythonFunction => {
+                return Err(DaftError::ValueError(
+                    "Cannot glob a PythonFunction source".to_string(),
+                ))
+            }
         };
 
         let schema = match schema_hint {
