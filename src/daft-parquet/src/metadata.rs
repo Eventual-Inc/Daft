@@ -80,7 +80,10 @@ fn rewrite_parquet_type_with_field_id_mapping(
                 field_id.and_then(|field_id| field_id_mapping.get(&field_id))
             {
                 // Fix the `pq_type`'s name
-                primitive_type.field_info.name = mapped_field.name.clone();
+                primitive_type
+                    .field_info
+                    .name
+                    .clone_from(&mapped_field.name);
                 return Ok(Transformed::yes(pq_type));
             }
         }
@@ -95,7 +98,7 @@ fn rewrite_parquet_type_with_field_id_mapping(
                 field_id.and_then(|field_id| field_id_mapping.get(&field_id))
             {
                 // Fix the `pq_type`'s name
-                field_info.name = mapped_field.name.clone();
+                field_info.name.clone_from(&mapped_field.name);
 
                 // Fix the `pq_type`'s fields, keeping only the fields that are correctly mapped to a field_id
                 match logical_type {

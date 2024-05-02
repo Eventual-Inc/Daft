@@ -198,7 +198,10 @@ pub(crate) struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub fn get_range_reader(&self, range: Range<usize>) -> DaftResult<impl futures::AsyncRead> {
+    pub async fn get_range_reader(
+        &self,
+        range: Range<usize>,
+    ) -> DaftResult<impl futures::AsyncRead> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -256,9 +259,16 @@ impl RangesContainer {
 
         assert_eq!(current_pos, range.end);
 
+        // We block on the first entry so we can surface up the error. This shouldn't cause any performance issues since we have to wait for this to complete anyways
+        if let Some(entry) = needed_entries.first()
+            && let Some(range) = ranges_to_slice.first()
+        {
+            entry.get_or_wait(range.clone()).await?;
+        }
+
         let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
             .then(|(e, r)| async move { e.get_or_wait(r).await })
-            .inspect_err(|e| panic!("Reading a range of Parquet bytes failed: {}", e));
+            .inspect_err(|e| log::warn!("Encountered error while streaming bytes into parquet reader. This may show up as a Thrift Error Downstream: {}", e));
 
         let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
         let convert = async_compat::Compat::new(stream_reader);

@@ -1,4 +1,42 @@
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
+use serde::{Deserialize, Serialize};
+
+use crate::py_object_serde::{deserialize_py_object, serialize_py_object};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PyObjectSerializableWrapper(
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub PyObject,
+);
+
+/// Python arguments to a Python function that produces Tables
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonTablesFactoryArgs(Vec<PyObjectSerializableWrapper>);
+
+impl PythonTablesFactoryArgs {
+    pub fn new(args: Vec<PyObject>) -> Self {
+        Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
+    }
+
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
+        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    }
+}
+
+impl PartialEq for PythonTablesFactoryArgs {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .all(|(s, o)| (s.0.as_ptr() as isize) == (o.0.as_ptr() as isize))
+    }
+}
 
 pub mod pylib {
     use common_error::DaftResult;
@@ -26,6 +64,8 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
+    use crate::file_format::FileFormatConfig;
+    use crate::storage_config::PythonStorageConfig;
     use crate::DataFileSource;
     use crate::PartitionField;
     use crate::Pushdowns;
@@ -37,6 +77,8 @@ pub mod pylib {
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
     use common_daft_config::PyDaftExecutionConfig;
+
+    use super::PythonTablesFactoryArgs;
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -274,7 +316,10 @@ pub mod pylib {
             partition_values: Option<PyTable>,
             stats: Option<PyTable>,
         ) -> PyResult<Option<Self>> {
-            if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
+            if let Some(ref pvalues) = partition_values
+                && let Some(Some(ref partition_filters)) =
+                    pushdowns.as_ref().map(|p| &p.0.partition_filters)
+            {
                 let table = &pvalues.table;
                 let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);
@@ -348,6 +393,50 @@ pub mod pylib {
                 file_format.into(),
                 schema.schema,
                 storage_config.into(),
+                pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+            );
+            Ok(PyScanTask(scan_task.into()))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        #[staticmethod]
+        pub fn python_factory_func_scan_task(
+            py: Python,
+            module: String,
+            func_name: String,
+            func_args: Vec<&PyAny>,
+            schema: PySchema,
+            num_rows: Option<i64>,
+            size_bytes: Option<u64>,
+            pushdowns: Option<PyPushdowns>,
+            stats: Option<PyTable>,
+        ) -> PyResult<Self> {
+            let statistics = stats
+                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .transpose()?;
+            let data_source = DataFileSource::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args: PythonTablesFactoryArgs::new(
+                    func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
+                ),
+                size_bytes,
+                metadata: num_rows.map(|num_rows| TableMetadata {
+                    length: num_rows as usize,
+                }),
+                statistics,
+                partition_spec: None,
+            };
+
+            let scan_task = ScanTask::new(
+                vec![data_source],
+                Arc::new(FileFormatConfig::PythonFunction),
+                schema.schema,
+                // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
+                // ScanTask creation, so we just put in a placeholder here
+                Arc::new(crate::storage_config::StorageConfig::Python(Arc::new(
+                    PythonStorageConfig { io_config: None },
+                ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
             Ok(PyScanTask(scan_task.into()))
@@ -482,6 +571,13 @@ pub mod pylib {
         #[getter]
         pub fn columns(&self) -> Option<Vec<String>> {
             self.0.columns.as_deref().cloned()
+        }
+
+        pub fn filter_required_column_names(&self) -> Option<Vec<String>> {
+            self.0
+                .filters
+                .as_ref()
+                .map(daft_dsl::optimization::get_required_columns)
         }
     }
 }

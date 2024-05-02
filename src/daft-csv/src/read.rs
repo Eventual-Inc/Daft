@@ -238,8 +238,7 @@ async fn read_csv_single_into_table(
             .unwrap_or(NonZeroUsize::new(2).unwrap())
             .checked_mul(2.try_into().unwrap())
             .unwrap()
-            .try_into()
-            .unwrap()
+            .into()
     });
     // Collect all chunks in chunk x column form.
     let tables = chunk_stream
@@ -302,7 +301,9 @@ async fn read_csv_single_into_table(
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
-    if let Some(limit) = limit && concated_table.len() > limit {
+    if let Some(limit) = limit
+        && concated_table.len() > limit
+    {
         // apply head in case that last chunk went over limit
         concated_table.head(limit)
     } else {
@@ -531,7 +532,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 fn fields_to_projection_indices(
-    fields: &Vec<arrow2::datatypes::Field>,
+    fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields
@@ -599,7 +600,14 @@ mod tests {
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
         if !has_header && let Some(column_names) = column_names {
-            fields = fields.into_iter().zip(column_names).map(|(field, name)| arrow2::datatypes::Field::new(name, field.data_type, true).with_metadata(field.metadata)).collect::<Vec<_>>();
+            fields = fields
+                .into_iter()
+                .zip(column_names)
+                .map(|(field, name)| {
+                    arrow2::datatypes::Field::new(name, field.data_type, true)
+                        .with_metadata(field.metadata)
+                })
+                .collect::<Vec<_>>();
         }
         let mut rows = vec![ByteRecord::default(); limit.unwrap_or(100)];
         let rows_read = read_rows(&mut reader, 0, &mut rows).unwrap();

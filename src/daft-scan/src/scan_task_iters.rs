@@ -48,7 +48,10 @@ struct MergeByFileSize {
 
 impl MergeByFileSize {
     fn accumulator_ready(&self) -> bool {
-        if let Some(acc) = &self.accumulator && let Some(acc_bytes) = acc.size_bytes() && acc_bytes >= self.min_size_bytes {
+        if let Some(acc) = &self.accumulator
+            && let Some(acc_bytes) = acc.size_bytes()
+            && acc_bytes >= self.min_size_bytes
+        {
             true
         } else {
             false
@@ -67,7 +70,12 @@ impl MergeByFileSize {
             && other.pushdowns == accumulator.pushdowns;
 
         let sum_smaller_than_max_size_bytes = if let Some(child_bytes) = other.size_bytes()
-            && let Some(accumulator_bytes) = accumulator.size_bytes() {child_bytes + accumulator_bytes <= self.max_size_bytes} else {false};
+            && let Some(accumulator_bytes) = accumulator.size_bytes()
+        {
+            child_bytes + accumulator_bytes <= self.max_size_bytes
+        } else {
+            false
+        };
 
         child_matches_accumulator && sum_smaller_than_max_size_bytes
     }
@@ -137,7 +145,9 @@ pub fn split_by_row_groups(
                         - have size past split threshold
                     */
                     if let (
-                        FileFormatConfig::Parquet(ParquetSourceConfig{field_id_mapping, ..}),
+                        FileFormatConfig::Parquet(ParquetSourceConfig {
+                            field_id_mapping, ..
+                        }),
                         StorageConfig::Native(_),
                         [source],
                         Some(None),
@@ -146,9 +156,12 @@ pub fn split_by_row_groups(
                         t.file_format_config.as_ref(),
                         t.storage_config.as_ref(),
                         &t.sources[..],
-                        t.sources.get(0).map(DataFileSource::get_chunk_spec),
+                        t.sources.first().map(DataFileSource::get_chunk_spec),
                         t.pushdowns.limit,
-                    ) && source.get_size_bytes().map_or(true, |s| s > max_size_bytes as u64) {
+                    ) && source
+                        .get_size_bytes()
+                        .map_or(true, |s| s > max_size_bytes as u64)
+                    {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
 
@@ -189,20 +202,28 @@ pub fn split_by_row_groups(
                                         chunk_spec,
                                         size_bytes,
                                         ..
-                                    } | DataFileSource::DatabaseDataSource { chunk_spec, size_bytes, .. } => {
+                                    }
+                                    | DataFileSource::DatabaseDataSource {
+                                        chunk_spec,
+                                        size_bytes,
+                                        ..
+                                    } => {
                                         *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                         *size_bytes = Some(curr_size_bytes as u64);
                                     }
+                                    #[cfg(feature = "python")]
+                                    DataFileSource::PythonFactoryFunction { .. } => unreachable!("DataFileSource::PythonFactoryFunction should never return Parquet formats"),
                                 };
                                 match &mut new_source {
                                     DataFileSource::AnonymousDataFile {
                                         metadata: Some(metadata),
                                         ..
                                     }
-                                    | DataFileSource::CatalogDataFile {
-                                        metadata,
+                                    | DataFileSource::CatalogDataFile { metadata, .. }
+                                    | DataFileSource::DatabaseDataSource {
+                                        metadata: Some(metadata),
                                         ..
-                                    } | DataFileSource::DatabaseDataSource { metadata: Some(metadata), .. } => {
+                                    } => {
                                         metadata.length = curr_num_rows;
                                     }
                                     _ => (),

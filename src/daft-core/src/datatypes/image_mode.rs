@@ -1,12 +1,10 @@
+use crate::datatypes::DataType;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
-use std::string::ToString;
-
-use crate::datatypes::DataType;
 
 use common_error::{DaftError, DaftResult};
 

@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10, None)
+            .get(parquet_file_path, Some(0..10), None)
             .await?
             .bytes()
             .await?;
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100, None)
+            .get(parquet_file_path, Some(10..100), None)
             .await?
             .bytes()
             .await?;
@@ -359,9 +359,9 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
 
         let last_bytes = client
-            .get_range(
+            .get(
                 parquet_file_path,
-                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
                 None,
             )
             .await?

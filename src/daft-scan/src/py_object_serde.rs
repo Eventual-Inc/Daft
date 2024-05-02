@@ -1,7 +1,5 @@
 use pyo3::{PyObject, Python, ToPyObject};
-use serde::{
-    de::Error as DeError, de::Visitor, ser::Error as SerError, Deserializer, Serialize, Serializer,
-};
+use serde::{de::Error as DeError, de::Visitor, ser::Error as SerError, Deserializer, Serializer};
 use std::fmt;
 
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
@@ -61,34 +59,4 @@ where
     D: Deserializer<'de>,
 {
     d.deserialize_bytes(PyObjectVisitor)
-}
-
-#[derive(Serialize)]
-#[serde(transparent)]
-#[cfg(feature = "python")]
-struct PyObjSerdeWrapper<'a>(#[serde(serialize_with = "serialize_py_object")] &'a PyObject);
-
-struct OptPyObjectVisitor;
-
-#[cfg(feature = "python")]
-impl<'de> Visitor<'de> for OptPyObjectVisitor {
-    type Value = Option<PyObject>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a byte array containing the pickled partition bytes")
-    }
-
-    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserialize_py_object(deserializer).map(Some)
-    }
-
-    fn visit_none<E>(self) -> Result<Self::Value, E>
-    where
-        E: DeError,
-    {
-        Ok(None)
-    }
 }

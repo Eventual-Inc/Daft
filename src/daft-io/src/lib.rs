@@ -63,6 +63,23 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display(
+        "Connection timed out when trying to connect to {}\nDetails:\n{:?}",
+        path,
+        source
+    ))]
+    ConnectTimeout { path: String, source: DynError },
+
+    #[snafu(display("Read timed out when trying to read {}\nDetails:\n{:?}", path, source))]
+    ReadTimeout { path: String, source: DynError },
+
+    #[snafu(display(
+        "Socket error occurred when trying to read {}\nDetails:\n{:?}",
+        path,
+        source
+    ))]
+    SocketError { path: String, source: DynError },
+
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
         path: String,
@@ -112,6 +129,22 @@ impl From<Error> for DaftError {
         use Error::*;
         match err {
             NotFound { path, source } => DaftError::FileNotFound { path, source },
+            ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
+            ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
+            UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
+            SocketError { .. } => DaftError::SocketError(err.into()),
+            // We have to repeat everything above for the case we have an Arc since we can't move the error.
+            CachedError { ref source } => match source.as_ref() {
+                NotFound { path, source: _ } => DaftError::FileNotFound {
+                    path: path.clone(),
+                    source: err.into(),
+                },
+                ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
+                ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
+                UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
+                SocketError { .. } => DaftError::SocketError(err.into()),
+                _ => DaftError::External(err.into()),
+            },
             _ => DaftError::External(err.into()),
         }
     }

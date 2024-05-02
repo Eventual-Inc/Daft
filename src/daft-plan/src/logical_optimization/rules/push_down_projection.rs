@@ -7,7 +7,7 @@ use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRe
 use indexmap::IndexSet;
 
 use crate::{
-    logical_ops::{Aggregate, Project, Source},
+    logical_ops::{Aggregate, Pivot, Project, Source},
     source_info::SourceInfo,
     LogicalPlan, ResourceRequest,
 };
@@ -83,9 +83,12 @@ impl PushDownProjection {
                     .flat_map(|expr| {
                         // If it's a reference for a column that requires computation,
                         // record it.
-                        if okay_to_merge && let Expr::Column(name) = expr.as_ref() && upstream_computations.contains(name.as_ref()) {
-                            okay_to_merge = okay_to_merge
-                                && upstream_computations_used.insert(name.to_string())
+                        if okay_to_merge
+                            && let Expr::Column(name) = expr.as_ref()
+                            && upstream_computations.contains(name.as_ref())
+                        {
+                            okay_to_merge =
+                                okay_to_merge && upstream_computations_used.insert(name.to_string())
                         };
                         if okay_to_merge {
                             expr.children()
@@ -147,9 +150,8 @@ impl PushDownProjection {
                             let pruned_upstream_schema = upstream_schema
                                 .fields
                                 .iter()
-                                .filter_map(|(name, field)| {
-                                    required_columns.contains(name).then(|| field.clone())
-                                })
+                                .filter(|&(name, _)| required_columns.contains(name))
+                                .map(|(_, field)| field.clone())
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema)?;
                             let new_source: LogicalPlan = Source::new(
@@ -182,11 +184,8 @@ impl PushDownProjection {
                     let pruned_upstream_projections = upstream_projection
                         .projection
                         .iter()
-                        .filter_map(|e| {
-                            required_columns
-                                .contains(e.name().unwrap())
-                                .then(|| e.clone())
-                        })
+                        .filter(|&e| required_columns.contains(e.name().unwrap()))
+                        .cloned()
                         .collect::<Vec<_>>();
 
                     let new_upstream: LogicalPlan = Project::try_new(
@@ -212,11 +211,8 @@ impl PushDownProjection {
                 let pruned_aggregate_exprs = aggregate
                     .aggregations
                     .iter()
-                    .filter_map(|e| {
-                        required_columns
-                            .contains(e.name().unwrap())
-                            .then(|| e.clone())
-                    })
+                    .filter(|&e| required_columns.contains(e.name().unwrap()))
+                    .cloned()
                     .collect::<Vec<_>>();
 
                 if pruned_aggregate_exprs.len() < aggregate.aggregations.len() {
@@ -436,6 +432,10 @@ impl PushDownProjection {
                 // since Distinct implicitly requires all parent columns.
                 Ok(Transformed::No(plan))
             }
+            LogicalPlan::Pivot(_) => {
+                // Cannot push down past a Pivot because it changes the schema.
+                Ok(Transformed::No(plan))
+            }
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
@@ -474,6 +474,39 @@ impl PushDownProjection {
             Ok(Transformed::No(plan))
         }
     }
+
+    fn try_optimize_pivot(
+        &self,
+        pivot: &Pivot,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // If this pivot prunes columns from its upstream,
+        // then explicitly create a projection to do so.
+        let upstream_plan = &pivot.input;
+        let upstream_schema = upstream_plan.schema();
+
+        let pivot_required_cols = &plan.required_columns()[0];
+        if pivot_required_cols.len() < upstream_schema.names().len() {
+            let new_subprojection: LogicalPlan = {
+                let pushdown_column_exprs = pivot_required_cols
+                    .iter()
+                    .map(|s| col(s.as_str()))
+                    .collect::<Vec<_>>();
+
+                Project::try_new(
+                    upstream_plan.clone(),
+                    pushdown_column_exprs,
+                    Default::default(),
+                )?
+                .into()
+            };
+
+            let new_pivot = plan.with_new_children(&[new_subprojection.into()]);
+            Ok(Transformed::Yes(new_pivot.into()))
+        } else {
+            Ok(Transformed::No(plan))
+        }
+    }
 }
 
 impl OptimizerRule for PushDownProjection {
@@ -488,6 +521,8 @@ impl OptimizerRule for PushDownProjection {
             LogicalPlan::Aggregate(aggregation) => {
                 self.try_optimize_aggregation(aggregation, plan.clone())
             }
+            // Pivots also do column projection
+            LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
             _ => Ok(Transformed::No(plan)),
         }
     }

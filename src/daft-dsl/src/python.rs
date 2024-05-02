@@ -220,6 +220,11 @@ impl PyExpr {
         Ok(round(self.into(), decimal).into())
     }
 
+    pub fn sqrt(&self) -> PyResult<Self> {
+        use functions::numeric::sqrt;
+        Ok(sqrt(self.into()).into())
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         use functions::numeric::sin;
         Ok(sin(self.into()).into())
@@ -485,6 +490,11 @@ impl PyExpr {
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
         use functions::temporal::day_of_week;
         Ok(day_of_week(self.into()).into())
+    }
+
+    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
+        use functions::temporal::truncate;
+        Ok(truncate(self.into(), interval, relative_to.expr.clone()).into())
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {

@@ -48,22 +48,6 @@ impl Aggregate {
         })
     }
 
-    pub(crate) fn schema(&self) -> SchemaRef {
-        let source_schema = self.input.schema();
-
-        let fields = self
-            .groupby
-            .iter()
-            .map(|expr| expr.to_field(&source_schema).unwrap())
-            .chain(
-                self.aggregations
-                    .iter()
-                    .map(|agg_expr| agg_expr.to_field(&source_schema).unwrap()),
-            )
-            .collect();
-        Schema::new(fields).unwrap().into()
-    }
-
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!(
@@ -76,7 +60,10 @@ impl Aggregate {
                 self.groupby.iter().map(|e| e.to_string()).join(", ")
             ));
         }
-        res.push(format!("Output schema = {}", self.schema().short_string()));
+        res.push(format!(
+            "Output schema = {}",
+            self.output_schema.short_string()
+        ));
         res
     }
 }

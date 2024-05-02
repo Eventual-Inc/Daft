@@ -50,6 +50,7 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.sqrt
     Expression.sin
     Expression.cos
     Expression.tan
@@ -153,6 +154,7 @@ Temporal
    Expression.dt.month
    Expression.dt.year
    Expression.dt.day_of_week
+   Expression.dt.truncate
 
 List
 ####

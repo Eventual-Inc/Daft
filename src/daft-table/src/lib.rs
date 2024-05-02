@@ -223,11 +223,11 @@ impl Table {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.get(0).unwrap().as_ref())?;
+            let mask = self.eval_expression(predicate.first().unwrap().as_ref())?;
             self.mask_filter(&mask)
         } else {
             let mut expr = predicate
-                .get(0)
+                .first()
                 .unwrap()
                 .clone()
                 .and(predicate.get(1).unwrap().clone());

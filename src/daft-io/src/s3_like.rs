@@ -69,12 +69,6 @@ enum Error {
         source: SdkError<ListObjectsV2Error, Response>,
     },
 
-    #[snafu(display("Unable to query the region for {}: {}", path, source))]
-    UnableToQueryRegion {
-        path: String,
-        source: reqwest::Error,
-    },
-
     #[snafu(display("Unable missing header: {header} when performing request for: {path}"))]
     MissingHeader { path: String, header: String },
 
@@ -98,9 +92,6 @@ enum Error {
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
 
-    #[snafu(display("Unable to create http client. {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
-
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
 
@@ -117,47 +108,120 @@ enum Error {
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
+
         match error {
-            UnableToOpenFile { path, source } => match source.into_service_error() {
-                GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+            UnableToOpenFile { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                GetObjectError::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    GetObjectError::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
-            UnableToHeadFile { path, source } => match source.into_service_error() {
-                HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+            UnableToHeadFile { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                HeadObjectError::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    HeadObjectError::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
-            UnableToListObjects { path, source } => match source.into_service_error() {
-                ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+            UnableToListObjects { path, source } => match source {
+                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
                     path,
-                    source: no_such_key.into(),
+                    source: source.into(),
                 },
-                ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(v).to_string(),
-                },
-                err => super::Error::UnableToOpenFile {
-                    path,
-                    source: err.into(),
+                SdkError::DispatchFailure(ref dispatch) => {
+                    if dispatch.is_timeout() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: source.into(),
+                        }
+                    } else if dispatch.is_io() {
+                        super::Error::SocketError {
+                            path,
+                            source: source.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: source.into(),
+                        }
+                    }
+                }
+                _ => match source.into_service_error() {
+                    ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                        path,
+                        source: no_such_key.into(),
+                    },
+                    ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(v).to_string(),
+                    },
+                    err => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
                 },
             },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
@@ -177,10 +241,6 @@ impl From<Error> for super::Error {
             }
             NotAFile { path } => super::Error::NotAFile { path },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
-                store: SourceType::S3,
-                source: source.into(),
-            },
-            UnableToCreateClient { source } => super::Error::UnableToCreateClient {
                 store: SourceType::S3,
                 source: source.into(),
             },
@@ -1045,7 +1105,7 @@ mod tests {
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10, None)
+            .get(parquet_file_path, Some(0..10), None)
             .await?
             .bytes()
             .await?;
@@ -1053,7 +1113,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100, None)
+            .get(parquet_file_path, Some(10..100), None)
             .await?
             .bytes()
             .await?;
@@ -1061,9 +1121,9 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
 
         let last_bytes = client
-            .get_range(
+            .get(
                 parquet_file_path,
-                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
                 None,
             )
             .await?

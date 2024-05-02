@@ -423,21 +423,28 @@ impl ParquetFileReader {
                             .map(|(i, _)| i)
                             .collect::<Vec<_>>();
 
-                        let range_readers = filtered_cols_idx
+                        let metadata = metadata.clone();
+
+                        let needed_byte_ranges = filtered_cols_idx
                             .iter()
                             .map(|i| {
                                 let c = columns.get(*i).unwrap();
                                 let (start, len) = c.byte_range();
                                 let end: u64 = start + len;
-                                let range_reader = ranges
-                                    .get_range_reader(start as usize..end as usize)
-                                    .unwrap();
-
-                                Box::pin(range_reader)
+                                start as usize..end as usize
                             })
                             .collect::<Vec<_>>();
-                        let metadata = metadata.clone();
+
+                        let ranges = ranges.clone();
+
                         let handle = tokio::task::spawn(async move {
+                            let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
+
+                            for range in needed_byte_ranges.into_iter() {
+                                let range_reader = ranges.get_range_reader(range).await?;
+                                range_readers.push(Box::pin(range_reader))
+                            }
+
                             let mut decompressed_iters =
                                 Vec::with_capacity(filtered_cols_idx.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
@@ -599,21 +606,25 @@ impl ParquetFileReader {
                             .map(|(i, _)| i)
                             .collect::<Vec<_>>();
 
-                        let range_readers = filtered_cols_idx
+                        let needed_byte_ranges = filtered_cols_idx
                             .iter()
                             .map(|i| {
                                 let c = columns.get(*i).unwrap();
                                 let (start, len) = c.byte_range();
                                 let end: u64 = start + len;
-                                let range_reader = ranges
-                                    .get_range_reader(start as usize..end as usize)
-                                    .unwrap();
-
-                                Box::pin(range_reader)
+                                start as usize..end as usize
                             })
                             .collect::<Vec<_>>();
                         let metadata = metadata.clone();
+                        let ranges = ranges.clone();
                         let handle = tokio::task::spawn(async move {
+                            let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
+
+                            for range in needed_byte_ranges.into_iter() {
+                                let range_reader = ranges.get_range_reader(range).await?;
+                                range_readers.push(Box::pin(range_reader))
+                            }
+
                             let mut decompressed_iters =
                                 Vec::with_capacity(filtered_cols_idx.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());

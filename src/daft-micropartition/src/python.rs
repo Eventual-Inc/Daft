@@ -17,7 +17,7 @@ use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
 use daft_stats::TableStatistics;
 use daft_table::python::PyTable;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, Python};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 
 use crate::micropartition::{MicroPartition, TableState};
 
@@ -219,6 +219,30 @@ impl PyMicroPartition {
             Ok(self
                 .inner
                 .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
+                .into())
+        })
+    }
+
+    pub fn pivot(
+        &self,
+        py: Python,
+        group_by: PyExpr,
+        pivot_col: PyExpr,
+        values_col: PyExpr,
+        names: Vec<String>,
+    ) -> PyResult<Self> {
+        let converted_group_by: daft_dsl::ExprRef = group_by.into();
+        let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
+        let converted_values_col: daft_dsl::ExprRef = values_col.into();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .pivot(
+                    converted_group_by,
+                    converted_pivot_col,
+                    converted_values_col,
+                    names,
+                )?
                 .into())
         })
     }

@@ -41,6 +41,7 @@ mod search_sorted;
 mod sign;
 mod sketch_percentile;
 mod sort;
+mod sqrt;
 mod struct_;
 mod sum;
 mod take;

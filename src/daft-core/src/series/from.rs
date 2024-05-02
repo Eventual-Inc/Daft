@@ -20,7 +20,10 @@ impl Series {
         // Corner-case nested logical types that have not yet been migrated to new Array formats
         // to hold only casted physical arrow arrays.
         let dtype = &field.dtype;
-        if matches!(dtype, DataType::List(..) | DataType::Extension(..)) && let physical_type = dtype.to_physical() && &physical_type != dtype {
+        if matches!(dtype, DataType::List(..) | DataType::Extension(..))
+            && let physical_type = dtype.to_physical()
+            && &physical_type != dtype
+        {
             let arrow_physical_type = physical_type.to_arrow()?;
             let casted_array = arrow2::compute::cast::cast(
                 array.as_ref(),

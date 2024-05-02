@@ -367,6 +367,9 @@ class Series:
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
 
+    def sqrt(self) -> Series:
+        return Series._from_pyseries(self._series.sqrt())
+
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
         return Series._from_pyseries(self._series.sin())
@@ -750,6 +753,13 @@ class SeriesDateNamespace(SeriesNamespace):
 
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
+
+    def truncate(self, interval: str, relative_to: Series | None = None) -> Series:
+        if relative_to is not None and not isinstance(relative_to, Series):
+            raise ValueError(f"expected another Series but got {type(relative_to)}")
+        if relative_to is None:
+            relative_to = Series.from_arrow(pa.array([None]))
+        return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):
