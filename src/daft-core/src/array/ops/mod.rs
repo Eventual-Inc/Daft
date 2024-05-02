@@ -1,5 +1,6 @@
 mod abs;
 mod apply;
+mod approx_sketch;
 mod arange;
 mod arithmetic;
 pub mod arrow2;
@@ -31,12 +32,14 @@ mod list;
 mod list_agg;
 mod log;
 mod mean;
+mod merge_sketch;
 mod null;
 mod pairwise;
 mod repr;
 mod round;
 mod search_sorted;
 mod sign;
+mod sketch_percentile;
 mod sort;
 mod sqrt;
 mod struct_;
@@ -126,6 +129,18 @@ pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftApproxSketchAggable {
+    type Output;
+    fn approx_sketch(&self) -> Self::Output;
+    fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftMergeSketchAggable {
+    type Output;
+    fn merge_sketch(&self) -> Self::Output;
+    fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMeanAggable {

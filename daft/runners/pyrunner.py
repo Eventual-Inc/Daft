@@ -162,6 +162,7 @@ class PyRunner(Runner[MicroPartition]):
                 plan_scheduler = adaptive_planner.next()
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 tasks = plan_scheduler.to_partition_tasks(psets)
+                psets = {}
                 results_gen = self._physical_plan_to_partitions(tasks)
                 if adaptive_planner.is_done():
                     yield from results_gen
@@ -177,6 +178,7 @@ class PyRunner(Runner[MicroPartition]):
             psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
             # Get executable tasks from planner.
             tasks = plan_scheduler.to_partition_tasks(psets)
+            psets = {}
             with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                 results_gen = self._physical_plan_to_partitions(tasks)
                 yield from results_gen

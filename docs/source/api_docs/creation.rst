@@ -134,3 +134,4 @@ Databases
     :toctree: doc_gen/io_functions
 
     read_sql
+    read_lance

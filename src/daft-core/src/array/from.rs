@@ -6,7 +6,6 @@ use crate::datatypes::{
 };
 
 use crate::array::DataArray;
-
 use common_error::{DaftError, DaftResult};
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>

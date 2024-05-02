@@ -11,8 +11,8 @@ use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::col;
 use daft_dsl::ExprRef;
+use daft_dsl::{col, ApproxPercentileParams};
 
 use daft_scan::ScanExternalInfo;
 
@@ -826,6 +826,32 @@ fn populate_aggregation_stages(
                         inputs: inputs.to_vec(),
                     });
                 final_exprs.push(col(output_name));
+            }
+            ApproxSketch(_) => {
+                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            }
+            MergeSketch(_) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            }
+            ApproxPercentile(ApproxPercentileParams {
+                child: e,
+                percentiles,
+                force_list_output,
+            }) => {
+                let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
+                let sketch_id = agg_expr.semantic_id(schema).id;
+                let approx_id = ApproxSketch(col(sketch_id.clone())).semantic_id(schema).id;
+                first_stage_aggs
+                    .entry(sketch_id.clone())
+                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(approx_id.clone())
+                    .or_insert(MergeSketch(col(sketch_id.clone()).alias(approx_id.clone())));
+                final_exprs.push(
+                    col(approx_id.clone())
+                        .sketch_percentile(percentiles.as_slice(), *force_list_output)
+                        .alias(output_name),
+                );
             }
         }
     }
