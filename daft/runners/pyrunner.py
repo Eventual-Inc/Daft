@@ -152,9 +152,9 @@ class PyRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
+
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
-
         plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
         psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
         # Get executable tasks from planner.
