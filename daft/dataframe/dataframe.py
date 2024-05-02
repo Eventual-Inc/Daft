@@ -219,7 +219,8 @@ class DataFrame:
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield from self._result.values()
+            for mat_result in self._result.values():
+                yield mat_result.partition()
 
         else:
             # Execute the dataframe in a streaming fashion.
@@ -238,8 +239,9 @@ class DataFrame:
         )
         if preview_partition_invalid:
             preview_parts = self._result._get_preview_vpartition(self._num_preview_rows)
-            preview_results = LocalPartitionSet({i: part for i, part in enumerate(preview_parts)})
-
+            preview_results = LocalPartitionSet()
+            for i, part in enumerate(preview_parts):
+                preview_results.set_partition_from_table(i, part)
             preview_partition = preview_results._get_merged_vpartition()
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
@@ -314,7 +316,10 @@ class DataFrame:
         if not parts:
             raise ValueError("Can't create a DataFrame from an empty list of tables.")
 
-        result_pset = LocalPartitionSet({i: part for i, part in enumerate(parts)})
+        result_pset = LocalPartitionSet()
+
+        for i, part in enumerate(parts):
+            result_pset.set_partition_from_table(i, part)
 
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
@@ -1265,61 +1270,6 @@ class DataFrame:
             GroupedDataFrame: DataFrame to Aggregate
         """
         return GroupedDataFrame(self, ExpressionsProjection(self._inputs_to_expressions(group_by)))
-
-    @DataframePublicAPI
-    def pivot(
-        self,
-        group_by: ColumnInputType,
-        pivot_col: ColumnInputType,
-        value_col: ColumnInputType,
-        agg_fn: str,
-        names: Optional[List[str]] = None,
-    ) -> "DataFrame":
-        """Pivots a column of the DataFrame and performs an aggregation on the values.
-
-        .. NOTE::
-            You may wish to provide a list of distinct values to pivot on, which is more efficient as it avoids
-            a distinct operation. Without this list, Daft will perform a distinct operation on the pivot column to
-            determine the unique values to pivot on.
-
-        Example:
-            >>> data = {
-                "id": [1, 2, 3, 4],
-                "version": ["3.8", "3.8", "3.9", "3.9"],
-                "platform": ["macos", "macos", "macos", "windows"],
-                "downloads": [100, 200, 150, 250],
-            }
-            >>> df = daft.from_pydict(data)
-            >>> df = df.pivot("version", "platform", "downloads", "sum")
-            >>> df.show()
-            ╭─────────┬─────────┬───────╮
-            │ version ┆ windows ┆ macos │
-            │ ---     ┆ ---     ┆ ---   │
-            │ Utf8    ┆ Int64   ┆ Int64 │
-            ╞═════════╪═════════╪═══════╡
-            │ 3.9     ┆ 250     ┆ 150   │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3.8     ┆ None    ┆ 300   │
-            ╰─────────┴─────────┴───────╯
-
-        Args:
-            group_by (Union[str, Expression]): column to group by
-            pivot_col (Union[str, Expression]): column to pivot
-            value_col (Union[str, Expression]): column to aggregate
-            agg_fn (str): aggregation function to apply
-            names (Optional[List[str]]): names of the pivoted columns
-
-        Returns:
-            DataFrame: DataFrame with pivoted columns
-
-        """
-        group_by, pivot_col, value_col = self.__column_input_to_expression([group_by, pivot_col, value_col])
-        agg_expr = self._agg_tuple_to_expression((value_col, agg_fn))
-        if names is None:
-            names = self.select(pivot_col).distinct().to_pydict()[pivot_col.name()]
-            names = [str(x) for x in names]
-        builder = self._builder.pivot(group_by, pivot_col, value_col, agg_expr, names)
-        return DataFrame(builder)
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
