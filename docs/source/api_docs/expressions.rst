@@ -103,6 +103,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.any_value
    Expression.agg_list
    Expression.agg_concat
+   Expression.approx_percentiles
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:

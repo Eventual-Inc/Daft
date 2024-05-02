@@ -17,7 +17,7 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, Expr, ExprRef};
+use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod ops;
@@ -322,6 +322,17 @@ impl Table {
         match agg_expr {
             Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
+            ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
+            ApproxPercentile(ApproxPercentileParams {
+                child: expr,
+                percentiles,
+                force_list_output,
+            }) => {
+                let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
+                Series::approx_sketch(&self.eval_expression(expr)?, groups)?
+                    .sketch_percentile(&percentiles, *force_list_output)
+            }
+            MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),

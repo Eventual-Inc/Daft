@@ -1187,6 +1187,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "common-error",
+ "daft-sketch",
  "dyn-clone",
  "fnv",
  "html-escape",
@@ -1210,6 +1211,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sketches-ddsketch",
  "xxhash-rust",
 ]
 
@@ -1275,6 +1277,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-io",
+ "daft-sketch",
  "indexmap 2.1.0",
  "pyo3",
  "pyo3-log",
@@ -1475,9 +1478,11 @@ name = "daft-sketch"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "common-error",
  "lazy_static",
  "serde_arrow",
  "sketches-ddsketch",
+ "snafu",
 ]
 
 [[package]]
