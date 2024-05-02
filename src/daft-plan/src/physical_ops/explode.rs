@@ -44,7 +44,7 @@ impl Explode {
                     .flat_map(get_required_columns)
                     .collect::<HashSet<String>>();
                 for expr in to_explode {
-                    let newname = expr.name().unwrap().to_string();
+                    let newname = expr.name().to_string();
                     // if we clobber one of the required columns for the clustering_spec, invalidate it.
                     if required_cols_for_clustering_spec.contains(&newname) {
                         return ClusteringSpec::Unknown(UnknownClusteringConfig::new(

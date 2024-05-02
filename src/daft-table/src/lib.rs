@@ -403,7 +403,7 @@ impl Table {
             } => match predicate.as_ref() {
                 Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(if_true),
                 Expr::Literal(LiteralValue::Boolean(false)) => {
-                    Ok(self.eval_expression(if_false)?.rename(if_true.name()?))
+                    Ok(self.eval_expression(if_false)?.rename(if_true.name()))
                 }
                 _ => {
                     let if_true_series = self.eval_expression(if_true)?;
