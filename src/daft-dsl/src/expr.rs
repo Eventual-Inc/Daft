@@ -727,17 +727,23 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
-                let if_true_field = if_true.to_field(schema)?;
-                let if_false_field = if_false.to_field(schema)?;
                 let predicate_field = predicate.to_field(schema)?;
                 if predicate_field.dtype != DataType::Boolean {
                     return Err(DaftError::TypeError(format!(
-                        "Expected predicate for if_else to be boolean but received {predicate_field}",
-                    )));
+                                "Expected predicate for if_else to be boolean but received {predicate_field}",
+                            )));
                 }
-                match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
-                    Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                match predicate.as_ref() {
+                    Expr::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
+                    Expr::Literal(lit::LiteralValue::Boolean(false)) => if_false.to_field(schema),
+                    _ => {
+                        let if_true_field = if_true.to_field(schema)?;
+                        let if_false_field = if_false.to_field(schema)?;
+                        match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                        }
+                    }
                 }
             }
         }
