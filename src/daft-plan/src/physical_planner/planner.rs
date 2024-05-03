@@ -36,7 +36,21 @@ impl TreeNodeVisitor for PhysicalPlanTranslator {
 
 pub(super) struct QueryStagePhysicalPlanTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
+    pub root: Arc<LogicalPlan>,
     pub cfg: Arc<DaftExecutionConfig>,
+}
+
+fn is_query_stage_boundary(plan: &PhysicalPlan) -> bool {
+    use PhysicalPlan::*;
+    match plan {
+        Sort(..) | HashJoin(..) | SortMergeJoin(..) | ReduceMerge(..) => true,
+        Aggregate(agg) => match agg.input.as_ref() {
+            ReduceMerge(..) => true,
+            _ => false,
+        },
+        Project(proj) => is_query_stage_boundary(&proj.input),
+        _ => false,
+    }
 }
 
 impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
@@ -49,13 +63,10 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         let translated_pplan =
             translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
-        use PhysicalPlan::*;
-        let query_stage_boundary = match translated_pplan.as_ref() {
-            Sort(..) | HashJoin(..) | SortMergeJoin(..) => true,
-            _ => false,
-        };
 
-        if query_stage_boundary {
+        let is_root_node = Arc::ptr_eq(&node, &self.root);
+
+        if is_query_stage_boundary(&translated_pplan) && !is_root_node {
             log::warn!(
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
@@ -262,6 +273,7 @@ impl AdaptivePlanner {
 
         let mut rewriter = QueryStagePhysicalPlanTranslator {
             physical_children: vec![],
+            root: self.logical_plan.clone(),
             cfg: self.cfg.clone(),
         };
 

@@ -41,6 +41,7 @@ pub fn plan_new(
 ) -> DaftResult<PhysicalPlanRef> {
     let mut rewriter = QueryStagePhysicalPlanTranslator {
         physical_children: vec![],
+        root: logical_plan.clone(),
         cfg: cfg.clone(),
     };
     let _output = logical_plan.rewrite(&mut rewriter)?;
