@@ -294,7 +294,7 @@ def _create_broadcast_join_step(
         partial_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
         resource_request=ResourceRequest(memory_bytes=size_bytes),
     ).add_instruction(
-        instruction=execution_step.HashJoin(
+        instruction=execution_step.BroadcastJoin(
             left_on=left_on,
             right_on=right_on,
             how=how,

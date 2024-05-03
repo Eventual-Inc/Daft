@@ -47,30 +47,129 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
     }
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-        let output = translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
+        let translated_pplan =
+            translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
         use PhysicalPlan::*;
-        let query_stage_boundary = match output.as_ref() {
-            Sort(..) => true,
+        let query_stage_boundary = match translated_pplan.as_ref() {
+            Sort(..) | HashJoin(..) | SortMergeJoin(..) => true,
             _ => false,
         };
 
-        self.physical_children.push(output.clone());
         if query_stage_boundary {
-            log::warn!("Detected Query Stage Boundary at {}", output.name());
-            let new_scan = LogicalPlan::Source(Source::new(
-                node.schema(),
-                SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
-                    node.schema(),
-                    output.clustering_spec(),
-                ))
-                .into(),
-            ));
-            Ok(Transformed::new(
-                new_scan.arced(),
-                true,
-                TreeNodeRecursion::Stop,
-            ))
+            log::warn!(
+                "Detected Query Stage Boundary at {}",
+                translated_pplan.name()
+            );
+            match &translated_pplan.children()[..] {
+                [] | [_] => {
+                    self.physical_children.push(translated_pplan.clone());
+                    let new_scan = LogicalPlan::Source(Source::new(
+                        node.schema(),
+                        SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                            node.schema(),
+                            translated_pplan.clustering_spec(),
+                        ))
+                        .into(),
+                    ));
+                    Ok(Transformed::new(
+                        new_scan.arced(),
+                        true,
+                        TreeNodeRecursion::Stop,
+                    ))
+                }
+                [left, right] => {
+                    enum RunNext {
+                        Parent,
+                        Left,
+                        Right,
+                    }
+
+                    let run_next: RunNext = match (left.as_ref(), right.as_ref()) {
+                        (PhysicalPlan::InMemoryScan(..), PhysicalPlan::InMemoryScan(..)) => {
+                            // both are in memory, emit as is.
+                            RunNext::Parent
+                        }
+                        (PhysicalPlan::InMemoryScan(..), _) => {
+                            // we know the left, so let's run the right
+                            RunNext::Right
+                        }
+                        (_, PhysicalPlan::InMemoryScan(..)) => {
+                            // we know the right, so let's run the left
+                            RunNext::Left
+                        }
+                        (_, _) => {
+                            // both sides are not in memory, so we should rank which side to run
+                            let left_stats = left.approximate_stats();
+                            let right_stats = right.approximate_stats();
+
+                            if left_stats.lower_bound_bytes < right_stats.lower_bound_bytes {
+                                RunNext::Left
+                            } else {
+                                RunNext::Right
+                            }
+                        }
+                    };
+                    match run_next {
+                        RunNext::Parent => {
+                            self.physical_children.push(translated_pplan.clone());
+                            Ok(Transformed::no(node))
+                        }
+                        RunNext::Left => {
+                            self.physical_children.push(left.clone());
+                            let logical_children = node.children();
+                            let logical_left = logical_children.get(0).expect(
+                                "we expect the logical node of a binary op to also have 2 children",
+                            );
+                            let logical_right = logical_children.get(1).expect(
+                                "we expect the logical node of a binary op to also have 2 children",
+                            );
+                            let new_left_scan = LogicalPlan::Source(Source::new(
+                                logical_left.schema(),
+                                SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                                    logical_left.schema(),
+                                    left.clustering_spec(),
+                                ))
+                                .into(),
+                            ));
+                            let new_bin_node = node
+                                .with_new_children(&[new_left_scan.arced(), logical_right.clone()]);
+                            Ok(Transformed::new(
+                                new_bin_node.arced(),
+                                true,
+                                TreeNodeRecursion::Stop,
+                            ))
+                        }
+                        RunNext::Right => {
+                            self.physical_children.push(right.clone());
+                            let logical_children = node.children();
+                            let logical_left = logical_children.get(0).expect(
+                                "we expect the logical node of a binary op to also have 2 children",
+                            );
+                            let logical_right = logical_children.get(1).expect(
+                                "we expect the logical node of a binary op to also have 2 children",
+                            );
+                            let new_right_scan = LogicalPlan::Source(Source::new(
+                                logical_right.schema(),
+                                SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                                    logical_right.schema(),
+                                    right.clustering_spec(),
+                                ))
+                                .into(),
+                            ));
+                            let new_bin_node = node
+                                .with_new_children(&[logical_left.clone(), new_right_scan.arced()]);
+                            Ok(Transformed::new(
+                                new_bin_node.arced(),
+                                true,
+                                TreeNodeRecursion::Stop,
+                            ))
+                        }
+                    }
+                }
+                _ => panic!("We shouldn't have any nodes that have more than 3 children"),
+            }
         } else {
+            self.physical_children.push(translated_pplan.clone());
             Ok(Transformed::no(node))
         }
     }
@@ -177,15 +276,21 @@ impl AdaptivePlanner {
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
 
-            log::warn!("emitting partial plan:\n {}", physical_plan.repr_indent());
+            log::warn!(
+                "\nEmitting partial plan:\n {}",
+                physical_plan.repr_ascii(true)
+            );
 
             log::warn!(
-                "logical plan remaining:\n {}",
-                self.logical_plan.repr_indent()
+                "Logical plan remaining:\n {}",
+                self.logical_plan.repr_ascii(true)
             );
             Ok(QueryStageOutput::Partial { physical_plan })
         } else {
-            log::warn!("emitting final plan:\n {}", physical_plan.repr_indent());
+            log::warn!(
+                "\nEmitting final plan:\n {}",
+                physical_plan.repr_ascii(true)
+            );
 
             self.status = AdaptivePlannerStatus::Done;
             Ok(QueryStageOutput::Final { physical_plan })

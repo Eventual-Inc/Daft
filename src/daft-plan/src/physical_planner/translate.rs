@@ -467,23 +467,23 @@ pub(super) fn translate_single_logical_node(
                 } else {
                     false
                 };
+            let left_stats = left_physical.approximate_stats();
+            let right_stats = right_physical.approximate_stats();
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
-            let (smaller_size_bytes, left_is_larger) = match (
-                left_physical.approximate_size_bytes(),
-                right_physical.approximate_size_bytes(),
-            ) {
-                (Some(left_size_bytes), Some(right_size_bytes)) => {
-                    if right_size_bytes < left_size_bytes {
-                        (Some(right_size_bytes), true)
-                    } else {
-                        (Some(left_size_bytes), false)
+            let (smaller_size_bytes, left_is_larger) =
+                match (left_stats.upper_bound_bytes, right_stats.upper_bound_bytes) {
+                    (Some(left_size_bytes), Some(right_size_bytes)) => {
+                        if right_size_bytes < left_size_bytes {
+                            (Some(right_size_bytes), true)
+                        } else {
+                            (Some(left_size_bytes), false)
+                        }
                     }
-                }
-                (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
-                (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
-                (None, None) => (None, false),
-            };
+                    (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
+                    (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
+                    (None, None) => (None, false),
+                };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned
             } else {

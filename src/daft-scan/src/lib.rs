@@ -465,6 +465,10 @@ impl ScanTask {
         }
     }
 
+    pub fn upper_bound_rows(&self) -> Option<usize> {
+        self.metadata.as_ref().map(|m| m.length)
+    }
+
     pub fn size_bytes(&self) -> Option<usize> {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
