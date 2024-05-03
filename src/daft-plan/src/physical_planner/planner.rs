@@ -43,9 +43,11 @@ pub(super) struct QueryStagePhysicalPlanTranslator {
 fn is_query_stage_boundary(plan: &PhysicalPlan) -> bool {
     use PhysicalPlan::*;
     match plan {
-        Sort(..) | HashJoin(..) | SortMergeJoin(..) | ReduceMerge(..) => true,
+        Sort(..) | HashJoin(..) | SortMergeJoin(..) | ReduceMerge(..) => {
+            plan.clustering_spec().num_partitions() > 1
+        }
         Aggregate(agg) => match agg.input.as_ref() {
-            ReduceMerge(..) => true,
+            ReduceMerge(..) => plan.clustering_spec().num_partitions() > 1,
             _ => false,
         },
         Project(proj) => is_query_stage_boundary(&proj.input),
