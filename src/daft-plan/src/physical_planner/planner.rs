@@ -64,13 +64,10 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
         let translated_pplan =
             translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
 
-        println!("QueryStagePhysicalPlanTranslator:f_up before is_query_stage_boundary");
-
-        let is_query_stage_boundary = false; //is_query_stage_boundary(&translated_pplan);
+        let is_query_stage_boundary = is_query_stage_boundary(&translated_pplan);
         let is_root_node = Arc::ptr_eq(&node, &self.root);
-        println!("QueryStagePhysicalPlanTranslator:f_up is_query_stage_boundary: {is_query_stage_boundary} is_root_node: {is_root_node}");
         if is_query_stage_boundary && !is_root_node {
-            println!(
+            log::warn!(
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
             );
@@ -184,8 +181,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
             }
         } else {
             self.physical_children.push(translated_pplan.clone());
-            println!("QueryStagePhysicalPlanTranslator:f_up else case");
-            Ok(Transformed::new(node, false, TreeNodeRecursion::Continue))
+            Ok(Transformed::no(node))
         }
     }
 }
@@ -273,8 +269,6 @@ impl AdaptivePlanner {
     }
 
     pub fn next(&mut self) -> DaftResult<QueryStageOutput> {
-        println!("AdaptivePhysicalPlanScheduler:next start");
-
         assert_eq!(self.status, AdaptivePlannerStatus::Ready);
 
         let mut rewriter = QueryStagePhysicalPlanTranslator {
@@ -282,10 +276,7 @@ impl AdaptivePlanner {
             root: self.logical_plan.clone(),
             cfg: self.cfg.clone(),
         };
-
-        println!("AdaptivePhysicalPlanScheduler:next before rewrite");
         let output = self.logical_plan.clone().rewrite(&mut rewriter)?;
-        println!("AdaptivePhysicalPlanScheduler:next after rewrite");
 
         let physical_plan = rewriter
             .physical_children
@@ -296,18 +287,18 @@ impl AdaptivePlanner {
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
 
-            println!(
+            log::warn!(
                 "\nEmitting partial plan:\n {}",
                 physical_plan.repr_ascii(true)
             );
 
-            println!(
+            log::warn!(
                 "Logical plan remaining:\n {}",
                 self.logical_plan.repr_ascii(true)
             );
             Ok(QueryStageOutput::Partial { physical_plan })
         } else {
-            println!(
+            log::warn!(
                 "\nEmitting final plan:\n {}",
                 physical_plan.repr_ascii(true)
             );
