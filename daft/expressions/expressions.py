@@ -1286,6 +1286,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
 
+    def repeat(self, n: int | Expression) -> Expression:
+        """Repeats each string n times
+
+        Example:
+            >>> col("x").str.repeat(3)
+
+        Returns:
+            Expression: a String expression which is `self` repeated `n` times
+        """
+        n_expr = Expression._to_expression(n)
+        return Expression._from_pyexpr(self._expr.utf8_repeat(n_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
