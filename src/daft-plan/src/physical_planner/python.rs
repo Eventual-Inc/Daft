@@ -44,6 +44,7 @@ impl AdaptivePhysicalPlanScheduler {
         cache_entry: &PyAny,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
         let cache_entry = cache_entry.into();
@@ -54,6 +55,7 @@ impl AdaptivePhysicalPlanScheduler {
                 cache_entry,
                 num_partitions,
                 size_bytes,
+                num_rows,
                 None, // TODO(sammy) thread through clustering spec to Python
             );
 

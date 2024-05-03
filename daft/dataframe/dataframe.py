@@ -92,6 +92,8 @@ class DataFrame:
         else:
             num_partitions = self._result_cache.num_partitions()
             size_bytes = self._result_cache.size_bytes()
+            num_rows = self._result_cache.num_rows()
+
             # Partition set should always be set on cache entry.
             assert (
                 num_partitions is not None and size_bytes is not None
@@ -101,6 +103,7 @@ class DataFrame:
                 self.__builder.schema(),
                 num_partitions=num_partitions,
                 size_bytes=size_bytes,
+                num_rows=num_rows,
             )
 
     def _get_current_builder(self) -> LogicalPlanBuilder:
@@ -324,9 +327,11 @@ class DataFrame:
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
+        num_rows = len(result_pset)
+
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes
+            cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes, num_rows=num_rows
         )
 
         df = cls(builder)
@@ -1597,12 +1602,14 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
+        num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
+            num_rows=num_rows,
         )
         df = cls(builder)
         df._result_cache = cache_entry
@@ -1686,12 +1693,14 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
+        num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
+            num_rows=num_rows,
         )
 
         df = cls(builder)

@@ -32,11 +32,12 @@ class PhysicalPlanScheduler:
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
         return physical_plan.materialize(self._scheduler.to_partition_tasks(psets))
 
+
 class AdaptivePhysicalPlanScheduler:
     def __init__(self, scheduler: _AdaptivePhysicalPlanScheduler) -> None:
         self._scheduler = scheduler
 
-    def next(self) -> PhysicalPlanScheduler:    
+    def next(self) -> PhysicalPlanScheduler:
         return PhysicalPlanScheduler(self._scheduler.next())
 
     def is_done(self) -> bool:
@@ -47,5 +48,6 @@ class AdaptivePhysicalPlanScheduler:
             cache_entry.key,
             cache_entry,
             num_partitions=cache_entry.num_partitions(),
-            size_bytes=cache_entry.size_bytes()
+            size_bytes=cache_entry.size_bytes(),
+            num_rows=cache_entry.num_rows(),
         )

@@ -64,10 +64,13 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
         let translated_pplan =
             translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
 
-        let is_root_node = Arc::ptr_eq(&node, &self.root);
+        println!("QueryStagePhysicalPlanTranslator:f_up before is_query_stage_boundary");
 
-        if is_query_stage_boundary(&translated_pplan) && !is_root_node {
-            log::warn!(
+        let is_query_stage_boundary = false; //is_query_stage_boundary(&translated_pplan);
+        let is_root_node = Arc::ptr_eq(&node, &self.root);
+        println!("QueryStagePhysicalPlanTranslator:f_up is_query_stage_boundary: {is_query_stage_boundary} is_root_node: {is_root_node}");
+        if  is_query_stage_boundary && !is_root_node {
+            println!(
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
             );
@@ -113,7 +116,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let left_stats = left.approximate_stats();
                             let right_stats = right.approximate_stats();
 
-                            if left_stats.lower_bound_bytes < right_stats.lower_bound_bytes {
+                            if left_stats.lower_bound_bytes <= right_stats.lower_bound_bytes {
                                 RunNext::Left
                             } else {
                                 RunNext::Right
@@ -181,7 +184,8 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
             }
         } else {
             self.physical_children.push(translated_pplan.clone());
-            Ok(Transformed::no(node))
+            println!("QueryStagePhysicalPlanTranslator:f_up else case");
+            Ok(Transformed::new(node, false, TreeNodeRecursion::Continue))
         }
     }
 }
@@ -269,6 +273,8 @@ impl AdaptivePlanner {
     }
 
     pub fn next(&mut self) -> DaftResult<QueryStageOutput> {
+        println!("AdaptivePhysicalPlanScheduler:next start");
+
         assert_eq!(self.status, AdaptivePlannerStatus::Ready);
 
         let mut rewriter = QueryStagePhysicalPlanTranslator {
@@ -277,7 +283,9 @@ impl AdaptivePlanner {
             cfg: self.cfg.clone(),
         };
 
+        println!("AdaptivePhysicalPlanScheduler:next before rewrite");
         let output = self.logical_plan.clone().rewrite(&mut rewriter)?;
+        println!("AdaptivePhysicalPlanScheduler:next after rewrite");
 
         let physical_plan = rewriter
             .physical_children
@@ -288,18 +296,18 @@ impl AdaptivePlanner {
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
 
-            log::warn!(
+            println!(
                 "\nEmitting partial plan:\n {}",
                 physical_plan.repr_ascii(true)
             );
 
-            log::warn!(
+            println!(
                 "Logical plan remaining:\n {}",
                 self.logical_plan.repr_ascii(true)
             );
             Ok(QueryStageOutput::Partial { physical_plan })
         } else {
-            log::warn!(
+            println!(
                 "\nEmitting final plan:\n {}",
                 physical_plan.repr_ascii(true)
             );

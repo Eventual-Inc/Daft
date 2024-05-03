@@ -184,6 +184,7 @@ impl LogicalPlan {
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation,names,..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(input.clone(), Some(&column_name))),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
             [input1, input2] => match self {

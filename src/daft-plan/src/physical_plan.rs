@@ -263,9 +263,8 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
                 ApproxStats {
-                    // TODO: Add num rows to InMemoryScan
-                    lower_bound_rows: 0,
-                    upper_bound_rows: None,
+                    lower_bound_rows: in_memory_info.num_rows,
+                    upper_bound_rows: Some(in_memory_info.num_rows),
                     lower_bound_bytes: in_memory_info.size_bytes,
                     upper_bound_bytes: Some(in_memory_info.size_bytes),
                 }
@@ -306,6 +305,8 @@ impl PhysicalPlan {
                 let limit = *limit as usize;
                 let input_stats = input.approximate_stats();
                 let bytes_per_row = 100;
+                let est_bytes_per_row_lower = input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats.upper_bound_bytes.and_then(|bytes|  input_stats.upper_bound_rows.map(|rows| bytes/rows)).unwrap_or(100);
                 let new_lower_rows = input_stats.lower_bound_rows.min(limit);
                 let new_upper_rows = input_stats
                     .upper_bound_rows
@@ -314,8 +315,8 @@ impl PhysicalPlan {
                 ApproxStats {
                     lower_bound_rows: new_lower_rows,
                     upper_bound_rows: Some(new_upper_rows),
-                    lower_bound_bytes: new_lower_rows * bytes_per_row,
-                    upper_bound_bytes: Some(new_upper_rows * bytes_per_row),
+                    lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
+                    upper_bound_bytes: Some(new_upper_rows * est_bytes_per_row_upper),
                 }
             }
             Self::Project(Project { input, .. })
@@ -365,20 +366,21 @@ impl PhysicalPlan {
             Self::Aggregate(Aggregate { groupby, .. }) => {
                 let input_stats = self.approximate_stats();
                 // TODO we should use schema inference here
-                let bytes_per_row = 100;
+                let est_bytes_per_row_lower = input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats.upper_bound_bytes.and_then(|bytes|  input_stats.upper_bound_rows.map(|rows| bytes/rows)).unwrap_or(100);
                 if groupby.is_empty() {
                     ApproxStats {
                         lower_bound_rows: input_stats.lower_bound_rows.min(1),
                         upper_bound_rows: Some(1),
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * bytes_per_row,
-                        upper_bound_bytes: Some(1 * bytes_per_row),
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
+                        upper_bound_bytes: Some(1 * est_bytes_per_row_upper),
                     }
                 } else {
                     // we should use the new schema here
                     ApproxStats {
                         lower_bound_rows: input_stats.lower_bound_rows.min(1),
                         upper_bound_rows: input_stats.upper_bound_rows,
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * bytes_per_row,
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
                         upper_bound_bytes: input_stats.upper_bound_bytes,
                     }
                 }

@@ -1295,7 +1295,7 @@ class AdaptivePhysicalPlanScheduler:
     def is_done(self) -> bool: ...
     # Todo use in memory info here instead
     def update(
-        self, partition_key: str, cache_entry: PartitionCacheEntry, num_partitions: int, size_bytes: int
+        self, partition_key: str, cache_entry: PartitionCacheEntry, num_partitions: int, size_bytes: int, num_rows: int
     ) -> None: ...
 
 class LogicalPlanBuilder:
@@ -1309,7 +1309,12 @@ class LogicalPlanBuilder:
 
     @staticmethod
     def in_memory_scan(
-        partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int, size_bytes: int
+        partition_key: str,
+        cache_entry: PartitionCacheEntry,
+        schema: PySchema,
+        num_partitions: int,
+        size_bytes: int,
+        num_rows: int,
     ) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...

@@ -51,11 +51,14 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     partition.set_partition_from_table(0, file_infos_table)
     cache_entry = context.runner().put_partition_set_into_cache(partition)
     size_bytes = partition.size_bytes()
+    num_rows = len(partition)
+
     assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
     builder = LogicalPlanBuilder.from_in_memory_scan(
         cache_entry,
         schema=file_infos_table.schema(),
         num_partitions=partition.num_partitions(),
         size_bytes=size_bytes,
+        num_rows=num_rows,
     )
     return DataFrame(builder)

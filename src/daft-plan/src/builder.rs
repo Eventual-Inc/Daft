@@ -149,6 +149,7 @@ impl LogicalPlanBuilder {
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize,
     ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
             schema.clone(),
@@ -156,6 +157,7 @@ impl LogicalPlanBuilder {
             cache_entry,
             num_partitions,
             size_bytes,
+            num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
         ));
         let logical_plan: LogicalPlan =
@@ -515,6 +517,7 @@ impl PyLogicalPlanBuilder {
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
@@ -522,6 +525,7 @@ impl PyLogicalPlanBuilder {
             schema.into(),
             num_partitions,
             size_bytes,
+            num_rows
         )?
         .into())
     }

@@ -34,6 +34,7 @@ pub struct InMemoryInfo {
     pub cache_entry: PyObject,
     pub num_partitions: usize,
     pub size_bytes: usize,
+    pub num_rows: usize,
     pub clustering_spec: Option<ClusteringSpecRef>,
 }
 
@@ -45,6 +46,7 @@ impl InMemoryInfo {
         cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize,
         clustering_spec: Option<ClusteringSpecRef>,
     ) -> Self {
         Self {
@@ -53,6 +55,7 @@ impl InMemoryInfo {
             cache_entry,
             num_partitions,
             size_bytes,
+            num_rows,
             clustering_spec,
         }
     }

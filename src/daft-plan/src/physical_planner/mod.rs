@@ -34,25 +34,3 @@ pub fn plan(
         .expect("should have exactly 1 parent");
     Ok(pplan)
 }
-
-pub fn plan_new(
-    logical_plan: Arc<LogicalPlan>,
-    cfg: Arc<DaftExecutionConfig>,
-) -> DaftResult<PhysicalPlanRef> {
-    let mut rewriter = QueryStagePhysicalPlanTranslator {
-        physical_children: vec![],
-        root: logical_plan.clone(),
-        cfg: cfg.clone(),
-    };
-    let _output = logical_plan.rewrite(&mut rewriter)?;
-    assert_eq!(
-        rewriter.physical_children.len(),
-        1,
-        "We should have exactly 1 node left"
-    );
-    let pplan = rewriter
-        .physical_children
-        .pop()
-        .expect("should have exactly 1 parent");
-    Ok(pplan)
-}
