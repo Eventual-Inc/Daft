@@ -7,10 +7,9 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    PhysicalPlanScheduler, ResourceRequest,
+    ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
@@ -23,10 +22,8 @@ use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperat
 
 #[cfg(feature = "python")]
 use {
-    crate::physical_planner::python::AdaptivePhysicalPlanScheduler,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::{physical_plan::PhysicalPlanRef, source_info::InMemoryInfo},
-    common_daft_config::PyDaftExecutionConfig,
+    crate::source_info::InMemoryInfo,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::python::pylib::ScanOperatorHandle,
@@ -560,7 +557,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 #[derive(Debug)]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
-    builder: LogicalPlanBuilder,
+    pub builder: LogicalPlanBuilder,
 }
 
 impl PyLogicalPlanBuilder {
@@ -857,37 +854,8 @@ impl PyLogicalPlanBuilder {
         })
     }
 
-    /// Finalize the logical plan, translate the logical plan to a physical plan, and return
-    /// a physical plan scheduler that's capable of launching the work necessary to compute the output
-    /// of the physical plan.
-    pub fn to_physical_plan_scheduler(
-        &self,
-        py: Python,
-        cfg: PyDaftExecutionConfig,
-    ) -> PyResult<PhysicalPlanScheduler> {
-        py.allow_threads(|| {
-            let logical_plan = self.builder.build();
-            let physical_plan: PhysicalPlanRef = plan(logical_plan, cfg.config.clone())?;
-            Ok(physical_plan.into())
-        })
-    }
-
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
-    }
-
-    pub fn to_adaptive_physical_plan_scheduler(
-        &self,
-        py: Python,
-        cfg: PyDaftExecutionConfig,
-    ) -> PyResult<AdaptivePhysicalPlanScheduler> {
-        py.allow_threads(|| {
-            let logical_plan = self.builder.build();
-            Ok(AdaptivePhysicalPlanScheduler::new(
-                logical_plan,
-                cfg.config.clone(),
-            ))
-        })
     }
 }
 
