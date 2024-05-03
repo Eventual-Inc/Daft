@@ -9,3 +9,4 @@ Integrations
     integrations/hudi
     integrations/microsoft-azure
     integrations/aws
+    integrations/sql
