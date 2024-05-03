@@ -261,14 +261,12 @@ impl PhysicalPlan {
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
             #[cfg(feature = "python")]
-            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
-                ApproxStats {
-                    lower_bound_rows: in_memory_info.num_rows,
-                    upper_bound_rows: Some(in_memory_info.num_rows),
-                    lower_bound_bytes: in_memory_info.size_bytes,
-                    upper_bound_bytes: Some(in_memory_info.size_bytes),
-                }
-            }
+            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
+                lower_bound_rows: in_memory_info.num_rows,
+                upper_bound_rows: Some(in_memory_info.num_rows),
+                lower_bound_bytes: in_memory_info.size_bytes,
+                upper_bound_bytes: Some(in_memory_info.size_bytes),
+            },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
                 let mut stats = ApproxStats::empty();
                 for st in scan_tasks.iter() {
@@ -304,9 +302,12 @@ impl PhysicalPlan {
             Self::Limit(Limit { input, limit, .. }) => {
                 let limit = *limit as usize;
                 let input_stats = input.approximate_stats();
-                let bytes_per_row = 100;
-                let est_bytes_per_row_lower = input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats.upper_bound_bytes.and_then(|bytes|  input_stats.upper_bound_rows.map(|rows| bytes/rows)).unwrap_or(100);
+                let est_bytes_per_row_lower =
+                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats
+                    .upper_bound_bytes
+                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows))
+                    .unwrap_or(100);
                 let new_lower_rows = input_stats.lower_bound_rows.min(limit);
                 let new_upper_rows = input_stats
                     .upper_bound_rows
@@ -363,16 +364,21 @@ impl PhysicalPlan {
                 &left.approximate_stats() + &right.approximate_stats()
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
-            Self::Aggregate(Aggregate { groupby, .. }) => {
-                let input_stats = self.approximate_stats();
+            Self::Aggregate(Aggregate { input, groupby, .. }) => {
+                let input_stats = input.approximate_stats();
                 // TODO we should use schema inference here
-                let est_bytes_per_row_lower = input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats.upper_bound_bytes.and_then(|bytes|  input_stats.upper_bound_rows.map(|rows| bytes/rows)).unwrap_or(100);
+                let est_bytes_per_row_lower =
+                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats
+                    .upper_bound_bytes
+                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows))
+                    .unwrap_or(100);
                 if groupby.is_empty() {
                     ApproxStats {
                         lower_bound_rows: input_stats.lower_bound_rows.min(1),
                         upper_bound_rows: Some(1),
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
+                            * est_bytes_per_row_lower,
                         upper_bound_bytes: Some(1 * est_bytes_per_row_upper),
                     }
                 } else {
@@ -380,7 +386,8 @@ impl PhysicalPlan {
                     ApproxStats {
                         lower_bound_rows: input_stats.lower_bound_rows.min(1),
                         upper_bound_rows: input_stats.upper_bound_rows,
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
+                            * est_bytes_per_row_lower,
                         upper_bound_bytes: input_stats.upper_bound_bytes,
                     }
                 }

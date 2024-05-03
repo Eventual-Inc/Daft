@@ -517,7 +517,7 @@ impl PyLogicalPlanBuilder {
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
-        num_rows: usize
+        num_rows: usize,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
@@ -525,7 +525,7 @@ impl PyLogicalPlanBuilder {
             schema.into(),
             num_partitions,
             size_bytes,
-            num_rows
+            num_rows,
         )?
         .into())
     }

@@ -69,7 +69,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
         let is_query_stage_boundary = false; //is_query_stage_boundary(&translated_pplan);
         let is_root_node = Arc::ptr_eq(&node, &self.root);
         println!("QueryStagePhysicalPlanTranslator:f_up is_query_stage_boundary: {is_query_stage_boundary} is_root_node: {is_root_node}");
-        if  is_query_stage_boundary && !is_root_node {
+        if is_query_stage_boundary && !is_root_node {
             println!(
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
