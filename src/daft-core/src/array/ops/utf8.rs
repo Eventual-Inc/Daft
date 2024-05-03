@@ -629,10 +629,8 @@ impl Utf8Array {
                         "Error in left: failed to cast rhs as usize {n}"
                     ))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
-                    .zip(nchars_iter)
-                    .map(|(val, n)| Some(left_most_chars(val?, n)))
+                    .map(|val| Some(left_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
@@ -695,10 +693,8 @@ impl Utf8Array {
                         "Error in right: failed to cast rhs as usize {n}"
                     ))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
-                    .zip(nchars_iter)
-                    .map(|(val, n)| Some(right_most_chars(val?, n)))
+                    .map(|val| Some(right_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
@@ -752,10 +748,8 @@ impl Utf8Array {
                         "Error in repeat: failed to cast rhs as usize {n}"
                     ))
                 })?;
-                let n_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
-                    .zip(n_iter)
-                    .map(|(val, n)| Some(val?.repeat(n)))
+                    .map(|val| Some(val?.repeat(n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
