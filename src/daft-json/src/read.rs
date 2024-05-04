@@ -24,20 +24,16 @@ use crate::{
 };
 use daft_compression::CompressionCodec;
 
-trait LineChunkStream = Stream<Item = super::Result<Vec<String>>>;
-trait ColumnArrayChunkStream = Stream<
-    Item = super::Result<
-        Context<
-            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
-            super::JoinSnafu,
-            super::Error,
-        >,
-    >,
->;
+type TableChunkResult =
+    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
 
-trait TableChunkStream = Stream<
-    Item = super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>,
->;
+type LineChunkResult = super::Result<Vec<String>>;
+
+trait TableChunkStream: Stream<Item = TableChunkResult> {}
+impl<T> TableChunkStream for T where T: Stream<Item = TableChunkResult> {}
+
+trait LineChunkStream: Stream<Item = LineChunkResult> {}
+impl<T> LineChunkStream for T where T: Stream<Item = LineChunkResult> {}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_json(
@@ -431,7 +427,7 @@ fn parse_into_column_array_chunk_stream(
                     let parsed = records
                         .iter_mut()
                         .map(|unparsed_record| {
-                            simd_json::to_borrowed_value(unsafe { unparsed_record.as_bytes_mut() })
+                            crate::deserializer::to_value(unsafe { unparsed_record.as_bytes_mut() })
                                 .map_err(|e| super::Error::JsonDeserializationError {
                                     string: e.to_string(),
                                 })
@@ -495,7 +491,7 @@ mod tests {
         let parsed = lines
             .iter_mut()
             .take(limit.unwrap_or(usize::MAX))
-            .map(|record| simd_json::to_borrowed_value(unsafe { record.as_bytes_mut() }).unwrap())
+            .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
         let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =

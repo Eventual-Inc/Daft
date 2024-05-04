@@ -1,3 +1,4 @@
+use crate::deserializer::Value as BorrowedValue;
 use arrow2::array::{
     Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
     MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
@@ -15,11 +16,10 @@ use daft_decoding::deserialize::{
 };
 use indexmap::IndexMap;
 use num_traits::NumCast;
-use simd_json::{BorrowedValue, StaticNode};
+use simd_json::StaticNode;
 use std::borrow::Borrow;
 use std::fmt::Write;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
-
 /// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
 pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     records: &[A],
@@ -30,14 +30,13 @@ pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     let mut results = schema
         .fields
         .iter()
-        .map(|f| (&f.name, allocate_array(f, records.len())))
+        .map(|f| (f.name.as_str(), allocate_array(f, records.len())))
         .collect::<IndexMap<_, _>>();
-
     for record in records {
         match record.borrow() {
             BorrowedValue::Object(record) => {
                 for (key, value) in record.iter() {
-                    let arr = results.get_mut(&key.to_string());
+                    let arr = results.get_mut(key.as_ref());
                     if let Some(arr) = arr {
                         deserialize_into(arr, &[value]);
                     } else if !schema_is_projection {
