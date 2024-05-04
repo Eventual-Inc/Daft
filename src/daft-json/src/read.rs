@@ -166,13 +166,6 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     Table::new(first_table.schema.clone(), new_series)
 }
 
-#[inline]
-fn assert_stream_send<'u, R>(
-    s: impl 'u + Send + Stream<Item = R>,
-) -> impl 'u + Send + Stream<Item = R> {
-    s
-}
-
 async fn read_json_single_into_table(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
@@ -230,7 +223,7 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
+    let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
@@ -241,7 +234,7 @@ async fn read_json_single_into_table(
         } else {
             table
         }
-    }));
+    });
     let mut remaining_rows = limit.map(|limit| limit as i64);
     let collected_tables = filtered_tables
         .try_take_while(|result| {
