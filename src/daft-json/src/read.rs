@@ -491,14 +491,11 @@ mod tests {
         projection: Option<Vec<String>>,
     ) {
         let reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let lines = reader.lines().collect::<Vec<_>>();
+        let mut lines = reader.lines().map(|l| l.unwrap()).collect::<Vec<_>>();
         let parsed = lines
-            .iter()
+            .iter_mut()
             .take(limit.unwrap_or(usize::MAX))
-            .map(|record| {
-                simd_json::to_borrowed_value(unsafe { record.as_ref().unwrap().as_bytes_mut() })
-                    .unwrap()
-            })
+            .map(|record| simd_json::to_borrowed_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
         let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
@@ -538,7 +535,7 @@ mod tests {
             None => (field_map.into_values().collect::<Vec<_>>().into(), false),
         };
         // Deserialize JSON records into Arrow2 column arrays.
-        let columns = deserialize_records(parsed, &schema, is_projection).unwrap();
+        let columns = deserialize_records(&parsed, &schema, is_projection).unwrap();
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()
