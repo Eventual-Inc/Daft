@@ -10,6 +10,7 @@ mod lower;
 mod lpad;
 mod lstrip;
 mod match_;
+mod repeat;
 mod replace;
 mod reverse;
 mod right;
@@ -30,6 +31,7 @@ use length::LengthEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
+use repeat::RepeatEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
@@ -66,6 +68,7 @@ pub enum Utf8Expr {
     Find,
     Rpad,
     Lpad,
+    Repeat,
 }
 
 impl Utf8Expr {
@@ -93,6 +96,7 @@ impl Utf8Expr {
             Find => &FindEvaluator {},
             Rpad => &RpadEvaluator {},
             Lpad => &LpadEvaluator {},
+            Repeat => &RepeatEvaluator {},
         }
     }
 }
@@ -253,6 +257,14 @@ pub fn lpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Lpad),
         inputs: vec![data, length, pad],
+    }
+    .into()
+}
+
+pub fn repeat(data: ExprRef, count: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Repeat),
+        inputs: vec![data, count],
     }
     .into()
 }

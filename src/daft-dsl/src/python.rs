@@ -175,6 +175,12 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
 }
 
+#[derive(FromPyObject)]
+pub enum ApproxPercentileInput {
+    Single(f64),
+    Many(Vec<f64>),
+}
+
 #[pymethods]
 impl PyExpr {
     pub fn _input_mapping(&self) -> PyResult<Option<String>> {
@@ -298,6 +304,28 @@ impl PyExpr {
 
     pub fn sum(&self) -> PyResult<Self> {
         Ok(self.expr.clone().sum().into())
+    }
+
+    pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {
+        let (percentiles, list_output) = match percentiles {
+            ApproxPercentileInput::Single(p) => (vec![p], false),
+            ApproxPercentileInput::Many(p) => (p, true),
+        };
+
+        for &p in percentiles.iter() {
+            if !(0. ..=1.).contains(&p) {
+                return Err(PyValueError::new_err(format!(
+                    "Provided percentile must be between 0 and 1: {}",
+                    p
+                )));
+            }
+        }
+
+        Ok(self
+            .expr
+            .clone()
+            .approx_percentiles(percentiles.as_slice(), list_output)
+            .into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {
@@ -573,6 +601,11 @@ impl PyExpr {
     pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
         use crate::functions::utf8::lpad;
         Ok(lpad(self.into(), length.into(), pad.into()).into())
+    }
+
+    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::repeat;
+        Ok(repeat(self.into(), n.into()).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

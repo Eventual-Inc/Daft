@@ -115,9 +115,10 @@ def test_str_capitalize():
     [
         pytest.param(lambda data, pat: data.str.left(pat), id="left"),
         pytest.param(lambda data, pat: data.str.right(pat), id="right"),
+        pytest.param(lambda data, pat: data.str.repeat(pat), id="repeat"),
     ],
 )
-def test_str_left_right(binary_data_fixture, op, request):
+def test_str_int_compares(binary_data_fixture, op, request):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=binary_data_fixture,

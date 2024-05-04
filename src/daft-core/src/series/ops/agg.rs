@@ -68,13 +68,59 @@ impl Series {
         }
     }
 
+    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftApproxSketchAggable;
+        use crate::datatypes::DataType::*;
+
+        // Upcast all numeric types to float64 and compute approx_sketch.
+        match self.data_type() {
+            dt if dt.is_numeric() => {
+                let casted = self.cast(&Float64)?;
+                match groups {
+                    Some(groups) => Ok(DaftApproxSketchAggable::grouped_approx_sketch(
+                        &casted.f64()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => {
+                        Ok(DaftApproxSketchAggable::approx_sketch(&casted.f64()?)?.into_series())
+                    }
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Approx sketch is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftMergeSketchAggable;
+        use crate::datatypes::DataType::*;
+
+        match self.data_type() {
+            Struct(_) => match groups {
+                Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
+                    &self.struct_()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(DaftMergeSketchAggable::merge_sketch(&self.struct_()?)?.into_series()),
+            },
+            other => Err(DaftError::TypeError(format!(
+                "Merge sketch is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftMeanAggable;
         use crate::datatypes::DataType::*;
 
         // Upcast all numeric types to float64 and use f64 mean kernel.
         match self.data_type() {
-            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+            dt if dt.is_numeric() => {
                 let casted = self.cast(&Float64)?;
                 match groups {
                     Some(groups) => {

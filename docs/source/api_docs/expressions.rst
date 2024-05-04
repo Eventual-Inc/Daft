@@ -103,6 +103,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.any_value
    Expression.agg_list
    Expression.agg_concat
+   Expression.approx_percentiles
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
@@ -138,6 +139,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.find
    Expression.str.rpad
    Expression.str.lpad
+   Expression.str.repeat
 
 .. _api-expressions-temporal:
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{optimization, AggExpr, Expr, ExprRef};
+use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -360,6 +360,29 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())
+        }
+        AggExpr::ApproxSketch(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::ApproxSketch, |_| e.clone())
+        }
+        AggExpr::ApproxPercentile(ApproxPercentileParams {
+            ref child,
+            ref percentiles,
+            ref force_list_output,
+        }) => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+            .map_yes_no(
+                |transformed_child| {
+                    AggExpr::ApproxPercentile(ApproxPercentileParams {
+                        child: transformed_child,
+                        percentiles: percentiles.clone(),
+                        force_list_output: *force_list_output,
+                    })
+                },
+                |_| e.clone(),
+            ),
+        AggExpr::MergeSketch(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::MergeSketch, |_| e.clone())
         }
         AggExpr::Mean(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

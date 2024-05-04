@@ -629,10 +629,8 @@ impl Utf8Array {
                         "Error in left: failed to cast rhs as usize {n}"
                     ))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
-                    .zip(nchars_iter)
-                    .map(|(val, n)| Some(left_most_chars(val?, n)))
+                    .map(|val| Some(left_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
@@ -695,10 +693,8 @@ impl Utf8Array {
                         "Error in right: failed to cast rhs as usize {n}"
                     ))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
-                    .zip(nchars_iter)
-                    .map(|(val, n)| Some(right_most_chars(val?, n)))
+                    .map(|val| Some(right_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
@@ -721,6 +717,63 @@ impl Utf8Array {
                 Utf8Array::from((self.name(), Box::new(arrow_result)))
             }
         };
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
+    pub fn repeat<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let (is_full_null, expected_size) = parse_inputs(self, &[n])
+            .map_err(|e| DaftError::ValueError(format!("Error in repeat: {e}")))?;
+        if is_full_null {
+            return Ok(Utf8Array::full_null(
+                self.name(),
+                &DataType::Utf8,
+                expected_size,
+            ));
+        }
+
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let result = match n.len() {
+            1 => {
+                let n = n.get(0).unwrap();
+                let n: usize = NumCast::from(n).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in repeat: failed to cast rhs as usize {n}"
+                    ))
+                })?;
+                let arrow_result = self_iter
+                    .map(|val| Some(val?.repeat(n)))
+                    .collect::<arrow2::array::Utf8Array<i64>>();
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+            _ => {
+                let arrow_result = self_iter
+                    .zip(n.as_arrow().iter())
+                    .map(|(val, n)| match (val, n) {
+                        (Some(val), Some(n)) => {
+                            let n: usize = NumCast::from(*n).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in repeat: failed to cast rhs as usize {n}"
+                                ))
+                            })?;
+                            Ok(Some(val.repeat(n)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+        };
+
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }
