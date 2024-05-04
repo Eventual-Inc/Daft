@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use arrow2::array::{
     Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
     MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
@@ -16,11 +14,15 @@ use daft_decoding::deserialize::{
     get_factor_from_timeunit,
 };
 use indexmap::IndexMap;
-use json_deserializer::{Number, Value};
+use num_traits::NumCast;
+use simd_json::{BorrowedValue, StaticNode};
+use std::borrow::{Borrow, Cow};
+use std::fmt::Write;
+const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 
 /// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
-pub(crate) fn deserialize_records(
-    records: Vec<Value>,
+pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
+    records: &[A],
     schema: &Schema,
     schema_is_projection: bool,
 ) -> Result<Vec<Box<dyn Array>>> {
@@ -32,10 +34,10 @@ pub(crate) fn deserialize_records(
         .collect::<IndexMap<_, _>>();
 
     for record in records {
-        match record {
-            Value::Object(record) => {
+        match record.borrow() {
+            BorrowedValue::Object(record) => {
                 for (key, value) in record.iter() {
-                    let arr = results.get_mut(key);
+                    let arr = results.get_mut(&key.to_string());
                     if let Some(arr) = arr {
                         deserialize_into(arr, &[value]);
                     } else if !schema_is_projection {
@@ -49,7 +51,7 @@ pub(crate) fn deserialize_records(
             _ => {
                 return Err(Error::ExternalFormat(format!(
                 "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
-                record
+                record.borrow()
             )))
             }
         }
@@ -122,7 +124,10 @@ fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
 }
 
 /// Deserialize `rows` by extending them into the given `target`
-fn deserialize_into<'a, A: Borrow<Value<'a>>>(target: &mut Box<dyn MutableArray>, rows: &[A]) {
+fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn MutableArray>,
+    rows: &[A],
+) {
     match target.data_type() {
         DataType::Null => {
             // TODO(Clark): Return an error if any of rows are not Value::Null.
@@ -131,39 +136,27 @@ fn deserialize_into<'a, A: Borrow<Value<'a>>>(target: &mut Box<dyn MutableArray>
             }
         }
         DataType::Boolean => generic_deserialize_into(target, rows, deserialize_boolean_into),
-        DataType::Float32 => {
-            deserialize_primitive_into::<_, f32>(target, rows, deserialize_float_into)
-        }
-        DataType::Float64 => {
-            deserialize_primitive_into::<_, f64>(target, rows, deserialize_float_into)
-        }
-        DataType::Int8 => deserialize_primitive_into::<_, i8>(target, rows, deserialize_int_into),
-        DataType::Int16 => deserialize_primitive_into::<_, i16>(target, rows, deserialize_int_into),
+        DataType::Float32 => deserialize_primitive_into::<_, f32>(target, rows),
+        DataType::Float64 => deserialize_primitive_into::<_, f64>(target, rows),
+        DataType::Int8 => deserialize_primitive_into::<_, i8>(target, rows),
+        DataType::Int16 => deserialize_primitive_into::<_, i16>(target, rows),
         DataType::Int32 | DataType::Interval(IntervalUnit::YearMonth) => {
-            deserialize_primitive_into::<_, i32>(target, rows, deserialize_int_into)
+            deserialize_primitive_into::<_, i32>(target, rows)
         }
-        DataType::Date32 | DataType::Time32(_) => {
-            deserialize_primitive_into::<_, i32>(target, rows, deserialize_date_into)
-        }
+        DataType::Date32 | DataType::Time32(_) => deserialize_date_into(target, rows),
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         }
         DataType::Int64 | DataType::Duration(_) => {
-            deserialize_primitive_into::<_, i64>(target, rows, deserialize_int_into)
+            deserialize_primitive_into::<_, i64>(target, rows)
         }
         DataType::Timestamp(..) | DataType::Date64 | DataType::Time64(_) => {
-            deserialize_primitive_into::<_, i64>(target, rows, deserialize_datetime_into)
+            deserialize_datetime_into(target, rows)
         }
-        DataType::UInt8 => deserialize_primitive_into::<_, u8>(target, rows, deserialize_int_into),
-        DataType::UInt16 => {
-            deserialize_primitive_into::<_, u16>(target, rows, deserialize_int_into)
-        }
-        DataType::UInt32 => {
-            deserialize_primitive_into::<_, u32>(target, rows, deserialize_int_into)
-        }
-        DataType::UInt64 => {
-            deserialize_primitive_into::<_, u64>(target, rows, deserialize_int_into)
-        }
+        DataType::UInt8 => deserialize_primitive_into::<_, u8>(target, rows),
+        DataType::UInt16 => deserialize_primitive_into::<_, u16>(target, rows),
+        DataType::UInt32 => deserialize_primitive_into::<_, u32>(target, rows),
+        DataType::UInt64 => deserialize_primitive_into::<_, u64>(target, rows),
         DataType::Utf8 => generic_deserialize_into::<_, MutableUtf8Array<i32>>(
             target,
             rows,
@@ -202,15 +195,26 @@ fn deserialize_into<'a, A: Borrow<Value<'a>>>(target: &mut Box<dyn MutableArray>
     }
 }
 
-fn deserialize_primitive_into<'a, A: Borrow<Value<'a>>, T: NativeType>(
+fn deserialize_primitive_into<'a, A: Borrow<BorrowedValue<'a>>, T: NativeType + NumCast>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
-    deserialize_into: fn(&mut MutablePrimitiveArray<T>, &[A]) -> (),
 ) {
-    generic_deserialize_into(target, rows, deserialize_into)
+    let target = target
+        .as_mut_any()
+        .downcast_mut::<MutablePrimitiveArray<T>>()
+        .unwrap();
+
+    let iter = rows.iter().map(|row| match row.borrow() {
+        BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
+        _ => None,
+    });
+    target.extend_trusted_len(iter);
 }
 
-fn generic_deserialize_into<'a, A: Borrow<Value<'a>>, M: 'static>(
+fn generic_deserialize_into<'a, A: Borrow<BorrowedValue<'a>>, M: 'static>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
     deserialize_into: fn(&mut M, &[A]) -> (),
@@ -218,97 +222,37 @@ fn generic_deserialize_into<'a, A: Borrow<Value<'a>>, M: 'static>(
     deserialize_into(target.as_mut_any().downcast_mut::<M>().unwrap(), rows);
 }
 
-fn deserialize_utf8_into<'a, O: Offset, A: Borrow<Value<'a>>>(
+fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableUtf8Array<O>,
     rows: &[A],
 ) {
-    let mut scratch = vec![];
+    let mut scratch = String::new();
+
     for row in rows {
         match row.borrow() {
-            Value::String(v) => target.push(Some(v.as_ref())),
-            Value::Number(number) => match number {
-                Number::Integer(number, exponent) | Number::Float(number, exponent) => {
-                    scratch.clear();
-                    scratch.extend_from_slice(number);
-                    if !exponent.is_empty() {
-                        scratch.push(b'e');
-                        scratch.extend_from_slice(exponent);
-                    }
-                    target.push(simdutf8::basic::from_utf8(scratch.as_slice()).ok());
-                }
-            },
-            Value::Bool(v) => target.push(Some(if *v { "true" } else { "false" })),
+            BorrowedValue::String(v) => target.push(Some(v.as_ref())),
+            BorrowedValue::Static(StaticNode::Bool(v)) => {
+                target.push(Some(if *v { "true" } else { "false" }))
+            }
+            BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
+                write!(scratch, "{node}").unwrap();
+                target.push(Some(scratch.as_str()));
+                scratch.clear();
+            }
             _ => target.push_null(),
         }
     }
 }
 
-fn deserialize_int_into<
-    'a,
-    T: NativeType + lexical_core::FromLexical + Pow10,
-    A: Borrow<Value<'a>>,
->(
-    target: &mut MutablePrimitiveArray<T>,
-    rows: &[A],
-) {
-    let iter = rows.iter().map(|row| match row.borrow() {
-        Value::Number(number) => Some(deserialize_int_single(*number)),
-        Value::Bool(number) => Some(if *number { T::one() } else { T::default() }),
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
-}
-
-fn deserialize_float_into<
-    'a,
-    T: NativeType + lexical_core::FromLexical + Powi10,
-    A: Borrow<Value<'a>>,
->(
-    target: &mut MutablePrimitiveArray<T>,
-    rows: &[A],
-) {
-    let iter = rows.iter().map(|row| match row.borrow() {
-        Value::Number(number) => Some(deserialize_float_single(number)),
-        Value::Bool(number) => Some(if *number { T::one() } else { T::default() }),
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
-}
-
-fn deserialize_boolean_into<'a, A: Borrow<Value<'a>>>(
+fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableBooleanArray,
     rows: &[A],
 ) {
     let iter = rows.iter().map(|row| match row.borrow() {
-        Value::Bool(v) => Some(v),
+        BorrowedValue::Static(StaticNode::Bool(v)) => Some(v),
         _ => None,
     });
     target.extend_trusted_len(iter);
-}
-
-fn deserialize_int_single<T>(number: Number) -> T
-where
-    T: NativeType + lexical_core::FromLexical + Pow10,
-{
-    match number {
-        Number::Float(fraction, exponent) => {
-            let integer = fraction.split(|x| *x == b'.').next().unwrap();
-            let mut integer: T = lexical_core::parse(integer).unwrap();
-            if !exponent.is_empty() {
-                let exponent: u32 = lexical_core::parse(exponent).unwrap();
-                integer = integer.pow10(exponent);
-            }
-            integer
-        }
-        Number::Integer(integer, exponent) => {
-            let mut integer: T = lexical_core::parse(integer).unwrap();
-            if !exponent.is_empty() {
-                let exponent: u32 = lexical_core::parse(exponent).unwrap();
-                integer = integer.pow10(exponent);
-            }
-            integer
-        }
-    }
 }
 
 trait Powi10: NativeType + num_traits::One + std::ops::Add {
@@ -352,39 +296,21 @@ impl_pow10!(i16);
 impl_pow10!(i32);
 impl_pow10!(i64);
 
-fn deserialize_float_single<T>(number: &Number) -> T
-where
-    T: NativeType + lexical_core::FromLexical + Powi10,
-{
-    match number {
-        Number::Float(float, exponent) => {
-            let mut float: T = lexical_core::parse(float).unwrap();
-            if !exponent.is_empty() {
-                let exponent: i32 = lexical_core::parse(exponent).unwrap();
-                float = float.powi10(exponent);
-            }
-            float
-        }
-        Number::Integer(integer, exponent) => {
-            let mut float: T = lexical_core::parse(integer).unwrap();
-            if !exponent.is_empty() {
-                let exponent: i32 = lexical_core::parse(exponent).unwrap();
-                float = float.powi10(exponent);
-            }
-            float
-        }
-    }
-}
-
-fn deserialize_date_into<'a, A: Borrow<Value<'a>>>(
-    target: &mut MutablePrimitiveArray<i32>,
+fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn MutableArray>,
     rows: &[A],
 ) {
+    let target = target
+        .as_mut_any()
+        .downcast_mut::<MutablePrimitiveArray<i32>>()
+        .unwrap();
     let dtype = target.data_type().clone();
     let mut last_fmt_idx = 0;
+
     let iter = rows.iter().map(|row| match row.borrow() {
-        Value::Number(v) => Some(deserialize_int_single(*v)),
-        Value::String(v) => match dtype {
+        BorrowedValue::Static(StaticNode::I64(i)) => i32::try_from(*i).ok(),
+        BorrowedValue::Static(StaticNode::U64(i)) => i32::try_from(*i).ok(),
+        BorrowedValue::String(v) => match dtype {
             DataType::Time32(tu) => {
                 let factor = get_factor_from_timeunit(tu);
                 v.parse::<chrono::NaiveTime>().ok().map(|x| {
@@ -403,15 +329,20 @@ fn deserialize_date_into<'a, A: Borrow<Value<'a>>>(
     target.extend_trusted_len(iter);
 }
 
-fn deserialize_datetime_into<'a, A: Borrow<Value<'a>>>(
-    target: &mut MutablePrimitiveArray<i64>,
+fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn MutableArray>,
     rows: &[A],
 ) {
+    let target = target
+        .as_mut_any()
+        .downcast_mut::<MutablePrimitiveArray<i64>>()
+        .unwrap();
     let dtype = target.data_type().clone();
     let mut last_fmt_idx = 0;
     let iter = rows.iter().map(|row| match row.borrow() {
-        Value::Number(v) => Some(deserialize_int_single(*v)),
-        Value::String(v) => match dtype {
+        BorrowedValue::Static(StaticNode::I64(i)) => Some(*i),
+        BorrowedValue::Static(StaticNode::U64(i)) => i64::try_from(*i).ok(),
+        BorrowedValue::String(v) => match dtype {
             DataType::Time64(tu) => {
                 let factor = get_factor_from_timeunit(tu) as u64;
                 v.parse::<chrono::NaiveTime>().ok().map(|x| {
@@ -449,7 +380,7 @@ fn deserialize_datetime_into<'a, A: Borrow<Value<'a>>>(
     target.extend_trusted_len(iter);
 }
 
-fn deserialize_list_into<'a, O: Offset, A: Borrow<Value<'a>>>(
+fn deserialize_list_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableListArray<O, Box<dyn MutableArray>>,
     rows: &[A],
 ) {
@@ -457,7 +388,7 @@ fn deserialize_list_into<'a, O: Offset, A: Borrow<Value<'a>>>(
     let inner: Vec<_> = rows
         .iter()
         .flat_map(|row| match row.borrow() {
-            Value::Array(value) => value.iter(),
+            BorrowedValue::Array(value) => value.iter(),
             _ => empty.iter(),
         })
         .collect();
@@ -465,7 +396,7 @@ fn deserialize_list_into<'a, O: Offset, A: Borrow<Value<'a>>>(
     deserialize_into(target.mut_values(), &inner);
 
     let lengths = rows.iter().map(|row| match row.borrow() {
-        Value::Array(value) => Some(value.len()),
+        BorrowedValue::Array(value) => Some(value.len()),
         _ => None,
     });
 
@@ -476,13 +407,13 @@ fn deserialize_list_into<'a, O: Offset, A: Borrow<Value<'a>>>(
         .expect("Offsets overflow");
 }
 
-fn deserialize_fixed_size_list_into<'a, A: Borrow<Value<'a>>>(
+fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableFixedSizeListArray<Box<dyn MutableArray>>,
     rows: &[A],
 ) {
     for row in rows {
         match row.borrow() {
-            Value::Array(value) => {
+            BorrowedValue::Array(value) => {
                 if value.len() == target.size() {
                     deserialize_into(target.mut_values(), value);
                     // Unless alignment is already off, the if above should
@@ -498,7 +429,10 @@ fn deserialize_fixed_size_list_into<'a, A: Borrow<Value<'a>>>(
     }
 }
 
-fn deserialize_struct_into<'a, A: Borrow<Value<'a>>>(target: &mut MutableStructArray, rows: &[A]) {
+fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut MutableStructArray,
+    rows: &[A],
+) {
     let dtype = target.data_type().clone();
     // Build a map from struct field -> JSON values.
     let mut values = match dtype {
@@ -510,16 +444,16 @@ fn deserialize_struct_into<'a, A: Borrow<Value<'a>>>(target: &mut MutableStructA
     };
     rows.iter().for_each(|row| {
         match row.borrow() {
-            Value::Object(value) => {
+            BorrowedValue::Object(value) => {
                 values.iter_mut().for_each(|(s, inner)| {
-                    inner.push(value.get(s).unwrap_or(&Value::Null));
+                    inner.push(value.get(s.as_str()).unwrap_or(&JSON_NULL_VALUE));
                 });
                 target.push(true);
             }
             _ => {
                 values
                     .iter_mut()
-                    .for_each(|(_, inner)| inner.push(&Value::Null));
+                    .for_each(|(_, inner)| inner.push(&JSON_NULL_VALUE));
                 target.push(false);
             }
         };

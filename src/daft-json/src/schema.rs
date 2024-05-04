@@ -5,7 +5,6 @@ use daft_core::schema::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
-use json_deserializer::parse;
 use snafu::ResultExt;
 use tokio::{
     fs::File,
@@ -164,11 +163,11 @@ where
         })
         .take(max_records)
         .map(|record| {
-            let record = record.context(StdIOSnafu)?;
+            let mut record = record.context(StdIOSnafu)?;
 
             // Parse record into a JSON Value, then infer the schema.
-            let parsed_record =
-                parse(record.as_bytes()).map_err(|e| super::Error::JsonDeserializationError {
+            let parsed_record = simd_json::to_borrowed_value(unsafe { record.as_bytes_mut() })
+                .map_err(|e| super::Error::JsonDeserializationError {
                     string: e.to_string(),
                 })?;
             infer_records_schema(&parsed_record).context(ArrowSnafu)

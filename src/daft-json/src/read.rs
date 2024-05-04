@@ -419,7 +419,7 @@ fn parse_into_column_array_chunk_stream(
     );
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    Ok(stream.map_ok(move |records| {
+    Ok(stream.map_ok(move |mut records| {
         let schema = schema.clone();
         let daft_schema = daft_schema.clone();
         let daft_fields = daft_fields.clone();
@@ -429,16 +429,15 @@ fn parse_into_column_array_chunk_stream(
                 let result = (move || {
                     // TODO(Clark): Switch to streaming parse + array construction?
                     let parsed = records
-                        .iter()
+                        .iter_mut()
                         .map(|unparsed_record| {
-                            json_deserializer::parse(unparsed_record.as_bytes()).map_err(|e| {
-                                super::Error::JsonDeserializationError {
+                            simd_json::to_borrowed_value(unsafe { unparsed_record.as_bytes_mut() })
+                                .map_err(|e| super::Error::JsonDeserializationError {
                                     string: e.to_string(),
-                                }
-                            })
+                                })
                         })
                         .collect::<super::Result<Vec<_>>>()?;
-                    let chunk = deserialize_records(parsed, schema.as_ref(), schema_is_projection)
+                    let chunk = deserialize_records(&parsed, schema.as_ref(), schema_is_projection)
                         .context(ArrowSnafu)?;
                     let all_series = chunk
                         .into_iter()
@@ -496,7 +495,10 @@ mod tests {
         let parsed = lines
             .iter()
             .take(limit.unwrap_or(usize::MAX))
-            .map(|record| json_deserializer::parse(record.as_ref().unwrap().as_bytes()).unwrap())
+            .map(|record| {
+                simd_json::to_borrowed_value(unsafe { record.as_ref().unwrap().as_bytes_mut() })
+                    .unwrap()
+            })
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
         let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =

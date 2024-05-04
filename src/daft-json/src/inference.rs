@@ -3,20 +3,21 @@ use std::{borrow::Borrow, collections::HashSet};
 use arrow2::datatypes::{DataType, Field, Metadata, Schema, TimeUnit};
 use arrow2::error::{Error, Result};
 use indexmap::IndexMap;
-use json_deserializer::{Number, Value};
+use simd_json::borrowed::Object;
+use simd_json::{BorrowedValue, StaticNode};
 
 const ITEM_NAME: &str = "item";
 
 /// Infer Arrow2 schema from JSON Value record.
-pub(crate) fn infer_records_schema(record: &Value) -> Result<Schema> {
+pub(crate) fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
     let fields = match record {
-        Value::Object(record) => record
+        BorrowedValue::Object(record) => record
             .iter()
             .map(|(name, value)| {
                 let data_type = infer(value)?;
 
                 Ok(Field {
-                    name: name.clone(),
+                    name: name.to_string(),
                     data_type,
                     is_nullable: true,
                     metadata: Metadata::default(),
@@ -35,14 +36,16 @@ pub(crate) fn infer_records_schema(record: &Value) -> Result<Schema> {
 }
 
 /// Infers [`DataType`] from [`Value`].
-fn infer(json: &Value) -> Result<DataType> {
+fn infer(json: &BorrowedValue) -> Result<DataType> {
     Ok(match json {
-        Value::Bool(_) => DataType::Boolean,
-        Value::Array(array) => infer_array(array)?,
-        Value::Null => DataType::Null,
-        Value::Number(number) => infer_number(number),
-        Value::String(string) => infer_string(string),
-        Value::Object(inner) => infer_object(inner)?,
+        BorrowedValue::Static(StaticNode::Bool(_)) => DataType::Boolean,
+        BorrowedValue::Static(StaticNode::Null) => DataType::Null,
+        BorrowedValue::Static(StaticNode::I64(_)) => DataType::Int64,
+        BorrowedValue::Static(StaticNode::U64(_)) => DataType::UInt64,
+        BorrowedValue::Static(StaticNode::F64(_)) => DataType::Float64,
+        BorrowedValue::String(s) => infer_string(s),
+        BorrowedValue::Array(array) => infer_array(array.as_slice())?,
+        BorrowedValue::Object(inner) => infer_object(inner)?,
     })
 }
 
@@ -50,13 +53,13 @@ fn infer_string(string: &str) -> DataType {
     daft_decoding::inference::infer_string(string)
 }
 
-fn infer_object(inner: &IndexMap<String, Value>) -> Result<DataType> {
+fn infer_object(inner: &Object) -> Result<DataType> {
     let fields = inner
         .iter()
         .map(|(key, value)| infer(value).map(|dt| (key, dt)))
         .map(|maybe_dt| {
             let (key, dt) = maybe_dt?;
-            Ok(Field::new(key, dt, true))
+            Ok(Field::new(key.as_ref(), dt, true))
         })
         .collect::<Result<Vec<_>>>()?;
     if fields.is_empty() {
@@ -68,7 +71,7 @@ fn infer_object(inner: &IndexMap<String, Value>) -> Result<DataType> {
     }
 }
 
-fn infer_array(values: &[Value]) -> Result<DataType> {
+fn infer_array(values: &[BorrowedValue]) -> Result<DataType> {
     let types = values
         .iter()
         .map(infer)
@@ -87,13 +90,6 @@ fn infer_array(values: &[Value]) -> Result<DataType> {
     } else {
         DataType::List(Box::new(Field::new(ITEM_NAME, dt, true)))
     })
-}
-
-fn infer_number(n: &Number) -> DataType {
-    match n {
-        Number::Float(..) => DataType::Float64,
-        Number::Integer(..) => DataType::Int64,
-    }
 }
 
 /// Convert each column's set of inferred dtypes to a field with a consolidated dtype, following the coercion rules
