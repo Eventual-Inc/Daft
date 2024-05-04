@@ -133,7 +133,7 @@ dependencies = [
  "hash_hasher",
  "hashbrown 0.14.3",
  "indexmap 1.9.3",
- "json-deserializer 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "json-deserializer",
  "lexical-core",
  "multiversion",
  "num-traits",
@@ -1350,7 +1350,6 @@ dependencies = [
  "daft-table",
  "futures",
  "indexmap 2.1.0",
- "json-deserializer 0.4.4 (git+https://github.com/Eventual-Inc/json-deserializer?rev=4be9205900888ff0767e0c37642884f2c912e22c)",
  "lexical-core",
  "log",
  "num-traits",
@@ -2365,14 +2364,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f63b421e16eb4100beb677af56f0b4f3a4f08bab74ef2af079ce5bb92c2683f"
 dependencies = [
  "indexmap 1.9.3",
-]
-
-[[package]]
-name = "json-deserializer"
-version = "0.4.4"
-source = "git+https://github.com/Eventual-Inc/json-deserializer?rev=4be9205900888ff0767e0c37642884f2c912e22c#4be9205900888ff0767e0c37642884f2c912e22c"
-dependencies = [
- "indexmap 2.1.0",
 ]
 
 [[package]]

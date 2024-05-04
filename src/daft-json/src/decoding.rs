@@ -16,7 +16,7 @@ use daft_decoding::deserialize::{
 use indexmap::IndexMap;
 use num_traits::NumCast;
 use simd_json::{BorrowedValue, StaticNode};
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::fmt::Write;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 
@@ -254,47 +254,6 @@ fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
     });
     target.extend_trusted_len(iter);
 }
-
-trait Powi10: NativeType + num_traits::One + std::ops::Add {
-    fn powi10(self, exp: i32) -> Self;
-}
-
-impl Powi10 for f32 {
-    #[inline]
-    fn powi10(self, exp: i32) -> Self {
-        self * 10.0f32.powi(exp)
-    }
-}
-
-impl Powi10 for f64 {
-    #[inline]
-    fn powi10(self, exp: i32) -> Self {
-        self * 10.0f64.powi(exp)
-    }
-}
-
-trait Pow10: NativeType + num_traits::One + std::ops::Add {
-    fn pow10(self, exp: u32) -> Self;
-}
-
-macro_rules! impl_pow10 {
-    ($ty:ty) => {
-        impl Pow10 for $ty {
-            #[inline]
-            fn pow10(self, exp: u32) -> Self {
-                self * (10 as $ty).pow(exp)
-            }
-        }
-    };
-}
-impl_pow10!(u8);
-impl_pow10!(u16);
-impl_pow10!(u32);
-impl_pow10!(u64);
-impl_pow10!(i8);
-impl_pow10!(i16);
-impl_pow10!(i32);
-impl_pow10!(i64);
 
 fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
