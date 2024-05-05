@@ -1192,7 +1192,7 @@ dependencies = [
  "fnv",
  "html-escape",
  "image",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "itertools",
  "jaq-core",
  "jaq-interpret",
@@ -1278,7 +1278,7 @@ dependencies = [
  "daft-core",
  "daft-io",
  "daft-sketch",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "pyo3",
  "pyo3-log",
  "serde",
@@ -1349,7 +1349,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "lexical-core",
  "log",
  "num-traits",
@@ -1383,7 +1383,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "log",
  "parquet2",
  "pyo3",
@@ -1408,7 +1408,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "itertools",
  "log",
  "parquet2",
@@ -1436,7 +1436,7 @@ dependencies = [
  "daft-dsl",
  "daft-scan",
  "daft-table",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "itertools",
  "log",
  "pyo3",
@@ -1493,7 +1493,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "pyo3",
  "pyo3-log",
  "serde",
@@ -2214,9 +2214,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.1.0"
+version = "2.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d530e1a18b1cb4c484e6e34556a0d948706958449fca0cab753d649f2bce3d1f"
+checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -2297,7 +2297,7 @@ dependencies = [
  "ahash",
  "dyn-clone",
  "hifijson",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "jaq-syn",
  "once_cell",
  "serde_json",
