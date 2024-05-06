@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use daft_core::schema::Schema;
-use serde::{Deserialize, Serialize};
 
 use crate::physical_planner::planner::MaterializedResults;
 use crate::source_info::InMemoryInfo;
 use crate::LogicalPlan;
 use crate::{physical_planner::planner::AdaptivePlanner, PhysicalPlanScheduler};
-use daft_core::python::schema::PySchema;
 use pyo3::prelude::*;
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]

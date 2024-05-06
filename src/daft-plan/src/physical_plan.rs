@@ -379,7 +379,7 @@ impl PhysicalPlan {
                         upper_bound_rows: Some(1),
                         lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
                             * est_bytes_per_row_lower,
-                        upper_bound_bytes: Some(1 * est_bytes_per_row_upper),
+                        upper_bound_bytes: Some(est_bytes_per_row_upper),
                     }
                 } else {
                     // we should use the new schema here

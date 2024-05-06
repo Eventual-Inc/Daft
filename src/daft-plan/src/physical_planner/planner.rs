@@ -8,7 +8,6 @@ use crate::logical_ops::Source;
 use crate::logical_optimization::Optimizer;
 use crate::logical_plan::LogicalPlan;
 
-use crate::physical_ops::InMemoryScan;
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 use crate::LogicalPlanRef;
@@ -130,7 +129,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                         RunNext::Left => {
                             self.physical_children.push(left.clone());
                             let logical_children = node.children();
-                            let logical_left = logical_children.get(0).expect(
+                            let logical_left = logical_children.first().expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );
                             let logical_right = logical_children.get(1).expect(
@@ -155,7 +154,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                         RunNext::Right => {
                             self.physical_children.push(right.clone());
                             let logical_children = node.children();
-                            let logical_left = logical_children.get(0).expect(
+                            let logical_left = logical_children.first().expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );
                             let logical_right = logical_children.get(1).expect(

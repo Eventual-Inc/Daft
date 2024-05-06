@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use crate::physical_plan::PhysicalPlanRef;
 use crate::LogicalPlan;
 
-use crate::physical_planner::planner::{PhysicalPlanTranslator, QueryStagePhysicalPlanTranslator};
+use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;
 mod planner;
 #[cfg(feature = "python")]
