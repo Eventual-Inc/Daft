@@ -800,7 +800,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         # physical plan to executable tasks.
         plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
 
-        result_uuid = self.start_plan(plan_scheduler, daft_execution_config)
+        result_uuid = self.start_plan(plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size)
 
         yield from self.stream_plan(result_uuid)
 
