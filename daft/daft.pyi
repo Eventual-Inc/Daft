@@ -1212,7 +1212,7 @@ class PyMicroPartition:
     def argsort(self, sort_keys: list[PyExpr], descending: list[bool]) -> PySeries: ...
     def agg(self, to_agg: list[PyExpr], group_by: list[PyExpr]) -> PyMicroPartition: ...
     def pivot(
-        self, group_by: PyExpr, pivot_column: PyExpr, values_column: PyExpr, names: list[str]
+        self, group_by: list[PyExpr], pivot_column: PyExpr, values_column: PyExpr, names: list[str]
     ) -> PyMicroPartition: ...
     def hash_join(self, right: PyMicroPartition, left_on: list[PyExpr], right_on: list[PyExpr]) -> PyMicroPartition: ...
     def sort_merge_join(
@@ -1330,7 +1330,7 @@ class LogicalPlanBuilder:
     def aggregate(self, agg_exprs: list[PyExpr], groupby_exprs: list[PyExpr]) -> LogicalPlanBuilder: ...
     def pivot(
         self,
-        groupby_expr: PyExpr,
+        groupby_exprs: list[PyExpr],
         pivot_expr: PyExpr,
         values_expr: PyExpr,
         agg_expr: PyExpr,

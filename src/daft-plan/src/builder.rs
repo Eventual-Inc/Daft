@@ -389,7 +389,7 @@ impl LogicalPlanBuilder {
 
     pub fn pivot(
         &self,
-        group_by: ExprRef,
+        group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
         agg_expr: ExprRef,
@@ -668,7 +668,7 @@ impl PyLogicalPlanBuilder {
 
     pub fn pivot(
         &self,
-        group_by: PyExpr,
+        group_by: Vec<PyExpr>,
         pivot_column: PyExpr,
         value_column: PyExpr,
         agg_expr: PyExpr,
@@ -677,7 +677,7 @@ impl PyLogicalPlanBuilder {
         Ok(self
             .builder
             .pivot(
-                group_by.into(),
+                pyexprs_to_exprs(group_by),
                 pivot_column.into(),
                 value_column.into(),
                 agg_expr.into(),

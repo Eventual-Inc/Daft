@@ -133,12 +133,13 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Pivot(pivot) => {
-                let exprs = [
-                    pivot.group_by.clone(),
-                    pivot.pivot_column.clone(),
-                    pivot.value_column.clone(),
-                ];
-                let res = exprs.iter().flat_map(get_required_columns).collect();
+                let res = pivot
+                    .group_by
+                    .iter()
+                    .chain(std::iter::once(&pivot.pivot_column))
+                    .chain(std::iter::once(&pivot.value_column))
+                    .flat_map(get_required_columns)
+                    .collect();
                 vec![res]
             }
             Self::Join(join) => {
