@@ -96,8 +96,9 @@ class DataFrame:
 
             # Partition set should always be set on cache entry.
             assert (
-                num_partitions is not None and size_bytes is not None
+                num_partitions is not None and size_bytes is not None and num_rows is not None
             ), "Partition set should always be set on cache entry"
+
             return self.__builder.from_in_memory_scan(
                 self._result_cache,
                 self.__builder.schema(),

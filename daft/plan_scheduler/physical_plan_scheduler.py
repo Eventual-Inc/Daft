@@ -44,10 +44,17 @@ class AdaptivePhysicalPlanScheduler:
         return self._scheduler.is_done()
 
     def update(self, cache_entry: PartitionCacheEntry):
+        num_partitions = cache_entry.num_partitions()
+        assert num_partitions is not None
+        size_bytes = cache_entry.size_bytes()
+        assert size_bytes is not None
+        num_rows = cache_entry.num_rows()
+        assert num_rows is not None
+
         self._scheduler.update(
             cache_entry.key,
             cache_entry,
-            num_partitions=cache_entry.num_partitions(),
-            size_bytes=cache_entry.size_bytes(),
-            num_rows=cache_entry.num_rows(),
+            num_partitions=num_partitions,
+            size_bytes=size_bytes,
+            num_rows=num_rows,
         )
