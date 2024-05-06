@@ -1409,7 +1409,7 @@ class DataFrame:
             ╰─────────┴─────────┴───────╯
 
         Args:
-            group_by (Union[str, Expression]): column to group by
+            group_by (ManyColumnsInputType): columns to group by
             pivot_col (Union[str, Expression]): column to pivot
             value_col (Union[str, Expression]): column to aggregate
             agg_fn (str): aggregation function to apply
