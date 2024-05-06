@@ -16,7 +16,7 @@ use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_dsl::{col, Expr, ExprRef};
+use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -47,15 +47,15 @@ impl LogicalPlanBuilder {
     }
 }
 
-fn check_for_agg(expr: &Expr) -> bool {
+fn check_for_agg(expr: &ExprRef) -> bool {
     use Expr::*;
 
-    match expr {
+    match expr.as_ref() {
         Agg(_) => true,
         Column(_) | Literal(_) => false,
         Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
-        Function { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
+        Function { inputs, .. } => inputs.iter().any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
         IfElse {
             if_true,
@@ -94,6 +94,17 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
+                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
+                ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => ApproxPercentile(ApproxPercentileParams {
+                    child: Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),
                 Max(e) => Max(Alias(e, name.clone()).into()),
@@ -118,15 +129,8 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
 }
 
 fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
-    use daft_dsl::AggExpr::*;
-
     let agg_expr = extract_agg_expr(expr)?;
-    let has_nested_agg = match &agg_expr {
-        Count(e, _) | Sum(e) | Mean(e) | Min(e) | Max(e) | AnyValue(e, _) | List(e) | Concat(e) => {
-            check_for_agg(e)
-        }
-        MapGroups { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
-    };
+    let has_nested_agg = agg_expr.children().iter().any(check_for_agg);
 
     if has_nested_agg {
         Err(DaftError::ValueError(format!(
@@ -386,6 +390,27 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn pivot(
+        &self,
+        group_by: ExprRef,
+        pivot_column: ExprRef,
+        value_column: ExprRef,
+        agg_expr: ExprRef,
+        names: Vec<String>,
+    ) -> DaftResult<Self> {
+        let agg_expr = extract_and_check_agg_expr(agg_expr.as_ref())?;
+        let pivot_logical_plan: LogicalPlan = logical_ops::Pivot::try_new(
+            self.plan.clone(),
+            group_by,
+            pivot_column,
+            value_column,
+            agg_expr,
+            names,
+        )?
+        .into();
+        Ok(pivot_logical_plan.into())
+    }
+
     pub fn join(
         &self,
         right: &Self,
@@ -641,6 +666,26 @@ impl PyLogicalPlanBuilder {
         Ok(self
             .builder
             .aggregate(pyexprs_to_exprs(agg_exprs), pyexprs_to_exprs(groupby_exprs))?
+            .into())
+    }
+
+    pub fn pivot(
+        &self,
+        group_by: PyExpr,
+        pivot_column: PyExpr,
+        value_column: PyExpr,
+        agg_expr: PyExpr,
+        names: Vec<String>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .pivot(
+                group_by.into(),
+                pivot_column.into(),
+                value_column.into(),
+                agg_expr.into(),
+                names,
+            )?
             .into())
     }
 

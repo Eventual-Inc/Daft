@@ -232,18 +232,18 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_arrow(cast_tensors_to_ray_tensor_dtype)
 
-    def items(self) -> list[tuple[PartID, PartitionT]]:
+    def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
         """
         Returns all (partition id, partition) in this PartitionSet,
         ordered by partition ID.
         """
         raise NotImplementedError()
 
-    def values(self) -> list[PartitionT]:
+    def values(self) -> list[MaterializedResult[PartitionT]]:
         return [value for _, value in self.items()]
 
     @abstractmethod
-    def get_partition(self, idx: PartID) -> PartitionT:
+    def get_partition(self, idx: PartID) -> MaterializedResult[PartitionT]:
         raise NotImplementedError()
 
     @abstractmethod

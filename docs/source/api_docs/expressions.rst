@@ -50,6 +50,7 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.sqrt
     Expression.sin
     Expression.cos
     Expression.tan
@@ -102,6 +103,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.any_value
    Expression.agg_list
    Expression.agg_concat
+   Expression.approx_percentiles
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
@@ -135,6 +137,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.left
    Expression.str.right
    Expression.str.find
+   Expression.str.repeat
 
 .. _api-expressions-temporal:
 

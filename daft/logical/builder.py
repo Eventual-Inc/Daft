@@ -174,6 +174,17 @@ class LogicalPlanBuilder:
         builder = self._builder.aggregate([udf._expr], group_by_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def pivot(
+        self,
+        group_by: Expression,
+        pivot_col: Expression,
+        value_col: Expression,
+        agg_fn: Expression,
+        names: list[str],
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.pivot(group_by._expr, pivot_col._expr, value_col._expr, agg_fn._expr, names)
+        return LogicalPlanBuilder(builder)
+
     def join(  # type: ignore[override]
         self,
         right: LogicalPlanBuilder,

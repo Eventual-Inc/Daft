@@ -130,6 +130,10 @@ impl PySeries {
         Ok(self.series.round(decimal)?.into())
     }
 
+    pub fn sqrt(&self) -> PyResult<Self> {
+        Ok(self.series.sqrt()?.into())
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         Ok(self
             .series
@@ -414,6 +418,10 @@ impl PySeries {
 
     pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_find(&substr.series)?.into())
+    }
+
+    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_repeat(&n.series)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {

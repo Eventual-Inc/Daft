@@ -5,6 +5,7 @@ mod floor;
 mod log;
 mod round;
 mod sign;
+mod sqrt;
 mod trigonometry;
 
 use abs::AbsEvaluator;
@@ -14,6 +15,7 @@ use log::LogEvaluator;
 use round::RoundEvaluator;
 use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
+use sqrt::SqrtEvaluator;
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
@@ -28,6 +30,7 @@ pub enum NumericExpr {
     Floor,
     Sign,
     Round(i32),
+    Sqrt,
     Sin,
     Cos,
     Tan,
@@ -53,6 +56,7 @@ impl NumericExpr {
             Floor => &FloorEvaluator {},
             Sign => &SignEvaluator {},
             Round(_) => &RoundEvaluator {},
+            Sqrt => &SqrtEvaluator {},
             Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
             Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
             Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
@@ -105,6 +109,14 @@ pub fn sign(input: ExprRef) -> ExprRef {
 pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Round(decimal)),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn sqrt(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Sqrt),
         inputs: vec![input],
     }
     .into()

@@ -143,6 +143,16 @@ pub enum DataFileSource {
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
     },
+    #[cfg(feature = "python")]
+    PythonFactoryFunction {
+        module: String,
+        func_name: String,
+        func_args: python::PythonTablesFactoryArgs,
+        size_bytes: Option<u64>,
+        metadata: Option<TableMetadata>,
+        statistics: Option<TableStatistics>,
+        partition_spec: Option<PartitionSpec>,
+    },
 }
 
 impl DataFileSource {
@@ -151,6 +161,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { path, .. }
             | Self::CatalogDataFile { path, .. }
             | Self::DatabaseDataSource { path, .. } => path,
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { module, .. } => module,
         }
     }
 
@@ -159,6 +171,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { chunk_spec, .. }
             | Self::CatalogDataFile { chunk_spec, .. }
             | Self::DatabaseDataSource { chunk_spec, .. } => chunk_spec.as_ref(),
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { .. } => None,
         }
     }
 
@@ -167,6 +181,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { size_bytes, .. }
             | Self::CatalogDataFile { size_bytes, .. }
             | Self::DatabaseDataSource { size_bytes, .. } => *size_bytes,
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
         }
     }
 
@@ -175,6 +191,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { metadata, .. }
             | Self::DatabaseDataSource { metadata, .. } => metadata.as_ref(),
             Self::CatalogDataFile { metadata, .. } => Some(metadata),
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
         }
     }
 
@@ -183,6 +201,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { statistics, .. }
             | Self::CatalogDataFile { statistics, .. }
             | Self::DatabaseDataSource { statistics, .. } => statistics.as_ref(),
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
         }
     }
 
@@ -191,6 +211,8 @@ impl DataFileSource {
             Self::AnonymousDataFile { partition_spec, .. }
             | Self::DatabaseDataSource { partition_spec, .. } => partition_spec.as_ref(),
             Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
         }
     }
 
@@ -265,6 +287,36 @@ impl DataFileSource {
                     "Partition spec = {}",
                     partition_spec.multiline_display().join(", ")
                 ));
+                if let Some(statistics) = statistics {
+                    res.push(format!("Statistics = {}", statistics));
+                }
+            }
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args: _func_args,
+                size_bytes,
+                metadata,
+                statistics,
+                partition_spec,
+            } => {
+                res.push(format!("Function = {module}.{func_name}"));
+                if let Some(size_bytes) = size_bytes {
+                    res.push(format!("Size bytes = {}", size_bytes));
+                }
+                if let Some(metadata) = metadata {
+                    res.push(format!(
+                        "Metadata = {}",
+                        metadata.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(partition_spec) = partition_spec {
+                    res.push(format!(
+                        "Partition spec = {}",
+                        partition_spec.multiline_display().join(", ")
+                    ));
+                }
                 if let Some(statistics) = statistics {
                     res.push(format!("Statistics = {}", statistics));
                 }
@@ -452,7 +504,9 @@ impl ScanTask {
                             config.csv_inflation_factor
                         }
                         #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) => 0.0,
+                        FileFormatConfig::Database(_) => 1.0,
+                        #[cfg(feature = "python")]
+                        FileFormatConfig::PythonFunction => 1.0,
                     };
 
                     // estimate number of rows from read schema

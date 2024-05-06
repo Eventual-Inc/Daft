@@ -36,7 +36,6 @@ from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     MaterializedResult,
-    PartialPartitionMetadata,
     PartitionT,
 )
 from daft.table.micropartition import MicroPartition
@@ -68,16 +67,12 @@ stage_id_counter = _stage_id_counter()
 
 
 def partition_read(
-    partitions: Iterator[PartitionT], metadatas: Iterator[PartialPartitionMetadata] | None = None
+    materialized_results: Iterator[MaterializedResult[PartitionT]],
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Instantiate a (no-op) physical plan from existing partitions."""
-    if metadatas is None:
-        # Iterator of empty metadatas.
-        metadatas = (PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in iter(int, 1))
-
     yield from (
-        PartitionTaskBuilder[PartitionT](inputs=[partition], partial_metadatas=[metadata])
-        for partition, metadata in zip(partitions, metadatas)
+        PartitionTaskBuilder[PartitionT](inputs=[mat_result.partition()], partial_metadatas=[mat_result.metadata()])
+        for mat_result in materialized_results
     )
 
 

@@ -21,6 +21,7 @@ pub enum LogicalPlan {
     Repartition(Repartition),
     Distinct(Distinct),
     Aggregate(Aggregate),
+    Pivot(Pivot),
     Concat(Concat),
     Join(Join),
     Sink(Sink),
@@ -47,7 +48,8 @@ impl LogicalPlan {
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
-            Self::Aggregate(aggregate) => aggregate.schema(),
+            Self::Aggregate(Aggregate { output_schema, .. }) => output_schema.clone(),
+            Self::Pivot(Pivot { output_schema, .. }) => output_schema.clone(),
             Self::Concat(Concat { input, .. }) => input.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
@@ -130,6 +132,15 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
+            Self::Pivot(pivot) => {
+                let exprs = [
+                    pivot.group_by.clone(),
+                    pivot.pivot_column.clone(),
+                    pivot.value_column.clone(),
+                ];
+                let res = exprs.iter().flat_map(get_required_columns).collect();
+                vec![res]
+            }
             Self::Join(join) => {
                 let left = join.left_on.iter().flat_map(get_required_columns).collect();
                 let right = join
@@ -156,6 +167,7 @@ impl LogicalPlan {
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::Distinct(Distinct { input, .. }) => vec![input.clone()],
             Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
+            Self::Pivot(Pivot { input, .. }) => vec![input.clone()],
             Self::Concat(Concat { input, other }) => vec![input.clone(), other.clone()],
             Self::Join(Join { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::Sink(Sink { input, .. }) => vec![input.clone()],
@@ -180,6 +192,7 @@ impl LogicalPlan {
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::try_new(input.clone(), scheme_config.clone()).unwrap()),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
+                Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation,names,..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
@@ -220,6 +233,7 @@ impl LogicalPlan {
             Self::Repartition(..) => "Repartition",
             Self::Distinct(..) => "Distinct",
             Self::Aggregate(..) => "Aggregate",
+            Self::Pivot(..) => "Pivot",
             Self::Concat(..) => "Concat",
             Self::Join(..) => "Join",
             Self::Sink(..) => "Sink",
@@ -241,6 +255,7 @@ impl LogicalPlan {
             Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Pivot(pivot) => pivot.multiline_display(),
             Self::Concat(_) => vec!["Concat".to_string()],
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
@@ -306,6 +321,7 @@ impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
+impl_from_data_struct_for_logical_plan!(Pivot);
 impl_from_data_struct_for_logical_plan!(Concat);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);

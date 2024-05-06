@@ -47,7 +47,8 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     runner_io = context.runner().runner_io()
     file_infos = runner_io.glob_paths_details([path], io_config=io_config)
     file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
-    partition = LocalPartitionSet({0: file_infos_table})
+    partition = LocalPartitionSet()
+    partition.set_partition_from_table(0, file_infos_table)
     cache_entry = context.runner().put_partition_set_into_cache(partition)
     size_bytes = partition.size_bytes()
     assert size_bytes is not None, "In-memory data should always have non-None size in bytes"

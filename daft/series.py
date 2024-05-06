@@ -367,6 +367,9 @@ class Series:
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
 
+    def sqrt(self) -> Series:
+        return Series._from_pyseries(self._series.sqrt())
+
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
         return Series._from_pyseries(self._series.sin())
@@ -730,6 +733,12 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(substr)}")
         assert self._series is not None and substr._series is not None
         return Series._from_pyseries(self._series.utf8_find(substr._series))
+
+    def repeat(self, n: Series) -> Series:
+        if not isinstance(n, Series):
+            raise ValueError(f"expected another Series but got {type(n)}")
+        assert self._series is not None and n._series is not None
+        return Series._from_pyseries(self._series.utf8_repeat(n._series))
 
 
 class SeriesDateNamespace(SeriesNamespace):

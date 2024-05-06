@@ -807,3 +807,70 @@ def test_series_utf8_replace_bad_regex_pattern() -> None:
     replacement = Series.from_arrow(pa.array([" "]))
     with pytest.raises(ValueError):
         s.str.replace(pattern, replacement, regex=True)
+
+
+@pytest.mark.parametrize(
+    ["data", "n", "expected"],
+    [
+        # No Broadcast
+        (["foo", "barbaz", "quux"], [0, 1, 2], ["", "barbaz", "quuxquux"]),
+        # Broadcast n
+        (["foo", "barbaz", "quux"], [1], ["foo", "barbaz", "quux"]),
+        # Broadcast data
+        (["foo"], [0, 1, 2], ["", "foo", "foofoo"]),
+        # Broadcast null data
+        ([None], [0, 1, 2], [None, None, None]),
+        # Broadcast null n
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # All Empty
+        ([[], [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "barbaz", None]),
+        # All null data.
+        ([None] * 4, [1] * 4, [None] * 4),
+        # All null n
+        (["foo"] * 4, [None] * 4, [None] * 4),
+        # with emojis
+        (["😃😌😝", "abc😃😄😅"], [3, 2], ["😃😌😝😃😌😝😃😌😝", "abc😃😄😅abc😃😄😅"]),
+    ],
+)
+def test_series_utf8_repeat(data, n, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    ntimes = Series.from_arrow(pa.array(n, type=pa.uint32()))
+    result = s.str.repeat(ntimes)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "n"],
+    [
+        # empty n
+        ([["foo"] * 4, []]),
+    ],
+)
+def test_series_utf8_repeat_empty_arrs(data, n) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    n = Series.from_arrow(pa.array(n, type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.repeat(n)
+
+
+def test_series_utf8_repeat_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    n = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.repeat(n)
+
+
+def test_series_utf8_repeat_bad_ntype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    n = Series.from_arrow(pa.array(["1", "2", "3"]))
+    with pytest.raises(ValueError):
+        s.str.repeat(n)
+
+
+def test_series_utf8_repeat_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    n = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.repeat(n)
