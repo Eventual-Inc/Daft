@@ -738,21 +738,13 @@ class RayRunner(Runner[ray.ObjectRef]):
         else:
             return self.scheduler.active_plans()
 
-    def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Iterator[RayMaterializedResult]:
-        # Grab and freeze the current DaftExecutionConfig
-        daft_execution_config = get_context().daft_execution_config
-
-        # Optimize the logical plan.
-        builder = builder.optimize()
-
-        # Finalize the logical plan and get a physical plan scheduler for translating the
-        # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-
+    def start_plan(
+        self,
+        plan_scheduler: PhysicalPlanScheduler,
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None = None,
+    ) -> str:
         psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-
         result_uuid = str(uuid.uuid4())
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
@@ -772,7 +764,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 result_uuid=result_uuid,
                 results_buffer_size=results_buffer_size,
             )
+        return result_uuid
 
+    def stream_plan(self, result_uuid: str) -> Iterator[RayMaterializedResult]:
         try:
             while True:
                 if isinstance(self.ray_context, ray.client_builder.ClientContext):
@@ -783,7 +777,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 if isinstance(result, StopIteration):
                     break
                 elif isinstance(result, Exception):
-                    raise result
+                    raise Exception from result
 
                 yield result
         finally:
@@ -792,6 +786,23 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ray.get(self.scheduler_actor.stop_plan.remote(result_uuid))
             else:
                 self.scheduler.stop_plan(result_uuid)
+
+    def run_iter(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[RayMaterializedResult]:
+        # Grab and freeze the current DaftExecutionConfig
+        daft_execution_config = get_context().daft_execution_config
+
+        # Optimize the logical plan.
+        builder = builder.optimize()
+
+        # Finalize the logical plan and get a physical plan scheduler for translating the
+        # physical plan to executable tasks.
+        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+
+        result_uuid = self.start_plan(plan_scheduler, daft_execution_config)
+
+        yield from self.stream_plan(result_uuid)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
