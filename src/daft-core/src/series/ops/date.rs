@@ -1,3 +1,4 @@
+use crate::datatypes::logical::TimeArray;
 use crate::series::array_impl::IntoSeries;
 use crate::{datatypes::DataType, series::Series};
 
@@ -41,8 +42,12 @@ impl Series {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.hour()?.into_series())
             }
+            DataType::Time(_) => {
+                let time_array = self.downcast::<TimeArray>()?;
+                Ok(time_array.hour()?.into_series())
+            }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run day() operation on temporal types, got {}",
+                "Can only run hour() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }
@@ -53,6 +58,10 @@ impl Series {
             DataType::Timestamp(..) => {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.minute()?.into_series())
+            }
+            DataType::Time(_) => {
+                let time_array = self.downcast::<TimeArray>()?;
+                Ok(time_array.minute()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run minute() operation on temporal types, got {}",
@@ -66,6 +75,10 @@ impl Series {
             DataType::Timestamp(..) => {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.second()?.into_series())
+            }
+            DataType::Time(_) => {
+                let time_array = self.downcast::<TimeArray>()?;
+                Ok(time_array.second()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run second() operation on temporal types, got {}",

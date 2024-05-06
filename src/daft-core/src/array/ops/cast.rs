@@ -14,16 +14,17 @@ use crate::{
             TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
-        Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
+        Int32Array, Int64Array, TimeUnit, UInt32Array, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display_table::display_time64,
     with_match_daft_logical_primitive_types,
 };
+use chrono::Timelike;
 use common_error::{DaftError, DaftResult};
 
 use arrow2::{
-    array::Array,
+    array::{Array, PrimitiveArray},
     bitmap::utils::SlicesIterator,
     compute::{
         self,
@@ -390,6 +391,81 @@ impl TimestampArray {
 }
 
 impl TimeArray {
+    pub fn hour(&self) -> DaftResult<UInt32Array> {
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.hour() as u32
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn minute(&self) -> DaftResult<UInt32Array> {
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.minute() as u32
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn second(&self) -> DaftResult<UInt32Array> {
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.second() as u32
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Time(..) => arrow_logical_cast(self, dtype),
