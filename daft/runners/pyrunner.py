@@ -152,9 +152,8 @@ class PyRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
-        ENABLE_AQE = True
 
-        if ENABLE_AQE:
+        if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 plan_scheduler = adaptive_planner.next()

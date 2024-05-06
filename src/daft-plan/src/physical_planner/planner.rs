@@ -68,7 +68,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
         let is_query_stage_boundary = is_query_stage_boundary(&translated_pplan);
         let is_root_node = Arc::ptr_eq(&node, &self.root);
         if is_query_stage_boundary && !is_root_node {
-            log::warn!(
+            log::info!(
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
             );
@@ -288,18 +288,18 @@ impl AdaptivePlanner {
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
 
-            log::warn!(
+            log::info!(
                 "\nEmitting partial plan:\n {}",
-                physical_plan.repr_ascii(false)
+                physical_plan.repr_ascii(true)
             );
 
-            log::warn!(
+            log::info!(
                 "Logical plan remaining:\n {}",
                 self.logical_plan.repr_ascii(true)
             );
             Ok(QueryStageOutput::Partial { physical_plan })
         } else {
-            log::warn!(
+            log::info!(
                 "\nEmitting final plan:\n {}",
                 physical_plan.repr_ascii(true)
             );

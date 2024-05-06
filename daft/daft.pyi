@@ -1379,6 +1379,8 @@ class LogicalPlanBuilder:
     def repr_ascii(self, simple: bool) -> str: ...
 
 class PyDaftExecutionConfig:
+    @staticmethod
+    def from_env() -> PyDaftExecutionConfig: ...
     def with_config_values(
         self,
         scan_tasks_min_size_bytes: int | None = None,
@@ -1395,6 +1397,7 @@ class PyDaftExecutionConfig:
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
+        enable_aqe: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1422,6 +1425,8 @@ class PyDaftExecutionConfig:
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
+    @property
+    def enable_aqe(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(
