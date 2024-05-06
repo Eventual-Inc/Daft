@@ -320,6 +320,7 @@ impl PhysicalPlan {
             }
             Self::Project(Project { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                // TODO(sammy), we need the schema to estimate the new size per row
                 input.approximate_stats()
             }
             Self::Sample(Sample {
@@ -358,8 +359,20 @@ impl PhysicalPlan {
             })
             | Self::HashJoin(HashJoin { left, right, .. })
             | Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
-                // TODO(Sammy): This should be more like a cross product
-                &left.approximate_stats() + &right.approximate_stats()
+                // assume a Primary-key + Foreign-Key join which would yield the max of the two tables
+                let left_stats = left.approximate_stats();
+                let right_stats = right.approximate_stats();
+
+                ApproxStats {
+                    lower_bound_rows: 0,
+                    upper_bound_rows: left_stats
+                        .upper_bound_rows
+                        .and_then(|l| right_stats.upper_bound_rows.map(|r| l.max(r))),
+                    lower_bound_bytes: 0,
+                    upper_bound_bytes: left_stats
+                        .upper_bound_bytes
+                        .and_then(|l| right_stats.upper_bound_bytes.map(|r| l.max(r))),
+                }
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
