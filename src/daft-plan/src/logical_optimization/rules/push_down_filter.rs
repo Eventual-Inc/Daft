@@ -172,10 +172,7 @@ impl OptimizerRule for PushDownFilter {
                 let projection_input_mapping = child_project
                     .projection
                     .iter()
-                    .filter_map(|e| {
-                        e.input_mapping()
-                            .map(|s| (e.name().unwrap().to_string(), col(s)))
-                    })
+                    .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), col(s))))
                     .collect::<HashMap<String, ExprRef>>();
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).

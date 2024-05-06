@@ -484,7 +484,7 @@ pub(super) fn translate_single_logical_node(
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
                 let is_primitive = |exprs: &Vec<ExprRef>| {
-                    exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                    exprs.iter().map(|e| e.name()).all(|col| {
                         let dtype = &output_schema.get_field(col).unwrap().dtype;
                         dtype.is_integer()
                             || dtype.is_floating()
@@ -700,7 +700,7 @@ fn populate_aggregation_stages(
     let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
 
     for agg_expr in aggregations {
-        let output_name = agg_expr.name().unwrap();
+        let output_name = agg_expr.name();
         match agg_expr {
             Count(e, mode) => {
                 let count_id = agg_expr.semantic_id(schema).id;

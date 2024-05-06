@@ -54,7 +54,7 @@ impl Project {
                 let mut old_colname_to_new_colname = IndexMap::new();
                 for expr in projection {
                     if let Some(oldname) = expr.input_mapping() {
-                        let newname = expr.name().unwrap().to_string();
+                        let newname = expr.name().to_string();
                         // Add the oldname -> newname mapping,
                         // but don't overwrite any existing identity mappings (e.g. "a" -> "a").
                         if old_colname_to_new_colname.get(&oldname) != Some(&oldname) {
