@@ -30,8 +30,8 @@ impl FunctionEvaluator for LpadEvaluator {
                     Ok(Field::new(data.name, DataType::Utf8))
                 } else {
                     Err(DaftError::TypeError(format!(
-                    "Expects inputs to lpad to be utf8, integer and utf8, but received {}, {}, and {}", data.dtype, length.dtype, pad.dtype
-                )))
+                        "Expects inputs to lpad to be utf8, integer and utf8, but received {}, {}, and {}", data.dtype, length.dtype, pad.dtype
+                    )))
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
