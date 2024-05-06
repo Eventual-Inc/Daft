@@ -151,6 +151,8 @@ Temporal
 
    Expression.dt.date
    Expression.dt.hour
+   Expression.dt.minute
+   Expression.dt.second
    Expression.dt.day
    Expression.dt.month
    Expression.dt.year
