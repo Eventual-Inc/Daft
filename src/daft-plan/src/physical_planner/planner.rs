@@ -37,6 +37,7 @@ pub(super) struct QueryStagePhysicalPlanTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
     pub root: Arc<LogicalPlan>,
     pub cfg: Arc<DaftExecutionConfig>,
+    pub source_id: Option<usize>,
 }
 
 fn is_query_stage_boundary(plan: &PhysicalPlan) -> bool {
@@ -75,13 +76,16 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
             match &translated_pplan.children()[..] {
                 [] | [_] => {
                     self.physical_children.push(translated_pplan.clone());
+
+                    let ph_info =
+                        PlaceHolderInfo::new(node.schema(), translated_pplan.clustering_spec());
+
+                    assert_eq!(self.source_id, None);
+                    self.source_id = Some(ph_info.source_id);
+
                     let new_scan = LogicalPlan::Source(Source::new(
                         node.schema(),
-                        SourceInfo::PlaceHolder(PlaceHolderInfo::new(
-                            node.schema(),
-                            translated_pplan.clustering_spec(),
-                        ))
-                        .into(),
+                        SourceInfo::PlaceHolder(ph_info).into(),
                     ));
                     Ok(Transformed::new(
                         new_scan.arced(),
@@ -135,13 +139,15 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let logical_right = logical_children.get(1).expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );
+                            let ph_info =
+                                PlaceHolderInfo::new(logical_left.schema(), left.clustering_spec());
+
+                            assert_eq!(self.source_id, None);
+                            self.source_id = Some(ph_info.source_id);
+
                             let new_left_scan = LogicalPlan::Source(Source::new(
                                 logical_left.schema(),
-                                SourceInfo::PlaceHolder(PlaceHolderInfo::new(
-                                    logical_left.schema(),
-                                    left.clustering_spec(),
-                                ))
-                                .into(),
+                                SourceInfo::PlaceHolder(ph_info).into(),
                             ));
                             let new_bin_node = node
                                 .with_new_children(&[new_left_scan.arced(), logical_right.clone()]);
@@ -160,13 +166,18 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let logical_right = logical_children.get(1).expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );
+
+                            let ph_info = PlaceHolderInfo::new(
+                                logical_right.schema(),
+                                right.clustering_spec(),
+                            );
+
+                            assert_eq!(self.source_id, None);
+                            self.source_id = Some(ph_info.source_id);
+
                             let new_right_scan = LogicalPlan::Source(Source::new(
                                 logical_right.schema(),
-                                SourceInfo::PlaceHolder(PlaceHolderInfo::new(
-                                    logical_right.schema(),
-                                    right.clustering_spec(),
-                                ))
-                                .into(),
+                                SourceInfo::PlaceHolder(ph_info).into(),
                             ));
                             let new_bin_node = node
                                 .with_new_children(&[logical_left.clone(), new_right_scan.arced()]);
@@ -207,11 +218,13 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
                 SourceInfo::PlaceHolder(phi) => {
                     assert!(self.mat_results.is_some());
                     let mut mat_results = self.mat_results.take().unwrap();
-
+                    if mat_results.source_id != phi.source_id {
+                        return Err(common_error::DaftError::ValueError(format!("During AQE: We are replacing a PlaceHolder Node with materialized results. There should only be 1 placeholder at a time but we found one with a different id, {} vs {}", mat_results.source_id, phi.source_id)));
+                    }
                     // use the clustering spec from the original plan
                     mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
                     mat_results.in_memory_info.source_schema = phi.source_schema.clone();
-                    //TODO: check placeholder id here
+
                     let new_source_node = LogicalPlan::Source(Source {
                         output_schema: mat_results.in_memory_info.source_schema.clone(),
                         source_info: SourceInfo::InMemory(mat_results.in_memory_info).into(),
@@ -231,15 +244,23 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
 }
 
 pub(super) enum QueryStageOutput {
-    Partial { physical_plan: PhysicalPlanRef },
-    Final { physical_plan: PhysicalPlanRef },
+    Partial {
+        physical_plan: PhysicalPlanRef,
+        source_id: usize,
+    },
+    Final {
+        physical_plan: PhysicalPlanRef,
+    },
 }
 
 impl QueryStageOutput {
-    pub fn unwrap(self) -> PhysicalPlanRef {
+    pub fn unwrap(self) -> (Option<usize>, PhysicalPlanRef) {
         match self {
-            QueryStageOutput::Partial { physical_plan }
-            | QueryStageOutput::Final { physical_plan } => physical_plan,
+            QueryStageOutput::Partial {
+                physical_plan,
+                source_id,
+            } => (Some(source_id), physical_plan),
+            QueryStageOutput::Final { physical_plan } => (None, physical_plan),
         }
     }
 }
@@ -251,6 +272,7 @@ enum AdaptivePlannerStatus {
 }
 
 pub(super) struct MaterializedResults {
+    pub source_id: usize,
     pub in_memory_info: InMemoryInfo,
 }
 
@@ -276,20 +298,22 @@ impl AdaptivePlanner {
             physical_children: vec![],
             root: self.logical_plan.clone(),
             cfg: self.cfg.clone(),
+            source_id: None,
         };
         let output = self.logical_plan.clone().rewrite(&mut rewriter)?;
 
         let physical_plan = rewriter
             .physical_children
             .pop()
-            .expect("should have 1 child");
+            .expect("should have at least 1 child");
 
         if output.transformed {
             self.logical_plan = output.data;
             self.status = AdaptivePlannerStatus::WaitingForStats;
+            let source_id = rewriter.source_id.expect("If we transformed the plan, it should have a placeholder and therefore a source_id");
 
             log::info!(
-                "\nEmitting partial plan:\n {}",
+                "Emitting partial plan:\n {}",
                 physical_plan.repr_ascii(true)
             );
 
@@ -297,12 +321,12 @@ impl AdaptivePlanner {
                 "Logical plan remaining:\n {}",
                 self.logical_plan.repr_ascii(true)
             );
-            Ok(QueryStageOutput::Partial { physical_plan })
+            Ok(QueryStageOutput::Partial {
+                physical_plan,
+                source_id,
+            })
         } else {
-            log::info!(
-                "\nEmitting final plan:\n {}",
-                physical_plan.repr_ascii(true)
-            );
+            log::info!("Emitting final plan:\n {}", physical_plan.repr_ascii(true));
 
             self.status = AdaptivePlannerStatus::Done;
             Ok(QueryStageOutput::Final { physical_plan })

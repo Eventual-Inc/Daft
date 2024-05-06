@@ -37,13 +37,14 @@ class AdaptivePhysicalPlanScheduler:
     def __init__(self, scheduler: _AdaptivePhysicalPlanScheduler) -> None:
         self._scheduler = scheduler
 
-    def next(self) -> PhysicalPlanScheduler:
-        return PhysicalPlanScheduler(self._scheduler.next())
+    def next(self) -> tuple[int | None, PhysicalPlanScheduler]:
+        sid, pps = self._scheduler.next()
+        return sid, PhysicalPlanScheduler(pps)
 
     def is_done(self) -> bool:
         return self._scheduler.is_done()
 
-    def update(self, cache_entry: PartitionCacheEntry):
+    def update(self, source_id: int, cache_entry: PartitionCacheEntry):
         num_partitions = cache_entry.num_partitions()
         assert num_partitions is not None
         size_bytes = cache_entry.size_bytes()
@@ -52,6 +53,7 @@ class AdaptivePhysicalPlanScheduler:
         assert num_rows is not None
 
         self._scheduler.update(
+            source_id,
             cache_entry.key,
             cache_entry,
             num_partitions=num_partitions,

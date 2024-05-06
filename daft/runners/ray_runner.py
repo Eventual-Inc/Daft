@@ -814,18 +814,19 @@ class RayRunner(Runner[ray.ObjectRef]):
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
-                plan_scheduler = adaptive_planner.next()
+                source_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
                 )
                 del plan_scheduler
                 results_iter = self._stream_plan(result_uuid)
-                if adaptive_planner.is_done():
+                # if source_id is None that means this is the final stage
+                if source_id is None:
                     yield from results_iter
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
-                    adaptive_planner.update(cache_entry)
+                    adaptive_planner.update(source_id, cache_entry)
                     del cache_entry
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the

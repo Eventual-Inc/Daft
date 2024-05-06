@@ -1291,11 +1291,17 @@ class AdaptivePhysicalPlanScheduler:
     """
     An adaptive Physical Plan Scheduler.
     """
-    def next(self) -> PhysicalPlanScheduler: ...
+    def next(self) -> tuple[int | None, PhysicalPlanScheduler]: ...
     def is_done(self) -> bool: ...
     # Todo use in memory info here instead
     def update(
-        self, partition_key: str, cache_entry: PartitionCacheEntry, num_partitions: int, size_bytes: int, num_rows: int
+        self,
+        source_id: int,
+        partition_key: str,
+        cache_entry: PartitionCacheEntry,
+        num_partitions: int,
+        size_bytes: int,
+        num_rows: int,
     ) -> None: ...
 
 class LogicalPlanBuilder:
