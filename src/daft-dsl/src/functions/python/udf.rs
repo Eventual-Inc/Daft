@@ -33,7 +33,7 @@ impl FunctionEvaluator for PythonUDF {
             [] => Err(DaftError::ValueError(
                 "Cannot run UDF with 0 expression arguments".into(),
             )),
-            [first, ..] => Ok(Field::new(first.name()?, self.return_dtype.clone())),
+            [first, ..] => Ok(Field::new(first.name(), self.return_dtype.clone())),
         }
     }
 

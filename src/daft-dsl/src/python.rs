@@ -436,7 +436,7 @@ impl PyExpr {
     }
 
     pub fn name(&self) -> PyResult<&str> {
-        Ok(self.expr.name()?)
+        Ok(self.expr.name())
     }
 
     pub fn to_sql(&self) -> PyResult<Option<String>> {

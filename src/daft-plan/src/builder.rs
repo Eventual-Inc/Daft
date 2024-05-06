@@ -211,10 +211,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         err_if_agg("with_columns", &columns)?;
 
-        let new_col_names = columns
-            .iter()
-            .map(|e| e.name())
-            .collect::<DaftResult<HashSet<&str>>>()?;
+        let new_col_names = columns.iter().map(|e| e.name()).collect::<HashSet<&str>>();
 
         let mut exprs = self
             .schema()
