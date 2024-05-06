@@ -5,7 +5,6 @@ use daft_scan::ScanExternalInfo;
 
 use crate::source_info::SourceInfo;
 
-#[cfg(feature = "python")]
 use crate::source_info::InMemoryInfo;
 use crate::source_info::PlaceHolderInfo;
 
@@ -47,7 +46,6 @@ impl Source {
                 ));
                 res.extend(pushdowns.multiline_display());
             }
-            #[cfg(feature = "python")]
             SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));

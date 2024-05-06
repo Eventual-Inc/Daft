@@ -51,7 +51,6 @@ impl OptimizerRule for PushDownLimit {
                     LogicalPlan::Source(source) => {
                         match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
-                            #[cfg(feature = "python")]
                             SourceInfo::InMemory(_) => Ok(Transformed::No(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::External(external_info)

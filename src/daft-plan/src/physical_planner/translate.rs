@@ -82,7 +82,6 @@ pub(super) fn translate_single_logical_node(
                     )
                 }
             }
-            #[cfg(feature = "python")]
             SourceInfo::InMemory(mem_info) => {
                 let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))

@@ -7,12 +7,12 @@ use std::hash::Hash;
 use std::sync::atomic::AtomicUsize;
 
 use crate::partitioning::ClusteringSpecRef;
+use std::hash::Hasher;
 
 #[cfg(feature = "python")]
 use {
     daft_scan::py_object_serde::{deserialize_py_object, serialize_py_object},
     pyo3::PyObject,
-    std::hash::Hasher,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]

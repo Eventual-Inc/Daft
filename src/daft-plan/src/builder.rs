@@ -7,7 +7,7 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    physical_planner::{plan, python::AdaptivePhysicalPlanScheduler},
+    physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
@@ -21,6 +21,7 @@ use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperat
 
 #[cfg(feature = "python")]
 use {
+    crate::physical_planner::python::AdaptivePhysicalPlanScheduler,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::{physical_plan::PhysicalPlanRef, source_info::InMemoryInfo},
     common_daft_config::PyDaftExecutionConfig,

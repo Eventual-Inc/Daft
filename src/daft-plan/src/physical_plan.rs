@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 use {
-    crate::{sink_info::OutputFileInfo, source_info::InMemoryInfo},
+    crate::sink_info::OutputFileInfo,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
@@ -14,6 +14,7 @@ use {
     std::collections::HashMap,
 };
 
+use crate::source_info::InMemoryInfo;
 use daft_core::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
@@ -36,7 +37,6 @@ pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 /// Physical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PhysicalPlan {
-    #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
@@ -117,7 +117,6 @@ impl PhysicalPlan {
 
     pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
@@ -260,7 +259,6 @@ impl PhysicalPlan {
 
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
                 lower_bound_rows: in_memory_info.num_rows,
                 upper_bound_rows: Some(in_memory_info.num_rows),
@@ -404,7 +402,6 @@ impl PhysicalPlan {
 
     pub fn children(&self) -> Vec<PhysicalPlanRef> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
@@ -496,7 +493,6 @@ impl PhysicalPlan {
 
     pub fn name(&self) -> String {
         let name = match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(..) => "InMemoryScan",
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
@@ -531,7 +527,6 @@ impl PhysicalPlan {
 
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
