@@ -1182,12 +1182,6 @@ class DataFrame:
         return DataFrame(builder)
 
     def _agg_tuple_to_expression(self, agg_tuple: Tuple[ColumnInputType, str]) -> Expression:
-        warnings.warn(
-            "Tuple arguments in aggregations is deprecated and will be removed "
-            "in Daft v0.3. Please use aggregation expressions instead.",
-            DeprecationWarning,
-        )
-
         expr, op = agg_tuple
 
         if isinstance(expr, str):
@@ -1226,7 +1220,15 @@ class DataFrame:
 
         columns: Iterable[Expression] = to_agg[0] if len(to_agg) == 1 and not is_agg_column_input(to_agg[0]) else to_agg  # type: ignore
 
-        return [self._agg_tuple_to_expression(col) if isinstance(col, tuple) else col for col in columns]  # type: ignore
+        if any(isinstance(col, tuple) for col in columns):
+            warnings.warn(
+                "Tuple arguments in aggregations is deprecated and will be removed "
+                "in Daft v0.3. Please use aggregation expressions instead.",
+                DeprecationWarning,
+            )
+            return [self._agg_tuple_to_expression(col) if isinstance(col, tuple) else col for col in columns]  # type: ignore
+        else:
+            return list(columns)
 
     def _apply_agg_fn(
         self,
