@@ -388,7 +388,9 @@ with test_table_rename_tbl.update_schema() as txn:
 
 spark.sql(
     """
-  CREATE OR REPLACE TABLE default.test_evolve_partitioning
+  CREATE OR REPLACE TABLE default.test_evolve_partitioning (
+        dt     date
+  )
   USING iceberg
   PARTITIONED BY (months(dt))
 """
