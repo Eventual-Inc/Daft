@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use common_error::DaftError;
 use pyo3::prelude::*;
 
-use crate::config;
+use crate::{config, s3::S3CredentialsProvider};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -35,6 +35,13 @@ use crate::config;
 pub struct S3Config {
     pub config: crate::S3Config,
 }
+
+#[derive(Clone)]
+#[pyclass]
+pub struct S3Credentials {
+    pub credentials: crate::S3Credentials,
+}
+
 /// Create configurations to be used when accessing Azure Blob Storage
 ///
 /// Args:
@@ -171,11 +178,13 @@ impl S3Config {
     #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(
+        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
+        credentials_provider: Option<&PyAny>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
         connect_timeout_ms: Option<u64>,
@@ -188,15 +197,19 @@ impl S3Config {
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let def = crate::S3Config::default();
-        S3Config {
+        Ok(S3Config {
             config: crate::S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 key_id: key_id.or(def.key_id),
                 session_token: session_token.or(def.session_token),
                 access_key: access_key.or(def.access_key),
+                credentials_provider: credentials_provider
+                    .map(|p| S3CredentialsProvider::new(py, p))
+                    .transpose()?
+                    .or(def.credentials_provider),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(def.max_connections_per_io_thread),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
@@ -213,17 +226,19 @@ impl S3Config {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(def.force_virtual_addressing),
             },
-        }
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
+        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
+        credentials_provider: Option<&PyAny>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
         connect_timeout_ms: Option<u64>,
@@ -236,14 +251,18 @@ impl S3Config {
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
-    ) -> Self {
-        S3Config {
+    ) -> PyResult<Self> {
+        Ok(S3Config {
             config: crate::S3Config {
                 region_name: region_name.or_else(|| self.config.region_name.clone()),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 key_id: key_id.or_else(|| self.config.key_id.clone()),
                 session_token: session_token.or_else(|| self.config.session_token.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
+                credentials_provider: credentials_provider
+                    .map(|p| S3CredentialsProvider::new(py, p))
+                    .transpose()?
+                    .or_else(|| self.config.credentials_provider.clone()),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(self.config.max_connections_per_io_thread),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
@@ -260,7 +279,7 @@ impl S3Config {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(self.config.force_virtual_addressing),
             },
-        }
+        })
     }
 
     /// Creates an S3Config from the current environment, auto-discovering variables such as
@@ -312,10 +331,14 @@ impl S3Config {
         Ok(self.config.access_key.clone())
     }
 
-    /// AWS max connections per IO thread
+    /// AWS expiry time as a Unix timestamp
     #[getter]
-    pub fn max_connections(&self) -> PyResult<u32> {
-        Ok(self.config.max_connections_per_io_thread)
+    pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
+        Ok(self
+            .config
+            .credentials_provider
+            .as_ref()
+            .map(|p| p.provider.as_ref(py).into()))
     }
 
     /// AWS Retry Initial Backoff Time in Milliseconds
@@ -382,6 +405,48 @@ impl S3Config {
     #[getter]
     pub fn force_virtual_addressing(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.force_virtual_addressing))
+    }
+}
+
+#[pymethods]
+impl S3Credentials {
+    #[new]
+    pub fn new(
+        key_id: String,
+        access_key: String,
+        session_token: Option<String>,
+        expiry: Option<u64>,
+    ) -> Self {
+        S3Credentials {
+            credentials: crate::S3Credentials {
+                key_id,
+                access_key,
+                session_token,
+                expiry,
+            },
+        }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.credentials))
+    }
+
+    /// AWS Access Key ID
+    #[getter]
+    pub fn key_id(&self) -> PyResult<String> {
+        Ok(self.credentials.key_id.clone())
+    }
+
+    /// AWS Secret Access Key
+    #[getter]
+    pub fn access_key(&self) -> PyResult<String> {
+        Ok(self.credentials.access_key.clone())
+    }
+
+    /// AWS Session Token
+    #[getter]
+    pub fn session_token(&self) -> PyResult<Option<String>> {
+        Ok(self.credentials.session_token.clone())
     }
 }
 
@@ -512,6 +577,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
+    parent.add_class::<S3Credentials>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

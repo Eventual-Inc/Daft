@@ -2,8 +2,14 @@ use async_trait::async_trait;
 use aws_config::meta::credentials::CredentialsProviderChain;
 use aws_config::retry::RetryMode;
 use aws_config::timeout::TimeoutConfig;
+#[cfg(feature = "python")]
+use aws_credential_types::provider::ProvideCredentials;
 use aws_smithy_async::rt::sleep::TokioSleep;
+#[cfg(feature = "python")]
+use common_io_config::python::S3Credentials;
 use futures::stream::BoxStream;
+#[cfg(feature = "python")]
+use pyo3::{PyObject, Python};
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
@@ -37,7 +43,7 @@ use std::io;
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
@@ -47,6 +53,44 @@ pub(crate) struct S3LikeSource {
     default_region: Region,
     s3_config: S3Config,
     anonymous: bool,
+}
+
+#[derive(Debug)]
+#[cfg(feature = "python")]
+struct PyCredentialsProvider {
+    provider: PyObject,
+}
+
+#[cfg(feature = "python")]
+impl ProvideCredentials for PyCredentialsProvider {
+    fn provide_credentials<'a>(
+        &'a self,
+    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        aws_credential_types::provider::future::ProvideCredentials::ready(
+            Python::with_gil(|py| {
+                let py_creds = self.provider.call0(py)?;
+                py_creds.extract::<S3Credentials>(py)
+            })
+            .map_err(|e| CredentialsError::provider_error(Box::new(e)))
+            .map(|creds| {
+                let expires_after = creds
+                    .credentials
+                    .expiry
+                    .map(|e| SystemTime::UNIX_EPOCH + Duration::from_secs(e));
+
+                Credentials::new(
+                    creds.credentials.key_id,
+                    creds.credentials.access_key,
+                    creds.credentials.session_token,
+                    expires_after,
+                    "daft_custom_provider",
+                )
+            }),
+        )
+    }
 }
 
 #[derive(Debug, Snafu)]
@@ -349,6 +393,33 @@ async fn build_s3_conf(
         None
     };
 
+    #[cfg(feature = "python")]
+    let provider = if let Some(cached_creds) = cached_creds {
+        let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
+            .or_default_provider()
+            .await;
+        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider))
+    } else if let Some(provider) = &config.credentials_provider {
+        let provider = PyCredentialsProvider {
+            provider: provider.provider.clone(),
+        };
+        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider))
+    } else if config.access_key.is_some() && config.key_id.is_some() {
+        let creds = Credentials::from_keys(
+            config.key_id.clone().unwrap(),
+            config.access_key.clone().unwrap(),
+            config.session_token.clone(),
+        );
+        Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
+    } else if config.access_key.is_some() || config.key_id.is_some() {
+        return Err(super::Error::InvalidArgument {
+            msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
+        });
+    } else {
+        None
+    };
+
+    #[cfg(not(feature = "python"))]
     let provider = if let Some(cached_creds) = cached_creds {
         let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
             .or_default_provider()

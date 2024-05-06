@@ -1,3 +1,5 @@
+#![feature(stmt_expr_attributes)]
+
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -6,4 +8,6 @@ mod config;
 mod gcs;
 mod s3;
 
-pub use crate::{azure::AzureConfig, config::IOConfig, gcs::GCSConfig, s3::S3Config};
+pub use crate::{
+    azure::AzureConfig, config::IOConfig, gcs::GCSConfig, s3::S3Config, s3::S3Credentials,
+};
