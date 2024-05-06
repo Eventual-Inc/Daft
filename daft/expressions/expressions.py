@@ -813,6 +813,28 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_hour())
 
+    def minute(self) -> Expression:
+        """Retrieves the minute for a datetime column
+
+        Example:
+            >>> col("x").dt.minute()
+
+        Returns:
+            Expression: a UInt32 expression with just the minute extracted from a datetime column
+        """
+        return Expression._from_pyexpr(self._expr.dt_minute())
+
+    def second(self) -> Expression:
+        """Retrieves the second for a datetime column
+
+        Example:
+            >>> col("x").dt.second()
+
+        Returns:
+            Expression: a UInt32 expression with just the second extracted from a datetime column
+        """
+        return Expression._from_pyexpr(self._expr.dt_second())
+
     def month(self) -> Expression:
         """Retrieves the month for a datetime column
 

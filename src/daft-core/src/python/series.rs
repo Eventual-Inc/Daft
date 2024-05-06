@@ -440,6 +440,14 @@ impl PySeries {
         Ok(self.series.dt_hour()?.into())
     }
 
+    pub fn dt_minute(&self) -> PyResult<Self> {
+        Ok(self.series.dt_minute()?.into())
+    }
+
+    pub fn dt_second(&self) -> PyResult<Self> {
+        Ok(self.series.dt_second()?.into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         Ok(self.series.dt_month()?.into())
     }

@@ -48,6 +48,32 @@ impl Series {
         }
     }
 
+    pub fn dt_minute(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.minute()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run minute() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_second(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.second()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run second() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_month(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Date => {

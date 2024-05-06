@@ -477,6 +477,16 @@ impl PyExpr {
         Ok(hour(self.into()).into())
     }
 
+    pub fn dt_minute(&self) -> PyResult<Self> {
+        use functions::temporal::minute;
+        Ok(minute(self.into()).into())
+    }
+
+    pub fn dt_second(&self) -> PyResult<Self> {
+        use functions::temporal::second;
+        Ok(second(self.into()).into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         use functions::temporal::month;
         Ok(month(self.into()).into())

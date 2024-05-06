@@ -127,6 +127,44 @@ def test_series_timestamp_hour() -> None:
     assert input == days.to_pylist()
 
 
+def test_series_timestamp_minute() -> None:
+    from datetime import datetime
+
+    def ts_maker(mi):
+        if mi is None:
+            return None
+        return datetime(2023, 1, 26, 23, mi, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    days = s.dt.minute()
+
+    assert days.datatype() == DataType.uint32()
+
+    assert input == days.to_pylist()
+
+
+def test_series_timestamp_second() -> None:
+    from datetime import datetime
+
+    def ts_maker(s):
+        if s is None:
+            return None
+        return datetime(2023, 1, 26, 23, 1, s)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    days = s.dt.second()
+
+    assert days.datatype() == DataType.uint32()
+
+    assert input == days.to_pylist()
+
+
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_month_operation(tz) -> None:
     from datetime import datetime
