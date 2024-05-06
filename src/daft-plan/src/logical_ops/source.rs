@@ -31,7 +31,7 @@ impl Source {
         let mut res = vec![];
 
         match self.source_info.as_ref() {
-            SourceInfo::ExternalInfo(ScanExternalInfo {
+            SourceInfo::External(ScanExternalInfo {
                 source_schema,
                 scan_op,
                 partitioning_keys,
@@ -48,11 +48,11 @@ impl Source {
                 res.extend(pushdowns.multiline_display());
             }
             #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(InMemoryInfo { num_partitions, .. }) => {
+            SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
             }
-            SourceInfo::PlaceHolderInfo(PlaceHolderInfo {
+            SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_id,
                 clustering_spec,
                 ..

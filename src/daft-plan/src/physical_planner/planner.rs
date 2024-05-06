@@ -77,7 +77,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                     self.physical_children.push(translated_pplan.clone());
                     let new_scan = LogicalPlan::Source(Source::new(
                         node.schema(),
-                        SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                        SourceInfo::PlaceHolder(PlaceHolderInfo::new(
                             node.schema(),
                             translated_pplan.clustering_spec(),
                         ))
@@ -137,7 +137,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             );
                             let new_left_scan = LogicalPlan::Source(Source::new(
                                 logical_left.schema(),
-                                SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                                SourceInfo::PlaceHolder(PlaceHolderInfo::new(
                                     logical_left.schema(),
                                     left.clustering_spec(),
                                 ))
@@ -162,7 +162,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             );
                             let new_right_scan = LogicalPlan::Source(Source::new(
                                 logical_right.schema(),
-                                SourceInfo::PlaceHolderInfo(PlaceHolderInfo::new(
+                                SourceInfo::PlaceHolder(PlaceHolderInfo::new(
                                     logical_right.schema(),
                                     right.clustering_spec(),
                                 ))
@@ -204,7 +204,7 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
                 output_schema: _,
                 source_info,
             }) => match source_info.as_ref() {
-                SourceInfo::PlaceHolderInfo(phi) => {
+                SourceInfo::PlaceHolder(phi) => {
                     assert!(self.mat_results.is_some());
                     let mut mat_results = self.mat_results.take().unwrap();
 
@@ -214,7 +214,7 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
                     //TODO: check placeholder id here
                     let new_source_node = LogicalPlan::Source(Source {
                         output_schema: mat_results.in_memory_info.source_schema.clone(),
-                        source_info: SourceInfo::InMemoryInfo(mat_results.in_memory_info).into(),
+                        source_info: SourceInfo::InMemory(mat_results.in_memory_info).into(),
                     })
                     .arced();
                     Ok(Transformed::new(

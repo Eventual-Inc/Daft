@@ -151,7 +151,7 @@ impl LogicalPlanBuilder {
         size_bytes: usize,
         num_rows: usize,
     ) -> DaftResult<Self> {
-        let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
+        let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
@@ -171,7 +171,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
-        let source_info = SourceInfo::ExternalInfo(ScanExternalInfo::new(
+        let source_info = SourceInfo::External(ScanExternalInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),

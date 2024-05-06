@@ -40,7 +40,7 @@ pub(super) fn translate_single_logical_node(
 ) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
-            SourceInfo::ExternalInfo(ScanExternalInfo {
+            SourceInfo::External(ScanExternalInfo {
                 pushdowns,
                 scan_op,
                 source_schema,
@@ -83,7 +83,7 @@ pub(super) fn translate_single_logical_node(
                 }
             }
             #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(mem_info) => {
+            SourceInfo::InMemory(mem_info) => {
                 let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
                         .into()
@@ -97,7 +97,7 @@ pub(super) fn translate_single_logical_node(
                 .arced();
                 Ok(scan)
             }
-            SourceInfo::PlaceHolderInfo(PlaceHolderInfo { source_id, .. }) => {
+            SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },

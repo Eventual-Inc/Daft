@@ -17,9 +17,9 @@ use {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
-    InMemoryInfo(InMemoryInfo),
-    ExternalInfo(ScanExternalInfo),
-    PlaceHolderInfo(PlaceHolderInfo),
+    InMemory(InMemoryInfo),
+    External(ScanExternalInfo),
+    PlaceHolder(PlaceHolderInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
