@@ -290,7 +290,7 @@ impl AdaptivePlanner {
 
             log::warn!(
                 "\nEmitting partial plan:\n {}",
-                physical_plan.repr_ascii(true)
+                physical_plan.repr_ascii(false)
             );
 
             log::warn!(
