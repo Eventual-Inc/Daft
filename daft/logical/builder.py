@@ -117,6 +117,14 @@ class LogicalPlanBuilder:
         builder = self._builder.explode(explode_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def unpivot(
+        self, ids: list[Expression], values: list[Expression], variable_name: str, value_name: str
+    ) -> LogicalPlanBuilder:
+        ids_pyexprs = [expr._expr for expr in ids]
+        values_pyexprs = [expr._expr for expr in values]
+        builder = self._builder.unpivot(ids_pyexprs, values_pyexprs, variable_name, value_name)
+        return LogicalPlanBuilder(builder)
+
     def count(self) -> LogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
         first_col = col(self.schema().column_names()[0])

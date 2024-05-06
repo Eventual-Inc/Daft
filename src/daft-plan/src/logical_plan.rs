@@ -16,6 +16,7 @@ pub enum LogicalPlan {
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
+    Unpivot(Unpivot),
     Sort(Sort),
     Repartition(Repartition),
     Distinct(Distinct),
@@ -43,6 +44,7 @@ impl LogicalPlan {
             Self::Explode(Explode {
                 exploded_schema, ..
             }) => exploded_schema.clone(),
+            Self::Unpivot(Unpivot { output_schema, .. }) => output_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
@@ -100,6 +102,15 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
+            Self::Unpivot(unpivot) => {
+                let res = unpivot
+                    .ids
+                    .iter()
+                    .chain(unpivot.values.iter())
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
             Self::Distinct(distinct) => {
                 let res = distinct
                     .input
@@ -151,6 +162,7 @@ impl LogicalPlan {
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
             Self::Explode(Explode { input, .. }) => vec![input.clone()],
+            Self::Unpivot(Unpivot { input, .. }) => vec![input.clone()],
             Self::Sort(Sort { input, .. }) => vec![input.clone()],
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::Distinct(Distinct { input, .. }) => vec![input.clone()],
@@ -216,6 +228,7 @@ impl LogicalPlan {
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
+            Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
             Self::Repartition(..) => "Repartition",
             Self::Distinct(..) => "Distinct",
@@ -237,6 +250,7 @@ impl LogicalPlan {
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Explode(explode) => explode.multiline_display(),
+            Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Distinct(_) => vec!["Distinct".to_string()],
@@ -302,6 +316,7 @@ impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Explode);
+impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
 impl_from_data_struct_for_logical_plan!(Distinct);

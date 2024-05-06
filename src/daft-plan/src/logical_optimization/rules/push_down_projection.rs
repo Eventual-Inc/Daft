@@ -239,7 +239,8 @@ impl PushDownProjection {
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
             | LogicalPlan::MonotonicallyIncreasingId(..)
-            | LogicalPlan::Explode(..) => {
+            | LogicalPlan::Explode(..)
+            | LogicalPlan::Unpivot(..) => {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
                     .required_columns()

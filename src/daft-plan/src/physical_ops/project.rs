@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{binary_op, Expr, ExprRef};
-use indexmap::IndexMap;
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 use crate::{
-    partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
-    physical_plan::PhysicalPlanRef,
-    ClusteringSpec, ResourceRequest,
+    partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,
+    ResourceRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -28,165 +26,13 @@ impl Project {
         resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
-        let clustering_spec = Self::translate_clustering_spec(clustering_spec, &projection);
+        let clustering_spec = translate_clustering_spec(clustering_spec, &projection);
         Ok(Self {
             input,
             projection,
             resource_request,
             clustering_spec,
         })
-    }
-
-    fn translate_clustering_spec(
-        input_clustering_spec: Arc<ClusteringSpec>,
-        projection: &Vec<ExprRef>,
-    ) -> Arc<ClusteringSpec> {
-        // Given an input partition spec, and a new projection,
-        // produce the new partition spec.
-
-        use crate::partitioning::ClusteringSpec::*;
-        match input_clustering_spec.as_ref() {
-            // If the scheme is vacuous, the result partition spec is the same.
-            Random(_) | Unknown(_) => input_clustering_spec,
-            // Otherwise, need to reevaluate the partition scheme for each expression.
-            Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
-                // See what columns the projection directly translates into new columns.
-                let mut old_colname_to_new_colname = IndexMap::new();
-                for expr in projection {
-                    if let Some(oldname) = expr.input_mapping() {
-                        let newname = expr.name().to_string();
-                        // Add the oldname -> newname mapping,
-                        // but don't overwrite any existing identity mappings (e.g. "a" -> "a").
-                        if old_colname_to_new_colname.get(&oldname) != Some(&oldname) {
-                            old_colname_to_new_colname.insert(oldname, newname);
-                        }
-                    }
-                }
-
-                // Then, see if we can fully translate the partition spec.
-                let maybe_new_clustering_spec = by
-                    .iter()
-                    .map(|e| Self::translate_clustering_spec_expr(e, &old_colname_to_new_colname))
-                    .collect::<std::result::Result<Vec<_>, _>>();
-                maybe_new_clustering_spec.map_or_else(
-                    |()| {
-                        ClusteringSpec::Unknown(UnknownClusteringConfig::new(
-                            input_clustering_spec.num_partitions(),
-                        ))
-                        .into()
-                    },
-                    |new_clustering_spec: Vec<ExprRef>| match input_clustering_spec.as_ref() {
-                        Range(RangeClusteringConfig {
-                            num_partitions,
-                            descending,
-                            ..
-                        }) => ClusteringSpec::Range(RangeClusteringConfig::new(
-                            *num_partitions,
-                            new_clustering_spec,
-                            descending.clone(),
-                        ))
-                        .into(),
-                        Hash(HashClusteringConfig { num_partitions, .. }) => ClusteringSpec::Hash(
-                            HashClusteringConfig::new(*num_partitions, new_clustering_spec),
-                        )
-                        .into(),
-                        _ => unreachable!(),
-                    },
-                )
-            }
-        }
-    }
-
-    fn translate_clustering_spec_expr(
-        clustering_spec_expr: &ExprRef,
-        old_colname_to_new_colname: &IndexMap<String, String>,
-    ) -> std::result::Result<ExprRef, ()> {
-        // Given a single expression of an input partition spec,
-        // translate it to a new expression in the given projection.
-        // Returns:
-        //  - Ok(expr) with expr being the translation, or
-        //  - Err(()) if no translation is possible in the new projection.
-
-        match clustering_spec_expr.as_ref() {
-            Expr::Column(name) => match old_colname_to_new_colname.get(name.as_ref()) {
-                Some(newname) => Ok(daft_dsl::col(newname.as_str())),
-                None => Err(()),
-            },
-            Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
-            Expr::Alias(child, name) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                Ok(newchild.alias(name.clone()))
-            }
-            Expr::BinaryOp { op, left, right } => {
-                let newleft =
-                    Self::translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
-                let newright =
-                    Self::translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
-                Ok(binary_op(*op, newleft, newright))
-            }
-            Expr::Cast(child, dtype) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                Ok(newchild.cast(dtype))
-            }
-            Expr::Function { func, inputs } => {
-                let new_inputs = inputs
-                    .iter()
-                    .map(|e| Self::translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Expr::Function {
-                    func: func.clone(),
-                    inputs: new_inputs,
-                }
-                .into())
-            }
-            Expr::Not(child) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                Ok(newchild.not())
-            }
-            Expr::IsNull(child) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                Ok(newchild.is_null())
-            }
-            Expr::NotNull(child) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                Ok(newchild.not_null())
-            }
-            Expr::FillNull(child, fill_value) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                let newfill =
-                    Self::translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
-                Ok(newchild.fill_null(newfill))
-            }
-            Expr::IsIn(child, items) => {
-                let newchild =
-                    Self::translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-                let newitems =
-                    Self::translate_clustering_spec_expr(items, old_colname_to_new_colname)?;
-                Ok(newchild.is_in(newitems))
-            }
-            Expr::IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => {
-                let newtrue =
-                    Self::translate_clustering_spec_expr(if_true, old_colname_to_new_colname)?;
-                let newfalse =
-                    Self::translate_clustering_spec_expr(if_false, old_colname_to_new_colname)?;
-                let newpred =
-                    Self::translate_clustering_spec_expr(predicate, old_colname_to_new_colname)?;
-
-                Ok(newpred.if_else(newtrue, newfalse))
-            }
-            // Cannot have agg exprs in partition specs.
-            Expr::Agg(_) => Err(()),
-        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
