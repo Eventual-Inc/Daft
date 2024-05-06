@@ -294,6 +294,30 @@ impl PyMicroPartition {
         py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
     }
 
+    pub fn unpivot(
+        &self,
+        py: Python,
+        ids: Vec<PyExpr>,
+        values: Vec<PyExpr>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> PyResult<Self> {
+        let converted_ids: Vec<daft_dsl::ExprRef> = ids.into_iter().map(|e| e.into()).collect();
+        let converted_values: Vec<daft_dsl::ExprRef> =
+            values.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .unpivot(
+                    converted_ids.as_slice(),
+                    converted_values.as_slice(),
+                    variable_name,
+                    value_name,
+                )?
+                .into())
+        })
+    }
+
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
         py.allow_threads(|| {
             if num < 0 {

@@ -30,7 +30,7 @@ impl FunctionEvaluator for CountEvaluator {
                 match input_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => match expr {
                         FunctionExpr::List(ListExpr::Count(_)) => {
-                            Ok(Field::new(input.name()?, DataType::UInt64))
+                            Ok(Field::new(input.name(), DataType::UInt64))
                         }
                         _ => panic!("Expected List Count Expr, got {expr}"),
                     },

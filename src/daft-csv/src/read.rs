@@ -32,20 +32,13 @@ use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
-trait ByteRecordChunkStream = Stream<Item = super::Result<Vec<ByteRecord>>>;
-trait ColumnArrayChunkStream = Stream<
-    Item = super::Result<
-        Context<
-            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
-            super::JoinSnafu,
-            super::Error,
-        >,
-    >,
->;
+trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
 
-trait TableStream = Stream<
-    Item = super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>,
->;
+type TableChunkResult =
+    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
+trait TableStream: Stream<Item = TableChunkResult> {}
+impl<S> TableStream for S where S: Stream<Item = TableChunkResult> {}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
@@ -140,13 +133,6 @@ pub fn read_csv_bulk(
     })?;
 
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
-}
-
-#[inline]
-fn assert_stream_send<'u, R>(
-    s: impl 'u + Send + Stream<Item = R>,
-) -> impl 'u + Send + Stream<Item = R> {
-    s
 }
 
 // Parallel version of table concat
@@ -262,7 +248,7 @@ async fn read_csv_single_into_table(
     let schema: arrow2::datatypes::Schema = schema_fields.into();
     let schema = Arc::new(Schema::try_from(&schema)?);
 
-    let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
+    let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
@@ -273,7 +259,7 @@ async fn read_csv_single_into_table(
         } else {
             table
         }
-    }));
+    });
     let mut remaining_rows = limit.map(|limit| limit as i64);
     let collected_tables = filtered_tables
         .try_take_while(|result| {
@@ -423,7 +409,7 @@ fn read_into_byterecord_chunk_stream<R>(
     chunk_size: usize,
     estimated_mean_row_size: Option<f64>,
     estimated_std_row_size: Option<f64>,
-) -> impl ByteRecordChunkStream + Send
+) -> impl ByteRecordChunkStream
 where
     R: AsyncRead + Unpin + Send + 'static,
 {

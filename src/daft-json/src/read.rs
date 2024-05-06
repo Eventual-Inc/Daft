@@ -24,20 +24,16 @@ use crate::{
 };
 use daft_compression::CompressionCodec;
 
-trait LineChunkStream = Stream<Item = super::Result<Vec<String>>>;
-trait ColumnArrayChunkStream = Stream<
-    Item = super::Result<
-        Context<
-            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
-            super::JoinSnafu,
-            super::Error,
-        >,
-    >,
->;
+type TableChunkResult =
+    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
 
-trait TableChunkStream = Stream<
-    Item = super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>,
->;
+type LineChunkResult = super::Result<Vec<String>>;
+
+trait TableChunkStream: Stream<Item = TableChunkResult> {}
+impl<T> TableChunkStream for T where T: Stream<Item = TableChunkResult> {}
+
+trait LineChunkStream: Stream<Item = LineChunkResult> {}
+impl<T> LineChunkStream for T where T: Stream<Item = LineChunkResult> {}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_json(
@@ -170,13 +166,6 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     Table::new(first_table.schema.clone(), new_series)
 }
 
-#[inline]
-fn assert_stream_send<'u, R>(
-    s: impl 'u + Send + Stream<Item = R>,
-) -> impl 'u + Send + Stream<Item = R> {
-    s
-}
-
 async fn read_json_single_into_table(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
@@ -234,7 +223,7 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
+    let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
@@ -245,7 +234,7 @@ async fn read_json_single_into_table(
         } else {
             table
         }
-    }));
+    });
     let mut remaining_rows = limit.map(|limit| limit as i64);
     let collected_tables = filtered_tables
         .try_take_while(|result| {
@@ -419,7 +408,7 @@ fn parse_into_column_array_chunk_stream(
     );
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    Ok(stream.map_ok(move |records| {
+    Ok(stream.map_ok(move |mut records| {
         let schema = schema.clone();
         let daft_schema = daft_schema.clone();
         let daft_fields = daft_fields.clone();
@@ -429,16 +418,15 @@ fn parse_into_column_array_chunk_stream(
                 let result = (move || {
                     // TODO(Clark): Switch to streaming parse + array construction?
                     let parsed = records
-                        .iter()
+                        .iter_mut()
                         .map(|unparsed_record| {
-                            json_deserializer::parse(unparsed_record.as_bytes()).map_err(|e| {
-                                super::Error::JsonDeserializationError {
+                            crate::deserializer::to_value(unsafe { unparsed_record.as_bytes_mut() })
+                                .map_err(|e| super::Error::JsonDeserializationError {
                                     string: e.to_string(),
-                                }
-                            })
+                                })
                         })
                         .collect::<super::Result<Vec<_>>>()?;
-                    let chunk = deserialize_records(parsed, schema.as_ref(), schema_is_projection)
+                    let chunk = deserialize_records(&parsed, schema.as_ref(), schema_is_projection)
                         .context(ArrowSnafu)?;
                     let all_series = chunk
                         .into_iter()
@@ -492,11 +480,11 @@ mod tests {
         projection: Option<Vec<String>>,
     ) {
         let reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
-        let lines = reader.lines().collect::<Vec<_>>();
+        let mut lines = reader.lines().map(|l| l.unwrap()).collect::<Vec<_>>();
         let parsed = lines
-            .iter()
+            .iter_mut()
             .take(limit.unwrap_or(usize::MAX))
-            .map(|record| json_deserializer::parse(record.as_ref().unwrap().as_bytes()).unwrap())
+            .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
         let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
@@ -536,7 +524,7 @@ mod tests {
             None => (field_map.into_values().collect::<Vec<_>>().into(), false),
         };
         // Deserialize JSON records into Arrow2 column arrays.
-        let columns = deserialize_records(parsed, &schema, is_projection).unwrap();
+        let columns = deserialize_records(&parsed, &schema, is_projection).unwrap();
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()

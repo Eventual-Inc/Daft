@@ -13,6 +13,7 @@ mod sample;
 mod sink;
 mod sort;
 mod source;
+mod unpivot;
 
 pub use agg::Aggregate;
 pub use concat::Concat;
@@ -29,3 +30,4 @@ pub use sample::Sample;
 pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;
+pub use unpivot::Unpivot;

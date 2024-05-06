@@ -654,6 +654,30 @@ class Pivot(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class Unpivot(SingleOutputInstruction):
+    ids: ExpressionsProjection
+    values: ExpressionsProjection
+    variable_name: str
+    value_name: str
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._unpivot(inputs)
+
+    def _unpivot(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.unpivot(self.ids, self.values, self.variable_name, self.value_name)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        [input_meta] = input_metadatas
+        return [
+            PartialPartitionMetadata(
+                num_rows=None if input_meta.num_rows is None else input_meta.num_rows * len(self.values),
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection

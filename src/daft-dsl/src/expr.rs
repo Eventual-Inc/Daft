@@ -92,7 +92,7 @@ pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
 }
 
 impl AggExpr {
-    pub fn name(&self) -> DaftResult<&str> {
+    pub fn name(&self) -> &str {
         use AggExpr::*;
         match self {
             Count(expr, ..)
@@ -641,19 +641,19 @@ impl Expr {
         match self {
             Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Agg(agg_expr) => agg_expr.to_field(schema),
-            Cast(expr, dtype) => Ok(Field::new(expr.name()?, dtype.clone())),
+            Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
             Column(name) => Ok(schema.get_field(name).cloned()?),
             Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
-                    DataType::Boolean => Ok(Field::new(expr.name()?, DataType::Boolean)),
+                    DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),
                 }
             }
-            IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
-            NotNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
+            IsNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            NotNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
             FillNull(expr, fill_value) => {
                 let expr_field = expr.to_field(schema)?;
                 let fill_value_field = fill_value.to_field(schema)?;
@@ -727,37 +727,45 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
-                let if_true_field = if_true.to_field(schema)?;
-                let if_false_field = if_false.to_field(schema)?;
                 let predicate_field = predicate.to_field(schema)?;
                 if predicate_field.dtype != DataType::Boolean {
                     return Err(DaftError::TypeError(format!(
                         "Expected predicate for if_else to be boolean but received {predicate_field}",
                     )));
                 }
-                match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
-                    Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                    Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                match predicate.as_ref() {
+                    Expr::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
+                    Expr::Literal(lit::LiteralValue::Boolean(false)) => {
+                        Ok(if_false.to_field(schema)?.rename(if_true.name()))
+                    }
+                    _ => {
+                        let if_true_field = if_true.to_field(schema)?;
+                        let if_false_field = if_false.to_field(schema)?;
+                        match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
+                            Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                        }
+                    }
                 }
             }
         }
     }
 
-    pub fn name(&self) -> DaftResult<&str> {
+    pub fn name(&self) -> &str {
         use Expr::*;
         match self {
-            Alias(.., name) => Ok(name.as_ref()),
+            Alias(.., name) => name.as_ref(),
             Agg(agg_expr) => agg_expr.name(),
             Cast(expr, ..) => expr.name(),
-            Column(name) => Ok(name.as_ref()),
+            Column(name) => name.as_ref(),
             Not(expr) => expr.name(),
             IsNull(expr) => expr.name(),
             NotNull(expr) => expr.name(),
             FillNull(expr, ..) => expr.name(),
             IsIn(expr, ..) => expr.name(),
-            Literal(..) => Ok("literal"),
+            Literal(..) => "literal",
             Function { func, inputs } => match func {
-                FunctionExpr::Struct(StructExpr::Get(name)) => Ok(name),
+                FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
             BinaryOp {

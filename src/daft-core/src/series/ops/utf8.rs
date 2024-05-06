@@ -238,4 +238,25 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_repeat(&self, n: &Series) -> DaftResult<Series> {
+        match (self.data_type(), n.data_type()) {
+            (DataType::Utf8, DataType::UInt32) => Ok(self.utf8()?.repeat(n.u32()?)?.into_series()),
+            (DataType::Utf8, DataType::Int32) => Ok(self.utf8()?.repeat(n.i32()?)?.into_series()),
+            (DataType::Utf8, DataType::UInt64) => Ok(self.utf8()?.repeat(n.u64()?)?.into_series()),
+            (DataType::Utf8, DataType::Int64) => Ok(self.utf8()?.repeat(n.i64()?)?.into_series()),
+            (DataType::Utf8, DataType::Int8) => Ok(self.utf8()?.repeat(n.i8()?)?.into_series()),
+            (DataType::Utf8, DataType::UInt8) => Ok(self.utf8()?.repeat(n.u8()?)?.into_series()),
+            (DataType::Utf8, DataType::Int16) => Ok(self.utf8()?.repeat(n.i16()?)?.into_series()),
+            (DataType::Utf8, DataType::UInt16) => Ok(self.utf8()?.repeat(n.u16()?)?.into_series()),
+            (DataType::Utf8, DataType::Int128) => Ok(self.utf8()?.repeat(n.i128()?)?.into_series()),
+            (DataType::Null, dt) if dt.is_integer() => Ok(self.clone()),
+            (DataType::Utf8, dt) => Err(DaftError::TypeError(format!(
+                "Repeat not implemented for nchar type {dt}"
+            ))),
+            (dt, _) => Err(DaftError::TypeError(format!(
+                "Repeat not implemented for type {dt}"
+            ))),
+        }
+    }
 }

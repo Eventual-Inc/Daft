@@ -24,6 +24,7 @@ mod scan;
 mod sort;
 mod sort_merge_join;
 mod split;
+mod unpivot;
 
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;
@@ -51,3 +52,4 @@ pub use scan::TabularScan;
 pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
 pub use split::Split;
+pub use unpivot::Unpivot;

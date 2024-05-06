@@ -44,6 +44,7 @@ pub enum PhysicalPlan {
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
+    Unpivot(Unpivot),
     Sort(Sort),
     Split(Split),
     Sample(Sample),
@@ -132,6 +133,9 @@ impl PhysicalPlan {
             Self::Filter(Filter { input, .. }) => input.clustering_spec(),
             Self::Limit(Limit { input, .. }) => input.clustering_spec(),
             Self::Explode(Explode {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::Unpivot(Unpivot {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Sample(Sample { input, .. }) => input.clustering_spec(),
@@ -403,6 +407,17 @@ impl PhysicalPlan {
                     }
                 }
             }
+            Self::Unpivot(Unpivot { input, values, .. }) => {
+                let input_stats = input.approximate_stats();
+                let num_values = values.len();
+                // the number of bytes should be the name but nows should be multiplied by num_values
+                ApproxStats {
+                    lower_bound_rows: input_stats.lower_bound_rows * num_values,
+                    upper_bound_rows: input_stats.upper_bound_rows.map(|v| v * num_values),
+                    lower_bound_bytes: input_stats.lower_bound_bytes,
+                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                }
+            }
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
             Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
@@ -421,6 +436,7 @@ impl PhysicalPlan {
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
             Self::Explode(Explode { input, .. }) => vec![input.clone()],
+            Self::Unpivot(Unpivot { input, .. }) => vec![input.clone()],
             Self::Sample(Sample { input, .. }) => vec![input.clone()],
             Self::Sort(Sort { input, .. }) => vec![input.clone()],
             Self::Split(Split { input, .. }) => vec![input.clone()],
@@ -466,6 +482,7 @@ impl PhysicalPlan {
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
+                Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
                 Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Sort(Sort { sort_by, descending, num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(), *num_partitions)),
                 Self::Split(Split { input_num_partitions, output_num_partitions, .. }) => Self::Split(Split::new(input.clone(), *input_num_partitions, *output_num_partitions)),
@@ -513,6 +530,7 @@ impl PhysicalPlan {
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
+            Self::Unpivot(..) => "Unpivot",
             Self::Sample(..) => "Sample",
             Self::Sort(..) => "Sort",
             Self::Split(..) => "Split",
@@ -547,6 +565,7 @@ impl PhysicalPlan {
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
+            Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Split(split) => split.multiline_display(),
@@ -817,6 +836,33 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "explode"))?
                     .call1((upstream_iter, explode_pyexprs))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Unpivot(Unpivot {
+                input,
+                ids,
+                values,
+                variable_name,
+                value_name,
+                ..
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let ids_pyexprs: Vec<PyExpr> =
+                    ids.iter().map(|expr| PyExpr::from(expr.clone())).collect();
+                let values_pyexprs: Vec<PyExpr> = values
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "unpivot"))?
+                    .call1((
+                        upstream_iter,
+                        ids_pyexprs,
+                        values_pyexprs,
+                        variable_name,
+                        value_name,
+                    ))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::Sample(Sample {

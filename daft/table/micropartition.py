@@ -240,6 +240,15 @@ class MicroPartition:
         to_explode_pyexprs = [e._expr for e in columns]
         return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
 
+    def unpivot(
+        self, ids: ExpressionsProjection, values: ExpressionsProjection, variable_name: str, value_name: str
+    ) -> MicroPartition:
+        ids_pyexprs = [e._expr for e in ids]
+        values_pyexprs = [e._expr for e in values]
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.unpivot(ids_pyexprs, values_pyexprs, variable_name, value_name)
+        )
+
     def hash_join(
         self,
         right: MicroPartition,

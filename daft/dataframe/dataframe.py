@@ -54,7 +54,7 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
 
-ColumnInputOrListType = Union[ColumnInputType, List[ColumnInputType]]
+ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 class DataFrame:
@@ -535,28 +535,27 @@ class DataFrame:
     ###
 
     def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> List[Expression]:
+        # TODO(Kevin): remove this method and use _column_inputs_to_expressions
         return [col(c) if isinstance(c, str) else c for c in columns]
 
-    def _inputs_to_expressions(self, inputs: Tuple[ColumnInputOrListType, ...]) -> List[Expression]:
+    def _is_column_input(self, x: Any) -> bool:
+        return isinstance(x, str) or isinstance(x, Expression)
+
+    def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
         """
-        Inputs to dataframe operations can be passed in as individual arguments or a list.
-        In addition, they may be strings, Expressions, or tuples (deprecated).
+        Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+        In addition, they may be strings or Expressions.
         This method normalizes the inputs to a list of Expressions.
         """
-        cols = inputs[0] if (len(inputs) == 1 and isinstance(inputs[0], list)) else inputs
 
-        exprs = []
-        for c in cols:
-            if isinstance(c, str):
-                exprs.append(col(c))
-            elif isinstance(c, Expression):
-                exprs.append(c)
-            elif isinstance(c, tuple):
-                exprs.append(self._agg_tuple_to_expression(c))
-            else:
-                raise ValueError(f"Unknown column type: {type(c)}")
+        column_iter: Iterable[ColumnInputType] = [columns] if self._is_column_input(columns) else columns  # type: ignore
+        return [col(c) if isinstance(c, str) else c for c in column_iter]
 
-        return exprs
+    def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
+        """Handles wildcard argument column inputs"""
+
+        column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
+        return self._column_inputs_to_expressions(column_input)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
@@ -1101,17 +1100,95 @@ class DataFrame:
         builder = self._builder.explode(parsed_exprs)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def unpivot(
+        self,
+        ids: ManyColumnsInputType,
+        values: ManyColumnsInputType = [],
+        variable_name: str = "variable",
+        value_name: str = "value",
+    ) -> "DataFrame":
+        """Unpivots a DataFrame from wide to long format.
+
+        Example:
+            >>> df = daft.from_pydict({
+            ...     "year": [2020, 2021, 2022],
+            ...     "Jan": [10, 30, 50],
+            ...     "Feb": [20, 40, 60],
+            ... })
+            >>> df
+            ╭───────┬───────┬───────╮
+            │ year  ┆ Jan   ┆ Feb   │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2020  ┆ 10    ┆ 20    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2021  ┆ 30    ┆ 40    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2022  ┆ 50    ┆ 60    │
+            ╰───────┴───────┴───────╯
+            (Showing first 3 of 3 rows)
+            >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
+            >>> df = df.sort("year")
+            >>> df.show()
+            ╭───────┬───────┬───────────╮
+            │ year  ┆ month ┆ inventory │
+            │ ---   ┆ ---   ┆ ---       │
+            │ Int64 ┆ Utf8  ┆ Int64     │
+            ╞═══════╪═══════╪═══════════╡
+            │ 2020  ┆ Jan   ┆ 10        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2020  ┆ Feb   ┆ 20        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Jan   ┆ 30        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Feb   ┆ 40        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Jan   ┆ 50        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Feb   ┆ 60        │
+            ╰───────┴───────┴───────────╯
+            (Showing first 6 of 6 rows)
+
+        Args:
+            ids (ManyColumnsInputType): Columns to keep as identifiers
+            values (Optional[ManyColumnsInputType]): Columns to unpivot. If not specified, all columns except ids will be unpivoted.
+            variable_name (Optional[str]): Name of the variable column. Defaults to "variable".
+            value_name (Optional[str]): Name of the value column. Defaults to "value".
+
+        Returns:
+            DataFrame: Unpivoted DataFrame
+
+        See also:
+            `melt`
+        """
+        ids_exprs = self._column_inputs_to_expressions(ids)
+        values_exprs = self._column_inputs_to_expressions(values)
+
+        builder = self._builder.unpivot(ids_exprs, values_exprs, variable_name, value_name)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def melt(
+        self,
+        ids: ManyColumnsInputType,
+        values: ManyColumnsInputType = [],
+        variable_name: str = "variable",
+        value_name: str = "value",
+    ) -> "DataFrame":
+        """Alias for unpivot
+
+        See also:
+            `unpivot`
+        """
+        return self.unpivot(ids, values, variable_name, value_name)
+
     def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
         builder = self._builder.agg(to_agg, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
     def _agg_tuple_to_expression(self, agg_tuple: Tuple[ColumnInputType, str]) -> Expression:
-        warnings.warn(
-            "Tuple arguments in aggregations is deprecated and will be removed "
-            "in Daft v0.3. Please use aggregation expressions instead.",
-            DeprecationWarning,
-        )
-
         expr, op = agg_tuple
 
         if isinstance(expr, str):
@@ -1136,10 +1213,34 @@ class DataFrame:
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
+    def _agg_inputs_to_expressions(
+        self, to_agg: Tuple[Union[Expression, Iterable[Expression]], ...]
+    ) -> List[Expression]:
+        def is_agg_column_input(x: Any) -> bool:
+            # aggs currently support Expression or tuple of (ColumnInputType, str) [deprecated]
+            if isinstance(x, Expression):
+                return True
+            if isinstance(x, tuple) and len(x) == 2:
+                tuple_type = list(map(type, x))
+                return tuple_type == [Expression, str] or tuple_type == [str, str]
+            return False
+
+        columns: Iterable[Expression] = to_agg[0] if len(to_agg) == 1 and not is_agg_column_input(to_agg[0]) else to_agg  # type: ignore
+
+        if any(isinstance(col, tuple) for col in columns):
+            warnings.warn(
+                "Tuple arguments in aggregations is deprecated and will be removed "
+                "in Daft v0.3. Please use aggregation expressions instead.",
+                DeprecationWarning,
+            )
+            return [self._agg_tuple_to_expression(col) if isinstance(col, tuple) else col for col in columns]  # type: ignore
+        else:
+            return list(columns)
+
     def _apply_agg_fn(
         self,
         fn: Callable[[Expression], Expression],
-        cols: Tuple[ColumnInputOrListType, ...],
+        cols: Tuple[ManyColumnsInputType, ...],
         group_by: Optional[ExpressionsProjection] = None,
     ) -> "DataFrame":
         if len(cols) == 0:
@@ -1147,7 +1248,7 @@ class DataFrame:
 
             groupby_name_set = set() if group_by is None else group_by.to_name_set()
             cols = tuple(c for c in self.column_names if c not in groupby_name_set)
-        exprs = self._inputs_to_expressions(cols)
+        exprs = self._wildcard_inputs_to_expressions(cols)
         return self._agg([fn(c) for c in exprs], group_by)
 
     def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
@@ -1155,7 +1256,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def sum(self, *cols: ColumnInputOrListType) -> "DataFrame":
+    def sum(self, *cols: ManyColumnsInputType) -> "DataFrame":
         """Performs a global sum on the DataFrame
 
         Args:
@@ -1244,7 +1345,7 @@ class DataFrame:
         return self._apply_agg_fn(Expression.agg_concat, cols)
 
     @DataframePublicAPI
-    def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
+    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
@@ -1263,10 +1364,10 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with aggregated results
         """
-        return self._agg(self._inputs_to_expressions(to_agg), group_by=None)
+        return self._agg(self._agg_inputs_to_expressions(to_agg), group_by=None)
 
     @DataframePublicAPI
-    def groupby(self, *group_by: ColumnInputOrListType) -> "GroupedDataFrame":
+    def groupby(self, *group_by: ManyColumnsInputType) -> "GroupedDataFrame":
         """Performs a GroupBy on the DataFrame for aggregation
 
         Args:
@@ -1275,7 +1376,7 @@ class DataFrame:
         Returns:
             GroupedDataFrame: DataFrame to Aggregate
         """
-        return GroupedDataFrame(self, ExpressionsProjection(self._inputs_to_expressions(group_by)))
+        return GroupedDataFrame(self, ExpressionsProjection(self._wildcard_inputs_to_expressions(group_by)))
 
     @DataframePublicAPI
     def pivot(
@@ -1819,7 +1920,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.agg_concat, cols, self.group_by)
 
-    def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
+    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:
@@ -1831,12 +1932,12 @@ class GroupedDataFrame:
             >>> )
 
         Args:
-            *to_agg (Expression): aggregation expressions
+            *to_agg (Union[Expression, Iterable[Expression]]): aggregation expressions
 
         Returns:
             DataFrame: DataFrame with grouped aggregations
         """
-        return self.df._agg(self.df._inputs_to_expressions(to_agg), group_by=self.group_by)
+        return self.df._agg(self.df._agg_inputs_to_expressions(to_agg), group_by=self.group_by)
 
     def map_groups(self, udf: Expression) -> "DataFrame":
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.

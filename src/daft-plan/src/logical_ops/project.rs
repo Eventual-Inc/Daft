@@ -161,8 +161,8 @@ impl Project {
                     // The substitution can unintentionally change the expression's name
                     // (since the name depends on the first column referenced, which can be substituted away)
                     // so re-alias the original name here if it has changed.
-                    let old_name = e.name().unwrap();
-                    if new_expr.name().unwrap() != old_name {
+                    let old_name = e.name();
+                    if new_expr.name() != old_name {
                         new_expr.alias(old_name)
                     } else {
                         new_expr.clone()
