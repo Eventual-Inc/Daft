@@ -40,7 +40,7 @@ pub mod take;
 mod trigonometry;
 pub mod utf8;
 
-pub fn match_types_on_series(series: Vec<&Series>) -> DaftResult<Vec<Series>> {
+pub fn cast_series_to_supertype(series: &[&Series]) -> DaftResult<Vec<Series>> {
     let supertype = series
         .iter()
         .map(|s| s.data_type().clone())

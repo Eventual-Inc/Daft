@@ -77,6 +77,21 @@ def test_unpivot_different_types(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
+def test_unpivot_incompatible_types(make_df, n_partitions):
+    df = make_df(
+        {
+            "id": ["x", "y", "z"],
+            "a": [[1], [2, 3], [4, 5, 6]],
+            "b": [7, 8, 9],
+        },
+        repartition=n_partitions,
+    )
+
+    with pytest.raises(ValueError):
+        df = df.unpivot("id", ["a", "b"])
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
 def test_unpivot_nulls(make_df, n_partitions):
     df = make_df(
         {

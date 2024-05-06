@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{UInt64Array, Utf8Array},
     schema::Schema,
-    series::match_types_on_series,
+    series::cast_series_to_supertype,
     IntoSeries, Series,
 };
 use daft_dsl::ExprRef;
@@ -47,7 +47,8 @@ impl Table {
         let variable_arr = Box::new(arrow2::array::Utf8Array::from_iter_values(variable_column));
         let variable_series = Utf8Array::from((variable_name, variable_arr)).into_series();
 
-        let values_casted = match_types_on_series(values_table.columns.iter().collect())?;
+        let values_cols: Vec<&Series> = values_table.columns.iter().collect();
+        let values_casted = cast_series_to_supertype(&values_cols)?;
 
         let value_series =
             Series::concat(&values_casted.iter().collect::<Vec<_>>())?.rename(value_name);

@@ -668,10 +668,10 @@ class Unpivot(SingleOutputInstruction):
         return [input.unpivot(self.ids, self.values, self.variable_name, self.value_name)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        # Can't derive anything.
+        [input_meta] = input_metadatas
         return [
             PartialPartitionMetadata(
-                num_rows=None,
+                num_rows=None if input_meta.num_rows is None else input_meta.num_rows * len(self.values),
                 size_bytes=None,
             )
         ]
