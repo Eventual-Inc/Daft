@@ -102,6 +102,14 @@ Delta Lake
 
     read_delta_lake
 
+Apache Hudi
+~~~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_hudi
 
 Integrations
 ------------
