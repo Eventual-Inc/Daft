@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft import col
@@ -235,3 +236,14 @@ def test_udf_arbitrary_number_of_args_with_kwargs():
 
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"a": [6, 12, 18]}
+
+
+def test_udf_return_pyarrow():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.int64())
+    def add_1(data):
+        return pa.compute.add(data.to_arrow(), 1)
+
+    result = table.eval_expression_list([add_1(col("a"))])
+    assert result.to_pydict() == {"a": [2, 3, 4]}

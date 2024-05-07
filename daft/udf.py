@@ -16,8 +16,15 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
+_PYARROW_AVAILABLE = True
+try:
+    import pyarrow as pa
+except ImportError:
+    _PYARROW_AVAILABLE = False
+
 if TYPE_CHECKING:
     import numpy as np
+    import pyarrow as pa
 
 UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 
@@ -114,6 +121,8 @@ class PartialUDF:
                 return Series.from_pylist(result, name=name, pyobj="allow").cast(self.udf.return_dtype)._series
         elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
             return Series.from_numpy(result, name=name).cast(self.udf.return_dtype)._series
+        elif _PYARROW_AVAILABLE and isinstance(result, (pa.Array, pa.ChunkedArray)):
+            return Series.from_arrow(result, name=name).cast(self.udf.return_dtype)._series
         else:
             raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
