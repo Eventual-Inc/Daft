@@ -11,6 +11,8 @@ from daft import DataFrame, col
 
 NUM_SAMPLES = 1_000_000
 
+JOIN_TYPES = ["inner", "left", "right", "outer"]
+
 
 @pytest.mark.benchmark(group="joins")
 @pytest.mark.parametrize(
@@ -18,7 +20,8 @@ NUM_SAMPLES = 1_000_000
     [(10_000, 1), (10_000, 100)],
     ids=["10_000/1", "10_000/100"],
 )
-def test_join_simple(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("join_type", JOIN_TYPES)
+def test_join_simple(benchmark, num_samples, num_partitions, join_type) -> None:
     """Test simple join performance.
 
     Keys are consecutive integers; no data payload; one-to-one matches.
@@ -51,7 +54,7 @@ def test_join_simple(benchmark, num_samples, num_partitions) -> None:
     # Run the benchmark.
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mycol"]).collect()
+        return left_table.join(right_table, on=["mycol"], how=join_type).collect()
 
     result = benchmark(bench_join)
 
@@ -65,7 +68,8 @@ def test_join_simple(benchmark, num_samples, num_partitions) -> None:
     [(10_000, 1), (10_000, 100)],
     ids=["10_000/1", "10_000/100"],
 )
-def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("join_type", JOIN_TYPES)
+def test_join_largekey(benchmark, num_samples, num_partitions, join_type) -> None:
     """Test the impact of string keys vs integer keys."""
 
     keys = [str(uuid4()) for _ in range(num_samples)]
@@ -96,7 +100,7 @@ def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
 
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mycol"]).collect()
+        return left_table.join(right_table, on=["mycol"], how=join_type).collect()
 
     result = benchmark(bench_join)
 
@@ -113,7 +117,8 @@ def test_join_largekey(benchmark, num_samples, num_partitions) -> None:
     [(10_000, 1), (10_000, 100)],
     ids=["10_000/1", "10_000/100"],
 )
-def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("join_type", JOIN_TYPES)
+def test_join_withdata(benchmark, num_samples, num_partitions, join_type) -> None:
     """Test the impact of data payloads."""
 
     left_arr = np.arange(num_samples)
@@ -148,7 +153,7 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
     # Run the benchmark.
     # Run the benchmark.
     def bench_join() -> DataFrame:
-        return left_table.join(right_table, on=["mykey"]).collect()
+        return left_table.join(right_table, on=["mykey"], how=join_type).collect()
 
     result = benchmark(bench_join)
 
@@ -168,7 +173,8 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
     ids=["left_bigger", "right_bigger"],
 )
 @pytest.mark.parametrize("num_partitions", [1, 10], ids=["1part", "10part"])
-def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
+@pytest.mark.parametrize("join_type", JOIN_TYPES)
+def test_broadcast_join(benchmark, left_bigger, num_partitions, join_type) -> None:
     """Test the performance of joining a smaller table to a bigger table.
 
     The cardinality is one-to-many.
@@ -202,9 +208,9 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
     # Run the benchmark.
     def bench_join() -> DataFrame:
         if left_bigger:
-            return big_table.join(small_table, on=["keys"]).collect()
+            return big_table.join(small_table, on=["keys"], how=join_type).collect()
         else:
-            return small_table.join(big_table, on=["keys"]).collect()
+            return small_table.join(big_table, on=["keys"], how=join_type).collect()
 
     result = benchmark(bench_join)
 
@@ -221,7 +227,8 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions) -> None:
     ids=["10_000/1", "10_000/100"],
 )
 @pytest.mark.parametrize("num_columns", [1, 4])
-def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) -> None:
+@pytest.mark.parametrize("join_type", JOIN_TYPES)
+def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions, join_type) -> None:
     """Evaluate the performance impact of using additional columns in the join.
 
     The join cardinality is the same for all cases;
@@ -263,7 +270,7 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions) 
     def bench_join() -> DataFrame:
         # Use the unique column "nums" plus some redundant columns.
         join_on = ["nums_a", "nums_b", "nums_c", "nums"][-num_columns:]
-        return left_table.join(right_table, on=join_on).collect()
+        return left_table.join(right_table, on=join_on, how=join_type).collect()
 
     result = benchmark(bench_join)
 
