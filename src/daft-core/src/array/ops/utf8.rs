@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    iter::{Repeat, Take},
+};
 
 use crate::{
     array::{DataArray, ListArray},
@@ -842,7 +845,7 @@ impl Utf8Array {
             val: &str,
             length: usize,
             fillchar: &str,
-            placement: PadPlacement,
+            placement_fn: impl Fn(Take<Repeat<char>>, &str) -> String,
         ) -> DaftResult<String> {
             if val.chars().count() >= length {
                 return Ok(val.chars().take(length).collect());
@@ -861,11 +864,17 @@ impl Utf8Array {
             };
             let fillchar =
                 std::iter::repeat(fillchar).take(length.saturating_sub(val.chars().count()));
-            Ok(match placement {
-                PadPlacement::Left => fillchar.chain(val.chars()).collect(),
-                PadPlacement::Right => val.chars().chain(fillchar).collect(),
-            })
+            Ok(placement_fn(fillchar, val))
         }
+
+        let placement_fn = match placement {
+            PadPlacement::Left => |fillchar: Take<Repeat<char>>, val: &str| -> String {
+                fillchar.chain(val.chars()).collect()
+            },
+            PadPlacement::Right => |fillchar: Take<Repeat<char>>, val: &str| -> String {
+                val.chars().chain(fillchar).collect()
+            },
+        };
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let padchar_iter = create_broadcasted_str_iter(padchar, expected_size);
@@ -881,7 +890,7 @@ impl Utf8Array {
                     .zip(padchar_iter)
                     .map(|(val, padchar)| match (val, padchar) {
                         (Some(val), Some(padchar)) => {
-                            Ok(Some(pad_str(val, len, padchar, placement)?))
+                            Ok(Some(pad_str(val, len, padchar, placement_fn)?))
                         }
                         _ => Ok(None),
                     })
@@ -901,7 +910,7 @@ impl Utf8Array {
                                     "Error in pad: failed to cast length as usize {len}"
                                 ))
                             })?;
-                            Ok(Some(pad_str(val, len, padchar, placement)?))
+                            Ok(Some(pad_str(val, len, padchar, placement_fn)?))
                         }
                         _ => Ok(None),
                     })
