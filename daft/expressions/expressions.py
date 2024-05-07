@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
-accessor_namespace_property: type[property] = property
+property = property
 if os.getenv("DAFT_SPHINX_BUILD") == "1":
     from typing import Any
 
@@ -55,7 +55,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
             except (AttributeError, ImportError):
                 return self  # type: ignore[return-value]
 
-    accessor_namespace_property = sphinx_accessor
+    property = sphinx_accessor  # type: ignore[misc]
 
 
 def lit(value: object) -> Expression:
@@ -118,47 +118,47 @@ class Expression:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
-    @accessor_namespace_property
+    @property
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def float(self) -> ExpressionFloatNamespace:
         """Access methods that work on columns of floats"""
         return ExpressionFloatNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def url(self) -> ExpressionUrlNamespace:
         """Access methods that work on columns of URLs"""
         return ExpressionUrlNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def list(self) -> ExpressionListNamespace:
         """Access methods that work on columns of lists"""
         return ExpressionListNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def struct(self) -> ExpressionStructNamespace:
         """Access methods that work on columns of structs"""
         return ExpressionStructNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def partitioning(self) -> ExpressionPartitioningNamespace:
         """Access methods that support partitioning operators"""
         return ExpressionPartitioningNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def json(self) -> ExpressionJsonNamespace:
         """Access methods that work on columns of json"""
         return ExpressionJsonNamespace.from_expression(self)
