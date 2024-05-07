@@ -588,10 +588,10 @@ def test_series_cast_timestamp(input_t, input, output_t, output) -> None:
 @pytest.mark.parametrize(
     ["timezone", "expected_dt", "tz_suffix"],
     [
-        (None, "1970-01-01T00:00", ""),
-        ("UTC", "1970-01-01T00:00", "+00:00"),
-        ("-04:00", "1969-12-31T20:00", "-04:00"),
-        ("America/Los_Angeles", "1969-12-31T16:00", "-08:00"),
+        (None, "1970-01-01 00:00", ""),
+        ("UTC", "1970-01-01 00:00", " +00:00"),
+        ("-04:00", "1969-12-31 20:00", " -04:00"),
+        ("America/Los_Angeles", "1969-12-31 16:00", " PST"),
     ],
 )
 def test_series_cast_timestamp_string(timeunit, sec_str, timezone, expected_dt, tz_suffix) -> None:
