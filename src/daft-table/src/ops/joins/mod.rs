@@ -135,15 +135,22 @@ fn add_non_join_key_columns(
     drop(lidx);
 
     // Zip the names of the left and right expressions into a HashMap
-    let left_names = left_on.iter().map(|e| e.name());
-    let right_names = right_on.iter().map(|e| e.name());
-    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(left_names.zip(right_names));
+    let left_names = left_on
+        .iter()
+        .map(|e| e.to_field(&left.schema).map(|f| f.name))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let right_names = right_on
+        .iter()
+        .map(|e| e.to_field(&left.schema).map(|f| f.name))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let right_to_left_keys: HashMap<String, String> =
+        HashMap::from_iter(left_names.into_iter().zip(right_names));
 
     // TODO(Clark): Parallelize with Rayon.
     for field in right.schema.fields.values() {
         // Skip fields if they were used in the join and have the same name as the corresponding left field
-        match right_to_left_keys.get(field.name.as_str()) {
-            Some(val) if val.eq(&field.name.as_str()) => {
+        match right_to_left_keys.get(&field.name) {
+            Some(val) if val.eq(&field.name) => {
                 continue;
             }
             _ => (),
@@ -159,7 +166,7 @@ fn add_non_join_key_columns(
                 .rename(curr_name.clone())
                 .take(&ridx)?,
         );
-        names_so_far.insert(curr_name.clone());
+        names_so_far.insert(curr_name);
     }
 
     Ok(join_series)
