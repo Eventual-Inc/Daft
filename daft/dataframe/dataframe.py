@@ -1378,7 +1378,7 @@ class DataFrame:
     @DataframePublicAPI
     def pivot(
         self,
-        group_by: ColumnInputType,
+        group_by: ManyColumnsInputType,
         pivot_col: ColumnInputType,
         value_col: ColumnInputType,
         agg_fn: str,
@@ -1412,7 +1412,7 @@ class DataFrame:
             ╰─────────┴─────────┴───────╯
 
         Args:
-            group_by (Union[str, Expression]): column to group by
+            group_by (ManyColumnsInputType): columns to group by
             pivot_col (Union[str, Expression]): column to pivot
             value_col (Union[str, Expression]): column to aggregate
             agg_fn (str): aggregation function to apply
@@ -1422,12 +1422,14 @@ class DataFrame:
             DataFrame: DataFrame with pivoted columns
 
         """
-        group_by, pivot_col, value_col = self.__column_input_to_expression([group_by, pivot_col, value_col])
-        agg_expr = self._agg_tuple_to_expression((value_col, agg_fn))
+        group_by_expr = self._column_inputs_to_expressions(group_by)
+        [pivot_col_expr, value_col_expr] = self._column_inputs_to_expressions([pivot_col, value_col])
+        agg_expr = self._agg_tuple_to_expression((value_col_expr, agg_fn))
+
         if names is None:
-            names = self.select(pivot_col).distinct().to_pydict()[pivot_col.name()]
+            names = self.select(pivot_col_expr).distinct().to_pydict()[pivot_col_expr.name()]
             names = [str(x) for x in names]
-        builder = self._builder.pivot(group_by, pivot_col, value_col, agg_expr, names)
+        builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
         return DataFrame(builder)
 
     def _materialize_results(self) -> None:

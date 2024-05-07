@@ -223,13 +223,13 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
-        self, group_by: Expression, pivot_column: Expression, values_column: Expression, names: list[str]
+        self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
     ) -> MicroPartition:
-        group_by_pyexpr = group_by._expr
+        group_by_pyexprs = [e._expr for e in group_by]
         pivot_column_pyexpr = pivot_column._expr
         values_column_pyexpr = values_column._expr
         return MicroPartition._from_pymicropartition(
-            self._micropartition.pivot(group_by_pyexpr, pivot_column_pyexpr, values_column_pyexpr, names)
+            self._micropartition.pivot(group_by_pyexprs, pivot_column_pyexpr, values_column_pyexpr, names)
         )
 
     def quantiles(self, num: int) -> MicroPartition:

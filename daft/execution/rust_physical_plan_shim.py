@@ -140,13 +140,13 @@ def local_aggregate(
 
 def pivot(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    group_by: PyExpr,
+    group_by: list[PyExpr],
     pivot_col: PyExpr,
     value_col: PyExpr,
     names: list[str],
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     pivot_step = execution_step.Pivot(
-        group_by=Expression._from_pyexpr(group_by),
+        group_by=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in group_by]),
         pivot_col=Expression._from_pyexpr(pivot_col),
         value_col=Expression._from_pyexpr(value_col),
         names=names,

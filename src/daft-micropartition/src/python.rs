@@ -227,19 +227,20 @@ impl PyMicroPartition {
     pub fn pivot(
         &self,
         py: Python,
-        group_by: PyExpr,
+        group_by: Vec<PyExpr>,
         pivot_col: PyExpr,
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: daft_dsl::ExprRef = group_by.into();
+        let converted_group_by: Vec<daft_dsl::ExprRef> =
+            group_by.into_iter().map(|e| e.into()).collect();
         let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
         let converted_values_col: daft_dsl::ExprRef = values_col.into();
         py.allow_threads(|| {
             Ok(self
                 .inner
                 .pivot(
-                    converted_group_by,
+                    converted_group_by.as_slice(),
                     converted_pivot_col,
                     converted_values_col,
                     names,

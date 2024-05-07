@@ -349,7 +349,7 @@ pub(super) fn translate_single_logical_node(
 
             // NOTE: For the aggregation stages of the pivot operation, we need to group by the group_by column and pivot column together.
             // This is because the resulting pivoted columns correspond to the unique pairs of group_by and pivot column values.
-            let group_by_with_pivot = vec![group_by.clone(), pivot_column.clone()];
+            let group_by_with_pivot = [group_by.clone(), vec![pivot_column.clone()]].concat();
             let aggregations = vec![aggregation.clone()];
 
             let aggregation_plan = match num_input_partitions {
@@ -390,7 +390,7 @@ pub(super) fn translate_single_logical_node(
                             ),
                             // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
                             // to ensure that all rows with the same group_by column values are hashed to the same partition.
-                            vec![group_by.clone()],
+                            group_by.clone(),
                         ))
                         .arced();
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()

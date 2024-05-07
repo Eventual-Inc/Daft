@@ -8,7 +8,7 @@ use crate::micropartition::MicroPartition;
 impl MicroPartition {
     pub fn pivot(
         &self,
-        group_by: ExprRef,
+        group_by: &[ExprRef],
         pivot_col: ExprRef,
         values_col: ExprRef,
         names: Vec<String>,
