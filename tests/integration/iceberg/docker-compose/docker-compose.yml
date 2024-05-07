@@ -28,6 +28,7 @@ services:
     - minio
     volumes:
     - ./warehouse:/home/iceberg/warehouse
+    - ./provision.py:/opt/spark/provision.py
     environment:
     - AWS_ACCESS_KEY_ID=admin
     - AWS_SECRET_ACCESS_KEY=password

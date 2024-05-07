@@ -32,6 +32,7 @@ pub mod partitioning;
 pub mod round;
 pub mod search_sorted;
 pub mod sign;
+pub mod sketch_percentile;
 pub mod sort;
 pub mod sqrt;
 pub mod struct_;
@@ -39,21 +40,14 @@ pub mod take;
 mod trigonometry;
 pub mod utf8;
 
-fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)> {
-    let supertype = try_get_supertype(l.data_type(), r.data_type())?;
+pub fn cast_series_to_supertype(series: &[&Series]) -> DaftResult<Vec<Series>> {
+    let supertype = series
+        .iter()
+        .map(|s| s.data_type().clone())
+        .try_reduce(|l, r| try_get_supertype(&l, &r))?
+        .unwrap();
 
-    let mut lhs = l.clone();
-
-    let mut rhs = r.clone();
-
-    if !lhs.data_type().eq(&supertype) {
-        lhs = lhs.cast(&supertype)?;
-    }
-    if !rhs.data_type().eq(&supertype) {
-        rhs = rhs.cast(&supertype)?;
-    }
-
-    Ok((lhs, rhs))
+    series.iter().map(|s| s.cast(&supertype)).collect()
 }
 
 #[cfg(feature = "python")]

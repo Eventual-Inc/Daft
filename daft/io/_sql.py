@@ -23,7 +23,7 @@ def read_sql(
     num_partitions: Optional[int] = None,
     disable_pushdowns_to_sql: bool = False,
 ) -> DataFrame:
-    """Creates a DataFrame from the results of a SQL query.
+    """Create a DataFrame from the results of a SQL query.
 
     Args:
         sql (str): SQL query to execute
@@ -37,8 +37,8 @@ def read_sql(
         DataFrame: Dataframe containing the results of the query
 
     .. NOTE::
-        #. Supported databases:
-            Daft uses `SQLGlot <https://sqlglot.com/sqlglot/dialects.html>`_ to build SQL queries, so it supports all databases that SQLGlot supports.
+        #. Supported dialects:
+            Daft uses `SQLGlot <https://sqlglot.com/sqlglot.html>`_ to build and translate SQL queries between dialects. For a list of supported dialects, see `SQLGlot's dialect documentation <https://sqlglot.com/sqlglot/dialects.html>`_.
 
         #. Partitioning:
             When `partition_col` is specified, the function partitions the query based on that column.

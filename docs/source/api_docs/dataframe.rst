@@ -43,6 +43,8 @@ Manipulating Columns
     DataFrame.pivot
     DataFrame.exclude
     DataFrame.explode
+    DataFrame.unpivot
+    DataFrame.melt
 
 Filtering Rows
 **************

@@ -439,6 +439,69 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
+    def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
+        """Calculates the approximate percentile(s) for a column of numeric values
+
+        For numeric columns, we use the `sketches_ddsketch crate <https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html>`_.
+        This is a Rust implementation of the paper `DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.) <https://arxiv.org/pdf/1908.10693>`_
+
+        1. Null values are ignored in the computation of the percentiles
+        2. If all values are Null then the result will also be Null
+        3. If ``percentiles`` are supplied as a single float, then the resultant column is a ``Float64`` column
+        4. If ``percentiles`` is supplied as a list, then the resultant column is a ``FixedSizeList[Float64; N]`` column, where ``N`` is the length of the supplied list.
+
+        Example of a global calculation of approximate percentiles:
+
+        >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
+        >>> df = df.agg(
+        >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+        >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+        >>> )
+        >>> df.show()
+        ╭─────────────────────┬────────────────────────────────╮
+        │ approx_median_score ┆ approx_percentiles_scores      │
+        │ ---                 ┆ ---                            │
+        │ Float64             ┆ FixedSizeList[Float64; 3]      │
+        ╞═════════════════════╪════════════════════════════════╡
+        │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
+        ╰─────────────────────┴────────────────────────────────╯
+        (Showing first 1 of 1 rows)
+
+        Example of a grouped calculation of approximate percentiles:
+
+        >>> df = daft.from_pydict({
+        >>>     "class":  ["a", "a", "a", "b", "c"],
+        >>>     "scores": [1, 2, 3, 1, None],
+        >>> })
+        >>> df = df.groupby("class").agg(
+        >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+        >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+        >>> )
+        >>> df.show()
+        ╭───────┬─────────────────────┬────────────────────────────────╮
+        │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
+        │ ---   ┆ ---                 ┆ ---                            │
+        │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
+        ╞═══════╪═════════════════════╪════════════════════════════════╡
+        │ c     ┆ None                ┆ None                           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+        ╰───────┴─────────────────────┴────────────────────────────────╯
+        (Showing first 3 of 3 rows)
+
+
+        Args:
+            percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
+                float or a list of floats.
+
+        Returns:
+            A new expression representing the approximate percentile(s). If `percentiles` was a single float, this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression with type: `FixedSizeList[Float64, len(percentiles)]`.
+        """
+        expr = self._expr.approx_percentiles(percentiles)
+        return Expression._from_pyexpr(expr)
+
     def mean(self) -> Expression:
         """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
@@ -1222,6 +1285,52 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
+
+    def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
+        """Right-pads each string by truncating or padding with the character
+
+        .. NOTE::
+            If the string is longer than the specified length, it will be truncated.
+            The pad character must be a single character.
+
+        Example:
+            >>> col("x").str.rpad(5, "0")
+
+        Returns:
+            Expression: a String expression which is `self` truncated or right-padded with the pad character
+        """
+        length_expr = Expression._to_expression(length)
+        pad_expr = Expression._to_expression(pad)
+        return Expression._from_pyexpr(self._expr.utf8_rpad(length_expr._expr, pad_expr._expr))
+
+    def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
+        """Left-pads each string by truncating on the right or padding with the character
+
+        .. NOTE::
+            If the string is longer than the specified length, it will be truncated on the right.
+            The pad character must be a single character.
+
+        Example:
+            >>> col("x").str.lpad(5, "0")
+
+        Returns:
+            Expression: a String expression which is `self` truncated or left-padded with the pad character
+        """
+        length_expr = Expression._to_expression(length)
+        pad_expr = Expression._to_expression(pad)
+        return Expression._from_pyexpr(self._expr.utf8_lpad(length_expr._expr, pad_expr._expr))
+
+    def repeat(self, n: int | Expression) -> Expression:
+        """Repeats each string n times
+
+        Example:
+            >>> col("x").str.repeat(3)
+
+        Returns:
+            Expression: a String expression which is `self` repeated `n` times
+        """
+        n_expr = Expression._to_expression(n)
+        return Expression._from_pyexpr(self._expr.utf8_repeat(n_expr._expr))
 
 
 class ExpressionListNamespace(ExpressionNamespace):

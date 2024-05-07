@@ -26,6 +26,7 @@ use crate::config;
 ///     check_hostname_ssl: Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
 ///     requester_pays: Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
 ///     force_virtual_addressing: Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
+///     profile_name: Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
 ///
 /// Example:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
@@ -188,6 +189,7 @@ impl S3Config {
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
+        profile_name: Option<String>,
     ) -> Self {
         let def = crate::S3Config::default();
         S3Config {
@@ -212,6 +214,7 @@ impl S3Config {
                 requester_pays: requester_pays.unwrap_or(def.requester_pays),
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(def.force_virtual_addressing),
+                profile_name: profile_name.or(def.profile_name),
             },
         }
     }
@@ -236,6 +239,7 @@ impl S3Config {
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
+        profile_name: Option<String>,
     ) -> Self {
         S3Config {
             config: crate::S3Config {
@@ -259,6 +263,7 @@ impl S3Config {
                 requester_pays: requester_pays.unwrap_or(self.config.requester_pays),
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(self.config.force_virtual_addressing),
+                profile_name: profile_name.or_else(|| self.config.profile_name.clone()),
             },
         }
     }
@@ -382,6 +387,12 @@ impl S3Config {
     #[getter]
     pub fn force_virtual_addressing(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.force_virtual_addressing))
+    }
+
+    /// AWS profile name
+    #[getter]
+    pub fn profile_name(&self) -> PyResult<Option<String>> {
+        Ok(self.config.profile_name.clone())
     }
 }
 

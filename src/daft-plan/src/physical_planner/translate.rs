@@ -12,8 +12,8 @@ use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::col;
 use daft_dsl::ExprRef;
+use daft_dsl::{col, ApproxPercentileParams};
 
 use daft_scan::ScanExternalInfo;
 
@@ -22,7 +22,7 @@ use crate::logical_ops::{
     Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
     Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source,
+    Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
@@ -128,6 +128,24 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
                     .arced(),
             )
+        }
+        LogicalPlan::Unpivot(LogicalUnpivot {
+            ids,
+            values,
+            variable_name,
+            value_name,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+
+            Ok(PhysicalPlan::Unpivot(Unpivot::new(
+                input_physical,
+                ids.clone(),
+                values.clone(),
+                variable_name,
+                value_name,
+            ))
+            .arced())
         }
         LogicalPlan::Sort(LogicalSort {
             sort_by,
@@ -485,7 +503,7 @@ pub(super) fn translate_single_logical_node(
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
                 let is_primitive = |exprs: &Vec<ExprRef>| {
-                    exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                    exprs.iter().map(|e| e.name()).all(|col| {
                         let dtype = &output_schema.get_field(col).unwrap().dtype;
                         dtype.is_integer()
                             || dtype.is_floating()
@@ -721,7 +739,7 @@ fn populate_aggregation_stages(
     let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
 
     for agg_expr in aggregations {
-        let output_name = agg_expr.name().unwrap();
+        let output_name = agg_expr.name();
         match agg_expr {
             Count(e, mode) => {
                 let count_id = agg_expr.semantic_id(schema).id;
@@ -840,6 +858,32 @@ fn populate_aggregation_stages(
                         inputs: inputs.to_vec(),
                     });
                 final_exprs.push(col(output_name));
+            }
+            ApproxSketch(_) => {
+                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            }
+            MergeSketch(_) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            }
+            ApproxPercentile(ApproxPercentileParams {
+                child: e,
+                percentiles,
+                force_list_output,
+            }) => {
+                let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
+                let sketch_id = agg_expr.semantic_id(schema).id;
+                let approx_id = ApproxSketch(col(sketch_id.clone())).semantic_id(schema).id;
+                first_stage_aggs
+                    .entry(sketch_id.clone())
+                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(approx_id.clone())
+                    .or_insert(MergeSketch(col(sketch_id.clone()).alias(approx_id.clone())));
+                final_exprs.push(
+                    col(approx_id.clone())
+                        .sketch_percentile(percentiles.as_slice(), *force_list_output)
+                        .alias(output_name),
+                );
             }
         }
     }

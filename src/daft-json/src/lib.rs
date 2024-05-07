@@ -7,7 +7,9 @@ use futures::stream::TryChunksError;
 use snafu::Snafu;
 
 mod decoding;
+mod deserializer;
 mod inference;
+
 pub mod options;
 #[cfg(feature = "python")]
 pub mod python;

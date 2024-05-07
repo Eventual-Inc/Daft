@@ -18,7 +18,7 @@ use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::{col, Expr, ExprRef};
+use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -49,15 +49,15 @@ impl LogicalPlanBuilder {
     }
 }
 
-fn check_for_agg(expr: &Expr) -> bool {
+fn check_for_agg(expr: &ExprRef) -> bool {
     use Expr::*;
 
-    match expr {
+    match expr.as_ref() {
         Agg(_) => true,
         Column(_) | Literal(_) => false,
         Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
-        Function { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
+        Function { inputs, .. } => inputs.iter().any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
         IfElse {
             if_true,
@@ -96,6 +96,17 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
+                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
+                ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => ApproxPercentile(ApproxPercentileParams {
+                    child: Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),
                 Max(e) => Max(Alias(e, name.clone()).into()),
@@ -120,15 +131,8 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
 }
 
 fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
-    use daft_dsl::AggExpr::*;
-
     let agg_expr = extract_agg_expr(expr)?;
-    let has_nested_agg = match &agg_expr {
-        Count(e, _) | Sum(e) | Mean(e) | Min(e) | Max(e) | AnyValue(e, _) | List(e) | Concat(e) => {
-            check_for_agg(e)
-        }
-        MapGroups { inputs, .. } => inputs.iter().map(|v| v.as_ref()).any(check_for_agg),
-    };
+    let has_nested_agg = agg_expr.children().iter().any(check_for_agg);
 
     if has_nested_agg {
         Err(DaftError::ValueError(format!(
@@ -209,10 +213,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         err_if_agg("with_columns", &columns)?;
 
-        let new_col_names = columns
-            .iter()
-            .map(|e| e.name())
-            .collect::<DaftResult<HashSet<&str>>>()?;
+        let new_col_names = columns.iter().map(|e| e.name()).collect::<HashSet<&str>>();
 
         let mut exprs = self
             .schema()
@@ -274,6 +275,44 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn unpivot(
+        &self,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> DaftResult<Self> {
+        let values = if values.is_empty() {
+            let ids_set = HashSet::<_>::from_iter(ids.iter());
+
+            self.schema()
+                .fields
+                .iter()
+                .filter_map(|(name, _)| {
+                    let column = col(name.clone());
+
+                    if ids_set.contains(&column) {
+                        None
+                    } else {
+                        Some(column)
+                    }
+                })
+                .collect()
+        } else {
+            values
+        };
+
+        let logical_plan: LogicalPlan = logical_ops::Unpivot::try_new(
+            self.plan.clone(),
+            ids,
+            values,
+            variable_name,
+            value_name,
+        )?
+        .into();
         Ok(logical_plan.into())
     }
 
@@ -557,6 +596,27 @@ impl PyLogicalPlanBuilder {
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         Ok(self.builder.explode(pyexprs_to_exprs(to_explode))?.into())
+    }
+
+    pub fn unpivot(
+        &self,
+        ids: Vec<PyExpr>,
+        values: Vec<PyExpr>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> PyResult<Self> {
+        let ids_exprs = ids
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<ExprRef>>();
+        let values_exprs = values
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<ExprRef>>();
+        Ok(self
+            .builder
+            .unpivot(ids_exprs, values_exprs, variable_name, value_name)?
+            .into())
     }
 
     pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {

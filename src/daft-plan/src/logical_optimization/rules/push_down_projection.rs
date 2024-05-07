@@ -64,7 +64,7 @@ impl PushDownProjection {
                 .flat_map(|e| {
                     e.input_mapping().map_or_else(
                         // None means computation required -> Some(colname)
-                        || Some(e.name().unwrap().to_string()),
+                        || Some(e.name().to_string()),
                         // Some(computation not required) -> None
                         |_| None,
                     )
@@ -107,7 +107,7 @@ impl PushDownProjection {
                 let upstream_names_to_exprs = upstream_projection
                     .projection
                     .iter()
-                    .map(|e| (e.name().unwrap().to_string(), e.clone()))
+                    .map(|e| (e.name().to_string(), e.clone()))
                     .collect::<HashMap<_, _>>();
 
                 // Merge the projections by applying the upstream expression substitutions
@@ -184,7 +184,7 @@ impl PushDownProjection {
                     let pruned_upstream_projections = upstream_projection
                         .projection
                         .iter()
-                        .filter(|&e| required_columns.contains(e.name().unwrap()))
+                        .filter(|&e| required_columns.contains(e.name()))
                         .cloned()
                         .collect::<Vec<_>>();
 
@@ -211,7 +211,7 @@ impl PushDownProjection {
                 let pruned_aggregate_exprs = aggregate
                     .aggregations
                     .iter()
-                    .filter(|&e| required_columns.contains(e.name().unwrap()))
+                    .filter(|&e| required_columns.contains(e.name()))
                     .cloned()
                     .collect::<Vec<_>>();
 
@@ -239,7 +239,8 @@ impl PushDownProjection {
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
             | LogicalPlan::MonotonicallyIncreasingId(..)
-            | LogicalPlan::Explode(..) => {
+            | LogicalPlan::Explode(..)
+            | LogicalPlan::Unpivot(..) => {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
                     .required_columns()

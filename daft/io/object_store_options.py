@@ -18,7 +18,7 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[st
         return _s3_config_to_storage_options(io_config.s3)
     elif scheme == "gcs" or scheme == "gs":
         return _gcs_config_to_storage_options(io_config.gcs)
-    elif scheme == "az" or scheme == "abfs":
+    elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
         return _azure_config_to_storage_options(io_config.azure)
     else:
         return None

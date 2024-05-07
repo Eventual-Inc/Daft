@@ -23,6 +23,7 @@ pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
+simd-json = {version = "0.13", features = ["known-key"]}
 simdutf8 = "0.1.3"
 snafu = {workspace = true}
 tokio = {workspace = true}
@@ -30,18 +31,20 @@ tokio-stream = {workspace = true, features = ["io-util"]}
 tokio-util = {workspace = true}
 url = {workspace = true}
 
-[dependencies.json-deserializer]
-features = ["preserve_order"]
-git = "https://github.com/Eventual-Inc/json-deserializer"
-package = "json-deserializer"
-rev = "4be9205900888ff0767e0c37642884f2c912e22c"
-
 [dev-dependencies]
 rstest = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
+python = [
+  "dep:pyo3",
+  "dep:pyo3-log",
+  "common-error/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-table/python",
+  "daft-dsl/python"
+]
 
 [package]
 edition = {workspace = true}

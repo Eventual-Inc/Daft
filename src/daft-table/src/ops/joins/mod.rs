@@ -137,12 +137,7 @@ fn add_non_join_key_columns(
     // Zip the names of the left and right expressions into a HashMap
     let left_names = left_on.iter().map(|e| e.name());
     let right_names = right_on.iter().map(|e| e.name());
-    let zipped_names: DaftResult<_> = left_names
-        .zip(right_names)
-        .map(|(l, r)| Ok((l?, r?)))
-        .collect();
-    let zipped_names: Vec<(&str, &str)> = zipped_names?;
-    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
+    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(left_names.zip(right_names));
 
     // TODO(Clark): Parallelize with Rayon.
     for field in right.schema.fields.values() {

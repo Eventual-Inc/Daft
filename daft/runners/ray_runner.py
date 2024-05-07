@@ -4,7 +4,6 @@ import logging
 import threading
 import time
 import uuid
-from dataclasses import dataclass
 from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
@@ -126,25 +125,29 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
         raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
 
 
-@dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _results: dict[PartID, RayMaterializedResult]
 
-    def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
-        return [(pid, result.partition()) for pid, result in sorted(self._results.items())]
+    def __init__(self) -> None:
+        super().__init__()
+        self._results = {}
+
+    def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
+        return [(pid, result) for pid, result in sorted(self._results.items())]
 
     def _get_merged_vpartition(self) -> MicroPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        all_partitions = ray.get([part for id, part in ids_and_partitions])
+        all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
         return MicroPartition.concat(all_partitions)
 
     def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
-        for _, part in ids_and_partitions:
-            part = ray.get(part)
+        for _, mat_result in ids_and_partitions:
+            ref: ray.ObjectRef = mat_result.partition()
+            part: MicroPartition = ray.get(ref)
             part_len = len(part)
             if part_len >= num_rows:  # if this part has enough rows, take what we need and break
                 preview_parts.append(part.slice(0, num_rows))
@@ -266,9 +269,12 @@ class RayRunnerIO(runner_io.RunnerIO):
         daft_vpartitions = [
             _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
         ]
+        pset = RayPartitionSet()
 
+        for i, obj in enumerate(daft_vpartitions):
+            pset.set_partition(i, RayMaterializedResult(obj))
         return (
-            RayPartitionSet(_results={i: RayMaterializedResult(obj) for i, obj in enumerate(daft_vpartitions)}),
+            pset,
             daft_schema,
         )
 
@@ -292,8 +298,13 @@ class RayRunnerIO(runner_io.RunnerIO):
                 "Can't convert a Dask DataFrame with inconsistent schemas across partitions to a Daft DataFrame:",
                 schemas,
             )
+
+        pset = RayPartitionSet()
+
+        for i, obj in enumerate(daft_vpartitions):
+            pset.set_partition(i, RayMaterializedResult(obj))
         return (
-            RayPartitionSet(_results={i: RayMaterializedResult(obj) for i, obj in enumerate(daft_vpartitions)}),
+            pset,
             schemas[0],
         )
 
@@ -536,8 +547,25 @@ class Scheduler:
                             elif len(next_step.instructions) == 0:
                                 logger.debug("Running task synchronously in main thread: %s", next_step)
                                 assert isinstance(next_step, SingleOutputPartitionTask)
+                                [single_partial] = next_step.partial_metadatas
+                                if single_partial.num_rows is None:
+                                    [single_meta] = ray.get(get_metas.remote(next_step.inputs))
+                                    accessor = PartitionMetadataAccessor.from_metadata_list(
+                                        [single_meta.merge_with_partial(single_partial)]
+                                    )
+                                else:
+                                    accessor = PartitionMetadataAccessor.from_metadata_list(
+                                        [
+                                            PartitionMetadata(
+                                                num_rows=single_partial.num_rows,
+                                                size_bytes=single_partial.size_bytes,
+                                                boundaries=single_partial.boundaries,
+                                            )
+                                        ]
+                                    )
+
                                 next_step.set_result(
-                                    [RayMaterializedResult(partition) for partition in next_step.inputs]
+                                    [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
                                 next_step = next(tasks)
 
@@ -772,7 +800,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             yield ray.get(result.partition())
 
     def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        result_pset = RayPartitionSet(_results={})
+        result_pset = RayPartitionSet()
 
         results_iter = self.run_iter(builder)
 
@@ -785,15 +813,13 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
-            pset = RayPartitionSet(
-                _results={
-                    pid: RayMaterializedResult(
-                        ray.put(val),
-                    )
-                    for pid, val in pset._partitions.items()
-                },
-            )
-
+            new_pset = RayPartitionSet()
+            metadata_accessor = PartitionMetadataAccessor.from_metadata_list([v.metadata() for v in pset.values()])
+            for i, (pid, py_mat_result) in enumerate(pset.items()):
+                new_pset.set_partition(
+                    pid, RayMaterializedResult(ray.put(py_mat_result.partition()), metadata_accessor, i)
+                )
+            pset = new_pset
         return self._part_set_cache.put_partition_set(pset=pset)
 
     def runner_io(self) -> RayRunnerIO:
@@ -845,3 +871,10 @@ class PartitionMetadataAccessor:
 
     def get_index(self, key) -> PartitionMetadata:
         return self._get_metadatas()[key]
+
+    @classmethod
+    def from_metadata_list(cls, meta: list[PartitionMetadata]) -> PartitionMetadataAccessor:
+        ref = ray.put(meta)
+        accessor = cls(ref)
+        accessor._metadatas = meta
+        return accessor
