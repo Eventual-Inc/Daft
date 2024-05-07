@@ -141,7 +141,7 @@ fn add_non_join_key_columns(
         .collect::<DaftResult<Vec<_>>>()?;
     let right_names = right_on
         .iter()
-        .map(|e| e.to_field(&left.schema).map(|f| f.name))
+        .map(|e| e.to_field(&right.schema).map(|f| f.name))
         .collect::<DaftResult<Vec<_>>>()?;
     let right_to_left_keys: HashMap<String, String> =
         HashMap::from_iter(left_names.into_iter().zip(right_names));
