@@ -7,12 +7,14 @@ mod find;
 mod left;
 mod length;
 mod lower;
+mod lpad;
 mod lstrip;
 mod match_;
 mod repeat;
 mod replace;
 mod reverse;
 mod right;
+mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
@@ -27,11 +29,13 @@ use find::FindEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
+use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
 use repeat::RepeatEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
+use rpad::RpadEvaluator;
 use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
@@ -62,6 +66,8 @@ pub enum Utf8Expr {
     Left,
     Right,
     Find,
+    Rpad,
+    Lpad,
     Repeat,
 }
 
@@ -88,6 +94,8 @@ impl Utf8Expr {
             Left => &LeftEvaluator {},
             Right => &RightEvaluator {},
             Find => &FindEvaluator {},
+            Rpad => &RpadEvaluator {},
+            Lpad => &LpadEvaluator {},
             Repeat => &RepeatEvaluator {},
         }
     }
@@ -233,6 +241,22 @@ pub fn find(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Find),
         inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn rpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Rpad),
+        inputs: vec![data, length, pad],
+    }
+    .into()
+}
+
+pub fn lpad(data: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Lpad),
+        inputs: vec![data, length, pad],
     }
     .into()
 }

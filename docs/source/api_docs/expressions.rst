@@ -137,6 +137,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.left
    Expression.str.right
    Expression.str.find
+   Expression.str.rpad
+   Expression.str.lpad
    Expression.str.repeat
 
 .. _api-expressions-temporal:
