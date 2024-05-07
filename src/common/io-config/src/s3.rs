@@ -1,10 +1,10 @@
 #[cfg(feature = "python")]
-use pyo3::{PyAny, PyObject, PyResult, Python, ToPyObject};
+use crate::s3_provider::S3CredentialsProvider;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct S3Config {
@@ -13,7 +13,6 @@ pub struct S3Config {
     pub key_id: Option<String>,
     pub session_token: Option<String>,
     pub access_key: Option<String>,
-    #[serde(skip_deserializing)]
     #[cfg(feature = "python")]
     pub credentials_provider: Option<S3CredentialsProvider>,
     pub max_connections_per_io_thread: u32,
@@ -29,13 +28,6 @@ pub struct S3Config {
     pub requester_pays: bool,
     pub force_virtual_addressing: bool,
     pub profile_name: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-#[cfg(feature = "python")]
-pub struct S3CredentialsProvider {
-    pub provider: PyObject,
-    pub hash: isize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -244,42 +236,5 @@ impl Display for S3Credentials {
     expiry: {:?}",
             self.key_id, self.session_token, self.access_key, self.expiry,
         )
-    }
-}
-
-#[cfg(feature = "python")]
-impl S3CredentialsProvider {
-    pub fn new(py: Python, provider: &PyAny) -> PyResult<Self> {
-        Ok(S3CredentialsProvider {
-            provider: provider.to_object(py),
-            hash: provider.hash()?,
-        })
-    }
-}
-
-#[cfg(feature = "python")]
-impl PartialEq for S3CredentialsProvider {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-
-#[cfg(feature = "python")]
-impl Eq for S3CredentialsProvider {}
-
-#[cfg(feature = "python")]
-impl Hash for S3CredentialsProvider {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
-    }
-}
-
-#[cfg(feature = "python")]
-impl Serialize for S3CredentialsProvider {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        self.hash.serialize(serializer)
     }
 }

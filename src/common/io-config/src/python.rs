@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use common_error::DaftError;
 use pyo3::prelude::*;
 
-use crate::{config, s3::S3CredentialsProvider};
+use crate::{config, s3_provider::S3CredentialsProvider};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -334,6 +334,12 @@ impl S3Config {
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
+    }
+
+    /// AWS max connections per IO thread
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
     }
 
     /// AWS expiry time as a Unix timestamp
