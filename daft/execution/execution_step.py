@@ -632,7 +632,7 @@ class Aggregate(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Pivot(SingleOutputInstruction):
-    group_by: Expression
+    group_by: ExpressionsProjection
     pivot_col: Expression
     value_col: Expression
     names: list[str]

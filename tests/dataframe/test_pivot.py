@@ -151,6 +151,28 @@ def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+def test_pivot_with_multiple_group_by(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group1": ["A", "A", "A", "B", "B", "B"],
+            "group2": ["X", "X", "Y", "X", "Y", "Y"],
+            "pivot": [1, 2, 1, 2, 1, 2],
+            "value": [10, 20, 30, 40, 50, 60],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.pivot(group_by=["group1", "group2"], pivot_col="pivot", value_col="value", agg_fn="sum")
+
+    expected = {
+        "group1": ["A", "A", "B", "B"],
+        "group2": ["X", "Y", "X", "Y"],
+        "1": [10, 30, None, 50],
+        "2": [20, None, 40, 60],
+    }
+    assert daft_df.sort(["group1", "group2"]).to_pydict() == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot_with_downstream_ops(make_df, repartition_nparts):
     daft_df = make_df(
         {
