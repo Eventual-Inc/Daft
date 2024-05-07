@@ -230,7 +230,7 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
     if get_protocol_from_path(path) == "s3" or get_protocol_from_path(path) == "s3a":
         kwargs["anon"] = True
-    if get_protocol_from_path(path) == "az":
+    if get_protocol_from_path(path) in ("az", "abfs", "abfss"):
         kwargs["account_name"] = "dafttestdata"
         kwargs["anon"] = True
 
