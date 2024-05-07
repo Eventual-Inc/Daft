@@ -1304,6 +1304,23 @@ class PhysicalPlanScheduler:
     def repr_ascii(self, simple: bool) -> str: ...
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.InProgressPhysicalPlan: ...
 
+class AdaptivePhysicalPlanScheduler:
+    """
+    An adaptive Physical Plan Scheduler.
+    """
+    def next(self) -> tuple[int | None, PhysicalPlanScheduler]: ...
+    def is_done(self) -> bool: ...
+    # Todo use in memory info here instead
+    def update(
+        self,
+        source_id: int,
+        partition_key: str,
+        cache_entry: PartitionCacheEntry,
+        num_partitions: int,
+        size_bytes: int,
+        num_rows: int,
+    ) -> None: ...
+
 class LogicalPlanBuilder:
     """
     A logical plan builder, which simplifies constructing logical plans via
@@ -1315,7 +1332,12 @@ class LogicalPlanBuilder:
 
     @staticmethod
     def in_memory_scan(
-        partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int, size_bytes: int
+        partition_key: str,
+        cache_entry: PartitionCacheEntry,
+        schema: PySchema,
+        num_partitions: int,
+        size_bytes: int,
+        num_rows: int,
     ) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
@@ -1379,9 +1401,12 @@ class LogicalPlanBuilder:
     def schema(self) -> PySchema: ...
     def optimize(self) -> LogicalPlanBuilder: ...
     def to_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> PhysicalPlanScheduler: ...
+    def to_adaptive_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> AdaptivePhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
 
 class PyDaftExecutionConfig:
+    @staticmethod
+    def from_env() -> PyDaftExecutionConfig: ...
     def with_config_values(
         self,
         scan_tasks_min_size_bytes: int | None = None,
@@ -1398,6 +1423,7 @@ class PyDaftExecutionConfig:
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
+        enable_aqe: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1425,6 +1451,8 @@ class PyDaftExecutionConfig:
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
+    @property
+    def enable_aqe(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(

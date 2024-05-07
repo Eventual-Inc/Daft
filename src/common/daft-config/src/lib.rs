@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +37,7 @@ pub struct DaftExecutionConfig {
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub read_sql_partition_size_bytes: usize,
+    pub enable_aqe: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -55,7 +57,21 @@ impl Default for DaftExecutionConfig {
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
+            enable_aqe: false,
         }
+    }
+}
+
+impl DaftExecutionConfig {
+    pub fn from_env() -> Self {
+        let mut cfg = Self::default();
+        let aqe_env_var_name = "DAFT_ENABLE_AQE";
+        if let Ok(val) = std::env::var(aqe_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_aqe = true;
+        }
+        cfg
     }
 }
 

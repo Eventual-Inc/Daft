@@ -69,7 +69,6 @@ class ProgressBar:
     def mark_task_done(self, step: PartitionTask[Any]) -> None:
         if self.disable:
             return
-
         stage_id = step.stage_id
         self.pbars[stage_id].update(1)
         if self.show_tasks_bar:

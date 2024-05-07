@@ -61,7 +61,7 @@ class DaftContext:
 
     # When a dataframe is executed, this config is copied into the Runner
     # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
-    _daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
+    _daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig.from_env()
 
     # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
     _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig()
@@ -255,6 +255,7 @@ def set_execution_config(
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
+    enable_aqe: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -285,6 +286,7 @@ def set_execution_config(
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
         shuffle_aggregation_default_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
+        enable_aqe: Enables Adaptive Query Execution, Defaults to False
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -305,6 +307,7 @@ def set_execution_config(
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
+            enable_aqe=enable_aqe,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

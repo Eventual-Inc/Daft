@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 use {
-    crate::{sink_info::OutputFileInfo, source_info::InMemoryInfo},
+    crate::sink_info::OutputFileInfo,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
@@ -14,10 +14,11 @@ use {
     std::collections::HashMap,
 };
 
+use crate::source_info::InMemoryInfo;
 use daft_core::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, ops::Add, sync::Arc};
 
 use crate::{
     display::TreeDisplay,
@@ -36,7 +37,6 @@ pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 /// Physical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PhysicalPlan {
-    #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
@@ -69,6 +69,48 @@ pub enum PhysicalPlan {
     IcebergWrite(IcebergWrite),
 }
 
+pub struct ApproxStats {
+    pub lower_bound_rows: usize,
+    pub upper_bound_rows: Option<usize>,
+    pub lower_bound_bytes: usize,
+    pub upper_bound_bytes: Option<usize>,
+}
+
+impl ApproxStats {
+    fn empty() -> Self {
+        ApproxStats {
+            lower_bound_rows: 0,
+            upper_bound_rows: None,
+            lower_bound_bytes: 0,
+            upper_bound_bytes: None,
+        }
+    }
+    fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
+        ApproxStats {
+            lower_bound_rows: f(self.lower_bound_rows),
+            upper_bound_rows: self.upper_bound_rows.map(&f),
+            lower_bound_bytes: f(self.lower_bound_rows),
+            upper_bound_bytes: self.upper_bound_bytes.map(&f),
+        }
+    }
+}
+
+impl Add for &ApproxStats {
+    type Output = ApproxStats;
+    fn add(self, rhs: Self) -> Self::Output {
+        ApproxStats {
+            lower_bound_rows: self.lower_bound_rows + rhs.lower_bound_rows,
+            upper_bound_rows: self
+                .upper_bound_rows
+                .and_then(|l_ub| rhs.upper_bound_rows.map(|v| v + l_ub)),
+            lower_bound_bytes: self.lower_bound_bytes + rhs.lower_bound_bytes,
+            upper_bound_bytes: self
+                .upper_bound_bytes
+                .and_then(|l_ub| rhs.upper_bound_bytes.map(|v| v + l_ub)),
+        }
+    }
+}
+
 impl PhysicalPlan {
     pub fn arced(self) -> PhysicalPlanRef {
         Arc::new(self)
@@ -76,7 +118,6 @@ impl PhysicalPlan {
 
     pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
@@ -220,32 +261,85 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn approximate_size_bytes(&self) -> Option<usize> {
+    pub fn approximate_stats(&self) -> ApproxStats {
         match self {
-            #[cfg(feature = "python")]
-            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
-                Some(in_memory_info.size_bytes)
+            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
+                lower_bound_rows: in_memory_info.num_rows,
+                upper_bound_rows: Some(in_memory_info.num_rows),
+                lower_bound_bytes: in_memory_info.size_bytes,
+                upper_bound_bytes: Some(in_memory_info.size_bytes),
+            },
+            Self::TabularScan(TabularScan { scan_tasks, .. }) => {
+                let mut stats = ApproxStats::empty();
+                for st in scan_tasks.iter() {
+                    stats.lower_bound_rows += st.num_rows().unwrap_or(0);
+                    let in_memory_size = st.estimate_in_memory_size_bytes(None);
+                    stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
+                    stats.upper_bound_rows = stats
+                        .upper_bound_rows
+                        .and_then(|st_ub| st.upper_bound_rows().map(|ub| st_ub + ub));
+                    stats.upper_bound_bytes = stats
+                        .upper_bound_bytes
+                        .and_then(|st_ub| in_memory_size.map(|ub| st_ub + ub));
+                }
+                stats
             }
-            Self::TabularScan(TabularScan { scan_tasks, .. }) => scan_tasks
-                .iter()
-                .map(|scan_task| scan_task.size_bytes())
-                .sum::<Option<usize>>(),
-            Self::EmptyScan(..) => Some(0),
+            Self::EmptyScan(..) => ApproxStats {
+                lower_bound_rows: 0,
+                upper_bound_rows: Some(0),
+                lower_bound_bytes: 0,
+                upper_bound_bytes: Some(0),
+            },
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
-            Self::Filter(Filter { input, .. })
-            | Self::Limit(Limit { input, .. })
-            | Self::Project(Project { input, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
-            | Self::Unpivot(Unpivot { input, .. }) => input.approximate_size_bytes(),
+            Self::Filter(Filter { input, .. }) => {
+                let input_stats = input.approximate_stats();
+                ApproxStats {
+                    lower_bound_rows: 0,
+                    upper_bound_rows: input_stats.upper_bound_rows,
+                    lower_bound_bytes: 0,
+                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                }
+            }
+            Self::Limit(Limit { input, limit, .. }) => {
+                let limit = *limit as usize;
+                let input_stats = input.approximate_stats();
+                let est_bytes_per_row_lower =
+                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats
+                    .upper_bound_bytes
+                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
+                let new_lower_rows = input_stats.lower_bound_rows.min(limit);
+                let new_upper_rows = input_stats
+                    .upper_bound_rows
+                    .map(|ub| ub.min(limit))
+                    .unwrap_or(limit);
+                ApproxStats {
+                    lower_bound_rows: new_lower_rows,
+                    upper_bound_rows: Some(new_upper_rows),
+                    lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
+                    upper_bound_bytes: est_bytes_per_row_upper.map(|x| x * new_upper_rows),
+                }
+            }
+            Self::Project(Project { input, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                // TODO(sammy), we need the schema to estimate the new size per row
+                input.approximate_stats()
+            }
             Self::Sample(Sample {
                 input, fraction, ..
             }) => input
-                .approximate_size_bytes()
-                .map(|size| (size as f64 * fraction) as usize),
-            // Assume ~the same size in bytes for explodes.
-            // TODO(Clark): Improve this estimate.
-            Self::Explode(Explode { input, .. }) => input.approximate_size_bytes(),
+                .approximate_stats()
+                .apply(|v| ((v as f64) * fraction) as usize),
+            Self::Explode(Explode { input, .. }) => {
+                let input_stats = input.approximate_stats();
+                ApproxStats {
+                    lower_bound_rows: input_stats.lower_bound_rows,
+                    upper_bound_rows: None,
+                    lower_bound_bytes: input_stats.lower_bound_bytes,
+                    upper_bound_bytes: None,
+                }
+            }
             // Propagate child approximation for operations that don't affect cardinality.
             Self::Coalesce(Coalesce { input, .. })
             | Self::FanoutByHash(FanoutByHash { input, .. })
@@ -255,13 +349,9 @@ impl PhysicalPlan {
             | Self::ReduceMerge(ReduceMerge { input, .. })
             | Self::Sort(Sort { input, .. })
             | Self::Split(Split { input, .. })
-            | Self::Pivot(Pivot { input, .. }) => input.approximate_size_bytes(),
+            | Self::Pivot(Pivot { input, .. }) => input.approximate_stats(),
             Self::Concat(Concat { input, other }) => {
-                input.approximate_size_bytes().and_then(|input_size| {
-                    other
-                        .approximate_size_bytes()
-                        .map(|other_size| input_size + other_size)
-                })
+                &input.approximate_stats() + &other.approximate_stats()
             }
             // Assume a simple sum of the sizes of both sides of the join for the post-join size.
             // TODO(Clark): This will double-count join key columns, we should ensure that these are only counted once.
@@ -272,27 +362,72 @@ impl PhysicalPlan {
             })
             | Self::HashJoin(HashJoin { left, right, .. })
             | Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
-                left.approximate_size_bytes().and_then(|left_size| {
-                    right
-                        .approximate_size_bytes()
-                        .map(|right_size| left_size + right_size)
-                })
+                // assume a Primary-key + Foreign-Key join which would yield the max of the two tables
+                let left_stats = left.approximate_stats();
+                let right_stats = right.approximate_stats();
+
+                ApproxStats {
+                    lower_bound_rows: 0,
+                    upper_bound_rows: left_stats
+                        .upper_bound_rows
+                        .and_then(|l| right_stats.upper_bound_rows.map(|r| l.max(r))),
+                    lower_bound_bytes: 0,
+                    upper_bound_bytes: left_stats
+                        .upper_bound_bytes
+                        .and_then(|l| right_stats.upper_bound_bytes.map(|r| l.max(r))),
+                }
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
-            Self::Aggregate(_) => None,
+            Self::Aggregate(Aggregate { input, groupby, .. }) => {
+                let input_stats = input.approximate_stats();
+                // TODO we should use schema inference here
+                let est_bytes_per_row_lower =
+                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+                let est_bytes_per_row_upper = input_stats
+                    .upper_bound_bytes
+                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
+                if groupby.is_empty() {
+                    ApproxStats {
+                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
+                        upper_bound_rows: Some(1),
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
+                            * est_bytes_per_row_lower,
+                        upper_bound_bytes: est_bytes_per_row_upper,
+                    }
+                } else {
+                    // we should use the new schema here
+                    ApproxStats {
+                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
+                        upper_bound_rows: input_stats.upper_bound_rows,
+                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
+                            * est_bytes_per_row_lower,
+                        upper_bound_bytes: input_stats.upper_bound_bytes,
+                    }
+                }
+            }
+            Self::Unpivot(Unpivot { input, values, .. }) => {
+                let input_stats = input.approximate_stats();
+                let num_values = values.len();
+                // the number of bytes should be the name but nows should be multiplied by num_values
+                ApproxStats {
+                    lower_bound_rows: input_stats.lower_bound_rows * num_values,
+                    upper_bound_rows: input_stats.upper_bound_rows.map(|v| v * num_values),
+                    lower_bound_bytes: input_stats.lower_bound_bytes,
+                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                }
+            }
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
             Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
-                None
+                ApproxStats::empty()
             }
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) => None,
+            Self::IcebergWrite(_) => ApproxStats::empty(),
         }
     }
 
     pub fn children(&self) -> Vec<PhysicalPlanRef> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
@@ -386,7 +521,6 @@ impl PhysicalPlan {
 
     pub fn name(&self) -> String {
         let name = match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(..) => "InMemoryScan",
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
@@ -422,7 +556,6 @@ impl PhysicalPlan {
 
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
-            #[cfg(feature = "python")]
             Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),

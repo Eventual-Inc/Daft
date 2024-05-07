@@ -327,13 +327,15 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
 
 
 def build_partitions(
-    instruction_stack: list[Instruction], *inputs: MicroPartition
+    instruction_stack: list[Instruction], partial_metadatas: list[PartitionMetadata], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
 
-    metadatas = [PartitionMetadata.from_table(p) for p in partitions]
+    assert len(partial_metadatas) == len(partitions), f"{len(partial_metadatas)} vs {len(partitions)}"
+
+    metadatas = [PartitionMetadata.from_table(p).merge_with_partial(m) for p, m in zip(partitions, partial_metadatas)]
 
     return [metadatas, *partitions]
 
@@ -343,38 +345,50 @@ def build_partitions(
 
 @ray.remote
 def single_partition_pipeline(
-    daft_execution_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_execution_config: PyDaftExecutionConfig,
+    instruction_stack: list[Instruction],
+    partial_metadatas: list[PartitionMetadata],
+    *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, *inputs)
+    return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray.remote
 def fanout_pipeline(
-    daft_execution_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_execution_config: PyDaftExecutionConfig,
+    instruction_stack: list[Instruction],
+    partial_metadatas: list[PartitionMetadata],
+    *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, *inputs)
+    return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_pipeline(
-    daft_execution_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], inputs: list
+    daft_execution_config: PyDaftExecutionConfig,
+    instruction_stack: list[Instruction],
+    partial_metadatas: list[PartitionMetadata],
+    inputs: list,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
     set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, *ray.get(inputs))
+    return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_and_fanout(
-    daft_execution_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], inputs: list
+    daft_execution_config: PyDaftExecutionConfig,
+    instruction_stack: list[Instruction],
+    partial_metadatas: list[PartitionMetadata],
+    inputs: list,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
     set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, *ray.get(inputs))
+    return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray.remote
@@ -563,7 +577,6 @@ class Scheduler:
                                             )
                                         ]
                                     )
-
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
@@ -679,7 +692,9 @@ def _build_partitions(
             else reduce_pipeline
         )
         build_remote = build_remote.options(**ray_options)
-        [metadatas_ref, *partitions] = build_remote.remote(daft_execution_config_objref, task.instructions, task.inputs)
+        [metadatas_ref, *partitions] = build_remote.remote(
+            daft_execution_config_objref, task.instructions, task.partial_metadatas, task.inputs
+        )
 
     else:
         build_remote = (
@@ -691,7 +706,7 @@ def _build_partitions(
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options)
         [metadatas_ref, *partitions] = build_remote.remote(
-            daft_execution_config_objref, task.instructions, *task.inputs
+            daft_execution_config_objref, task.instructions, task.partial_metadatas, *task.inputs
         )
 
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
@@ -738,21 +753,13 @@ class RayRunner(Runner[ray.ObjectRef]):
         else:
             return self.scheduler.active_plans()
 
-    def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Iterator[RayMaterializedResult]:
-        # Grab and freeze the current DaftExecutionConfig
-        daft_execution_config = get_context().daft_execution_config
-
-        # Optimize the logical plan.
-        builder = builder.optimize()
-
-        # Finalize the logical plan and get a physical plan scheduler for translating the
-        # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-
+    def _start_plan(
+        self,
+        plan_scheduler: PhysicalPlanScheduler,
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None = None,
+    ) -> str:
         psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-
         result_uuid = str(uuid.uuid4())
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
@@ -772,7 +779,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 result_uuid=result_uuid,
                 results_buffer_size=results_buffer_size,
             )
+        return result_uuid
 
+    def _stream_plan(self, result_uuid: str) -> Iterator[RayMaterializedResult]:
         try:
             while True:
                 if isinstance(self.ray_context, ray.client_builder.ClientContext):
@@ -793,16 +802,51 @@ class RayRunner(Runner[ray.ObjectRef]):
             else:
                 self.scheduler.stop_plan(result_uuid)
 
+    def run_iter(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[RayMaterializedResult]:
+        # Grab and freeze the current DaftExecutionConfig
+        daft_execution_config = get_context().daft_execution_config
+
+        # Optimize the logical plan.
+        builder = builder.optimize()
+
+        if daft_execution_config.enable_aqe:
+            adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
+            while not adaptive_planner.is_done():
+                source_id, plan_scheduler = adaptive_planner.next()
+                # don't store partition sets in variable to avoid reference
+                result_uuid = self._start_plan(
+                    plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
+                )
+                del plan_scheduler
+                results_iter = self._stream_plan(result_uuid)
+                # if source_id is None that means this is the final stage
+                if source_id is None:
+                    yield from results_iter
+                else:
+                    cache_entry = self._collect_into_cache(results_iter)
+                    adaptive_planner.update(source_id, cache_entry)
+                    del cache_entry
+        else:
+            # Finalize the logical plan and get a physical plan scheduler for translating the
+            # physical plan to executable tasks.
+            plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+
+            result_uuid = self._start_plan(
+                plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
+            )
+
+            yield from self._stream_plan(result_uuid)
+
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+    def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
-
-        results_iter = self.run_iter(builder)
 
         for i, result in enumerate(results_iter):
             result_pset.set_partition(i, result)
@@ -810,6 +854,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
 
         return pset_entry
+
+    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+        results_iter = self.run_iter(builder)
+        return self._collect_into_cache(results_iter)
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):

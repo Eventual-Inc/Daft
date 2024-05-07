@@ -718,6 +718,10 @@ class HashJoin(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class BroadcastJoin(HashJoin): ...
+
+
+@dataclass(frozen=True)
 class MergeJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection

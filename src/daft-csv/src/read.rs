@@ -563,6 +563,7 @@ mod tests {
 
     use super::read_csv;
 
+    #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(
         path: &str,
         out: &Table,

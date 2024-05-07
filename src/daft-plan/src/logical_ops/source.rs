@@ -5,8 +5,8 @@ use daft_scan::ScanExternalInfo;
 
 use crate::source_info::SourceInfo;
 
-#[cfg(feature = "python")]
 use crate::source_info::InMemoryInfo;
+use crate::source_info::PlaceHolderInfo;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -30,7 +30,7 @@ impl Source {
         let mut res = vec![];
 
         match self.source_info.as_ref() {
-            SourceInfo::ExternalInfo(ScanExternalInfo {
+            SourceInfo::External(ScanExternalInfo {
                 source_schema,
                 scan_op,
                 partitioning_keys,
@@ -46,10 +46,18 @@ impl Source {
                 ));
                 res.extend(pushdowns.multiline_display());
             }
-            #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(InMemoryInfo { num_partitions, .. }) => {
+            SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
+            }
+            SourceInfo::PlaceHolder(PlaceHolderInfo {
+                source_id,
+                clustering_spec,
+                ..
+            }) => {
+                res.push("PlaceHolder:".to_string());
+                res.push(format!("Source ID = {}", source_id));
+                res.extend(clustering_spec.multiline_display());
             }
         }
         res.push(format!(

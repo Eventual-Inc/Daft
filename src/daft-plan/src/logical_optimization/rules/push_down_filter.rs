@@ -74,17 +74,16 @@ impl OptimizerRule for PushDownFilter {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
-                    #[cfg(feature = "python")]
-                    SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
+                    SourceInfo::InMemory(_) => return Ok(Transformed::No(plan)),
                     // Do not pushdown if Source node already has a limit
-                    SourceInfo::ExternalInfo(external_info)
+                    SourceInfo::External(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }
 
                     // Pushdown filter into the Source node
-                    SourceInfo::ExternalInfo(external_info) => {
+                    SourceInfo::External(external_info) => {
                         let predicate = &filter.predicate;
                         let new_predicate = external_info
                             .pushdowns
@@ -145,7 +144,7 @@ impl OptimizerRule for PushDownFilter {
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),
-                            SourceInfo::ExternalInfo(new_external_info).into(),
+                            SourceInfo::External(new_external_info).into(),
                         )
                         .into();
                         if !needing_filter_op.is_empty() {
@@ -160,6 +159,9 @@ impl OptimizerRule for PushDownFilter {
                         } else {
                             return Ok(Transformed::Yes(new_source.into()));
                         }
+                    }
+                    SourceInfo::PlaceHolder(..) => {
+                        panic!("PlaceHolderInfo should not exist for optimization!");
                     }
                 }
             }

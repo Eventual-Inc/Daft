@@ -302,6 +302,9 @@ class PartitionCacheEntry:
     def size_bytes(self) -> int | None:
         return self.value.size_bytes() if self.value is not None else None
 
+    def num_rows(self) -> int | None:
+        return len(self.value) if self.value is not None else None
+
 
 class PartitionSetCache:
     def __init__(self) -> None:

@@ -31,7 +31,7 @@ use crate::partitioning::{
 use crate::physical_ops::*;
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::SourceInfo;
+use crate::source_info::{PlaceHolderInfo, SourceInfo};
 use crate::FileFormat;
 
 pub(super) fn translate_single_logical_node(
@@ -41,7 +41,7 @@ pub(super) fn translate_single_logical_node(
 ) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
-            SourceInfo::ExternalInfo(ScanExternalInfo {
+            SourceInfo::External(ScanExternalInfo {
                 pushdowns,
                 scan_op,
                 source_schema,
@@ -83,16 +83,22 @@ pub(super) fn translate_single_logical_node(
                     )
                 }
             }
-            #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(mem_info) => {
+            SourceInfo::InMemory(mem_info) => {
+                let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
+                        .into()
+                });
+
                 let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
-                        .into(),
+                    clustering_spec,
                 ))
                 .arced();
                 Ok(scan)
+            }
+            SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
+                panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
         LogicalPlan::Project(LogicalProject {
@@ -479,23 +485,23 @@ pub(super) fn translate_single_logical_node(
                 } else {
                     false
                 };
+            let left_stats = left_physical.approximate_stats();
+            let right_stats = right_physical.approximate_stats();
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
-            let (smaller_size_bytes, left_is_larger) = match (
-                left_physical.approximate_size_bytes(),
-                right_physical.approximate_size_bytes(),
-            ) {
-                (Some(left_size_bytes), Some(right_size_bytes)) => {
-                    if right_size_bytes < left_size_bytes {
-                        (Some(right_size_bytes), true)
-                    } else {
-                        (Some(left_size_bytes), false)
+            let (smaller_size_bytes, left_is_larger) =
+                match (left_stats.upper_bound_bytes, right_stats.upper_bound_bytes) {
+                    (Some(left_size_bytes), Some(right_size_bytes)) => {
+                        if right_size_bytes < left_size_bytes {
+                            (Some(right_size_bytes), true)
+                        } else {
+                            (Some(left_size_bytes), false)
+                        }
                     }
-                }
-                (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
-                (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
-                (None, None) => (None, false),
-            };
+                    (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
+                    (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
+                    (None, None) => (None, false),
+                };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned
             } else {

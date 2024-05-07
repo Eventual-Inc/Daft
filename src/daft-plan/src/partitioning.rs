@@ -116,6 +116,7 @@ pub enum ClusteringSpec {
     Unknown(UnknownClusteringConfig),
 }
 
+pub type ClusteringSpecRef = Arc<ClusteringSpec>;
 impl ClusteringSpec {
     pub fn var_name(&self) -> &'static str {
         match self {
