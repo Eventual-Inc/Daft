@@ -274,7 +274,7 @@ def _infer_filesystem(
     ###
     # Azure: Use FSSpec as a fallback
     ###
-    elif protocol in {"az", "abfs"}:
+    elif protocol in {"az", "abfs", "abfss"}:
         fsspec_fs_cls = get_filesystem_class(protocol)
         fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
