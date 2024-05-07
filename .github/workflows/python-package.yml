@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7', '3.10']
+        python-version: ['3.8', '3.10']
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
         os: [ubuntu, windows]
@@ -31,7 +31,7 @@ jobs:
           pyarrow-version: 7.0.0
           os: ubuntu
         - os: windows
-          python-version: '3.7'
+          python-version: '3.8'
         - os: windows
           pyarrow-version: 7.0.0
     steps:
@@ -146,7 +146,7 @@ jobs:
       package-name: getdaft
     strategy:
       matrix:
-        python-version: ['3.7']
+        python-version: ['3.8']
     steps:
     - uses: actions/checkout@v4
       with:
@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7']
+        python-version: ['3.8']
         daft-runner: [py, ray]
     steps:
     - uses: actions/checkout@v4
@@ -656,7 +656,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, windows]
-        python-version: ['3.7']
+        python-version: ['3.8']
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
