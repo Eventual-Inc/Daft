@@ -172,8 +172,16 @@ DAFT_CAN_READ_FILES = [
         "s3a://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
     ),
     (
-        "azure/mvp",
+        "azure/mvp/az",
         "az://public-anonymous/mvp.parquet",
+    ),
+    (
+        "azure/mvp/abfs",
+        "abfs://public-anonymous/mvp.parquet",
+    ),
+    (
+        "azure/mvp/abfss",
+        "abfss://public-anonymous/mvp.parquet",
     ),
     (
         "gcs/mvp",
