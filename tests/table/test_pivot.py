@@ -14,7 +14,7 @@ def test_pivot_empty_table() -> None:
             "value": [],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), [])
+    daft_table = daft_table.pivot([col("group")], col("pivot"), col("value"), [])
 
     expected = {
         "group": [],
@@ -43,7 +43,7 @@ def test_pivot_empty_table() -> None:
     ],
 )
 def test_pivot_multipartition(input: MicroPartition) -> None:
-    daft_table = input.pivot(col("group"), col("pivot"), col("value"), ["1", "2"])
+    daft_table = input.pivot([col("group")], col("pivot"), col("value"), ["1", "2"])
 
     expected = {
         "group": ["A", "B"],
@@ -61,7 +61,7 @@ def test_pivot_column_names_subset() -> None:
             "value": [1, 2, 3],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1"])
+    daft_table = daft_table.pivot([col("group")], col("pivot"), col("value"), ["1"])
 
     expected = {
         "group": ["A", "B"],
@@ -78,7 +78,7 @@ def test_pivot_column_names_superset() -> None:
             "value": [1, 2, 3],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "2", "3"])
+    daft_table = daft_table.pivot([col("group")], col("pivot"), col("value"), ["1", "2", "3"])
 
     expected = {
         "group": ["A", "B"],
@@ -97,7 +97,7 @@ def test_pivot_nulls_in_group() -> None:
             "value": [1, 2, 3, 4],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "2"])
+    daft_table = daft_table.pivot([col("group")], col("pivot"), col("value"), ["1", "2"])
 
     expected = {
         "group": ["A", "B", None],
@@ -115,7 +115,7 @@ def test_pivot_nulls_in_pivot() -> None:
             "value": [1, 2, 3, 4],
         }
     )
-    daft_table = daft_table.pivot(col("group"), col("pivot"), col("value"), ["1", "None"])
+    daft_table = daft_table.pivot([col("group")], col("pivot"), col("value"), ["1", "None"])
 
     expected = {
         "group": ["A", "B"],

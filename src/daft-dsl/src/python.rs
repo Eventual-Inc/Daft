@@ -593,6 +593,16 @@ impl PyExpr {
         Ok(find(self.into(), substr.into()).into())
     }
 
+    pub fn utf8_rpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::rpad;
+        Ok(rpad(self.into(), length.into(), pad.into()).into())
+    }
+
+    pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::lpad;
+        Ok(lpad(self.into(), length.into(), pad.into()).into())
+    }
+
     pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
         use crate::functions::utf8::repeat;
         Ok(repeat(self.into(), n.into()).into())

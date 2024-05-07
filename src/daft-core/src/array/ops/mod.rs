@@ -52,6 +52,8 @@ mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
+pub use utf8::PadPlacement;
+
 use common_error::DaftResult;
 
 use crate::count_mode::CountMode;

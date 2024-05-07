@@ -223,13 +223,13 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
-        self, group_by: Expression, pivot_column: Expression, values_column: Expression, names: list[str]
+        self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
     ) -> MicroPartition:
-        group_by_pyexpr = group_by._expr
+        group_by_pyexprs = [e._expr for e in group_by]
         pivot_column_pyexpr = pivot_column._expr
         values_column_pyexpr = values_column._expr
         return MicroPartition._from_pymicropartition(
-            self._micropartition.pivot(group_by_pyexpr, pivot_column_pyexpr, values_column_pyexpr, names)
+            self._micropartition.pivot(group_by_pyexprs, pivot_column_pyexpr, values_column_pyexpr, names)
         )
 
     def quantiles(self, num: int) -> MicroPartition:
@@ -256,8 +256,6 @@ class MicroPartition:
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
     ) -> MicroPartition:
-        if how != JoinType.Inner:
-            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
@@ -270,7 +268,7 @@ class MicroPartition:
         right_exprs = [e._expr for e in right_on]
 
         return MicroPartition._from_pymicropartition(
-            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs)
+            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how)
         )
 
     def sort_merge_join(

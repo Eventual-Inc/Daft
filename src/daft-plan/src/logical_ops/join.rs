@@ -2,6 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    join::{JoinStrategy, JoinType},
     schema::{hash_index_map, Schema, SchemaRef},
     DataType,
 };
@@ -11,7 +12,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
-    JoinStrategy, JoinType, LogicalPlan,
+    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

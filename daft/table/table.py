@@ -307,9 +307,10 @@ class Table:
         return Table._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
-        self, group_by: Expression, pivot_column: Expression, values_column: Expression, names: list[str]
+        self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
     ) -> Table:
-        return Table._from_pytable(self._table.pivot(group_by._expr, pivot_column._expr, values_column._expr, names))
+        group_by_pyexprs = [e._expr for e in group_by]
+        return Table._from_pytable(self._table.pivot(group_by_pyexprs, pivot_column._expr, values_column._expr, names))
 
     def quantiles(self, num: int) -> Table:
         return Table._from_pytable(self._table.quantiles(num))
@@ -326,8 +327,6 @@ class Table:
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
     ) -> Table:
-        if how != JoinType.Inner:
-            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
@@ -339,7 +338,9 @@ class Table:
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Table._from_pytable(self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs))
+        return Table._from_pytable(
+            self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs, how=how)
+        )
 
     def sort_merge_join(
         self,

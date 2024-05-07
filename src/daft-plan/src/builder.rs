@@ -10,12 +10,14 @@ use crate::{
     physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
+    PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
-use daft_core::schema::Schema;
-use daft_core::schema::SchemaRef;
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    schema::{Schema, SchemaRef},
+};
 use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
@@ -393,7 +395,7 @@ impl LogicalPlanBuilder {
 
     pub fn pivot(
         &self,
-        group_by: ExprRef,
+        group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
         agg_expr: ExprRef,
@@ -674,7 +676,7 @@ impl PyLogicalPlanBuilder {
 
     pub fn pivot(
         &self,
-        group_by: PyExpr,
+        group_by: Vec<PyExpr>,
         pivot_column: PyExpr,
         value_column: PyExpr,
         agg_expr: PyExpr,
@@ -683,7 +685,7 @@ impl PyLogicalPlanBuilder {
         Ok(self
             .builder
             .pivot(
-                group_by.into(),
+                pyexprs_to_exprs(group_by),
                 pivot_column.into(),
                 value_column.into(),
                 agg_expr.into(),

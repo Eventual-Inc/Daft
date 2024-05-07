@@ -72,7 +72,7 @@ fn map_pivot_key_idx_to_values_indices(
 impl Table {
     pub fn pivot(
         &self,
-        group_by: ExprRef,
+        group_by: &[ExprRef],
         pivot_col: ExprRef,
         values_col: ExprRef,
         names: Vec<String>,
@@ -87,11 +87,11 @@ impl Table {
         // - This function assumes that there are no duplicate values in the pivot column.
         // - If a name in the names vector does not exist in the pivot column, a new column with null values is created.
 
-        let groupby_series = self.eval_expression(&group_by)?;
+        let groupby_table = self.eval_expression_list(group_by)?;
         let pivot_series = self.eval_expression(&pivot_col)?;
         let value_series = self.eval_expression(&values_col)?;
 
-        let (group_keys_indices, group_vals_indices) = groupby_series.make_groups()?;
+        let (group_keys_indices, group_vals_indices) = groupby_table.make_groups()?;
         let (pivot_keys_indices, pivot_vals_indices) = pivot_series.make_groups()?;
 
         let name_to_pivot_key_idx =
@@ -121,10 +121,10 @@ impl Table {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let group_keys_series = {
+        let group_keys_table = {
             let indices_as_series = UInt64Array::from(("", group_keys_indices)).into_series();
-            groupby_series.take(&indices_as_series)?
+            groupby_table.take(&indices_as_series)?
         };
-        Self::from_columns([&[group_keys_series], &pivoted_cols[..]].concat())
+        Self::from_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())
     }
 }

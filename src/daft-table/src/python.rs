@@ -1,3 +1,4 @@
+use daft_core::JoinType;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -99,19 +100,20 @@ impl PyTable {
     pub fn pivot(
         &self,
         py: Python,
-        group_by: PyExpr,
+        group_by: Vec<PyExpr>,
         pivot_col: PyExpr,
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: daft_dsl::ExprRef = group_by.into();
+        let converted_group_by: Vec<daft_dsl::ExprRef> =
+            group_by.into_iter().map(|e| e.into()).collect();
         let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
         let converted_values_col: daft_dsl::ExprRef = values_col.into();
         py.allow_threads(|| {
             Ok(self
                 .table
                 .pivot(
-                    converted_group_by,
+                    converted_group_by.as_slice(),
                     converted_pivot_col,
                     converted_values_col,
                     names,
@@ -126,13 +128,19 @@ impl PyTable {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
         let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
-                .hash_join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+                .hash_join(
+                    &right.table,
+                    left_exprs.as_slice(),
+                    right_exprs.as_slice(),
+                    how,
+                )?
                 .into())
         })
     }

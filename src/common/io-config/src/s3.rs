@@ -23,6 +23,7 @@ pub struct S3Config {
     pub check_hostname_ssl: bool,
     pub requester_pays: bool,
     pub force_virtual_addressing: bool,
+    pub profile_name: Option<String>,
 }
 
 impl S3Config {
@@ -66,6 +67,9 @@ impl S3Config {
             "Force Virtual Addressing = {}",
             self.force_virtual_addressing
         ));
+        if let Some(name) = &self.profile_name {
+            res.push(format!("Profile Name = {}", name));
+        }
         res
     }
 }
@@ -92,6 +96,7 @@ impl Default for S3Config {
             check_hostname_ssl: true,
             requester_pays: false,
             force_virtual_addressing: false,
+            profile_name: None,
         }
     }
 }
@@ -117,7 +122,8 @@ impl Display for S3Config {
     verify_ssl: {},
     check_hostname_ssl: {}
     requester_pays: {}
-    force_virtual_addressing: {}",
+    force_virtual_addressing: {}
+    profile_name: {:?}",
             self.region_name,
             self.endpoint_url,
             self.key_id,
@@ -134,7 +140,8 @@ impl Display for S3Config {
             self.verify_ssl,
             self.check_hostname_ssl,
             self.requester_pays,
-            self.force_virtual_addressing
+            self.force_virtual_addressing,
+            self.profile_name
         )
     }
 }

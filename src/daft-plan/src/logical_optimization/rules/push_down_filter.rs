@@ -308,7 +308,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::{datatypes::Field, join::JoinType, DataType};
     use daft_dsl::{col, lit};
     use daft_scan::Pushdowns;
     use rstest::rstest;
@@ -316,7 +316,7 @@ mod tests {
     use crate::{
         logical_optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
-        JoinType, LogicalPlan,
+        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
