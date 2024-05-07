@@ -97,6 +97,30 @@ def explode(
     )
 
 
+def unpivot(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    ids: list[PyExpr],
+    values: list[PyExpr],
+    variable_name: str,
+    value_name: str,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    ids_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in ids])
+    values_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in values])
+
+    unpivot_step = execution_step.Unpivot(
+        ids=ids_projection,
+        values=values_projection,
+        variable_name=variable_name,
+        value_name=value_name,
+    )
+
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=unpivot_step,
+        resource_request=ResourceRequest(),
+    )
+
+
 def local_aggregate(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     agg_exprs: list[PyExpr],
@@ -116,13 +140,13 @@ def local_aggregate(
 
 def pivot(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    group_by: PyExpr,
+    group_by: list[PyExpr],
     pivot_col: PyExpr,
     value_col: PyExpr,
     names: list[str],
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     pivot_step = execution_step.Pivot(
-        group_by=Expression._from_pyexpr(group_by),
+        group_by=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in group_by]),
         pivot_col=Expression._from_pyexpr(pivot_col),
         value_col=Expression._from_pyexpr(value_col),
         names=names,

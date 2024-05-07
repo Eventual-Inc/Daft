@@ -436,7 +436,7 @@ impl PyExpr {
     }
 
     pub fn name(&self) -> PyResult<&str> {
-        Ok(self.expr.name()?)
+        Ok(self.expr.name())
     }
 
     pub fn to_sql(&self) -> PyResult<Option<String>> {
@@ -591,6 +591,16 @@ impl PyExpr {
     pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
         use crate::functions::utf8::find;
         Ok(find(self.into(), substr.into()).into())
+    }
+
+    pub fn utf8_rpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::rpad;
+        Ok(rpad(self.into(), length.into(), pad.into()).into())
+    }
+
+    pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::lpad;
+        Ok(lpad(self.into(), length.into(), pad.into()).into())
     }
 
     pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {

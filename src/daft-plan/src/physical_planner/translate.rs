@@ -21,7 +21,7 @@ use crate::logical_ops::{
     Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
     Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source,
+    Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
@@ -127,6 +127,24 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
                     .arced(),
             )
+        }
+        LogicalPlan::Unpivot(LogicalUnpivot {
+            ids,
+            values,
+            variable_name,
+            value_name,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+
+            Ok(PhysicalPlan::Unpivot(Unpivot::new(
+                input_physical,
+                ids.clone(),
+                values.clone(),
+                variable_name,
+                value_name,
+            ))
+            .arced())
         }
         LogicalPlan::Sort(LogicalSort {
             sort_by,
@@ -330,7 +348,7 @@ pub(super) fn translate_single_logical_node(
 
             // NOTE: For the aggregation stages of the pivot operation, we need to group by the group_by column and pivot column together.
             // This is because the resulting pivoted columns correspond to the unique pairs of group_by and pivot column values.
-            let group_by_with_pivot = vec![group_by.clone(), pivot_column.clone()];
+            let group_by_with_pivot = [group_by.clone(), vec![pivot_column.clone()]].concat();
             let aggregations = vec![aggregation.clone()];
 
             let aggregation_plan = match num_input_partitions {
@@ -371,7 +389,7 @@ pub(super) fn translate_single_logical_node(
                             ),
                             // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
                             // to ensure that all rows with the same group_by column values are hashed to the same partition.
-                            vec![group_by.clone()],
+                            group_by.clone(),
                         ))
                         .arced();
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
@@ -484,7 +502,7 @@ pub(super) fn translate_single_logical_node(
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
                 let is_primitive = |exprs: &Vec<ExprRef>| {
-                    exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                    exprs.iter().map(|e| e.name()).all(|col| {
                         let dtype = &output_schema.get_field(col).unwrap().dtype;
                         dtype.is_integer()
                             || dtype.is_floating()
@@ -700,7 +718,7 @@ fn populate_aggregation_stages(
     let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
 
     for agg_expr in aggregations {
-        let output_name = agg_expr.name().unwrap();
+        let output_name = agg_expr.name();
         match agg_expr {
             Count(e, mode) => {
                 let count_id = agg_expr.semantic_id(schema).id;

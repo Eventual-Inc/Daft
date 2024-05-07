@@ -226,19 +226,20 @@ impl PyMicroPartition {
     pub fn pivot(
         &self,
         py: Python,
-        group_by: PyExpr,
+        group_by: Vec<PyExpr>,
         pivot_col: PyExpr,
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: daft_dsl::ExprRef = group_by.into();
+        let converted_group_by: Vec<daft_dsl::ExprRef> =
+            group_by.into_iter().map(|e| e.into()).collect();
         let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
         let converted_values_col: daft_dsl::ExprRef = values_col.into();
         py.allow_threads(|| {
             Ok(self
                 .inner
                 .pivot(
-                    converted_group_by,
+                    converted_group_by.as_slice(),
                     converted_pivot_col,
                     converted_values_col,
                     names,
@@ -292,6 +293,30 @@ impl PyMicroPartition {
             to_explode.into_iter().map(|e| e.expr).collect();
 
         py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
+    }
+
+    pub fn unpivot(
+        &self,
+        py: Python,
+        ids: Vec<PyExpr>,
+        values: Vec<PyExpr>,
+        variable_name: &str,
+        value_name: &str,
+    ) -> PyResult<Self> {
+        let converted_ids: Vec<daft_dsl::ExprRef> = ids.into_iter().map(|e| e.into()).collect();
+        let converted_values: Vec<daft_dsl::ExprRef> =
+            values.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .unpivot(
+                    converted_ids.as_slice(),
+                    converted_values.as_slice(),
+                    variable_name,
+                    value_name,
+                )?
+                .into())
+        })
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {

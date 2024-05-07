@@ -204,7 +204,7 @@ impl Table {
         let right_names = right_on.iter().map(|e| e.name());
         let zipped_names: DaftResult<_> = left_names
             .zip(right_names)
-            .map(|(l, r)| Ok((l?, r?)))
+            .map(|(l, r)| Ok((l, r)))
             .collect();
         let zipped_names: Vec<(&str, &str)> = zipped_names?;
         let right_to_left_keys: HashMap<&str, &str> =

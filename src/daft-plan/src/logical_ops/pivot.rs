@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::datatypes::Field;
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
@@ -12,7 +14,7 @@ use crate::LogicalPlan;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pivot {
     pub input: Arc<LogicalPlan>,
-    pub group_by: ExprRef,
+    pub group_by: Vec<ExprRef>,
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
     pub aggregation: AggExpr,
@@ -23,7 +25,7 @@ pub struct Pivot {
 impl Pivot {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        group_by: ExprRef,
+        group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
         aggregation: AggExpr,
@@ -31,8 +33,11 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let output_schema = {
             let upstream_schema = input.schema();
-            let group_by_fields =
-                vec![group_by.to_field(&upstream_schema).context(CreationSnafu)?];
+            let group_by_fields = group_by
+                .iter()
+                .map(|e| e.to_field(&upstream_schema))
+                .collect::<DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
             let value_col_field = value_column
                 .to_field(&upstream_schema)
                 .context(CreationSnafu)?;
@@ -62,7 +67,10 @@ impl Pivot {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("Pivot:".to_string());
-        res.push(format!("Group by: {}", self.group_by));
+        res.push(format!(
+            "Group by = {}",
+            self.group_by.iter().map(|e| e.to_string()).join(", ")
+        ));
         res.push(format!("Pivot column: {}", self.pivot_column));
         res.push(format!("Value column: {}", self.value_column));
         res.push(format!("Aggregation: {}", self.aggregation));

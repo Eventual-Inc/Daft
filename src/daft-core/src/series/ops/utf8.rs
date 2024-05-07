@@ -1,3 +1,4 @@
+use crate::array::ops::PadPlacement;
 use crate::series::Series;
 use common_error::{DaftError, DaftResult};
 
@@ -237,6 +238,78 @@ impl Series {
                 "Find not implemented for type {dt}"
             ))),
         }
+    }
+
+    fn utf8_pad(
+        &self,
+        length: &Series,
+        pad: &Series,
+        placement: PadPlacement,
+    ) -> DaftResult<Series> {
+        if self.data_type() == &DataType::Null {
+            return Ok(self.clone());
+        }
+        if self.data_type() != &DataType::Utf8 {
+            return Err(DaftError::TypeError(format!(
+                "Pad not implemented for type {}",
+                self.data_type()
+            )));
+        }
+        if pad.data_type() != &DataType::Utf8 {
+            return Err(DaftError::TypeError(format!(
+                "Pad not implemented for pad type {}",
+                pad.data_type()
+            )));
+        }
+        match length.data_type() {
+            DataType::UInt32 => Ok(self
+                .utf8()?
+                .pad(length.u32()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::Int32 => Ok(self
+                .utf8()?
+                .pad(length.i32()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::UInt64 => Ok(self
+                .utf8()?
+                .pad(length.u64()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::Int64 => Ok(self
+                .utf8()?
+                .pad(length.i64()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::Int8 => Ok(self
+                .utf8()?
+                .pad(length.i8()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::UInt8 => Ok(self
+                .utf8()?
+                .pad(length.u8()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::Int16 => Ok(self
+                .utf8()?
+                .pad(length.i16()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::UInt16 => Ok(self
+                .utf8()?
+                .pad(length.u16()?, pad.utf8()?, placement)?
+                .into_series()),
+            DataType::Int128 => Ok(self
+                .utf8()?
+                .pad(length.i128()?, pad.utf8()?, placement)?
+                .into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Pad not implemented for length type {dt}"
+            ))),
+        }
+    }
+
+    pub fn utf8_lpad(&self, length: &Series, pad: &Series) -> DaftResult<Series> {
+        self.utf8_pad(length, pad, PadPlacement::Left)
+    }
+
+    pub fn utf8_rpad(&self, length: &Series, pad: &Series) -> DaftResult<Series> {
+        self.utf8_pad(length, pad, PadPlacement::Right)
     }
 
     pub fn utf8_repeat(&self, n: &Series) -> DaftResult<Series> {

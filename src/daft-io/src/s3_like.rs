@@ -446,6 +446,12 @@ async fn build_s3_conf(
         builder.build()
     } else {
         let loader = aws_config::from_env();
+        let loader = if let Some(profile_name) = &config.profile_name {
+            loader.profile_name(profile_name)
+        } else {
+            loader
+        };
+
         // Set region now to avoid imds
         let loader = if let Some(region) = &config.region_name {
             loader.region(Region::new(region.to_owned()))
@@ -467,7 +473,6 @@ async fn build_s3_conf(
         None => builder,
         Some(endpoint) => builder.endpoint_url(endpoint),
     };
-
     let builder = if config.endpoint_url.is_some() && !config.force_virtual_addressing {
         builder.force_path_style(true)
     } else {

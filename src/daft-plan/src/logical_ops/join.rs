@@ -73,11 +73,7 @@ impl Join {
         // Schema inference ported from existing behaviour for parity,
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
         let output_schema = {
-            let left_join_keys = left_on
-                .iter()
-                .map(|e| e.name())
-                .collect::<common_error::DaftResult<HashSet<_>>>()
-                .context(CreationSnafu)?;
+            let left_join_keys = left_on.iter().map(|e| e.name()).collect::<HashSet<_>>();
             let left_schema = &left.schema().fields;
             let fields = left_schema
                 .iter()
