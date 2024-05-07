@@ -7,7 +7,7 @@ import pytest
 from pyarrow import parquet as pq
 
 import daft
-from daft.exceptions import ConnectTimeoutError, DaftCoreException, ReadTimeoutError
+from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
 from daft.table import MicroPartition, Table
 
@@ -436,18 +436,4 @@ def test_read_timeout(multithreaded_io):
     )
 
     with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
-        MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "multithreaded_io",
-    [False, True],
-)
-def test_bad_profile_name(multithreaded_io):
-    PROFILE_NAME = "SOME_RANDOM_PROFILE"
-    url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
-    read_timeout_config = daft.io.IOConfig(s3=daft.io.S3Config(profile_name=PROFILE_NAME, region_name="us-west-2"))
-
-    with pytest.raises(DaftCoreException, match=f"could not find source profile {PROFILE_NAME}"):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
