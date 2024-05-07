@@ -455,11 +455,15 @@ class DataFrame:
         if len(table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned Iceberg tables")
 
+        import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
+
+        if parse(pa.__version__) < parse("8.0.0"):
+            raise ValueError(f"Write Iceberg is only supported on pyarrow>=8.0.0, found {pa.__version__}")
 
         from pyiceberg.table import _MergingSnapshotProducer
         from pyiceberg.table.snapshots import Operation
@@ -508,7 +512,6 @@ class DataFrame:
             size.append(data_file.file_size_in_bytes)
 
         merge.commit()
-        import pyarrow as pa
 
         from daft import from_pydict
 
