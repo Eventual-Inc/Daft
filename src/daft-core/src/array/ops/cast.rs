@@ -301,42 +301,36 @@ impl DateArray {
     }
 }
 
+/// Formats a naive timestamp to a string in the format "%Y-%m-%d %H:%M:%S%.f".
+/// Example: 2021-01-01 00:00:00
+/// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts =
-        { arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow()) };
-    let format_str = match unit {
-        TimeUnit::Seconds => "%Y-%m-%dT%H:%M:%S",
-        TimeUnit::Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
-        TimeUnit::Microseconds => "%Y-%m-%dT%H:%M:%S%.6f",
-        TimeUnit::Nanoseconds => "%Y-%m-%dT%H:%M:%S%.9f",
-    };
+    let chrono_ts = arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
+    let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
 
+/// Formats a timestamp with an offset to a string in the format "%Y-%m-%d %H:%M:%S%.f %:z".
+/// Example: 2021-01-01 00:00:00 -07:00
+/// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub(crate) fn timestamp_to_str_offset(
     val: i64,
     unit: &TimeUnit,
     offset: &chrono::FixedOffset,
 ) -> String {
-    let seconds_format = match unit {
-        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
-        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
-        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
-        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
-    };
-    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset)
-        .to_rfc3339_opts(seconds_format, false)
+    let chrono_ts =
+        arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
+    let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
+    chrono_ts.format(format_str).to_string()
 }
 
+/// Formats a timestamp with a timezone to a string in the format "%Y-%m-%d %H:%M:%S%.f %Z".
+/// Example: 2021-01-01 00:00:00 PST
+/// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
-    let seconds_format = match unit {
-        TimeUnit::Seconds => chrono::SecondsFormat::Secs,
-        TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,
-        TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
-        TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
-    };
-    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz)
-        .to_rfc3339_opts(seconds_format, false)
+    let chrono_ts = arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
+    let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
+    chrono_ts.format(format_str).to_string()
 }
 
 impl TimestampArray {

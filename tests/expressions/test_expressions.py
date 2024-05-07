@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 import pytz
@@ -28,7 +28,10 @@ from daft.table import MicroPartition
         (date(2023, 1, 1), DataType.date()),
         (time(1, 2, 3, 4), DataType.time(timeunit=TimeUnit.from_str("us"))),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
-        (datetime(2022, 1, 1, tzinfo=pytz.utc), DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="UTC")),
+        (
+            datetime(2022, 1, 1, tzinfo=pytz.utc),
+            DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="UTC"),
+        ),
     ],
 )
 def test_make_lit(data, expected_dtype) -> None:
@@ -264,22 +267,98 @@ def test_date_lit_pre_epoch() -> None:
     assert output == "lit(1950-01-01)"
 
 
-def test_datetime_lit_post_epoch() -> None:
-    d = lit(datetime(2022, 1, 1))
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (
+            datetime(2022, 1, 1, 12, 30, 59, 0),
+            "lit(2022-01-01 12:30:59)",
+        ),
+        (
+            datetime(2022, 1, 1, 12, 30, 59, 123456),
+            "lit(2022-01-01 12:30:59.123456)",
+        ),
+    ],
+)
+def test_datetime_lit_post_epoch(input, expected) -> None:
+    d = lit(input)
     output = repr(d)
-    assert output == "lit(2022-01-01T00:00:00.000000)"
+    assert output == expected
 
 
-def test_datetime_tz_lit_post_epoch() -> None:
-    d = lit(datetime(2022, 1, 1, tzinfo=pytz.utc))
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (
+            pytz.timezone("US/Eastern").localize(datetime(2022, 1, 1, 12, 30, 59, 0)),
+            "lit(2022-01-01 12:30:59 EST)",
+        ),
+        (
+            datetime(2022, 1, 1, 12, 30, 59, 123456, tzinfo=timezone(timedelta(hours=9))),
+            "lit(2022-01-01 12:30:59.123456 +09:00)",
+        ),
+    ],
+)
+def test_datetime_tz_lit_post_epoch(input, expected) -> None:
+    d = lit(input)
     output = repr(d)
-    assert output == "lit(2022-01-01T00:00:00.000000+00:00)"
+    assert output == expected
 
 
-def test_datetime_lit_pre_epoch() -> None:
-    d = lit(datetime(1950, 1, 1))
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (
+            datetime(1950, 1, 1, 12, 30, 59, 0),
+            "lit(1950-01-01 12:30:59)",
+        ),
+        (
+            datetime(1950, 1, 1, 12, 30, 59, 123456),
+            "lit(1950-01-01 12:30:59.123456)",
+        ),
+    ],
+)
+def test_datetime_lit_pre_epoch(input, expected) -> None:
+    d = lit(input)
     output = repr(d)
-    assert output == "lit(1950-01-01T00:00:00.000000)"
+    assert output == expected
+
+
+@pytest.mark.parametrize(
+    "timeunit, expected",
+    [
+        (
+            "s",
+            "1970-01-01 00:00:01",
+        ),
+        (
+            "ms",
+            "1970-01-01 00:00:00.001",
+        ),
+        (
+            "us",
+            "1970-01-01 00:00:00.000001",
+        ),
+        (
+            "ns",
+            "1970-01-01 00:00:00.000000001",
+        ),
+    ],
+)
+def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
+    import pyarrow as pa
+
+    pa_array = pa.array([1], type=pa.timestamp(timeunit))
+    pa_table = pa.table({"dt": pa_array})
+    mp = MicroPartition.from_arrow(pa_table)
+
+    series = mp.get_column("dt")
+    output = repr(series)
+
+    # Series repr is very long, so we just check the last line which contains the timestamp
+    # Also remove the │ │, which is what the [1:-1] and strip is doing
+    timestamp_repr = output.split("\n")[-3][1:-1].strip()
+    assert timestamp_repr == expected
 
 
 def test_repr_series_lit() -> None:
