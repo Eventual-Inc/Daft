@@ -11,6 +11,9 @@ data = {
     "long": [-122.7, -74.1],
 }
 
+PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="lance only supported if pyarrow >= 8.0.0")
+
 
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):

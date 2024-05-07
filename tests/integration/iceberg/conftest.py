@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from typing import Generator, TypeVar
 
+import pyarrow as pa
 import pytest
 
 pyiceberg = pytest.importorskip("pyiceberg")
+
+PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="iceberg writes only supported if pyarrow >= 8.0.0")
+
 
 import tenacity
 from pyiceberg.catalog import Catalog, load_catalog
