@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import builtins
 import os
-import sys
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, TypeVar, overload
 
 import pyarrow as pa
 
@@ -24,11 +23,6 @@ from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
 
 if TYPE_CHECKING:
     from daft.io import IOConfig

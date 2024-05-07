@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import sys
-from typing import Any, TypeVar
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
+from typing import Any, Literal, TypeVar
 
 import pyarrow as pa
 

@@ -1,14 +1,8 @@
-import sys
-
+import lance
 import pyarrow as pa
 import pytest
 
 import daft
-
-if sys.version_info[:2] < (3, 8):
-    pytest.skip(allow_module_level=True, reason="LanceDB does not support Python 3.7 and below")
-else:
-    import lance
 
 TABLE_NAME = "my_table"
 data = {

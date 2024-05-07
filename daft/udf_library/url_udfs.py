@@ -1,19 +1,14 @@
 from __future__ import annotations
 
 import logging
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Literal
 
 from daft import filesystem
 from daft.datatype import DataType
 from daft.series import Series
 from daft.udf import udf
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
 
 thread_local = threading.local()
 

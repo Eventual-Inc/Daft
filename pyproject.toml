@@ -8,8 +8,7 @@ dependencies = [
   "pyarrow >= 7.0.0",
   "fsspec",
   "tqdm",
-  "typing-extensions >= 4.0.0; python_version < '3.10'",
-  "pickle5 >= 0.0.12; python_version < '3.8'"
+  "typing-extensions >= 4.0.0; python_version < '3.10'"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]
@@ -20,7 +19,7 @@ maintainers = [
 ]
 name = "getdaft"
 readme = "README.rst"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 
 [project.optional-dependencies]
 all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql]"]
