@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import pathlib
 import sys
 import urllib.parse
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
-
-import logging
-from typing import Any
+from typing import Any, Literal
 
 import fsspec
 from fsspec.registry import get_filesystem_class
