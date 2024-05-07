@@ -1,4 +1,4 @@
-use std::iter::repeat;
+use std::{cmp, iter::repeat};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use daft_core::{
@@ -139,10 +139,13 @@ pub(super) fn hash_left_right_join(
             false,
         )?;
 
-        let mut left_idx = vec![];
-        let mut right_idx = vec![];
+        // we will have at least as many rows in the join table as the right table
+        let min_rows = rkeys.len();
 
-        let mut l_valid = MutableBitmap::new();
+        let mut left_idx = Vec::with_capacity(min_rows);
+        let mut right_idx = Vec::with_capacity(min_rows);
+
+        let mut l_valid = MutableBitmap::with_capacity(min_rows);
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -263,13 +266,16 @@ pub(super) fn hash_outer_join(
             false,
         )?;
 
-        let mut left_idx = vec![];
-        let mut right_idx = vec![];
+        // we will have at least as many rows in the join table as the max of the left and right tables
+        let min_rows = cmp::max(lkeys.len(), rkeys.len());
 
-        let mut l_valid = MutableBitmap::new();
-        let mut r_valid = MutableBitmap::new();
+        let mut left_idx = Vec::with_capacity(min_rows);
+        let mut right_idx = Vec::with_capacity(min_rows);
 
-        let mut left_idx_used = vec![false; lkeys.len()];
+        let mut l_valid = MutableBitmap::with_capacity(min_rows);
+        let mut r_valid = MutableBitmap::with_capacity(min_rows);
+
+        let mut left_idx_used = MutableBitmap::from_len_zeroed(lkeys.len());
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -280,7 +286,7 @@ pub(super) fn hash_outer_join(
             }) {
                 for l_idx in indices {
                     left_idx.push(*l_idx);
-                    left_idx_used[*l_idx as usize] = true;
+                    left_idx_used.set(*l_idx as usize, true);
 
                     right_idx.push(r_idx as u64);
 
@@ -296,7 +302,7 @@ pub(super) fn hash_outer_join(
             }
         }
 
-        for (l_idx, used) in left_idx_used.iter().enumerate() {
+        for (l_idx, used) in left_idx_used.into_iter().enumerate() {
             if !used {
                 left_idx.push(l_idx as u64);
                 right_idx.push(0);

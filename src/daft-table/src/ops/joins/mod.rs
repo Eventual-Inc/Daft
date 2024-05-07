@@ -239,7 +239,7 @@ impl Table {
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
         let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
-        let mut join_series = vec![];
+        let mut join_series = Vec::with_capacity(ltable.num_columns());
 
         for (l, r) in ltable
             .column_names()

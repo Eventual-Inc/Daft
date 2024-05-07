@@ -1,22 +1,28 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::{array::ops::DaftCompare, join::JoinType};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
-use daft_table::infer_join_schema;
+use daft_table::{infer_join_schema, Table};
 
 use crate::micropartition::MicroPartition;
 
 use daft_stats::TruthValue;
 
 impl MicroPartition {
-    pub fn hash_join(
+    fn join<F>(
         &self,
         right: &Self,
+        io_stats: Arc<IOStatsContext>,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
         how: JoinType,
-    ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::hash_join");
+        table_join: F,
+    ) -> DaftResult<Self>
+    where
+        F: FnOnce(&Table, &Table, &[ExprRef], &[ExprRef], JoinType) -> DaftResult<Table>,
+    {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
 
         match (how, self.len(), right.len()) {
@@ -63,7 +69,7 @@ impl MicroPartition {
         match (lt.as_slice(), rt.as_slice()) {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),
             ([lt], [rt]) => {
-                let joined_table = lt.hash_join(rt, left_on, right_on, how)?;
+                let joined_table = table_join(lt, rt, left_on, right_on, how)?;
                 Ok(MicroPartition::new_loaded(
                     join_schema.into(),
                     vec![joined_table].into(),
@@ -74,6 +80,18 @@ impl MicroPartition {
         }
     }
 
+    pub fn hash_join(
+        &self,
+        right: &Self,
+        left_on: &[ExprRef],
+        right_on: &[ExprRef],
+        how: JoinType,
+    ) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::hash_join");
+
+        self.join(right, io_stats, left_on, right_on, how, Table::hash_join)
+    }
+
     pub fn sort_merge_join(
         &self,
         right: &Self,
@@ -82,51 +100,18 @@ impl MicroPartition {
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");
-        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
+        let table_join =
+            |lt: &Table, rt: &Table, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
+                Table::sort_merge_join(lt, rt, lo, ro, is_sorted)
+            };
 
-        if self.len() == 0 || right.len() == 0 {
-            return Ok(Self::empty(Some(join_schema.into())));
-        }
-
-        let tv = match (&self.statistics, &right.statistics) {
-            (_, None) => TruthValue::Maybe,
-            (None, _) => TruthValue::Maybe,
-            (Some(l), Some(r)) => {
-                let l_eval_stats = l.eval_expression_list(left_on, &self.schema)?;
-                let r_eval_stats = r.eval_expression_list(right_on, &right.schema)?;
-                let mut curr_tv = TruthValue::Maybe;
-                for (lc, rc) in l_eval_stats
-                    .columns
-                    .values()
-                    .zip(r_eval_stats.columns.values())
-                {
-                    if let TruthValue::False = lc.equal(rc)?.to_truth_value() {
-                        curr_tv = TruthValue::False;
-                        break;
-                    }
-                }
-                curr_tv
-            }
-        };
-        if let TruthValue::False = tv {
-            return Ok(Self::empty(Some(join_schema.into())));
-        }
-
-        // TODO(Clark): Elide concatenations where possible by doing a chunk-aware local table join.
-        let lt = self.concat_or_get(io_stats.clone())?;
-        let rt = right.concat_or_get(io_stats)?;
-
-        match (lt.as_slice(), rt.as_slice()) {
-            ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),
-            ([lt], [rt]) => {
-                let joined_table = lt.sort_merge_join(rt, left_on, right_on, is_sorted)?;
-                Ok(MicroPartition::new_loaded(
-                    join_schema.into(),
-                    vec![joined_table].into(),
-                    None,
-                ))
-            }
-            _ => unreachable!(),
-        }
+        self.join(
+            right,
+            io_stats,
+            left_on,
+            right_on,
+            JoinType::Inner,
+            table_join,
+        )
     }
 }
