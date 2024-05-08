@@ -13,7 +13,6 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    name: unit tests ${{ join(matrix.*, ' - ') }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -94,8 +93,8 @@ jobs:
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
+        coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Build library and Test with pytest (windows)
@@ -109,15 +108,15 @@ jobs:
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests\integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o .\report-output\coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
+        coverage xml -o .\report-output\coverage-${{ join(matrix.*, '-') }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports-unit-tests-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}
+        name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
 
     - name: Send Slack notification on failure
