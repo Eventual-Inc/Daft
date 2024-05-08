@@ -60,8 +60,8 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
         aws_secret_access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
         aws_session_token=aws_credentials["AWS_SESSION_TOKEN"],
     )
-
-    s3.Bucket(bucket_name)
+    bucket = s3.Bucket(bucket_name)
+    bucket.create(CreateBucketConfiguration={"LocationConstraint": "us-west-2"})
 
     count_get_credentials = 0
 
@@ -72,6 +72,9 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             key_id=aws_credentials["AWS_ACCESS_KEY_ID"],
             access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=aws_credentials["AWS_SESSION_TOKEN"],
+            # there may be 0 to 10 seconds of jitter applied by the cache,
+            # so with a 15 second expiry, we can expect to see one call to get_credentials
+            # between 0 and 5 seconds and another call after 15 seconds.
             expiry=int(time.time()) + 15,
         )
 
