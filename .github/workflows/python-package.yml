@@ -13,7 +13,7 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    name: Run ${{ join(matrix.*, ' - ') }} - ${{ github.event_name }}
+    name: unit tests ${{ join(matrix.*, ' - ') }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
