@@ -586,7 +586,25 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  rust-tests:
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs:
+    - integration-test-tpch
+    - integration-test-io
+    - integration-test-io-credentialed
+    - integration-test-iceberg
+    - integration-test-sql
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
+  rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -632,12 +650,26 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+  rust-tests:
+    runs-on: ubuntu-latest
+    needs:
+    - rust-tests-platform
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
+
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
     needs:
     - unit-tests-with-coverage
-    - rust-tests
+    - rust-tests-platform
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
@@ -670,7 +702,7 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  test-imports:
+  test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -750,6 +782,20 @@ jobs:
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  test-imports:
+    runs-on: ubuntu-latest
+    needs:
+    - test-imports-platform
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
 
   style:
     runs-on: ubuntu-latest
