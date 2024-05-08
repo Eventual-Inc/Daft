@@ -21,6 +21,7 @@ jobs:
         python-version: ['3.8', '3.10']
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
+        enable-aqe: [0, 1]
         os: [ubuntu, windows]
         exclude:
         - daft-runner: ray
@@ -93,10 +94,12 @@ jobs:
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
+        coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
     - name: Build library and Test with pytest (windows)
       if: ${{ (matrix.os == 'windows') }}
       run: |
@@ -108,15 +111,16 @@ jobs:
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests\integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o .\report-output\coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
+        coverage xml -o .\report-output\coverage-${{ join(matrix.*, '-') }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports-unit-tests-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}
+        name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
 
     - name: Send Slack notification on failure
@@ -138,6 +142,18 @@ jobs:
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests-with-coverage
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
 
   integration-test-build:
     runs-on: ubuntu-latest
@@ -186,6 +202,7 @@ jobs:
       matrix:
         python-version: ['3.8']
         daft-runner: [py, ray]
+        enable-aqe: [0, 1]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -226,6 +243,8 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -430,6 +449,7 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-aqe: [0, 1]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -475,6 +495,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -565,7 +586,25 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  rust-tests:
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs:
+    - integration-test-tpch
+    - integration-test-io
+    - integration-test-io-credentialed
+    - integration-test-iceberg
+    - integration-test-sql
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
+  rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -611,12 +650,26 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+  rust-tests:
+    runs-on: ubuntu-latest
+    needs:
+    - rust-tests-platform
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
+
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
     needs:
     - unit-tests-with-coverage
-    - rust-tests
+    - rust-tests-platform
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
@@ -649,7 +702,7 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  test-imports:
+  test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -730,19 +783,31 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+  test-imports:
+    runs-on: ubuntu-latest
+    needs:
+    - test-imports-platform
+    if: always()
+    steps:
+    - name: All tests ok
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+    - name: Some tests failed
+      if: ${{ contains(needs.*.result, 'failure') }}
+      run: exit 1
+
+
   style:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.8']
+    env:
+      python-version: '3.8'
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python ${{ env.python-version }}
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: ${{ env.python-version }}
 
     - name: Install pre-commit
       run: |
@@ -760,7 +825,7 @@ jobs:
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/
-        key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        key: ${{ runner.os }}-python-${{ env.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
         pre-commit run --all-files
