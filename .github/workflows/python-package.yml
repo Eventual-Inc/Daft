@@ -21,6 +21,7 @@ jobs:
         python-version: ['3.8', '3.10']
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
+        enable-aqe: [0, 1]
         os: [ubuntu, windows]
         exclude:
         - daft-runner: ray
@@ -97,6 +98,8 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
     - name: Build library and Test with pytest (windows)
       if: ${{ (matrix.os == 'windows') }}
       run: |
@@ -112,6 +115,7 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
@@ -186,6 +190,7 @@ jobs:
       matrix:
         python-version: ['3.8']
         daft-runner: [py, ray]
+        enable-aqe: [0, 1]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -226,6 +231,8 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -430,6 +437,7 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-aqe: [0, 1]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -475,6 +483,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
