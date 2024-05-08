@@ -13,6 +13,7 @@ use crate::{config, s3_provider::S3CredentialsProvider};
 ///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
+///     credentials_provider: Custom credentials provider function, should return a `S3Credentials` object
 ///     max_connections: Maximum number of connections to S3 at any time, defaults to 64
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
@@ -37,6 +38,22 @@ pub struct S3Config {
     pub config: crate::S3Config,
 }
 
+/// Create credentials to be used when accessing an S3-compatible system
+///
+/// Args:
+///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
+///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
+///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     expiry: Expiry time of the credentials as a Unix timestamp in integer seconds, credentials are assumed to be permanent if not provided
+///
+/// Example:
+///     >>> get_credentials = lambda: S3Credentials(
+///     ...     key_id="xxx",
+///     ...     access_key="xxx",
+///     ...     expiry=int(time.time()) + 3600
+///     ... )
+///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
+///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone)]
 #[pyclass]
 pub struct S3Credentials {
@@ -342,7 +359,7 @@ impl S3Config {
         Ok(self.config.max_connections_per_io_thread)
     }
 
-    /// AWS expiry time as a Unix timestamp
+    /// Custom credentials provider function
     #[getter]
     pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         Ok(self
