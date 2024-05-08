@@ -249,6 +249,9 @@ class DataType:
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types
 
+        Example:
+        >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
+
         Args:
             fields: Nested fields of the Struct
         """
