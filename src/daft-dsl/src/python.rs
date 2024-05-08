@@ -678,6 +678,11 @@ impl PyExpr {
         Ok(get(self.into(), name).into())
     }
 
+    pub fn map_get(&self, key: &Self) -> PyResult<Self> {
+        use crate::functions::map::get;
+        Ok(get(self.into(), key.into()).into())
+    }
+
     pub fn partitioning_days(&self) -> PyResult<Self> {
         use crate::functions::partitioning::days;
         Ok(days(self.into()).into())

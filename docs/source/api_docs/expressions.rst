@@ -181,6 +181,16 @@ Struct
 
    Expression.struct.get
 
+Map
+######
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.map.get
+
 .. _api-expressions-images:
 
 Image
