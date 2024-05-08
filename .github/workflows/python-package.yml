@@ -800,16 +800,14 @@ jobs:
   style:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.8']
+    env:
+      python-version: '3.8'
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python ${{ env.python-version }}
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: ${{ env.python-version }}
 
     - name: Install pre-commit
       run: |
@@ -827,7 +825,7 @@ jobs:
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/
-        key: ${{ runner.os }}-python-${{ steps.setup-python.outputs.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        key: ${{ runner.os }}-python-${{ env.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
         pre-commit run --all-files
