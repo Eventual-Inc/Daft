@@ -2,14 +2,8 @@ from __future__ import annotations
 
 import itertools
 import pathlib
-import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Generic
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Protocol
-else:
-    from typing import Protocol
+from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
 from daft.expressions import Expression, ExpressionsProjection, col

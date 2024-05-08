@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import threading
 import weakref
 from abc import abstractmethod
@@ -14,11 +13,6 @@ from daft.datatype import TimeUnit
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
 from daft.table import MicroPartition
-
-if sys.version_info < (3, 8):
-    pass
-else:
-    pass
 
 if TYPE_CHECKING:
     import pandas as pd

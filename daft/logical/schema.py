@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Iterator
 
 from daft.daft import CsvParseOptions, JsonParseOptions
@@ -14,12 +13,6 @@ from daft.datatype import DataType, TimeUnit
 if TYPE_CHECKING:
     import pyarrow as pa
 
-if sys.version_info < (3, 8):
-    pass
-else:
-    pass
-
-if TYPE_CHECKING:
     from daft.io import IOConfig
 
 

@@ -147,7 +147,7 @@ package = "parquet2"
 rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py37"]
+features = ["extension-module", "multiple-pymethods", "abi3-py38"]
 version = "0.19.2"
 
 [workspace.dependencies.pyo3-log]

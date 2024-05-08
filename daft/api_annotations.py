@@ -3,12 +3,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
-from typing import Any, Callable, ForwardRef, TypeVar, Union
-
-if sys.version_info < (3, 8):
-    from typing_extensions import get_args, get_origin
-else:
-    from typing import get_args, get_origin
+from typing import Any, Callable, ForwardRef, TypeVar, Union, get_args, get_origin
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
