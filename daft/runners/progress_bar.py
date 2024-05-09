@@ -21,13 +21,23 @@ class ProgressBar:
 
             from tqdm.auto import tqdm as _tqdm
 
-            class tqdm(_tqdm):  # type: ignore[no-redef]
-                def __init__(self, *args, **kwargs):
-                    kwargs = kwargs.copy()
-                    if "file" not in kwargs:
-                        kwargs["file"] = sys.stdout  # avoid the red block in IPython
+            try:
+                from tqdm.notebook import IProgress
 
-                    super().__init__(*args, **kwargs)
+                # write to sys.stdout if in IPython
+                if IProgress is None:
+
+                    class tqdm(_tqdm):  # type: ignore[no-redef]
+                        def __init__(self, *args, **kwargs):
+                            kwargs = kwargs.copy()
+                            if "file" not in kwargs:
+                                kwargs["file"] = sys.stdout  # avoid the red block in IPython
+
+                            super().__init__(*args, **kwargs)
+                else:
+                    tqdm = _tqdm
+            except ImportError:
+                tqdm = _tqdm
 
         self.tqdm_mod = tqdm
 
