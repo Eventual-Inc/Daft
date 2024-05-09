@@ -1350,12 +1350,15 @@ dependencies = [
  "indexmap 2.1.0",
  "lexical-core",
  "log",
+ "memchr",
+ "memmap2",
  "num-traits",
  "pyo3",
  "pyo3-log",
  "rayon",
  "rstest",
  "serde",
+ "serde_json",
  "simd-json",
  "simdutf8",
  "snafu",
@@ -2541,9 +2544,18 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "memchr"
-version = "2.6.4"
+version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f665ee40bc4a3c5590afb1e9677db74a508659dfd71e126420da8274909a0167"
+checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
+
+[[package]]
+name = "memmap2"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe751422e4a8caa417e13c3ea66452215d7d63e19e604f4980461212f3ae1322"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memoffset"

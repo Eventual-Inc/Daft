@@ -18,7 +18,7 @@ use common_error::{DaftError, DaftResult};
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
