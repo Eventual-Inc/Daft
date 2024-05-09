@@ -17,15 +17,17 @@ class ProgressBar:
         if use_ray_tqdm:
             from ray.experimental.tqdm_ray import tqdm
         else:
-            import sys
-
             from tqdm.auto import tqdm as _tqdm
 
             try:
-                from tqdm.notebook import IProgress
+                import sys
 
-                # write to sys.stdout if in IPython
-                if IProgress is None:
+                from IPython import get_ipython
+
+                ipython = get_ipython()
+
+                # write to sys.stdout if in jupyter notebook
+                if ipython is not None and "IPKernelApp" in ipython.config:
 
                     class tqdm(_tqdm):  # type: ignore[no-redef]
                         def __init__(self, *args, **kwargs):
