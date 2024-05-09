@@ -190,6 +190,16 @@ def test_murmur3_32_hash_bytes():
     assert hashes.to_pylist() == [java_answer, None]
 
 
+def test_murmur3_32_hash_fixed_sized_bytes():
+    import pyarrow as pa
+
+    arr = Series.from_arrow(pa.array([b"\x00\x01\x02\x03", None], type=pa.binary(4)))
+    assert arr.datatype() == DataType.fixed_size_binary(4)
+    hashes = arr.murmur3_32()
+    java_answer = -188683207
+    assert hashes.to_pylist() == [java_answer, None]
+
+
 def test_murmur3_32_hash_date():
     arr = Series.from_pylist([date(2017, 11, 16), None])
     assert arr.datatype() == DataType.date()
