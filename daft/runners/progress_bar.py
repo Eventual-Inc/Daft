@@ -16,12 +16,20 @@ class ProgressBar:
         self.use_ray_tqdm = use_ray_tqdm
         if use_ray_tqdm:
             from ray.experimental.tqdm_ray import tqdm
-
-            self.tqdm_mod = tqdm
         else:
-            from tqdm.auto import tqdm
+            import sys
 
-            self.tqdm_mod = tqdm
+            from tqdm.auto import tqdm as _tqdm
+
+            class tqdm(_tqdm):  # type: ignore[no-redef]
+                def __init__(self, *args, **kwargs):
+                    kwargs = kwargs.copy()
+                    if "file" not in kwargs:
+                        kwargs["file"] = sys.stdout  # avoid the red block in IPython
+
+                    super().__init__(*args, **kwargs)
+
+        self.tqdm_mod = tqdm
 
         self.pbars: dict[int, tqdm] = dict()
         self.disable = (
