@@ -86,10 +86,10 @@ jobs:
       if: ${{ (matrix.os != 'windows') }}
       run: |
         source activate
-        # source <(cargo llvm-cov show-env --export-prefix)
-        # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
-        # export CARGO_INCREMENTAL=1
-        # cargo llvm-cov clean --workspace
+        source <(cargo llvm-cov show-env --export-prefix)
+        export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
+        export CARGO_INCREMENTAL=1
+        cargo llvm-cov clean --workspace
         maturin develop
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
