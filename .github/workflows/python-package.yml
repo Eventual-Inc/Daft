@@ -45,6 +45,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Install grcov from crates.io
+      if: ${{ (matrix.os != 'windows') }}
       uses: baptiste0928/cargo-install@v3
       with:
         crate: grcov
