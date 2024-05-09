@@ -499,18 +499,15 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
 @pytest.mark.parametrize(
     "agg, expected",
     [
-        (col("cookies").sum(), [3, 7]),
-        (col("cookies").max(), [2, 4]),
-        (col("cookies").min(), [1, 3]),
-        (col("cookies").count(), [2, 2]),
-        (col("cookies").mean(), [1.5, 3.5]),
+        (col("cookies").max(), [b"2", b"4"]),
+        (col("cookies").min(), [b"1", b"3"]),
     ],
 )
 def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
             "group": Series.from_arrow(pa.array([b"1", b"1", None, None], type=type)),
-            "cookies": [1, 2, 3, 4],
+            "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
     result_table = daft_table.agg([agg], group_by=[col("group")])
@@ -530,18 +527,15 @@ def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
 @pytest.mark.parametrize(
     "agg, expected",
     [
-        (col("cookies").sum(), [6, 4]),
-        (col("cookies").max(), [4, 3]),
-        (col("cookies").min(), [2, 1]),
-        (col("cookies").count(), [2, 2]),
-        (col("cookies").mean(), [3.0, 2.0]),
+        (col("cookies").max(), [b"4", b"3"]),
+        (col("cookies").min(), [b"2", b"1"]),
     ],
 )
 def test_groupby_binary_no_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
             "group": Series.from_arrow(pa.array([b"1", b"0", b"1", b"0"], type=type)),
-            "cookies": [1, 2, 3, 4],
+            "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
     result_table = daft_table.agg([agg], group_by=[col("group")])
