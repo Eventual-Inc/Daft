@@ -295,7 +295,7 @@ impl DataType {
     #[inline]
     pub fn is_temporal(&self) -> bool {
         match self {
-            DataType::Date | DataType::Timestamp(..) => true,
+            DataType::Date | DataType::Timestamp(..) | DataType::Time(..) => true,
             DataType::Extension(_, inner, _) => inner.is_temporal(),
             _ => false,
         }

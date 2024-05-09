@@ -112,6 +112,22 @@ impl DateArray {
     }
 }
 
+impl TimeArray {
+    pub fn hour(&self) -> DaftResult<UInt32Array> {
+        let arrow_timeunit = match self.data_type() {
+            DataType::Time(timeunit) => timeunit.to_arrow(),
+            _ => unreachable!("Time array must have Time datatype"),
+        };
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Time64(arrow_timeunit));
+        let hour_arr = arrow2::compute::temporal::hour(&input_array)?;
+        Ok((self.name(), Box::new(hour_arr)).into())
+    }
+}
+
 impl TimestampArray {
     pub fn date(&self) -> DaftResult<DateArray> {
         let physical = self.physical.as_arrow();

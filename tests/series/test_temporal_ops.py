@@ -85,6 +85,25 @@ def test_series_date_day_of_week_operation() -> None:
     assert [0, 1, 2, None, 3, 4, None, 5, 6] == day_of_weeks.to_pylist()
 
 
+def test_series_date_hour_operation() -> None:
+    from datetime import time
+
+    def time_maker(h):
+        if h is None:
+            return None
+        return time(h, 1, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_times = list(map(time_maker, input))
+    s = Series.from_pylist(input_times)
+    hours = s.dt.hour()
+
+    assert hours.datatype() == DataType.uint32()
+
+    assert input == hours.to_pylist()
+
+
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_day_operation(tz) -> None:
     from datetime import datetime

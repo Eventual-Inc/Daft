@@ -1,6 +1,6 @@
 use crate::series::array_impl::IntoSeries;
 use crate::{
-    datatypes::{logical::DateArray, logical::TimeArray, DataType},
+    datatypes::{logical::TimeArray, DataType},
     series::Series,
 };
 use common_error::{DaftError, DaftResult};
