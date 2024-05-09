@@ -12,6 +12,14 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
 
+  package-name: getdaft
+  # output of `cargo llvm-cov show-env --export-prefix`
+  LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+  CARGO_LLVM_COV: 1
+  CARGO_LLVM_COV_SHOW_ENV: 1
+  CARGO_LLVM_COV_TARGET_DIR: ./target
+  CARGO_TARGET_DIR: ./target
+
 jobs:
 
   unit-tests-with-coverage:
@@ -103,11 +111,6 @@ jobs:
       env:
         # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
-        CARGO_LLVM_COV: 1
-        CARGO_LLVM_COV_SHOW_ENV: 1
-        CARGO_LLVM_COV_TARGET_DIR: ./target
-        CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
@@ -172,15 +175,7 @@ jobs:
     timeout-minutes: 30
     env:
       package-name: getdaft
-
-      # output of `cargo llvm-cov show-env --export-prefix`
       RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-      LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
-      CARGO_LLVM_COV: 1
-      CARGO_LLVM_COV_SHOW_ENV: 1
-      CARGO_LLVM_COV_TARGET_DIR: ./target
-      CARGO_TARGET_DIR: ./target
-      CARGO_PROFILE_DEV_DEBUG: 1
       CARGO_PROFILE_DEV_OPT_LEVEL: 1
 
     strategy:
@@ -218,18 +213,6 @@ jobs:
     timeout-minutes: 30
     needs:
     - integration-test-build
-    env:
-      package-name: getdaft
-
-      # output of `cargo llvm-cov show-env --export-prefix`
-      RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-      LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
-      CARGO_LLVM_COV: 1
-      CARGO_LLVM_COV_SHOW_ENV: 1
-      CARGO_LLVM_COV_TARGET_DIR: ./target
-      CARGO_TARGET_DIR: ./target
-      CARGO_PROFILE_DEV_DEBUG: 1
-      CARGO_PROFILE_DEV_OPT_LEVEL: 1
     strategy:
       fail-fast: false
       matrix:
@@ -241,13 +224,13 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
-
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
-
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
 
@@ -340,6 +323,15 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
+
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
@@ -373,12 +365,31 @@ jobs:
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
+
     - name: Run IO integration tests
       run: |
-        pytest tests/integration/io -m 'integration' --durations=50
-        pytest tests/io -m 'integration'
+        pytest --cov tests/integration/io -m 'integration' --durations=50
+        pytest --cov tests/io -m 'integration'
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+
+    - name: Generate Report
+      run: |
+        mkdir -p target/debug
+        # copy shared library for demangling
+        cp $(python3 -c "import daft; print(daft.__path__[0])")/*.so target/debug
+        coverage combine -a --data-file='.coverage' || true
+        mkdir -p report-output
+        coverage xml -o ./report-output/coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.xml
+        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.lcov
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ github.job }}-${{ join(matrix.*, '-') }}
+        path: ./report-output
+
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -423,6 +434,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
@@ -513,6 +525,15 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
+
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
@@ -550,10 +571,27 @@ jobs:
         popd
     - name: Run Iceberg integration tests
       run: |
-        pytest tests/integration/iceberg -m 'integration' --durations=50
+        pytest --cov tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
+    - name: Generate Report
+      run: |
+        mkdir -p target/debug
+        # copy shared library for demangling
+        cp $(python3 -c "import daft; print(daft.__path__[0])")/*.so target/debug
+        coverage combine -a --data-file='.coverage' || true
+        mkdir -p report-output
+        coverage xml -o ./report-output/coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.xml
+        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.lcov
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ github.job }}-${{ join(matrix.*, '-') }}
+        path: ./report-output
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -591,6 +629,13 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
@@ -621,9 +666,26 @@ jobs:
         popd
     - name: Run sql integration tests
       run: |
-        pytest tests/integration/sql -m 'integration or not integration' --durations=50
+        pytest --cov tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+
+    - name: Generate Report
+      run: |
+        mkdir -p target/debug
+        # copy shared library for demangling
+        cp $(python3 -c "import daft; print(daft.__path__[0])")/*.so target/debug
+        coverage combine -a --data-file='.coverage' || true
+        mkdir -p report-output
+        coverage xml -o ./report-output/coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.xml
+        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ github.job }}-${{ join(matrix.*, '-') }}.lcov
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ github.job }}-${{ join(matrix.*, '-') }}
+        path: ./report-output
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -729,6 +791,10 @@ jobs:
     - unit-tests-with-coverage
     - rust-tests-platform
     - integration-test-tpch
+    - integration-test-io
+    - integration-test-iceberg
+    - integration-test-sql
+
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
