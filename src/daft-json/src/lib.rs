@@ -1,6 +1,5 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
-#![feature(trait_alias)]
 #![feature(trait_upcasting)]
 use common_error::DaftError;
 use futures::stream::TryChunksError;
@@ -9,6 +8,7 @@ use snafu::Snafu;
 mod decoding;
 mod deserializer;
 mod inference;
+pub mod local;
 
 pub mod options;
 #[cfg(feature = "python")]

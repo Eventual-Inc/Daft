@@ -59,7 +59,7 @@ pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     Ok(results.into_values().map(|mut ma| ma.as_box()).collect())
 }
 
-fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
+pub(crate) fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
     match f.data_type() {
         DataType::Null => Box::new(MutableNullArray::new(DataType::Null, 0)),
         DataType::Int8 => Box::new(MutablePrimitiveArray::<i8>::with_capacity(length)),
@@ -123,7 +123,7 @@ fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
 }
 
 /// Deserialize `rows` by extending them into the given `target`
-fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
+pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
 ) {
