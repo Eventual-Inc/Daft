@@ -68,6 +68,8 @@ pub enum DataType {
     Duration(TimeUnit),
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
+    /// Opque binary data of fixed size. Enum parameter specifies the number of bytes per value.
+    FixedSizeBinary(usize),
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
     /// A list of some logical data type with a fixed number of elements.
@@ -146,6 +148,7 @@ impl DataType {
             DataType::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
             DataType::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
             DataType::Binary => Ok(ArrowType::LargeBinary),
+            DataType::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
             DataType::Utf8 => Ok(ArrowType::LargeUtf8),
             DataType::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
                 Box::new(arrow2::datatypes::Field::new(
@@ -370,6 +373,7 @@ impl DataType {
             DataType::Float64 => Some(8.),
             DataType::Utf8 => Some(VARIABLE_TYPE_SIZE),
             DataType::Binary => Some(VARIABLE_TYPE_SIZE),
+            DataType::FixedSizeBinary(size) => Some(size as f64),
             DataType::FixedSizeList(dtype, len) => {
                 dtype.estimate_size_bytes().map(|b| b * (len as f64))
             }
@@ -458,9 +462,8 @@ impl From<&ArrowType> for DataType {
                 DataType::Time(timeunit.into())
             }
             ArrowType::Duration(timeunit) => DataType::Duration(timeunit.into()),
-            ArrowType::Binary | ArrowType::LargeBinary | ArrowType::FixedSizeBinary(_) => {
-                DataType::Binary
-            }
+            ArrowType::FixedSizeBinary(size) => DataType::FixedSizeBinary(*size),
+            ArrowType::Binary | ArrowType::LargeBinary => DataType::Binary,
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
             ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {

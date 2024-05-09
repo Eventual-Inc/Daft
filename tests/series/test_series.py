@@ -123,6 +123,17 @@ def test_series_pylist_round_trip_binary() -> None:
     assert words["None"] == 2
 
 
+def test_series_pylist_round_trip_fixed_size_binary() -> None:
+    data = pa.array([b"a", b"b", b"c", None, b"d", None], type=pa.binary(1))
+
+    s = Series.from_arrow(data)
+
+    words = Counter(repr(s).split())
+    assert s.name() in words
+    assert words[s.name()] == 1
+    assert words["None"] == 2
+
+
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES + ARROW_STRING_TYPES)
 def test_series_pickling(dtype) -> None:
     s = Series.from_pylist([1, 2, 3, None]).cast(DataType.from_arrow_type(dtype))

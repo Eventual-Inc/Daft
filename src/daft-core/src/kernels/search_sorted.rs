@@ -469,6 +469,11 @@ pub fn search_sorted(
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
+        FixedSizeBinary => search_sorted_binary_array::<i64>(
+            sorted_array.as_any().downcast_ref().unwrap(),
+            keys.as_any().downcast_ref().unwrap(),
+            input_reversed,
+        ),
         t => {
             return Err(Error::NotYetImplemented(format!(
                 "search_sorted not implemented for type {t:?}"

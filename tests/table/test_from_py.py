@@ -92,6 +92,7 @@ ARROW_TYPE_ARRAYS = {
     "float64": pa.array(PYTHON_TYPE_ARRAYS["float"], pa.float64()),
     "string": pa.array(PYTHON_TYPE_ARRAYS["str"], pa.string()),
     "binary": pa.array(PYTHON_TYPE_ARRAYS["binary"], pa.binary()),
+    "fixed_size_binary": pa.array(PYTHON_TYPE_ARRAYS["binary"], pa.binary(3)),
     "boolean": pa.array(PYTHON_TYPE_ARRAYS["bool"], pa.bool_()),
     "date32": pa.array(PYTHON_TYPE_ARRAYS["date"], pa.date32()),
     "date64": pa.array(PYTHON_TYPE_ARRAYS["date"], pa.date64()),
@@ -148,6 +149,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "float64": pa.float64(),
     "string": pa.large_string(),
     "binary": pa.large_binary(),
+    "fixed_size_binary": pa.binary(3),
     "boolean": pa.bool_(),
     "date32": pa.date32(),
     "date64": pa.timestamp("ms"),
@@ -354,6 +356,7 @@ def test_from_pydict_arrow_deeply_nested() -> None:
         (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
         (pa.array([b"a", b"b", None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([b"a", b"b", None, b"d"], type=pa.binary(1)), pa.binary(1)),
         (pa.array([[1, 2], [3], None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
         (pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
         (
@@ -384,6 +387,7 @@ def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> Non
         (pa.array([1, 2, 3, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", "c", "d"], type=pa.string()), pa.large_string()),
         (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary(1)), pa.binary(1)),
         (pa.array([[1, 2], [3], [4, 5, 6], [None, 7]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
         (pa.array([[1, 2], [3, None], [4, 5], [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
         (
@@ -398,6 +402,7 @@ def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> Non
         (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
         (pa.array([b"a", b"b", None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([b"a", b"b", None, b"d"], type=pa.binary(1)), pa.binary(1)),
         (pa.array([[1, 2], [3], None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
         (pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
         (
@@ -438,6 +443,7 @@ def test_from_pydict_series() -> None:
         (pa.array([1, 2, 3, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", "c", "d"], type=pa.string()), pa.large_string()),
         (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([b"a", b"b", b"c", b"d"], type=pa.binary(1)), pa.binary(1)),
         (pa.array([[1, 2], [3], [4, 5, 6], [None, 7]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
         (pa.array([[1, 2], [3, None], [4, 5], [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
         (
@@ -452,6 +458,7 @@ def test_from_pydict_series() -> None:
         (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
         (pa.array([b"a", b"b", None, b"d"], type=pa.binary()), pa.large_binary()),
+        (pa.array([b"a", b"b", None, b"d"], type=pa.binary(1)), pa.binary(1)),
         (pa.array([[1, 2], [3], None, [None, 4]], pa.list_(pa.int64())), pa.large_list(pa.int64())),
         (pa.array([[1, 2], [3, 4], None, [None, 6]], pa.list_(pa.int64(), 2)), pa.list_(pa.int64(), 2)),
         (

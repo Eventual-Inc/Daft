@@ -67,6 +67,19 @@ def test_series_filter_on_binary() -> None:
     assert result.to_pylist() == expected
 
 
+def test_series_filter_on_fixed_size_binary() -> None:
+    s = Series.from_arrow(pa.array([b"Y", b"N", None, b"Y", None, b"N"], type=pa.binary(1)))
+    pymask = [False, True, True, None, False, False]
+    mask = Series.from_pylist(pymask)
+
+    result = s.filter(mask)
+
+    assert s.datatype() == result.datatype()
+
+    expected = [b"N", None]
+    assert result.to_pylist() == expected
+
+
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
 def test_series_filter_on_list_array(dtype) -> None:
     data = pa.array([[1], [2, None], None, [5, 6, 7], [8]], type=pa.list_(dtype))

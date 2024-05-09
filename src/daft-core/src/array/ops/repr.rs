@@ -7,8 +7,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
-        UInt64Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
+        ImageFormat, NullArray, UInt64Array, Utf8Array,
     },
     utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
     with_match_daft_types, DataType, Series,
@@ -112,6 +112,19 @@ impl NullArray {
     }
 }
 impl BinaryArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => {
+                const LEN_TO_TRUNC: usize = 40;
+                pretty_print_bytes(v, LEN_TO_TRUNC)
+            }
+        }
+    }
+}
+
+impl FixedSizeBinaryArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let val = self.get(idx);
         match val {
@@ -346,6 +359,7 @@ impl_array_html_value!(Utf8Array);
 impl_array_html_value!(BooleanArray);
 impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
+impl_array_html_value!(FixedSizeBinaryArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(MapArray);

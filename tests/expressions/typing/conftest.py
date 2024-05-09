@@ -28,6 +28,7 @@ ALL_DTYPES = [
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
     (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
+    (DataType.fixed_size_binary(1), pa.array([b"1", b"2", None], type=pa.binary(1))),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
@@ -182,6 +183,7 @@ def is_comparable(dt: DataType):
         or dt == DataType.string()
         or dt == DataType.null()
         or dt == DataType.binary()
+        or dt == DataType.fixed_size_binary(1)
         or dt._is_temporal_type()
     )
 
@@ -210,7 +212,9 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
     for x, y in ((dt1, dt2), (dt2, dt1)):
         # --- Common types across hierarchies ---
         either_null = x == DataType.null()
-        either_string_and_other_not_binary = x == DataType.string() and y != DataType.binary()
+        either_string_and_other_not_binary = x == DataType.string() and not (
+            y == DataType.binary() or y == DataType.fixed_size_binary(1)
+        )
 
         # --- Within type hierarchies ---
         both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))

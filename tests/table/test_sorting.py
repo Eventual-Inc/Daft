@@ -171,6 +171,7 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
     )
 
 
+# TODO: Implement sorting for fixed size binary arrays
 @pytest.mark.parametrize(
     "data",
     [

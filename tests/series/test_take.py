@@ -78,6 +78,22 @@ def test_series_binary_take() -> None:
     assert result.to_pylist() == expected
 
 
+def test_series_fixed_size_binary_take() -> None:
+    data = pa.array([b"123", b"256", b"312", None, b"556", None], type=pa.binary(3))
+
+    s = Series.from_arrow(data)
+    pyidx = [2, 0, None, 5]
+    idx = Series.from_pylist(pyidx)
+
+    result = s.take(idx)
+    assert result.datatype() == s.datatype()
+    assert len(result) == 4
+
+    original_data = s.to_pylist()
+    expected = [original_data[i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
 def test_series_list_take() -> None:
     data = pa.array([[1, 2], [None], None, [7, 8, 9], [10, None], [11]], type=pa.list_(pa.int64()))
 

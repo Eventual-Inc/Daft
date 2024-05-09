@@ -495,18 +495,29 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
     )
 
 
-def test_groupby_binary_bool_some_nulls() -> None:
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+@pytest.mark.parametrize(
+    "agg, expected",
+    [
+        (col("cookies").sum(), [3, 7]),
+        (col("cookies").max(), [2, 4]),
+        (col("cookies").min(), [1, 3]),
+        (col("cookies").count(), [2, 2]),
+        (col("cookies").mean(), [1.5, 3.5]),
+    ],
+)
+def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
-            "group": Series.from_pylist([b"1", b"1", None]),
-            "cookies": [2, 2, 3],
+            "group": Series.from_arrow(pa.array([b"1", b"1", None, None], type=type)),
+            "cookies": [1, 2, 3, 4],
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_table.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"1", None]),
-            "cookies": [4, 3],
+            "cookies": expected,
         }
     )
 
@@ -515,38 +526,29 @@ def test_groupby_binary_bool_some_nulls() -> None:
     )
 
 
-def test_groupby_binary_no_nulls() -> None:
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+@pytest.mark.parametrize(
+    "agg, expected",
+    [
+        (col("cookies").sum(), [6, 4]),
+        (col("cookies").max(), [4, 3]),
+        (col("cookies").min(), [2, 1]),
+        (col("cookies").count(), [2, 2]),
+        (col("cookies").mean(), [3.0, 2.0]),
+    ],
+)
+def test_groupby_binary_no_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
-            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
-            "cookies": [1, 2, 2, 3],
+            "group": Series.from_arrow(pa.array([b"1", b"0", b"1", b"0"], type=type)),
+            "cookies": [1, 2, 3, 4],
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_table.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"0", b"1"]),
-            "cookies": [5, 3],
-        }
-    )
-
-    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
-        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
-    )
-
-
-def test_groupby_binary_no_nulls_max() -> None:
-    daft_table = MicroPartition.from_pydict(
-        {
-            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
-            "cookies": [b"1", b"2", b"2", b"3"],
-        }
-    )
-    result_table = daft_table.agg([col("cookies").max()], group_by=[col("group")])
-    expected_table = MicroPartition.from_pydict(
-        {
-            "group": Series.from_pylist([b"0", b"1"]),
-            "cookies": [b"3", "2"],
+            "cookies": expected,
         }
     )
 

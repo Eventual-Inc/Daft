@@ -5,8 +5,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, MapArray, TimeArray,
             TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
+        FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     Series,
 };
@@ -67,6 +67,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 impl_array_arrow_get!(Utf8Array, &str);
 impl_array_arrow_get!(BooleanArray, bool);
 impl_array_arrow_get!(BinaryArray, &[u8]);
+impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
 impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);

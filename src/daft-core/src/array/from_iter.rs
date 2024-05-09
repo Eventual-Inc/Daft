@@ -1,4 +1,6 @@
-use crate::datatypes::{BinaryArray, BooleanArray, DaftNumericType, Field, Utf8Array};
+use crate::datatypes::{
+    BinaryArray, BooleanArray, DaftNumericType, Field, FixedSizeBinaryArray, Utf8Array,
+};
 
 use super::DataArray;
 
@@ -36,6 +38,21 @@ impl BinaryArray {
         ));
         DataArray::new(
             Field::new(name, crate::DataType::Binary).into(),
+            arrow_array,
+        )
+        .unwrap()
+    }
+}
+
+impl FixedSizeBinaryArray {
+    pub fn from_iter<S: AsRef<[u8]>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
+        size: usize,
+    ) -> Self {
+        let arrow_array = Box::new(arrow2::array::FixedSizeBinaryArray::from_iter(iter, size));
+        DataArray::new(
+            Field::new(name, crate::DataType::FixedSizeBinary(size)).into(),
             arrow_array,
         )
         .unwrap()

@@ -68,7 +68,7 @@ impl ColumnRangeStatistics {
             DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
 
             // String types
-            DataType::Utf8 | DataType::Binary |
+            DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(..) |
 
             // Temporal types
             DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) => true,
