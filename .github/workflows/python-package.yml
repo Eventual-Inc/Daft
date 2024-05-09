@@ -26,14 +26,14 @@ jobs:
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
-          os: ubuntu
+          os: ubuntu-20.04
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 7.0.0
-          os: ubuntu
-        - os: windows
+          os: ubuntu-20.04
+        - os: windows-latest
           python-version: '3.8'
-        - os: windows
+        - os: windows-latest
           pyarrow-version: 7.0.0
     steps:
     - uses: actions/checkout@v4
