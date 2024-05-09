@@ -13,7 +13,7 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -22,7 +22,7 @@ jobs:
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
         enable-aqe: [0, 1]
-        os: [ubuntu, windows]
+        os: [ubuntu-20.04, windows-latest]
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
