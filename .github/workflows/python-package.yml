@@ -13,7 +13,7 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -22,7 +22,7 @@ jobs:
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
         enable-aqe: [0, 1]
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-20.04, Windows-latest]
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
@@ -31,9 +31,9 @@ jobs:
           python-version: '3.10'
           pyarrow-version: 7.0.0
           os: ubuntu
-        - os: windows
+        - os: Windows
           python-version: '3.8'
-        - os: windows
+        - os: Windows
           pyarrow-version: 7.0.0
     steps:
     - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Install grcov from crates.io
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       uses: baptiste0928/cargo-install@v3
       with:
         crate: grcov
@@ -66,20 +66,20 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         pip install --upgrade pip
         pip install -r requirements-dev.txt
 
     - name: Install dependencies (Windows)
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
         python -m pip install --upgrade pip
         python -m pip install -r requirements-dev.txt
 
     - name: Override pyarrow
-      if: ${{ (matrix.pyarrow-version) && (matrix.os != 'windows') }}
+      if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
       run: pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
@@ -87,7 +87,7 @@ jobs:
       run: pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
         maturin develop
@@ -103,8 +103,8 @@ jobs:
         RUSTFLAGS: -Cinstrument-coverage
         CARGO_INCREMENTAL: 0
 
-    - name: Build library and Test with pytest (windows)
-      if: ${{ (matrix.os == 'windows') }}
+    - name: Build library and Test with pytest (Windows)
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
         # source <(cargo llvm-cov show-env --export-prefix)
@@ -613,7 +613,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu, Windows]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -711,7 +711,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu, Windows]
         python-version: ['3.8']
     steps:
     - uses: actions/checkout@v4
@@ -729,7 +729,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Unix Build
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         python -m venv venv
         source venv/bin/activate
@@ -737,7 +737,7 @@ jobs:
         maturin build --out dist
 
     - name: Windows Build
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         python -m venv venv
         .\venv\Scripts\activate
@@ -745,7 +745,7 @@ jobs:
         maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         rm -rf daft
         rm -rf venv
@@ -756,7 +756,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Test Imports in Clean Env (Windows)
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         rd -r daft
         rd -r venv
