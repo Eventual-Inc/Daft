@@ -40,13 +40,16 @@ jobs:
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-
+    - name: Install grcov from crates.io
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: grcov
+        version: 0.8.19
+        cache-key: ${{ runner.os }}-build
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -86,19 +89,18 @@ jobs:
       if: ${{ (matrix.os != 'windows') }}
       run: |
         source activate
-        source <(cargo llvm-cov show-env --export-prefix)
-        export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
-        export CARGO_INCREMENTAL=1
-        cargo llvm-cov clean --workspace
         maturin develop
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
+        grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing --keep-only 'src/*' -o ./report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        LLVM_PROFILE_FILE: target/coverage/%p-%m.profraw
+        RUSTFLAGS: -Cinstrument-coverage
+        CARGO_INCREMENTAL: 0
 
     - name: Build library and Test with pytest (windows)
       if: ${{ (matrix.os == 'windows') }}
