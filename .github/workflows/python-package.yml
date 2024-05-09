@@ -8,10 +8,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
 env:
   DAFT_ANALYTICS_ENABLED: '0'
 
 jobs:
+
   unit-tests-with-coverage:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -46,6 +48,10 @@ jobs:
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
+
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -85,7 +91,6 @@ jobs:
       if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
-        source <(cargo llvm-cov show-env --export-prefix)
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
@@ -94,11 +99,16 @@ jobs:
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
         cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
+        # output of `cargo llvm-cov show-env --export-prefix`
+        RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        CARGO_LLVM_COV: 1
+        CARGO_LLVM_COV_SHOW_ENV: 1
+        CARGO_LLVM_COV_TARGET_DIR: ./target
+        CARGO_TARGET_DIR: ./target
+
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
-        LLVM_PROFILE_FILE: daft-cov-%p-%m.profraw
-        RUSTFLAGS: -Cinstrument-coverage
-        CARGO_INCREMENTAL: 0
 
     - name: Build library and Test with pytest (Windows)
       if: ${{ (runner.os == 'Windows') }}
