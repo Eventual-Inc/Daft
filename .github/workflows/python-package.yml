@@ -241,6 +241,16 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
+
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
