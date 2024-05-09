@@ -636,8 +636,8 @@ def test_comparisons_fixed_size_binary_left_scalar() -> None:
 
 
 def test_comparisons_fixed_size_binary_right_scalar() -> None:
-    l_arrow = pa.array([b"111", b"222", b"333", None, b"555", None])
-    r_arrow = pa.array([b"222"])
+    l_arrow = pa.array([b"111", b"222", b"333", None, b"555", None], type=pa.binary(3))
+    r_arrow = pa.array([b"222"], type=pa.binary(3))
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
