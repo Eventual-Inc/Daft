@@ -99,7 +99,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
-        LLVM_PROFILE_FILE: target/coverage/%p-%m.profraw
+        LLVM_PROFILE_FILE: daft-cov-%p-%m.profraw
         RUSTFLAGS: -Cinstrument-coverage
         CARGO_INCREMENTAL: 0
 
