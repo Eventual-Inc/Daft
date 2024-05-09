@@ -435,14 +435,14 @@ mod tests {
 
     #[test]
     fn test_read_json() -> DaftResult<()> {
-        let uri = "/Users/corygrinstead/Downloads/stackexchange_sample.jsonl";
+        let uri = todo!();
         let _df = read_json_local(uri, None, None, None)?;
         Ok(())
     }
 
     #[test]
     fn test_read_with_limit() -> DaftResult<()> {
-        let uri = "/Users/corygrinstead/Downloads/stackexchange_sample.jsonl";
+        let uri = todo!();
         let limit = 100;
         let convert_opts = JsonConvertOptions {
             limit: Some(limit),
