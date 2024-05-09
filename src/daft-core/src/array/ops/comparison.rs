@@ -13,7 +13,7 @@ use common_error::{DaftError, DaftResult};
 
 use std::ops::Not;
 
-use super::{full::FullNull, DaftCompare, DaftLogical};
+use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 
 use super::as_arrow::AsArrow;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
@@ -1730,65 +1730,55 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
     }
 }
 
+fn cmp_fixed_size_binary<F>(
+    lhs: &FixedSizeBinaryArray,
+    rhs: &[u8],
+    op: F,
+) -> DaftResult<BooleanArray>
+where
+    F: Fn(&[u8], &[u8]) -> bool,
+{
+    let lhs_arrow = lhs.as_arrow();
+    let validity = lhs_arrow.validity().cloned();
+
+    let values = lhs_arrow.values_iter().map(|lhs| op(lhs, rhs));
+    let values = arrow2::bitmap::Bitmap::from_trusted_len_iter(values);
+
+    BooleanArray::from_arrow(
+        lhs.field().clone().into(),
+        Box::new(arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            values,
+            validity,
+        )),
+    )
+}
+
 impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
     type Output = DaftResult<BooleanArray>;
 
     fn equal(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result =
-            comparison::binary::eq_scalar(self.cast(&DataType::Binary)?.binary()?.as_arrow(), rhs)
-                .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs == rhs)
     }
 
     fn not_equal(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result =
-            comparison::binary::neq_scalar(self.cast(&DataType::Binary)?.binary()?.as_arrow(), rhs)
-                .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs != rhs)
     }
 
     fn lt(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result =
-            comparison::binary::lt_scalar(self.cast(&DataType::Binary)?.binary()?.as_arrow(), rhs)
-                .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs < rhs)
     }
 
     fn lte(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result = comparison::binary::lt_eq_scalar(
-            self.cast(&DataType::Binary)?.binary()?.as_arrow(),
-            rhs,
-        )
-        .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs <= rhs)
     }
 
     fn gt(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result =
-            comparison::binary::gt_scalar(self.cast(&DataType::Binary)?.binary()?.as_arrow(), rhs)
-                .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs > rhs)
     }
 
     fn gte(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
-        let arrow_result = comparison::binary::gt_eq_scalar(
-            self.cast(&DataType::Binary)?.binary()?.as_arrow(),
-            rhs,
-        )
-        .with_validity(validity);
-
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        cmp_fixed_size_binary(self, rhs, |lhs, rhs| lhs >= rhs)
     }
 }
 

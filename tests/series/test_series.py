@@ -143,6 +143,16 @@ def test_series_bincode_serdes(dtype) -> None:
     assert s.to_pylist() == copied_s.to_pylist()
 
 
+def test_series_bincode_serdes_fixed_size_binary() -> None:
+    s = Series.from_arrow(pa.array([b"a", b"b", b"c", None, b"d", None], type=pa.binary(1)))
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
+
+
 @pytest.mark.parametrize(
     "data",
     [
