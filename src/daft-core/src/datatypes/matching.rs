@@ -26,6 +26,7 @@ macro_rules! with_match_daft_types {(
         Time(_) => __with_ty__! { TimeType },
         Duration(_) => __with_ty__! { DurationType },
         Binary => __with_ty__! { BinaryType },
+        FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         Utf8 => __with_ty__! { Utf8Type },
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         List(_) => __with_ty__! { ListType },
@@ -74,6 +75,7 @@ macro_rules! with_match_physical_daft_types {(
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Binary => __with_ty__! { BinaryType },
+        FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         Utf8 => __with_ty__! { Utf8Type },
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         List(_) => __with_ty__! { ListType },
@@ -97,6 +99,7 @@ macro_rules! with_match_arrow_daft_types {(
         Null => __with_ty__! { NullType },
         Boolean => __with_ty__! { BooleanType },
         Binary => __with_ty__! { BinaryType },
+        FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         Int8 => __with_ty__! { Int8Type },
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
@@ -143,6 +146,7 @@ macro_rules! with_match_comparable_daft_types {(
         Float64 => __with_ty__! { Float64Type },
         Utf8 => __with_ty__! { Utf8Type },
         Binary => __with_ty__! { BinaryType },
+        FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         _ => panic!("{:?} not implemented", $key_type)
     }
 })}

@@ -19,7 +19,11 @@ daft_int_types = [
 
 daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
 daft_string_types = [DataType.string()]
-daft_nonnull_types = daft_numeric_types + daft_string_types + [DataType.bool(), DataType.binary(), DataType.date()]
+daft_nonnull_types = (
+    daft_numeric_types
+    + daft_string_types
+    + [DataType.bool(), DataType.binary(), DataType.fixed_size_binary(1), DataType.date()]
+)
 
 
 @pytest.mark.parametrize("dtype", daft_nonnull_types)

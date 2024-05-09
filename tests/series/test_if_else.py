@@ -139,6 +139,30 @@ def test_series_if_else_binary(
     assert result.to_pylist() == [if_true_value, if_false_value, None]
 
 
+@pytest.mark.parametrize("if_true_value", [b"Y", None])
+@pytest.mark.parametrize("if_false_value", [b"N", None])
+@pytest.mark.parametrize(
+    "if_true_length",
+    [1, 3],
+)
+@pytest.mark.parametrize(
+    "if_false_length",
+    [1, 3],
+)
+def test_series_if_else_fixed_size_binary(
+    if_true_value,
+    if_false_value,
+    if_true_length,
+    if_false_length,
+) -> None:
+    if_true_series = Series.from_arrow(pa.array([if_true_value] * if_true_length, type=pa.binary(1)))
+    if_false_series = Series.from_arrow(pa.array([if_false_value] * if_false_length, type=pa.binary(1)))
+    predicate_series = Series.from_arrow(pa.array([True, False, None]))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.datatype() == DataType.fixed_size_binary(1)
+    assert result.to_pylist() == [if_true_value, if_false_value, None]
+
+
 @pytest.mark.parametrize(
     ["if_true", "if_false", "expected"],
     [
@@ -559,6 +583,19 @@ def test_series_if_else_predicate_broadcast_binary(predicate_value, expected_res
     predicate_series = Series.from_arrow(pa.array([predicate_value], type=pa.bool_()))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.binary()
+    assert result.to_pylist() == expected_results
+
+
+@pytest.mark.parametrize(
+    ["predicate_value", "expected_results"],
+    [(True, [b"Y", b"Y", b"Y"]), (False, [b"N", b"N", b"N"]), (None, [None, None, None])],
+)
+def test_series_if_else_predicate_broadcast_fixed_size_binary(predicate_value, expected_results) -> None:
+    if_true_series = Series.from_arrow(pa.array([b"Y", b"Y", b"Y"], type=pa.binary(1)))
+    if_false_series = Series.from_arrow(pa.array([b"N", b"N", b"N"], type=pa.binary(1)))
+    predicate_series = Series.from_arrow(pa.array([predicate_value], type=pa.bool_()))
+    result = predicate_series.if_else(if_true_series, if_false_series)
+    assert result.datatype() == DataType.fixed_size_binary(1)
     assert result.to_pylist() == expected_results
 
 

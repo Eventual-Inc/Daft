@@ -9,7 +9,7 @@ use crate::{
     },
     datatypes::{
         logical::{Decimal128Array, MapArray},
-        Int128Array,
+        FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
@@ -214,6 +214,7 @@ impl SeriesBinaryOps for ArrayWrapper<PythonArray> {}
 impl SeriesBinaryOps for ArrayWrapper<NullArray> {}
 impl SeriesBinaryOps for ArrayWrapper<BooleanArray> {}
 impl SeriesBinaryOps for ArrayWrapper<BinaryArray> {}
+impl SeriesBinaryOps for ArrayWrapper<FixedSizeBinaryArray> {}
 impl SeriesBinaryOps for ArrayWrapper<Int8Array> {}
 impl SeriesBinaryOps for ArrayWrapper<Int16Array> {}
 impl SeriesBinaryOps for ArrayWrapper<Int32Array> {}

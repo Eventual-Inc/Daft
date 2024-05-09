@@ -5,8 +5,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, Float32Array,
-        Float64Array, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
+        FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
@@ -561,6 +561,30 @@ macro_rules! impl_binary_like_sort {
 
 impl_binary_like_sort!(BinaryArray);
 impl_binary_like_sort!(Utf8Array);
+
+impl FixedSizeBinaryArray {
+    pub fn argsort<I>(&self, _descending: bool) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        todo!("impl argsort for FixedSizeBinaryArray")
+    }
+    pub fn argsort_multikey<I>(
+        &self,
+        _others: &[Series],
+        _descending: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        todo!("impl argsort_multikey for FixedSizeBinaryArray")
+    }
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedSizeBinaryArray")
+    }
+}
 
 impl FixedSizeListArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {

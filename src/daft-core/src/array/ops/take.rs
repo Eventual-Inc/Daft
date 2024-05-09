@@ -8,8 +8,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
+        FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     DataType,
 };
@@ -79,6 +79,38 @@ impl_logicalarray_take!(FixedShapeImageArray);
 impl_logicalarray_take!(TensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+
+impl FixedSizeBinaryArray {
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let mut growable = FixedSizeBinaryArray::make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            idx.data().null_count() > 0,
+            idx.len(),
+        );
+
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize(), 1);
+                }
+            }
+        }
+
+        Ok(growable
+            .build()?
+            .downcast::<FixedSizeBinaryArray>()?
+            .clone())
+    }
+}
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {

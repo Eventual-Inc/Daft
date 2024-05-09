@@ -146,6 +146,17 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn fixed_size_binary(size: i64) -> PyResult<Self> {
+        if size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "The size for fixed-size binary types must be a positive integer, but got: {}",
+                size
+            )));
+        }
+        Ok(DataType::FixedSizeBinary(usize::try_from(size)?).into())
+    }
+
+    #[staticmethod]
     pub fn string() -> PyResult<Self> {
         Ok(DataType::Utf8.into())
     }

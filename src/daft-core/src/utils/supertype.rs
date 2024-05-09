@@ -194,7 +194,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             // }
 
             // every known type can be casted to a string except binary
-            (dt, Utf8) if dt.ne(&Binary) => Some(Utf8),
+            (dt, Utf8) if !matches!(&dt, &Binary | &FixedSizeBinary(_)) => Some(Utf8),
             (dt, Null) => Some(dt.clone()), // Drop Null Type
 
 

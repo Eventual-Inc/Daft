@@ -123,6 +123,24 @@ def test_series_binary_size_bytes(size, with_nulls) -> None:
     assert s.size_bytes() == get_total_buffer_size(data)
 
 
+@pytest.mark.parametrize("size", [1, 2, 8, 9])
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_series_fixed_size_binary_size_bytes(size, with_nulls) -> None:
+    import random
+
+    pydata = ["".join([str(random.randint(0, 9)) for _ in range(size)]).encode() for _ in range(size)]
+
+    if with_nulls and size > 0:
+        data = pa.array(pydata[:-1] + [None], pa.binary(size))
+    else:
+        data = pa.array(pydata, pa.binary(size))
+
+    s = Series.from_arrow(data)
+
+    assert s.datatype() == DataType.fixed_size_binary(size)
+    assert s.size_bytes() == get_total_buffer_size(data)
+
+
 @pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_series_list_size_bytes(dtype, size, with_nulls) -> None:

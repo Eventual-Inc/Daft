@@ -7,9 +7,9 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, ExtensionArray, FixedSizeBinaryArray, Float32Array,
+        Float64Array, Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     with_match_daft_types, DataType, Series,
 };
@@ -179,6 +179,10 @@ impl_growable_array!(UInt64Array, arrow_growable::ArrowUInt64Growable<'a>);
 impl_growable_array!(Float32Array, arrow_growable::ArrowFloat32Growable<'a>);
 impl_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
 impl_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
+impl_growable_array!(
+    FixedSizeBinaryArray,
+    arrow_growable::ArrowFixedSizeBinaryGrowable<'a>
+);
 impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
 impl_growable_array!(

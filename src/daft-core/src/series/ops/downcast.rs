@@ -83,6 +83,10 @@ impl Series {
         self.downcast()
     }
 
+    pub fn fixed_size_binary(&self) -> DaftResult<&FixedSizeBinaryArray> {
+        self.downcast()
+    }
+
     pub fn utf8(&self) -> DaftResult<&Utf8Array> {
         self.downcast()
     }
