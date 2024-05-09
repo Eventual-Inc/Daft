@@ -172,6 +172,17 @@ jobs:
     timeout-minutes: 30
     env:
       package-name: getdaft
+
+      # output of `cargo llvm-cov show-env --export-prefix`
+      RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+      LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+      CARGO_LLVM_COV: 1
+      CARGO_LLVM_COV_SHOW_ENV: 1
+      CARGO_LLVM_COV_TARGET_DIR: ./target
+      CARGO_TARGET_DIR: ./target
+      CARGO_PROFILE_DEV_DEBUG: 1
+      CARGO_PROFILE_DEV_OPT_LEVEL: 1
+
     strategy:
       matrix:
         python-version: ['3.8']
@@ -195,7 +206,7 @@ jobs:
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
-      run: maturin build --release --compatibility linux --out dist
+      run: maturin build --compatibility linux --out dist
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
