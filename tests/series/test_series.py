@@ -112,19 +112,9 @@ def test_series_pylist_round_trip_null() -> None:
     assert words["None"] == 2
 
 
-def test_series_pylist_round_trip_binary() -> None:
-    data = pa.array([b"a", b"b", b"c", None, b"d", None])
-
-    s = Series.from_arrow(data)
-
-    words = Counter(repr(s).split())
-    assert s.name() in words
-    assert words[s.name()] == 1
-    assert words["None"] == 2
-
-
-def test_series_pylist_round_trip_fixed_size_binary() -> None:
-    data = pa.array([b"a", b"b", b"c", None, b"d", None], type=pa.binary(1))
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_series_pylist_round_trip_binary(type) -> None:
+    data = pa.array([b"a", b"b", b"c", None, b"d", None], type=type)
 
     s = Series.from_arrow(data)
 
