@@ -177,6 +177,7 @@ jobs:
       package-name: getdaft
       RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
       CARGO_PROFILE_DEV_OPT_LEVEL: 1
+      CARGO_PROFILE_DEV_DEBUG: 1
 
     strategy:
       matrix:
