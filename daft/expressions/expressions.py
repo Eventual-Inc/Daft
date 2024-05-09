@@ -797,13 +797,13 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.dt_day())
 
     def hour(self) -> Expression:
-        """Retrieves the day for a datetime column
+        """Retrieves the hour for a datetime column
 
         Example:
-            >>> col("x").dt.day()
+            >>> col("x").dt.hour()
 
         Returns:
-            Expression: a UInt32 expression with just the day extracted from a datetime column
+            Expression: a UInt32 expression with just the hour extracted from a datetime column
         """
         return Expression._from_pyexpr(self._expr.dt_hour())
 
