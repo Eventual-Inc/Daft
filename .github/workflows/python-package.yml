@@ -8,12 +8,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
 env:
   DAFT_ANALYTICS_ENABLED: '0'
 
 jobs:
+
   unit-tests-with-coverage:
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -22,30 +24,33 @@ jobs:
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
         enable-aqe: [0, 1]
-        os: [ubuntu, windows]
+        os: [ubuntu-20.04, windows-latest]
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
-          os: ubuntu
+          os: ubuntu-20.04
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 7.0.0
-          os: ubuntu
-        - os: windows
+          os: ubuntu-20.04
+        - os: windows-latest
           python-version: '3.8'
-        - os: windows
+        - os: windows-latest
           pyarrow-version: 7.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -62,20 +67,20 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         pip install --upgrade pip
         pip install -r requirements-dev.txt
 
     - name: Install dependencies (Windows)
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
         python -m pip install --upgrade pip
         python -m pip install -r requirements-dev.txt
 
     - name: Override pyarrow
-      if: ${{ (matrix.pyarrow-version) && (matrix.os != 'windows') }}
+      if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
       run: pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
@@ -83,25 +88,32 @@ jobs:
       run: pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
-        # source <(cargo llvm-cov show-env --export-prefix)
-        # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
-        # export CARGO_INCREMENTAL=1
-        # cargo llvm-cov clean --workspace
+        export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
+        cargo llvm-cov clean --workspace
         maturin develop
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
+        pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
+        mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
+        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
+        # output of `cargo llvm-cov show-env --export-prefix`
+        RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        CARGO_LLVM_COV: 1
+        CARGO_LLVM_COV_SHOW_ENV: 1
+        CARGO_LLVM_COV_TARGET_DIR: ./target
+        CARGO_TARGET_DIR: ./target
+
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
-    - name: Build library and Test with pytest (windows)
-      if: ${{ (matrix.os == 'windows') }}
+    - name: Build library and Test with pytest (Windows)
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
         # source <(cargo llvm-cov show-env --export-prefix)
@@ -610,7 +622,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu, Windows]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -708,7 +720,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu, Windows]
         python-version: ['3.8']
     steps:
     - uses: actions/checkout@v4
@@ -726,7 +738,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Unix Build
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         python -m venv venv
         source venv/bin/activate
@@ -734,7 +746,7 @@ jobs:
         maturin build --out dist
 
     - name: Windows Build
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         python -m venv venv
         .\venv\Scripts\activate
@@ -742,7 +754,7 @@ jobs:
         maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
-      if: ${{ (matrix.os != 'windows') }}
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         rm -rf daft
         rm -rf venv
@@ -753,7 +765,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Test Imports in Clean Env (Windows)
-      if: ${{ (matrix.os == 'windows') }}
+      if: ${{ (runner.os == 'Windows') }}
       run: |
         rd -r daft
         rd -r venv
