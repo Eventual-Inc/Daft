@@ -786,7 +786,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.dt_date())
 
     def day(self) -> Expression:
-        """Retrieves the day for a datetime or time column
+        """Retrieves the day for a datetime column
 
         Example:
             >>> col("x").dt.day()
@@ -797,13 +797,27 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.dt_day())
 
     def hour(self) -> Expression:
-        """Retrieves the hour for a datetime column
+        """Retrieves the hour for a datetime or time column
 
         Example:
-            >>> col("x").dt.hour()
+            >>> import daft, datetime
+            >>> df = daft.from_pydict({"time": [datetime.time(1, 1, 1), datetime.time(2, 1, 59), datetime.time(23, 2, 0)]})
+            >>> df = df.with_column("hour", df["time"].dt.hour())
+            >>> df.show()
+            ╭────────────────────┬────────╮
+            │ time               ┆ hour   │
+            │ ---                ┆ ---    │
+            │ Time(Microseconds) ┆ UInt32 │
+            ╞════════════════════╪════════╡
+            │ 01:01:01           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 02:01:59           ┆ 2      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 23:02:00           ┆ 23     │
+            ╰────────────────────┴────────╯
 
         Returns:
-            Expression: a UInt32 expression with just the hour extracted from a datetime column
+            Expression: a UInt32 expression with just the hour extracted
         """
         return Expression._from_pyexpr(self._expr.dt_hour())
 
