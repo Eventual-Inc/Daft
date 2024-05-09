@@ -786,7 +786,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.dt_date())
 
     def day(self) -> Expression:
-        """Retrieves the day for a datetime column
+        """Retrieves the day for a datetime or time column
 
         Example:
             >>> col("x").dt.day()
