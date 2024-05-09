@@ -184,6 +184,32 @@ def test_table_minmax_bool(case) -> None:
     assert res == expected
 
 
+test_table_minmax_binary_cases = [
+    ([], {"min": [None], "max": [None]}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    ([b"1"], {"min": [b"1"], "max": [b"1"]}),
+    ([None, b"1"], {"min": [b"1"], "max": [b"1"]}),
+    ([b"a", b"b", b"c", b"a"], {"min": [b"a"], "max": [b"c"]}),
+]
+
+
+@pytest.mark.parametrize("case", test_table_minmax_binary_cases, ids=[f"{_}" for _ in test_table_minmax_binary_cases])
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_table_minmax_binary(case, type) -> None:
+    input, expected = case
+    daft_table = MicroPartition.from_arrow(pa.table({"input": pa.array(input, type=type)}))
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min").min(),
+            col("input").alias("max").max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
 test_table_sum_mean_cases = [
     ([], {"sum": [None], "mean": [None]}),
     ([None], {"sum": [None], "mean": [None]}),

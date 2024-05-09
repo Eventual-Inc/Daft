@@ -268,17 +268,17 @@ impl DaftCompareAggable for DataArray<BinaryType> {
 
 fn cmp_fixed_size_binary<'a, F>(
     data_array: &'a FixedSizeBinaryArray,
-    cmp: F,
+    op: F,
 ) -> DaftResult<FixedSizeBinaryArray>
 where
-    F: Fn(&'a [u8], &'a [u8]) -> bool,
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 {
     let arrow_array = data_array.as_arrow();
     if arrow_array.null_count() == arrow_array.len() {
         Ok(FixedSizeBinaryArray::full_null(
             data_array.name(),
             &DataType::FixedSizeBinary(arrow_array.size()),
-            data_array.len(),
+            1,
         ))
     } else if arrow_array.validity().is_some() {
         let res = arrow_array
@@ -286,35 +286,21 @@ where
             .reduce(|v1, v2| match (v1, v2) {
                 (None, v2) => v2,
                 (v1, None) => v1,
-                (Some(v1), Some(v2)) => {
-                    if cmp(v1, v2) {
-                        Some(v2)
-                    } else {
-                        Some(v1)
-                    }
-                }
+                (Some(v1), Some(v2)) => Some(op(v1, v2)),
             })
             .unwrap_or(None);
-        let arrow_res = arrow2::array::FixedSizeBinaryArray::from_iter(
+        Ok(FixedSizeBinaryArray::from_iter(
+            data_array.name(),
             std::iter::once(res),
             arrow_array.size(),
-        );
-        Ok(FixedSizeBinaryArray::from((
-            data_array.name(),
-            Box::new(arrow_res),
-        )))
+        ))
     } else {
-        let res = arrow_array
-            .values_iter()
-            .reduce(|v1, v2| if cmp(v1, v2) { v2 } else { v1 });
-        let arrow_res = arrow2::array::FixedSizeBinaryArray::from_iter(
+        let res = arrow_array.values_iter().reduce(|v1, v2| op(v1, v2));
+        Ok(FixedSizeBinaryArray::from_iter(
+            data_array.name(),
             std::iter::once(res),
             arrow_array.size(),
-        );
-        Ok(FixedSizeBinaryArray::from((
-            data_array.name(),
-            Box::new(arrow_res),
-        )))
+        ))
     }
 }
 
@@ -372,10 +358,10 @@ where
 impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
     type Output = DaftResult<DataArray<FixedSizeBinaryType>>;
     fn min(&self) -> Self::Output {
-        cmp_fixed_size_binary(self, |l, r| l < r)
+        cmp_fixed_size_binary(self, |l, r| l.min(r))
     }
     fn max(&self) -> Self::Output {
-        cmp_fixed_size_binary(self, |l, r| l > r)
+        cmp_fixed_size_binary(self, |l, r| l.max(r))
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
