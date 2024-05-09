@@ -22,7 +22,7 @@ jobs:
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 12.0]
         enable-aqe: [0, 1]
-        os: [ubuntu-20.04, Windows-latest]
+        os: [ubuntu-20.04, windows-latest]
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
@@ -31,9 +31,9 @@ jobs:
           python-version: '3.10'
           pyarrow-version: 7.0.0
           os: ubuntu
-        - os: Windows
+        - os: windows
           python-version: '3.8'
-        - os: Windows
+        - os: windows
           pyarrow-version: 7.0.0
     steps:
     - uses: actions/checkout@v4
