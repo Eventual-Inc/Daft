@@ -219,12 +219,15 @@ class DataFrame:
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
-            results_buffer_size: how many partitions to allow in the results buffer. Setting this value
-                value will buffer results up to the provided size and provide backpressure to dataframe
-                execution based on the rate of consumption from the returned iterator. Setting this to
+            results_buffer_size: how many partitions to allow in the results buffer (only affects execution with Ray).
+                Setting this value value will buffer results up to the provided size and provide backpressure
+                to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
                 `None` will result in a buffer of unbounded size, causing the dataframe run asynchronously
                 to completion.
         """
+        if results_buffer_size is not None and not results_buffer_size > 0:
+            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
