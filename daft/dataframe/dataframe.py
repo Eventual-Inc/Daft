@@ -212,15 +212,18 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self, buffer_size: Optional[int] = None) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    def iter_partitions(self, results_buffer_size: Optional[int] = 1) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
-            buffer_size: how many in-flight partitions to allow. This controls the "depth" of the pipeline. Defaults
-                to `None` which indicates an unbounded number of in-flight partitions.
+            results_buffer_size: how many partitions to allow in the results buffer. Setting this value
+                value will buffer results up to the provided size and provide backpressure to dataframe
+                execution based on the rate of consumption from the returned iterator. Setting this to
+                `None` will result in a buffer of unbounded size, causing the dataframe run asynchronously
+                to completion.
         """
         if self._result is not None:
             # If the dataframe has already finished executing,
@@ -231,7 +234,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder, results_buffer_size=buffer_size)
+            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
             for result in results_iter:
                 yield result.partition()
 
