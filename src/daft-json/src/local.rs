@@ -7,7 +7,7 @@ use daft_table::Table;
 use indexmap::IndexMap;
 use num_traits::Pow;
 
-use rayon::prelude::*;
+use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
 
@@ -16,7 +16,8 @@ use crate::{
     deserializer::Value,
     inference::{column_types_map_to_fields, infer_records_schema},
     read::tables_concat,
-    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, RayonThreadPoolSnafu,
+    StdIOSnafu,
 };
 
 const NEWLINE: u8 = b'\n';
@@ -27,13 +28,19 @@ pub fn read_json_local(
     convert_options: Option<JsonConvertOptions>,
     parse_options: Option<JsonParseOptions>,
     read_options: Option<JsonReadOptions>,
-    _max_chunks_in_flight: Option<usize>,
+    max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
-    let mmap = unsafe { memmap2::Mmap::map(&file) }.expect("TODO");
+    let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
     let bytes = &mmap[..];
-    let reader = JsonReader::try_new(bytes, convert_options, parse_options, read_options)?;
+    let reader = JsonReader::try_new(
+        bytes,
+        convert_options,
+        parse_options,
+        read_options,
+        max_chunks_in_flight,
+    )?;
     reader.finish()
 }
 
@@ -45,14 +52,16 @@ struct JsonReader<'a> {
     sample_size: usize,
     n_rows: Option<usize>,
     chunk_size: Option<usize>,
+    pool: rayon::ThreadPool,
 }
 
 impl<'a> JsonReader<'a> {
-    pub fn try_new(
+    fn try_new(
         bytes: &'a [u8],
         convert_options: Option<JsonConvertOptions>,
         parse_options: Option<JsonParseOptions>,
         read_options: Option<JsonReadOptions>,
+        max_chunks_in_flight: Option<usize>,
     ) -> DaftResult<Self> {
         let sample_size = parse_options
             .as_ref()
@@ -76,6 +85,13 @@ impl<'a> JsonReader<'a> {
             None => Schema::try_from(&infer_schema(bytes, None, None)?)?,
         };
 
+        let pool = if let Some(max_in_flight) = max_chunks_in_flight {
+            ThreadPoolBuilder::new().num_threads(max_in_flight).build()
+        } else {
+            ThreadPoolBuilder::new().num_threads(n_threads).build()
+        }
+        .context(RayonThreadPoolSnafu)?;
+
         let projected_schema = match convert_options.and_then(|options| options.include_columns) {
             Some(projected_columns) => schema.project(&projected_columns)?,
             None => schema,
@@ -89,14 +105,11 @@ impl<'a> JsonReader<'a> {
             sample_size,
             n_rows,
             chunk_size,
+            pool,
         })
     }
 
     pub fn finish(&self) -> DaftResult<Table> {
-        self.read_json_impl()
-    }
-
-    fn read_json_impl(&self) -> DaftResult<Table> {
         let mut bytes = self.bytes;
         let mut n_threads = self.n_threads;
         let mut total_rows = 128;
@@ -117,28 +130,30 @@ impl<'a> JsonReader<'a> {
                 }
             }
         }
+
         if total_rows <= 128 {
             n_threads = 1;
         }
 
         let total_len = bytes.len();
-        let chunk_size = self.chunk_size.unwrap_or_else(|| bytes.len() / n_threads);
+        let chunk_size = self.chunk_size.unwrap_or_else(|| total_len / n_threads);
         let file_chunks = self.get_file_chunks(bytes, n_threads, total_len, chunk_size);
 
-        let tbls = file_chunks
-            .into_par_iter()
-            .map(|(start, stop)| {
-                let chunk = &bytes[start..stop];
-                self.parse_json_chunk(chunk, chunk_size)
-            })
-            .collect::<DaftResult<Vec<Table>>>()?;
+        let tbls = self.pool.install(|| {
+            file_chunks
+                .into_par_iter()
+                .map(|(start, stop)| {
+                    let chunk = &bytes[start..stop];
+                    self.parse_json_chunk(chunk, chunk_size)
+                })
+                .collect::<DaftResult<Vec<Table>>>()
+        })?;
 
         let tbl = tables_concat(tbls)?;
 
-        // The `limit` is not guaranteed, so we need to properly apply the limit after concatenating the tables
-        let len = tbl.len();
+        // The `limit` is not guaranteed, so we need to properly apply the limit after concatenating the
         if let Some(limit) = self.n_rows {
-            if len > limit {
+            if tbl.len() > limit {
                 return tbl.head(limit);
             }
         };
@@ -162,8 +177,8 @@ impl<'a> JsonReader<'a> {
         // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
         // This is more accurate than using a `Lines` iterator.
         // Ideally, we would instead use a line-based deserializer from simd_json, but that is not available.
-        let iter = serde_json::Deserializer::from_slice(bytes)
-            .into_iter::<Box<serde_json::value::RawValue>>();
+        let iter =
+            serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
         let mut columns = arrow_schema
             .fields
@@ -180,7 +195,7 @@ impl<'a> JsonReader<'a> {
             let value = record.map_err(|e| super::Error::JsonDeserializationError {
                 string: e.to_string(),
             })?;
-            let v = parse_raw_value(&value, scratch)?;
+            let v = parse_raw_value(value, scratch)?;
 
             match v {
                 Value::Object(record) => {
@@ -264,6 +279,7 @@ impl<'a> JsonReader<'a> {
     }
 }
 
+// TODO: there should be much more shared code between this and the async version
 fn infer_schema(
     bytes: &[u8],
     max_rows: Option<usize>,
@@ -279,14 +295,14 @@ fn infer_schema(
     let scratch = &mut scratch;
 
     let iter =
-        serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
+        serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
     for value in iter.take(max_records) {
         let value = value?;
         let bytes = value.get().as_bytes();
         total_bytes += bytes.len();
 
-        let v = parse_raw_value(&value, scratch)?;
+        let v = parse_raw_value(value, scratch)?;
 
         let inferred_schema = infer_records_schema(&v).context(ArrowSnafu)?;
         for field in inferred_schema.fields {
@@ -406,7 +422,7 @@ fn parse_raw_value<'a>(
     })
 }
 
-pub(crate) fn next_line_position(input: &[u8]) -> Option<usize> {
+fn next_line_position(input: &[u8]) -> Option<usize> {
     let pos = memchr::memchr(NEWLINE, input)?;
     if pos == 0 {
         return Some(1);
@@ -460,7 +476,7 @@ mod tests {
 {"floats": 2.0, "utf8": "world", "bools": false}
 {"floats": 3.0, "utf8": "!\\n", "bools": true}
 "#;
-        let reader = JsonReader::try_new(json.as_bytes(), None, None, None).unwrap();
+        let reader = JsonReader::try_new(json.as_bytes(), None, None, None, None).unwrap();
         let _result = reader.finish();
     }
 }

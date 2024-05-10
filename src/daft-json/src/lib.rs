@@ -45,6 +45,8 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[snafu(display("Error creating rayon threadpool: {}", source))]
+    RayonThreadPoolError { source: rayon::ThreadPoolBuildError },
 }
 
 impl From<Error> for DaftError {
