@@ -144,7 +144,6 @@ class PyRunner(Runner[MicroPartition]):
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
-        # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
     ) -> Iterator[PyMaterializedResult]:
         # NOTE: Freeze and use this same execution config for the entire execution
@@ -159,7 +158,8 @@ class PyRunner(Runner[MicroPartition]):
                 source_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
                 tasks = plan_scheduler.to_partition_tasks(
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    max_result_buffer_size=results_buffer_size,
                 )
                 del plan_scheduler
                 results_gen = self._physical_plan_to_partitions(tasks)
@@ -180,7 +180,7 @@ class PyRunner(Runner[MicroPartition]):
             plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
             psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
             # Get executable tasks from planner.
-            tasks = plan_scheduler.to_partition_tasks(psets)
+            tasks = plan_scheduler.to_partition_tasks(psets, max_result_buffer_size=results_buffer_size)
             del psets
             with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                 results_gen = self._physical_plan_to_partitions(tasks)

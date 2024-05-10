@@ -1459,11 +1459,17 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
 
 def materialize(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    max_result_buffer_size: int | None = None,
 ) -> MaterializedPhysicalPlan:
     """Materialize the child plan.
 
     Repeatedly yields either a PartitionTask (to produce an intermediate partition)
     or a PartitionT (which is part of the final result).
+
+    Args:
+        child_plan: Child "in progress" plan
+        max_result_buffer_size: Maximum size of the result buffer, at which point no forward
+            progress will be allowed to be made
     """
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
@@ -1474,6 +1480,11 @@ def materialize(
             done_task = materializations.popleft()
             yield done_task.result()
 
+        # Check if maximum number of materializations has been hit
+        if max_result_buffer_size is not None and len(materializations) >= max_result_buffer_size:
+            yield None
+            continue
+
         # Materialize a single dependency.
         try:
             step = next(child_plan)
@@ -1481,7 +1492,6 @@ def materialize(
                 step = step.finalize_partition_task_single_output(stage_id=stage_id)
                 materializations.append(step)
             assert isinstance(step, (PartitionTask, type(None)))
-
             yield step
 
         except StopIteration:

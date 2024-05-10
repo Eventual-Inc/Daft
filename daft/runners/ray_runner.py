@@ -440,6 +440,7 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
+        self.max_result_buffer_size_by_df: dict[str, int | None] = {}
 
         self.use_ray_tqdm = use_ray_tqdm
 
@@ -467,7 +468,10 @@ class Scheduler:
         results_buffer_size: int | None = None,
     ) -> None:
         self.execution_configs_objref_by_df[result_uuid] = ray.put(daft_execution_config)
-        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+        self.results_by_df[result_uuid] = Queue(maxsize=1 if results_buffer_size is not None else -1)
+        self.max_result_buffer_size_by_df[result_uuid] = (
+            max(results_buffer_size - 1, 1) if results_buffer_size is not None else None
+        )
         self.active_by_df[result_uuid] = True
 
         t = threading.Thread(
@@ -495,6 +499,7 @@ class Scheduler:
             del self.threads_by_df[result_uuid]
             del self.active_by_df[result_uuid]
             del self.results_by_df[result_uuid]
+            del self.max_result_buffer_size_by_df[result_uuid]
 
     def _run_plan(
         self,
@@ -503,7 +508,9 @@ class Scheduler:
         result_uuid: str,
     ) -> None:
         # Get executable tasks from plan scheduler.
-        tasks = plan_scheduler.to_partition_tasks(psets)
+        tasks = plan_scheduler.to_partition_tasks(
+            psets, max_result_buffer_size=self.max_result_buffer_size_by_df[result_uuid]
+        )
 
         daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
