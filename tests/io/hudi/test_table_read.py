@@ -11,7 +11,7 @@ PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeri
 pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="hudi only supported if pyarrow >= 8.0.0")
 
 
-def test_hudi_read_table(get_testing_table_for_supported_cases):
+def test_read_table(get_testing_table_for_supported_cases):
     table_path = get_testing_table_for_supported_cases
     df = daft.read_hudi(table_path)
 
@@ -59,3 +59,9 @@ def test_hudi_read_table(get_testing_table_for_supported_cases):
             },
         ],
     }
+
+
+def test_read_empty_table(get_empty_table):
+    table_path = get_empty_table
+    df = daft.read_hudi(table_path)
+    assert len(df.collect()) == 0
