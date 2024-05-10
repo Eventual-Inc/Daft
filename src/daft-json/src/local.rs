@@ -32,7 +32,10 @@ pub fn read_json_local(
 ) -> DaftResult<Table> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
+    // SAFETY: mmapping is inherently unsafe.
+    // We are trusting that the file is not modified or accessed by other systems while we are reading it.
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
+
     let bytes = &mmap[..];
     let reader = JsonReader::try_new(
         bytes,
