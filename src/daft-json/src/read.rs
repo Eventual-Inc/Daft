@@ -176,13 +176,14 @@ async fn read_json_single_into_table(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let (source_type, fixed_uri) = parse_url(uri)?;
-
-    if matches!(source_type, SourceType::File) {
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
         return read_json_local(
             fixed_uri.as_ref(),
             convert_options,
             parse_options,
             read_options,
+            max_chunks_in_flight,
         );
     }
 

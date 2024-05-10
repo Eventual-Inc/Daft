@@ -168,6 +168,23 @@ impl Schema {
             .map(|f| f.dtype.estimate_size_bytes().unwrap_or(0.))
             .sum()
     }
+
+    /// Returns a new schema with only the specified columns in the new schema
+    pub fn project<S: AsRef<str>>(self, columns: &[S]) -> DaftResult<Schema> {
+        let new_fields = columns
+            .iter()
+            .map(|i| {
+                let key = i.as_ref();
+                self.fields.get(key).cloned().ok_or_else(|| {
+                    DaftError::SchemaMismatch(format!(
+                        "Column {} not found in schema: {:?}",
+                        key, self.fields
+                    ))
+                })
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        Self::new(new_fields)
+    }
 }
 
 impl Eq for Schema {}
