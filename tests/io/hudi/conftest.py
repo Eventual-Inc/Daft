@@ -7,6 +7,12 @@ from pathlib import Path
 import pytest
 
 
+def _extract_testing_table(zip_file_path, target_path, table_name) -> str:
+    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+        zip_ref.extractall(target_path)
+    return os.path.join(target_path, table_name)
+
+
 @pytest.fixture(
     params=[
         "v6_complexkeygen_hivestyle",
@@ -19,6 +25,15 @@ import pytest
 def get_testing_table_for_supported_cases(request, tmp_path) -> str:
     table_name = request.param
     zip_file_path = Path(__file__).parent.joinpath("data", f"{table_name}.zip")
-    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-        zip_ref.extractall(tmp_path)
-    return os.path.join(tmp_path, table_name)
+    return _extract_testing_table(zip_file_path, tmp_path, table_name)
+
+
+@pytest.fixture(
+    params=[
+        "v6_empty",
+    ]
+)
+def get_empty_table(request, tmp_path) -> str:
+    table_name = request.param
+    zip_file_path = Path(__file__).parent.joinpath("data", f"{table_name}.zip")
+    return _extract_testing_table(zip_file_path, tmp_path, table_name)

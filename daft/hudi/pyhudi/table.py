@@ -171,6 +171,7 @@ class HudiTable:
         files_metadata = []
         min_vals_arr = []
         max_vals_arr = []
+        files_metadata_schema = FileSlice.FILES_METADATA_SCHEMA if file_slices else pa.schema([])
         colstats_schema = file_slices[0].colstats_schema if file_slices else pa.schema([])
         for file_slice in file_slices:
             files_metadata.append(file_slice.files_metadata)
@@ -181,7 +182,7 @@ class HudiTable:
         min_value_arrays = [pa.array(column) for column in list(zip(*min_vals_arr))]
         max_value_arrays = [pa.array(column) for column in list(zip(*max_vals_arr))]
         return HudiTableMetadata(
-            pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.FILES_METADATA_SCHEMA),
+            pa.RecordBatch.from_arrays(metadata_arrays, schema=files_metadata_schema),
             pa.RecordBatch.from_arrays(min_value_arrays, schema=colstats_schema),
             pa.RecordBatch.from_arrays(max_value_arrays, schema=colstats_schema),
         )
