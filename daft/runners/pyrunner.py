@@ -159,10 +159,9 @@ class PyRunner(Runner[MicroPartition]):
                 # don't store partition sets in variable to avoid reference
                 tasks = plan_scheduler.to_partition_tasks(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-                    max_result_buffer_size=results_buffer_size,
                 )
                 del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(tasks)
+                results_gen = self._physical_plan_to_partitions(tasks, results_buffer_size)
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -180,10 +179,10 @@ class PyRunner(Runner[MicroPartition]):
             plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
             psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
             # Get executable tasks from planner.
-            tasks = plan_scheduler.to_partition_tasks(psets, max_result_buffer_size=results_buffer_size)
+            tasks = plan_scheduler.to_partition_tasks(psets)
             del psets
             with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                results_gen = self._physical_plan_to_partitions(tasks)
+                results_gen = self._physical_plan_to_partitions(tasks, results_buffer_size)
                 yield from results_gen
 
     def run_iter_tables(
@@ -193,39 +192,69 @@ class PyRunner(Runner[MicroPartition]):
             yield result.partition()
 
     def _physical_plan_to_partitions(
-        self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
+        self,
+        plan: physical_plan.MaterializedPhysicalPlan[MicroPartition],
+        results_buffer_size: int | None,
     ) -> Iterator[PyMaterializedResult]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
+        final_results: list[physical_plan.SingleOutputPartitionTask] = []
+
+        def _await_at_least_one_task():
+            # Await at least one task and process the results.
+            assert len(future_to_task) > 0, "Scheduler deadlocked! This should never happen. Please file an issue."
+            done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
+            for done_future in done_set:
+                done_id = future_to_task.pop(done_future)
+                del inflight_tasks_resources[done_id]
+                done_task = inflight_tasks.pop(done_id)
+                materialized_results = done_future.result()
+
+                pbar.mark_task_done(done_task)
+
+                logger.debug("Task completed: %s -> <%s partitions>", done_id, len(materialized_results))
+
+                done_task.set_result(materialized_results)
+
         pbar = ProgressBar(use_ray_tqdm=False)
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
-                next_step = next(plan)
+                next_step, is_final = next(plan)
 
                 # Dispatch->Await loop.
                 while True:
+                    if final_results and final_results[0].done():
+                        materialized_result = final_results.pop(0).result()
+                        assert isinstance(materialized_result, PyMaterializedResult)
+                        yield materialized_result
+
+                    # Skip task dispatching and go back to waiting on results if result buffer is already too full
+                    if results_buffer_size is not None and len(final_results) >= results_buffer_size:
+                        _await_at_least_one_task()
+                        continue
+
                     # Dispatch loop.
                     while True:
                         if next_step is None:
                             # Blocked on already dispatched tasks; await some tasks.
                             break
 
-                        elif isinstance(next_step, MaterializedResult):
-                            assert isinstance(next_step, PyMaterializedResult)
-
-                            # A final result.
-                            yield next_step
-                            next_step = next(plan)
-                            continue
-
-                        elif not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values()):
+                        if not self._can_admit_task(
+                            next_step.resource_request,
+                            inflight_tasks_resources.values(),
+                            len(final_results),
+                            results_buffer_size,
+                        ):
                             # Insufficient resources; await some tasks.
                             break
 
                         else:
                             # next_task is a task to run.
+                            if is_final:
+                                assert isinstance(next_step, physical_plan.SingleOutputPartitionTask)
+                                final_results.append(next_step)
 
                             # Run the task in the main thread, instead of the thread pool, in certain conditions:
                             # - Threading is disabled in runner config.
@@ -265,29 +294,21 @@ class PyRunner(Runner[MicroPartition]):
                                 inflight_tasks[next_step.id()] = next_step
                                 inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
-                            next_step = next(plan)
+                            next_step, is_final = next(plan)
 
-                    # Await at least one task and process the results.
-                    assert (
-                        len(future_to_task) > 0
-                    ), "Scheduler deadlocked! This should never happen. Please file an issue."
-                    done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
-                    for done_future in done_set:
-                        done_id = future_to_task.pop(done_future)
-                        del inflight_tasks_resources[done_id]
-                        done_task = inflight_tasks.pop(done_id)
-                        materialized_results = done_future.result()
-
-                        pbar.mark_task_done(done_task)
-
-                        logger.debug("Task completed: %s -> <%s partitions>", done_id, len(materialized_results))
-
-                        done_task.set_result(materialized_results)
+                    _await_at_least_one_task()
 
                     if next_step is None:
-                        next_step = next(plan)
+                        next_step, is_final = next(plan)
 
             except StopIteration:
+                while final_results:
+                    if final_results[0].done():
+                        materialized_result = final_results.pop(0).result()
+                        assert isinstance(materialized_result, PyMaterializedResult)
+                        yield materialized_result
+                    else:
+                        _await_at_least_one_task()
                 pbar.close()
                 return
 
@@ -303,7 +324,13 @@ class PyRunner(Runner[MicroPartition]):
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
             )
 
-    def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
+    def _can_admit_task(
+        self,
+        resource_request: ResourceRequest,
+        inflight_resources: Iterable[ResourceRequest],
+        final_result_len: int,
+        results_buffer_size: int | None,
+    ) -> bool:
         self._check_resource_requests(resource_request)
 
         total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
@@ -313,7 +340,11 @@ class PyRunner(Runner[MicroPartition]):
             resource_request.memory_bytes or 0
         ) <= self.bytes_memory
 
-        return all((cpus_okay, gpus_okay, memory_okay))
+        buffer_okay = True
+        if results_buffer_size is not None:
+            buffer_okay = final_result_len < results_buffer_size
+
+        return all((cpus_okay, gpus_okay, memory_okay, buffer_okay))
 
     @staticmethod
     def build_partitions(

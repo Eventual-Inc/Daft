@@ -32,11 +32,9 @@ class PhysicalPlanScheduler:
     def to_partition_tasks(
         self,
         psets: dict[str, list[PartitionT]],
-        max_result_buffer_size: int | None = None,
     ) -> physical_plan.MaterializedPhysicalPlan:
         return physical_plan.materialize(
             self._scheduler.to_partition_tasks(psets),
-            max_result_buffer_size=max_result_buffer_size,
         )
 
 

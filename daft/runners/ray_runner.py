@@ -509,7 +509,7 @@ class Scheduler:
     ) -> None:
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(
-            psets, max_result_buffer_size=self.max_result_buffer_size_by_df[result_uuid]
+            psets,
         )
 
         daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
@@ -517,6 +517,8 @@ class Scheduler:
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
         pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
+        final_results: list[SingleOutputPartitionTask] = []
+        max_result_buffer_size = self.max_result_buffer_size_by_df[result_uuid]
 
         start = datetime.now()
         profile_filename = (
@@ -535,11 +537,83 @@ class Scheduler:
                 except Full:
                     pass
 
+        def _await_inflight_tasks():
+            """Awaits the next task, and then the next batch of tasks within 10ms."""
+            dispatch = datetime.now()
+            completed_task_ids = []
+            for wait_for in ("next_one", "next_batch"):
+                if not is_active():
+                    break
+
+                if wait_for == "next_one":
+                    num_returns = 1
+                    timeout = None
+                elif wait_for == "next_batch":
+                    num_returns = len(inflight_ref_to_task)
+                    timeout = 0.01  # 10ms
+
+                if num_returns == 0:
+                    break
+
+                readies, _ = ray.wait(
+                    list(inflight_ref_to_task.keys()),
+                    num_returns=num_returns,
+                    timeout=timeout,
+                    fetch_local=False,
+                )
+
+                for ready in readies:
+                    if ready in inflight_ref_to_task:
+                        task_id = inflight_ref_to_task[ready]
+                        completed_task_ids.append(task_id)
+                        # Mark the entire task associated with the result as done.
+                        task = inflight_tasks[task_id]
+                        if isinstance(task, SingleOutputPartitionTask):
+                            del inflight_ref_to_task[ready]
+                        elif isinstance(task, MultiOutputPartitionTask):
+                            for partition in task.partitions():
+                                del inflight_ref_to_task[partition]
+
+                        pbar.mark_task_done(task)
+                        del inflight_tasks[task_id]
+
+            logger.debug(
+                "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
+            )
+
+        def _dispatch_tasks(tasks_to_dispatch: list[PartitionTask]):
+            # Dispatch the batch of tasks.
+            logger.debug(
+                "%ss: RayRunner dispatching %s tasks",
+                (datetime.now() - start).total_seconds(),
+                len(tasks_to_dispatch),
+            )
+
+            for task in tasks_to_dispatch:
+                results = _build_partitions(daft_execution_config, task)
+                logger.debug("%s -> %s", task, results)
+                inflight_tasks[task.id()] = task
+                for result in results:
+                    inflight_ref_to_task[result] = task.id()
+
+                pbar.mark_task_start(task)
+
         with profiler(profile_filename):
             try:
-                next_step = next(tasks)
+                next_step, is_final = next(tasks)
 
                 while is_active():  # Loop: Dispatch -> await.
+                    # If result(s) are done, yield it to the consumer
+                    if len(final_results) > 0 and final_results[0].done():
+                        logger.debug("Results completely materialized, placing it into queue.")
+                        place_in_queue(final_results.pop(0).result())
+
+                    # Skip task dispatching and go back to waiting on results if result buffer is already too full
+                    if max_result_buffer_size is not None and len(final_results) >= max_result_buffer_size:
+                        logger.debug("Results buffer is full, awaiting for some tasks to complete.")
+                        _await_inflight_tasks()
+                        continue
+
                     while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
                         tasks_to_dispatch: list[PartitionTask] = []
 
@@ -550,6 +624,11 @@ class Scheduler:
                         max_inflight_tasks = cores + self.max_task_backlog
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
                         dispatches_allowed = min(cores, dispatches_allowed)
+                        dispatches_allowed = (
+                            dispatches_allowed
+                            if max_result_buffer_size is None
+                            else min(dispatches_allowed, max_result_buffer_size - len(final_results))
+                        )
 
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed and is_active():
@@ -557,15 +636,15 @@ class Scheduler:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break
 
-                            elif isinstance(next_step, MaterializedResult):
-                                # A final result.
-                                place_in_queue(next_step)
-                                next_step = next(tasks)
-
-                            # next_step is a task.
+                            if is_final:
+                                # Keep track of tasks which are part of the final result set
+                                assert isinstance(
+                                    next_step, SingleOutputPartitionTask
+                                ), "Final results must be SingleOutputPartitionTask"
+                                final_results.append(next_step)
 
                             # If it is a no-op task, just run it locally immediately.
-                            elif len(next_step.instructions) == 0:
+                            if len(next_step.instructions) == 0:
                                 logger.debug("Running task synchronously in main thread: %s", next_step)
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 [single_partial] = next_step.partial_metadatas
@@ -587,84 +666,39 @@ class Scheduler:
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
-                                next_step = next(tasks)
+                                next_step, is_final = next(tasks)
 
                             else:
                                 # Add the task to the batch.
                                 tasks_to_dispatch.append(next_step)
-                                next_step = next(tasks)
-
-                        # Dispatch the batch of tasks.
-                        logger.debug(
-                            "%ss: RayRunner dispatching %s tasks",
-                            (datetime.now() - start).total_seconds(),
-                            len(tasks_to_dispatch),
-                        )
+                                next_step, is_final = next(tasks)
 
                         if not is_active():
                             break
 
-                        for task in tasks_to_dispatch:
-                            results = _build_partitions(daft_execution_config, task)
-                            logger.debug("%s -> %s", task, results)
-                            inflight_tasks[task.id()] = task
-                            for result in results:
-                                inflight_ref_to_task[result] = task.id()
-
-                            pbar.mark_task_start(task)
+                        # Dispatch all available tasks
+                        _dispatch_tasks(tasks_to_dispatch)
 
                         if dispatches_allowed == 0 or next_step is None:
                             break
 
                     # Await a batch of tasks.
-                    # (Awaits the next task, and then the next batch of tasks within 10ms.)
-
-                    dispatch = datetime.now()
-                    completed_task_ids = []
-                    for wait_for in ("next_one", "next_batch"):
-                        if not is_active():
-                            break
-
-                        if wait_for == "next_one":
-                            num_returns = 1
-                            timeout = None
-                        elif wait_for == "next_batch":
-                            num_returns = len(inflight_ref_to_task)
-                            timeout = 0.01  # 10ms
-
-                        if num_returns == 0:
-                            break
-
-                        readies, _ = ray.wait(
-                            list(inflight_ref_to_task.keys()),
-                            num_returns=num_returns,
-                            timeout=timeout,
-                            fetch_local=False,
-                        )
-
-                        for ready in readies:
-                            if ready in inflight_ref_to_task:
-                                task_id = inflight_ref_to_task[ready]
-                                completed_task_ids.append(task_id)
-                                # Mark the entire task associated with the result as done.
-                                task = inflight_tasks[task_id]
-                                if isinstance(task, SingleOutputPartitionTask):
-                                    del inflight_ref_to_task[ready]
-                                elif isinstance(task, MultiOutputPartitionTask):
-                                    for partition in task.partitions():
-                                        del inflight_ref_to_task[partition]
-
-                                pbar.mark_task_done(task)
-                                del inflight_tasks[task_id]
-
-                    logger.debug(
-                        "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
-                    )
+                    _await_inflight_tasks()
 
                     if next_step is None:
-                        next_step = next(tasks)
+                        next_step, is_final = next(tasks)
 
             except StopIteration as e:
+                # Wait for all tasks in final_results to be completed
+                _dispatch_tasks(tasks_to_dispatch)
+                logger.debug("Flushing rest of results")
+                for task in final_results:
+                    while True:
+                        _await_inflight_tasks()
+                        if task.done():
+                            place_in_queue(task.result())
+                            break
+                logger.debug("Finished flushing results")
                 place_in_queue(e)
 
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
