@@ -12,7 +12,6 @@ use crate::{
     DataType, Series,
 };
 use arrow2::array::Array;
-
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
 use num_traits::NumCast;
@@ -269,6 +268,20 @@ fn replace_on_literal<'a>(
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
 
     Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
+fn substring(s: &str, start: usize, len: usize) -> Option<&str> {
+    let mut char_indices = s.char_indices().skip(start);
+
+    if let Some((start_pos, _)) = char_indices.next() {
+        let end_pos = char_indices
+            .nth(len.saturating_sub(1))
+            .map_or(s.len(), |(idx, _)| idx);
+
+        Some(&s[start_pos..end_pos])
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -876,6 +889,126 @@ impl Utf8Array {
         };
 
         assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
+    pub fn substr<I>(&self, start: &DataArray<I>, length: &DataArray<I>) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let (is_full_null, expected_size) = parse_inputs(self, &[start, length])
+            .map_err(|e| DaftError::ValueError(format!("Error in right: {e}")))?;
+
+        if is_full_null {
+            return Ok(Utf8Array::full_null(
+                self.name(),
+                &DataType::Utf8,
+                expected_size,
+            ));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+
+        let result = match (start.len(), length.len()) {
+            (1, 1) => {
+                let length = length.get(0).unwrap();
+                let start = start.get(0).unwrap();
+
+                let start: usize = NumCast::from(start).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in substr: failed to cast start as usize {start}"
+                    ))
+                })?;
+                let length: usize = NumCast::from(length).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in substr: failed to cast length as usize {length}"
+                    ))
+                })?;
+
+                let arrow_result = self_iter
+                    .map(|val| substring(val?, start, length))
+                    .collect::<arrow2::array::Utf8Array<i64>>();
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+            (1, _) => {
+                let start = start.get(0).unwrap();
+                let start: usize = NumCast::from(start).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in substr: failed to cast start as usize {start}"
+                    ))
+                })?;
+
+                let arrow_result = self_iter
+                    .zip(length.as_arrow().iter())
+                    .map(|(val, l)| match (val, l) {
+                        (Some(val), Some(l)) => {
+                            let l: usize = NumCast::from(*l).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in repeat: failed to cast length as usize {l}"
+                                ))
+                            })?;
+                            Ok(substring(val, start, l))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+            (_, 1) => {
+                let length = length.get(0).unwrap();
+                let length: usize = NumCast::from(length).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in substr: failed to cast length as usize {length}"
+                    ))
+                })?;
+
+                let arrow_result = self_iter
+                    .zip(start.as_arrow().iter())
+                    .map(|(val, s)| match (val, s) {
+                        (Some(val), Some(s)) => {
+                            let s: usize = NumCast::from(*s).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in repeat: failed to cast start as usize {s}"
+                                ))
+                            })?;
+                            Ok(substring(val, s, length))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+
+            _ => {
+                let arrow_result = self_iter
+                    .zip(start.as_arrow().iter())
+                    .zip(length.as_arrow().iter())
+                    .map(|((val, s), l)| match (val, s, l) {
+                        (Some(val), Some(s), Some(l)) => {
+                            let s: usize = NumCast::from(*s).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in repeat: failed to cast start as usize {s}"
+                                ))
+                            })?;
+                            let l: usize = NumCast::from(*l).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in repeat: failed to cast length as usize {l}"
+                                ))
+                            })?;
+                            Ok(substring(val, s, l))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Utf8Array::from((self.name(), Box::new(arrow_result)))
+            }
+        };
+
         Ok(result)
     }
 

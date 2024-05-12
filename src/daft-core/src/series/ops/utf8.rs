@@ -212,4 +212,59 @@ impl Series {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.ilike(pattern_arr)?.into_series()))
         })
     }
+
+    pub fn utf8_substr(&self, start: &Series, length: &Series) -> DaftResult<Series> {
+        if self.data_type() == &DataType::Null {
+            return Ok(self.clone());
+        }
+        if self.data_type() != &DataType::Utf8 {
+            return Err(DaftError::TypeError(format!(
+                "Substr not implemented for type {}",
+                self.data_type()
+            )));
+        }
+
+        // This part is only illustrative for now
+        match start.data_type() {
+            DataType::UInt32 => Ok(self
+                .utf8()?
+                .substr(start.u32()?, length.u32()?)?
+                .into_series()),
+            DataType::Int32 => Ok(self
+                .utf8()?
+                .substr(start.i32()?, length.i32()?)?
+                .into_series()),
+            DataType::UInt64 => Ok(self
+                .utf8()?
+                .substr(start.u64()?, length.u64()?)?
+                .into_series()),
+            DataType::Int64 => Ok(self
+                .utf8()?
+                .substr(start.i64()?, length.i64()?)?
+                .into_series()),
+            DataType::Int8 => Ok(self
+                .utf8()?
+                .substr(start.i8()?, length.i8()?)?
+                .into_series()),
+            DataType::UInt8 => Ok(self
+                .utf8()?
+                .substr(start.u8()?, length.u8()?)?
+                .into_series()),
+            DataType::Int16 => Ok(self
+                .utf8()?
+                .substr(start.i16()?, length.i16()?)?
+                .into_series()),
+            DataType::UInt16 => Ok(self
+                .utf8()?
+                .substr(start.u16()?, length.u16()?)?
+                .into_series()),
+            DataType::Int128 => Ok(self
+                .utf8()?
+                .substr(start.i128()?, length.i128()?)?
+                .into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Substr not implemented for type {dt}"
+            ))),
+        }
+    }
 }

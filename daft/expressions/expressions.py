@@ -1393,7 +1393,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
+    
+    def substr(self, start: int | Expression, length: int | Expression) -> Expression:
+        """Extract a substring of a length 'length' starting from an index 'start'
 
+        .. NOTE::
+            If length not supplied, searches the entire string
+
+        Example:
+            >>> col("x").str.substr(2, 2)
+
+        Returns:
+            Expression: a String expression which is a substring of a provided string
+        """
+        start_expr = Expression._to_expression(start)
+        length_expr = Expression._to_expression(length)
+        return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

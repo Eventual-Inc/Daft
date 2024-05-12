@@ -765,6 +765,15 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(pattern)}")
         assert self._series is not None and pattern._series is not None
         return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
+    
+    def substr(self, start: Series, length: Series) -> Series:
+        if not isinstance(start, Series):
+            raise ValueError(f"expected another Series but got {type(start)}")
+        if not isinstance(length, Series):
+            raise ValueError(f"expected another Series but got {type(length)}")
+
+        assert self._series is not None and start._series is not None and length._series is not None
+        return Series._from_pyseries(self._series.utf8_substr(start._series, length._series))
 
 
 class SeriesDateNamespace(SeriesNamespace):
