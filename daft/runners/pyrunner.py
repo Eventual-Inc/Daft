@@ -231,7 +231,7 @@ class PyRunner(Runner[MicroPartition]):
                         yield materialized_result
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
-                    if results_buffer_size is not None and len(final_results) >= results_buffer_size:
+                    if results_buffer_size is not None and len(final_results) >= results_buffer_size + 1:
                         _await_at_least_one_task()
                         continue
 
@@ -342,7 +342,7 @@ class PyRunner(Runner[MicroPartition]):
 
         buffer_okay = True
         if results_buffer_size is not None:
-            buffer_okay = final_result_len < results_buffer_size
+            buffer_okay = final_result_len < results_buffer_size + 1
 
         return all((cpus_okay, gpus_okay, memory_okay, buffer_okay))
 
