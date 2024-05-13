@@ -109,18 +109,6 @@ pub struct DeltaLakeCatalogInfo {
     pub current_version: i32,
     pub large_dtypes: bool,
     pub file_writer_spec: Option<Vec<(String, Option<i32>)>>,
-    pub invariants: Option<Vec<(String, String)>>,
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    pub table_info: PyObject,
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    pub partition_filters: PyObject,
-    pub partition_by: Option<Vec<String>>,
     pub io_config: Option<IOConfig>,
 }
 

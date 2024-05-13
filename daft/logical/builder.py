@@ -251,11 +251,7 @@ class LogicalPlanBuilder:
         mode: str,
         current_version: int,
         large_dtypes: bool,
-        invariants: list[tuple[str, str]] | None,
-        table_info: dict[str, Any],
         file_writer_spec: list[tuple[str, int | None]],
-        partition_filters: list[tuple[str, str, Any]] | None,
-        partition_by: list[str] | None,
         io_config: IOConfig,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
@@ -265,11 +261,7 @@ class LogicalPlanBuilder:
             mode,
             current_version,
             large_dtypes,
-            table_info,
-            partition_filters,
             file_writer_spec,
-            invariants,
-            partition_by,
             io_config,
         )
         return LogicalPlanBuilder(builder)

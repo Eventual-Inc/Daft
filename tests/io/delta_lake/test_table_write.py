@@ -41,36 +41,6 @@ def test_deltalake_write_basic(tmp_path, base_table):
     assert read_delta.to_pyarrow_table() == base_table
 
 
-def test_deltalake_write_overwrite(tmp_path, base_table):
-    deltalake = pytest.importorskip("deltalake")
-    path = tmp_path / "some_table"
-    df = daft.from_arrow(base_table)
-    df.write_delta(str(path))
-    read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
-    assert read_delta.version() == 0
-    assert df.schema() == expected_schema
-    assert read_delta.to_pyarrow_table() == base_table
-    df = daft.from_arrow(base_table)
-    df.write_delta(str(path), mode="overwrite")
-    read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
-    assert read_delta.version() == 1
-    assert df.schema() == expected_schema
-    assert read_delta.to_pyarrow_table() == base_table
-
-
-def test_deltalake_write_parationby(tmp_path, base_table):
-    deltalake = pytest.importorskip("deltalake")
-    path = tmp_path / "some_table"
-    df = daft.from_arrow(base_table)
-    df.write_delta(str(path), partition_by="c")
-    read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
-    assert df.schema() == expected_schema
-    assert read_delta.metadata().partition_columns == ["c"]
-
-
 def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
     path, io_config, catalog_table = cloud_paths

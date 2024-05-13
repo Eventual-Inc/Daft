@@ -653,22 +653,14 @@ def write_deltalake(
     large_dtypes: bool,
     base_path: str,
     current_version: int,
-    mode: str,
-    invariants: list[tuple[str, str]] | None,
     file_writer_spec: list[tuple[str, int | None]],
-    delta_table_info: dict[str, Any],
-    partition_filters: list[tuple[str, str, Any]] | None,
-    partition_by: list[str] | None,
     io_config: IOConfig | None = None,
 ):
-    from deltalake.schema import _convert_pa_schema_to_delta, convert_pyarrow_table
+    from deltalake.schema import convert_pyarrow_table
     from deltalake.writer import (
         AddAction,
         DeltaJSONEncoder,
         DeltaStorageHandler,
-        _DeltaDataChecker,
-        batch_distinct,
-        encode_partition_value,
         get_file_stats_from_metadata,
         get_partitions_from_path,
         try_get_table_and_table_uri,
@@ -719,32 +711,6 @@ def write_deltalake(
 
     arrow_table = mp.to_arrow()
     arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
-    schema = arrow_batch.schema
-
-    delta_schema = _convert_pa_schema_to_delta(schema, large_dtypes=large_dtypes)
-
-    dtype_map = {
-        pa.large_string(): pa.string(),
-    }
-
-    def _large_to_normal_dtype(dtype: pa.DataType) -> pa.DataType:
-        try:
-            return dtype_map[dtype]
-        except KeyError:
-            return dtype
-
-    if partition_by:
-        from daft.utils import ARROW_VERSION
-
-        if ARROW_VERSION < (12, 0, 0):
-            partition_schema = pa.schema(
-                [pa.field(name, _large_to_normal_dtype(delta_schema.field(name).type)) for name in partition_by]
-            )
-        else:
-            partition_schema = pa.schema([delta_schema.field(name) for name in partition_by])
-        partitioning = ds.partitioning(partition_schema, flavor="hive")
-    else:
-        partitioning = None
 
     execution_config = get_context().daft_execution_config
     execution_config.parquet_inflation_factor
@@ -755,45 +721,6 @@ def write_deltalake(
     min_rows_per_group = file_writer_spec[3][1]
     max_rows_per_group = file_writer_spec[4][1]
 
-    if len(delta_table_info) > 0:
-        checker = _DeltaDataChecker(invariants)
-
-        def check_data_is_aligned_with_partition_filtering(
-            batch: pa.RecordBatch,
-        ) -> None:
-            if len(delta_table_info) > 0:
-                return
-            existed_partitions: frozenset[frozenset[tuple[str, str | None]]] = delta_table_info["existed_partitions"]
-            allowed_partitions: frozenset[frozenset[tuple[str, str | None]]] = delta_table_info["allowed_partitions"]
-            partition_values = pa.RecordBatch.from_arrays(
-                [batch.column(column_name) for column_name in delta_table_info["partition_columns"]],
-                delta_table_info["partition_columns"],
-            )
-            partition_values = batch_distinct(partition_values)
-            for i in range(partition_values.num_rows):
-                # Map will maintain order of partition_columns
-                partition_map = {
-                    column_name: encode_partition_value(batch.column(column_name)[i].as_py())
-                    for column_name in delta_table_info["partition_columns"]
-                }
-                partition = frozenset(partition_map.items())
-                if partition not in allowed_partitions and partition in existed_partitions:
-                    partition_repr = " ".join(f"{key}={value}" for key, value in partition_map.items())
-                    raise ValueError(
-                        f"Data should be aligned with partitioning. "
-                        f"Data contained values for partition {partition_repr}"
-                    )
-
-        def validate_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
-            checker.check_batch(batch)
-
-            if mode == "overwrite" and partition_filters:
-                check_data_is_aligned_with_partition_filtering(batch)
-
-            return batch
-
-        RecordBatchReader.from_batches(schema, (validate_batch(batch) for batch in arrow_batch))
-
     file_options = pads.ParquetFileFormat().make_write_options(use_compliant_nested_type=False)
 
     pads.write_dataset(
@@ -801,7 +728,7 @@ def write_deltalake(
         base_dir="/",
         basename_template=f"{current_version + 1}-{uuid4()}-{{i}}.parquet",
         format="parquet",
-        partitioning=partitioning,
+        partitioning=None,
         schema=None,
         file_visitor=file_visitor,
         existing_data_behavior="overwrite_or_ignore",

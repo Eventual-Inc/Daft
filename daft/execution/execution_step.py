@@ -420,12 +420,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     current_version: int
-    mode: str
-    invariants: list[tuple[str, str]] | None
     file_writer_spec: list[tuple[str, int | None]]
-    delta_table_info: dict[str, Any]
-    partition_filters: list[tuple[str, str, Any]] | None
-    partition_by: list[str] | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -453,12 +448,7 @@ class WriteDeltaLake(SingleOutputInstruction):
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             current_version=self.current_version,
-            mode=self.mode,
-            invariants=self.invariants,
             file_writer_spec=self.file_writer_spec,
-            delta_table_info=self.delta_table_info,
-            partition_filters=self.partition_filters,
-            partition_by=self.partition_by,
             io_config=self.io_config,
         )
 

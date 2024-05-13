@@ -2,7 +2,7 @@
 
 SHELL=/bin/bash
 VENV = .venv
-IS_M1 ?= 0
+IS_M1 ?= 1
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
