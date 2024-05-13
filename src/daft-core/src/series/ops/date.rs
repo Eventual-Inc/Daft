@@ -1,4 +1,4 @@
-use crate::datatypes::logical::TimeArray;
+use crate::datatypes::TimeUnit;
 use crate::series::array_impl::IntoSeries;
 use crate::{datatypes::DataType, series::Series};
 
@@ -38,12 +38,16 @@ impl Series {
 
     pub fn dt_hour(&self) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::Timestamp(..) => {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
                 let ts_array = self.timestamp()?;
-                Ok(ts_array.hour()?.into_series())
+                Ok(ts_array.time(&tu)?.hour()?.into_series())
             }
             DataType::Time(_) => {
-                let time_array = self.downcast::<TimeArray>()?;
+                let time_array = self.time()?;
                 Ok(time_array.hour()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
@@ -55,12 +59,16 @@ impl Series {
 
     pub fn dt_minute(&self) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::Timestamp(..) => {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
                 let ts_array = self.timestamp()?;
-                Ok(ts_array.minute()?.into_series())
+                Ok(ts_array.time(&tu)?.minute()?.into_series())
             }
             DataType::Time(_) => {
-                let time_array = self.downcast::<TimeArray>()?;
+                let time_array = self.time()?;
                 Ok(time_array.minute()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
@@ -72,12 +80,16 @@ impl Series {
 
     pub fn dt_second(&self) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::Timestamp(..) => {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
                 let ts_array = self.timestamp()?;
-                Ok(ts_array.second()?.into_series())
+                Ok(ts_array.time(&tu)?.second()?.into_series())
             }
             DataType::Time(_) => {
-                let time_array = self.downcast::<TimeArray>()?;
+                let time_array = self.time()?;
                 Ok(time_array.second()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(

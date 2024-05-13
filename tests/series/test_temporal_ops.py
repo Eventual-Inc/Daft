@@ -120,11 +120,18 @@ def test_series_timestamp_hour() -> None:
 
     input_ts = list(map(ts_maker, input))
     s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    days = s.dt.hour()
+    hours = s.dt.hour()
 
-    assert days.datatype() == DataType.uint32()
+    assert hours.datatype() == DataType.uint32()
 
-    assert input == days.to_pylist()
+    assert input == hours.to_pylist()
+
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    hours = s.dt.hour()
+
+    assert hours.datatype() == DataType.uint32()
+
+    assert input == hours.to_pylist()
 
 
 def test_series_timestamp_minute() -> None:
@@ -139,11 +146,18 @@ def test_series_timestamp_minute() -> None:
 
     input_ts = list(map(ts_maker, input))
     s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    days = s.dt.minute()
+    minutes = s.dt.minute()
 
-    assert days.datatype() == DataType.uint32()
+    assert minutes.datatype() == DataType.uint32()
 
-    assert input == days.to_pylist()
+    assert input == minutes.to_pylist()
+
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    minutes = s.dt.minute()
+
+    assert minutes.datatype() == DataType.uint32()
+
+    assert input == minutes.to_pylist()
 
 
 def test_series_timestamp_second() -> None:
@@ -158,11 +172,18 @@ def test_series_timestamp_second() -> None:
 
     input_ts = list(map(ts_maker, input))
     s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    days = s.dt.second()
+    seconds = s.dt.second()
 
-    assert days.datatype() == DataType.uint32()
+    assert seconds.datatype() == DataType.uint32()
 
-    assert input == days.to_pylist()
+    assert input == seconds.to_pylist()
+
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    seconds = s.dt.second()
+
+    assert seconds.datatype() == DataType.uint32()
+
+    assert input == seconds.to_pylist()
 
 
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
