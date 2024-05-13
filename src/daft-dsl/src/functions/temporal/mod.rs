@@ -5,6 +5,7 @@ mod hour;
 mod minute;
 mod month;
 mod second;
+mod time;
 mod truncate;
 mod year;
 
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::functions::temporal::{
     date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
-    minute::MinuteEvaluator, month::MonthEvaluator, second::SecondEvaluator,
+    minute::MinuteEvaluator, month::MonthEvaluator, second::SecondEvaluator, time::TimeEvaluator,
     truncate::TruncateEvaluator, year::YearEvaluator,
 };
 use crate::{Expr, ExprRef};
@@ -29,6 +30,7 @@ pub enum TemporalExpr {
     Year,
     DayOfWeek,
     Date,
+    Time,
     Truncate(String),
 }
 
@@ -45,6 +47,7 @@ impl TemporalExpr {
             Date => &DateEvaluator {},
             Minute => &MinuteEvaluator {},
             Second => &SecondEvaluator {},
+            Time => &TimeEvaluator {},
             Truncate(..) => &TruncateEvaluator {},
         }
     }
@@ -85,6 +88,14 @@ pub fn minute(input: ExprRef) -> ExprRef {
 pub fn second(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Second),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn time(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Time),
         inputs: vec![input],
     }
     .into()

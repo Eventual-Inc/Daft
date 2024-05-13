@@ -99,6 +99,24 @@ impl Series {
         }
     }
 
+    pub fn dt_time(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.time(&tu)?.into_series())
+            }
+            DataType::Time(_) => Ok(self.clone()),
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run time() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_month(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Date => {

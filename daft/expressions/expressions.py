@@ -835,6 +835,17 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_second())
 
+    def time(self) -> Expression:
+        """Retrieves the time for a datetime column
+
+        Example:
+            >>> col("x").dt.time()
+
+        Returns:
+            Expression: a Time expression
+        """
+        return Expression._from_pyexpr(self._expr.dt_time())
+
     def month(self) -> Expression:
         """Retrieves the month for a datetime column
 
