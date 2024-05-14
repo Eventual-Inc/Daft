@@ -2,6 +2,7 @@ pub mod float;
 pub mod image;
 pub mod json;
 pub mod list;
+pub mod map;
 pub mod numeric;
 pub mod partitioning;
 pub mod sketch;
@@ -17,6 +18,7 @@ use crate::ExprRef;
 use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
+use self::map::MapExpr;
 use self::numeric::NumericExpr;
 use self::partitioning::PartitioningExpr;
 use self::sketch::SketchExpr;
@@ -41,6 +43,7 @@ pub enum FunctionExpr {
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
     List(ListExpr),
+    Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
     Json(JsonExpr),
@@ -72,6 +75,7 @@ impl FunctionExpr {
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
+            Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
             Json(expr) => expr.query_evaluator(),

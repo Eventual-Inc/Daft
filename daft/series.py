@@ -567,6 +567,10 @@ class Series:
         return SeriesListNamespace.from_series(self)
 
     @property
+    def map(self) -> SeriesMapNamespace:
+        return SeriesMapNamespace.from_series(self)
+
+    @property
     def image(self) -> SeriesImageNamespace:
         return SeriesImageNamespace.from_series(self)
 
@@ -804,6 +808,11 @@ class SeriesListNamespace(SeriesNamespace):
 
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
+
+
+class SeriesMapNamespace(SeriesNamespace):
+    def get(self, key: Series) -> Series:
+        return Series._from_pyseries(self._series.map_get(key._series))
 
 
 class SeriesImageNamespace(SeriesNamespace):

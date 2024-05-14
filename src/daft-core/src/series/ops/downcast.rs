@@ -7,7 +7,7 @@ use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
 
-use self::logical::{DurationArray, ImageArray};
+use self::logical::{DurationArray, ImageArray, MapArray};
 
 impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
@@ -92,6 +92,10 @@ impl Series {
     }
 
     pub fn list(&self) -> DaftResult<&ListArray> {
+        self.downcast()
+    }
+
+    pub fn map(&self) -> DaftResult<&MapArray> {
         self.downcast()
     }
 

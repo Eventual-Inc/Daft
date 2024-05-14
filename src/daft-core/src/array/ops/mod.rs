@@ -31,6 +31,7 @@ mod len;
 mod list;
 mod list_agg;
 mod log;
+mod map;
 mod mean;
 mod merge_sketch;
 mod null;

@@ -509,6 +509,10 @@ impl PySeries {
         Ok(self.series.list_get(&idx.series, &default.series)?.into())
     }
 
+    pub fn map_get(&self, key: &Self) -> PyResult<Self> {
+        Ok(self.series.map_get(&key.series)?.into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         Ok(self.series.image_decode(raise_error_on_failure)?.into())
     }

@@ -143,6 +143,11 @@ class Expression:
         return ExpressionStructNamespace.from_expression(self)
 
     @property
+    def map(self) -> ExpressionMapNamespace:
+        """Access methods that work on columns of maps"""
+        return ExpressionMapNamespace.from_expression(self)
+
+    @property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
@@ -1417,6 +1422,43 @@ class ExpressionStructNamespace(ExpressionNamespace):
             Expression: the field expression
         """
         return Expression._from_pyexpr(self._expr.struct_get(name))
+
+
+class ExpressionMapNamespace(ExpressionNamespace):
+    def get(self, key: Expression) -> Expression:
+        """Retrieves the value for a key in a map column
+
+        Example:
+            >>> import pyarrrow as pa
+            >>> import daft
+            >>> pa_array = pa.array([[(1, 2)],[],[(2,1)]], type=pa.map_(pa.int64(), pa.int64()))
+            >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+            >>> df = df.with_column("1", df["map_col"].map.get(1))
+            >>> df.show()
+            ╭───────────────────────────────────────┬───────╮
+            │ map_col                               ┆ 1     │
+            │ ---                                   ┆ ---   │
+            │ Map[Struct[key: Int64, value: Int64]] ┆ Int64 │
+            ╞═══════════════════════════════════════╪═══════╡
+            │ [{key: 1,                             ┆ 2     │
+            │ value: 2,                             ┆       │
+            │ }]                                    ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []                                    ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: 2,                             ┆ None  │
+            │ value: 1,                             ┆       │
+            │ }]                                    ┆       │
+            ╰───────────────────────────────────────┴───────╯
+
+        Args:
+            key: the key to retrieve
+
+        Returns:
+            Expression: the value expression
+        """
+        key_expr = Expression._to_expression(key)
+        return Expression._from_pyexpr(self._expr.map_get(key_expr._expr))
 
 
 class ExpressionsProjection(Iterable[Expression]):
