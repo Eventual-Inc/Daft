@@ -54,6 +54,9 @@ pub enum Error {
     #[snafu(display("Invalid Argument: {:?}", msg))]
     InvalidArgument { msg: String },
 
+    #[snafu(display("Unable to expand home dir"))]
+    HomeDirError { path: String },
+
     #[snafu(display("Unable to open file {}: {:?}", path, source))]
     UnableToOpenFile { path: String, source: DynError },
 
@@ -300,11 +303,25 @@ impl std::fmt::Display for SourceType {
 
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
+    // handle tilde `~` expansion
+    if input.starts_with("~/") {
+        return home::home_dir()
+            .and_then(|home_dir| {
+                let expanded = home_dir.join(&input[2..]);
+                let input = expanded.to_str()?;
+
+                Some((SourceType::File, Cow::Owned(format!("file://{}", input))))
+            })
+            .ok_or_else(|| crate::Error::InvalidArgument {
+                msg: "Could not convert expanded path to string".to_string(),
+            });
+    }
 
     let url = match url::Url::parse(input) {
         Ok(url) => Ok(url),
         Err(ParseError::RelativeUrlWithoutBase) => {
             fixed_input = Cow::Owned(format!("file://{input}"));
+
             url::Url::parse(fixed_input.as_ref())
         }
         Err(err) => Err(err),
