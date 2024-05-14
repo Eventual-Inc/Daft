@@ -212,14 +212,16 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self, results_buffer_size: Optional[int] = 1) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    def iter_partitions(
+        self, results_buffer_size: Optional[int] = 1
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
-            results_buffer_size: how many partitions to allow in the results buffer (only affects execution with Ray).
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
                 Setting this value value will buffer results up to the provided size and provide backpressure
                 to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
                 `None` will result in a buffer of unbounded size, causing the dataframe run asynchronously
