@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
@@ -517,7 +518,7 @@ class Scheduler:
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
         pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
-        results_buffer: list[SingleOutputPartitionTask] = []
+        results_buffer: deque[SingleOutputPartitionTask] = deque()
         max_results_buffer_size = self.max_results_buffer_size_by_df[result_uuid]
 
         start = datetime.now()
@@ -605,7 +606,7 @@ class Scheduler:
                 while is_active():  # Loop: Dispatch -> await.
                     # Attempt to yield one materialized result before dispatching
                     if len(results_buffer) > 0 and results_buffer[0].done():
-                        place_in_queue(results_buffer.pop(0).result())
+                        place_in_queue(results_buffer.popleft().result())
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
                     if max_results_buffer_size is not None and len(results_buffer) >= max_results_buffer_size:
