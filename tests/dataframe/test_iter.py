@@ -121,62 +121,32 @@ def test_iter_partitions_with_buffer_limit_1(tmp_path, make_df):
 
     assert os.listdir(files_location) == [], "Directory should have no files initially"
 
-    if daft.context.get_context().runner_config.name == "py":
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 2
-        ), "First iteration should trigger 2 calls of write_file, one for the iterator result and one for the buffer"
+    data.append(next(it))
+    time.sleep(0.5)
+    assert (
+        len(os.listdir(files_location)) == 2
+    ), "First iteration should trigger 2 calls of write_file, one for the iterator result and one for the buffer"
 
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 3
-        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+    data.append(next(it))
+    time.sleep(0.5)
+    assert (
+        len(os.listdir(files_location)) == 3
+    ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
 
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 4
-        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+    data.append(next(it))
+    time.sleep(0.5)
+    assert (
+        len(os.listdir(files_location)) == 4
+    ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
 
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 4
-        ), "Last iteration should not trigger anymore writes, and just consume the last item"
+    data.append(next(it))
+    time.sleep(0.5)
+    assert (
+        len(os.listdir(files_location)) == 4
+    ), "Last iteration should not trigger anymore writes, and just consume the last item"
 
-        with pytest.raises(StopIteration):
-            next(it)
-    elif daft.context.get_context().runner_config.name == "ray":
-        # NOTE: RayRunner unfortunately cannot support buffer size 1, because of the implementation detail of the queue
-        # so it behaves like a buffer size 2 instead.
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 3
-        ), "First iteration should trigger 3 calls of write_file, one for the iterator result, one for the buffer and one in the queue"
-
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 4
-        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
-
-        data.append(next(it))
-        time.sleep(0.2)
-        assert (
-            len(os.listdir(files_location)) == 4
-        ), "Subsequent iteration just consumes from the queue, does not trigger writes"
-
-        data.append(next(it))
-        time.sleep(0.2)
-        assert len(os.listdir(files_location)) == 4, "Last iteration consumes from the queue, does not trigger writes"
-
-        with pytest.raises(StopIteration):
-            next(it)
-    else:
-        raise NotImplementedError(f"Runner not implemented: {daft.context.get_context().runner_config().name}")
+    with pytest.raises(StopIteration):
+        next(it)
 
 
 def test_iter_partitions_with_buffer_limit_3(tmp_path, make_df):
