@@ -440,7 +440,7 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
-        self.max_result_buffer_size_by_df: dict[str, int | None] = {}
+        self.max_results_buffer_size_by_df: dict[str, int | None] = {}
 
         self.use_ray_tqdm = use_ray_tqdm
 
@@ -469,7 +469,7 @@ class Scheduler:
     ) -> None:
         self.execution_configs_objref_by_df[result_uuid] = ray.put(daft_execution_config)
         self.results_by_df[result_uuid] = Queue(maxsize=1 if results_buffer_size is not None else -1)
-        self.max_result_buffer_size_by_df[result_uuid] = (
+        self.max_results_buffer_size_by_df[result_uuid] = (
             max(results_buffer_size - 1, 1) if results_buffer_size is not None else None
         )
         self.active_by_df[result_uuid] = True
@@ -499,7 +499,7 @@ class Scheduler:
             del self.threads_by_df[result_uuid]
             del self.active_by_df[result_uuid]
             del self.results_by_df[result_uuid]
-            del self.max_result_buffer_size_by_df[result_uuid]
+            del self.max_results_buffer_size_by_df[result_uuid]
 
     def _run_plan(
         self,
@@ -517,8 +517,8 @@ class Scheduler:
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
         pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
-        final_results: list[SingleOutputPartitionTask] = []
-        max_result_buffer_size = self.max_result_buffer_size_by_df[result_uuid]
+        results_buffer: list[SingleOutputPartitionTask] = []
+        max_results_buffer_size = self.max_results_buffer_size_by_df[result_uuid]
 
         start = datetime.now()
         profile_filename = (
@@ -604,12 +604,12 @@ class Scheduler:
 
                 while is_active():  # Loop: Dispatch -> await.
                     # If result(s) are done, yield it to the consumer
-                    if len(final_results) > 0 and final_results[0].done():
+                    if len(results_buffer) > 0 and results_buffer[0].done():
                         logger.debug("Results completely materialized, placing it into queue.")
-                        place_in_queue(final_results.pop(0).result())
+                        place_in_queue(results_buffer.pop(0).result())
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
-                    if max_result_buffer_size is not None and len(final_results) >= max_result_buffer_size:
+                    if max_results_buffer_size is not None and len(results_buffer) >= max_results_buffer_size:
                         logger.debug("Results buffer is full, awaiting for some tasks to complete.")
                         _await_inflight_tasks()
                         continue
@@ -626,8 +626,8 @@ class Scheduler:
                         dispatches_allowed = min(cores, dispatches_allowed)
                         dispatches_allowed = (
                             dispatches_allowed
-                            if max_result_buffer_size is None
-                            else min(dispatches_allowed, max_result_buffer_size - len(final_results))
+                            if max_results_buffer_size is None
+                            else min(dispatches_allowed, max_results_buffer_size - len(results_buffer))
                         )
 
                         # Loop: Get a batch of tasks.
@@ -641,7 +641,7 @@ class Scheduler:
                                 assert isinstance(
                                     next_step, SingleOutputPartitionTask
                                 ), "Final results must be SingleOutputPartitionTask"
-                                final_results.append(next_step)
+                                results_buffer.append(next_step)
 
                             # If it is a no-op task, just run it locally immediately.
                             if len(next_step.instructions) == 0:
@@ -689,10 +689,10 @@ class Scheduler:
                         next_step, is_final = next(tasks)
 
             except StopIteration as e:
-                # Wait for all tasks in final_results to be completed
+                # Wait for all tasks in results_buffer to be completed
                 _dispatch_tasks(tasks_to_dispatch)
                 logger.debug("Flushing rest of results")
-                for task in final_results:
+                for task in results_buffer:
                     while True:
                         _await_inflight_tasks()
                         if task.done():

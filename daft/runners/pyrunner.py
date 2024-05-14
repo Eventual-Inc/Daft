@@ -200,7 +200,7 @@ class PyRunner(Runner[MicroPartition]):
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
-        final_results: list[physical_plan.SingleOutputPartitionTask] = []
+        results_buffer: list[physical_plan.SingleOutputPartitionTask] = []
 
         def _await_at_least_one_task():
             # Await at least one task and process the results.
@@ -225,13 +225,13 @@ class PyRunner(Runner[MicroPartition]):
 
                 # Dispatch->Await loop.
                 while True:
-                    if final_results and final_results[0].done():
-                        materialized_result = final_results.pop(0).result()
+                    if results_buffer and results_buffer[0].done():
+                        materialized_result = results_buffer.pop(0).result()
                         assert isinstance(materialized_result, PyMaterializedResult)
                         yield materialized_result
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
-                    if results_buffer_size is not None and len(final_results) >= results_buffer_size + 1:
+                    if results_buffer_size is not None and len(results_buffer) >= results_buffer_size + 1:
                         _await_at_least_one_task()
                         continue
 
@@ -244,7 +244,7 @@ class PyRunner(Runner[MicroPartition]):
                         if not self._can_admit_task(
                             next_step.resource_request,
                             inflight_tasks_resources.values(),
-                            len(final_results),
+                            len(results_buffer),
                             results_buffer_size,
                             is_final,
                         ):
@@ -255,7 +255,7 @@ class PyRunner(Runner[MicroPartition]):
                             # next_task is a task to run.
                             if is_final:
                                 assert isinstance(next_step, physical_plan.SingleOutputPartitionTask)
-                                final_results.append(next_step)
+                                results_buffer.append(next_step)
 
                             # Run the task in the main thread, instead of the thread pool, in certain conditions:
                             # - Threading is disabled in runner config.
@@ -303,9 +303,9 @@ class PyRunner(Runner[MicroPartition]):
                         next_step, is_final = next(plan)
 
             except StopIteration:
-                while final_results:
-                    if final_results[0].done():
-                        materialized_result = final_results.pop(0).result()
+                while results_buffer:
+                    if results_buffer[0].done():
+                        materialized_result = results_buffer.pop(0).result()
                         assert isinstance(materialized_result, PyMaterializedResult)
                         yield materialized_result
                     else:
