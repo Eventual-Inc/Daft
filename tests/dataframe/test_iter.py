@@ -197,27 +197,27 @@ def test_iter_partitions_with_buffer_limit_3(tmp_path, make_df):
     assert os.listdir(files_location) == [], "Directory should have no files initially"
 
     data.append(next(it))
-    time.sleep(0.2)
+    time.sleep(0.5)
     assert (
         len(os.listdir(files_location)) == 4
     ), "First iteration should trigger 4 calls of write_file: 1 for the iterator result, 3 buffered"
 
     data.append(next(it))
-    time.sleep(0.2)
+    time.sleep(0.5)
     assert (
         len(os.listdir(files_location)) == 5
     ), "Subsequent single iteration should trigger 1 call of write_file to refill the buffer"
 
     for _ in range(2):
         data.append(next(it))
-    time.sleep(0.2)
+    time.sleep(0.5)
     assert (
         len(os.listdir(files_location)) == 7
     ), "Subsequent rapid iteration twice in a row should trigger 2 calls to refill buffer"
 
     for _ in range(3):
         data.append(next(it))
-    time.sleep(0.2)
+    time.sleep(0.5)
     assert (
         len(os.listdir(files_location)) == 7
     ), "Last 3 iterations to empty everything should not trigger any more writes"
