@@ -180,8 +180,9 @@ impl TimestampArray {
             return Err(DaftError::ValueError(format!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}")));
         }
         let time_arrow = match tz {
-            Some(tz) => match arrow2::temporal_conversions::parse_offset(tz) {
-                Ok(tz) => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+            Some(tz) => {
+                if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
+                Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
                     physical.iter().map(|ts| {
                         ts.map(|ts| {
                             let dt =
@@ -192,13 +193,29 @@ impl TimestampArray {
                                     TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
                                     _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
                                 }
-                        })
-                    }),
-                )),
-                Err(e) => Err(DaftError::TypeError(format!(
-                    "Cannot parse timezone in Timestamp datatype: {}, error: {}",
-                    tz, e
-                ))),
+                            })
+                        }),
+                    ))
+                } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz) {
+                Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+                    physical.iter().map(|ts| {
+                        ts.map(|ts| {
+                            let dt =
+                                arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &tz);
+                                let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
+                                match timeunit_for_cast {
+                                    TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                                    TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                                    _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
+                                }
+                            })
+                        }),
+                    ))
+                } else {
+                Err(DaftError::TypeError(format!(
+                    "Cannot parse timezone in Timestamp datatype: {}",
+                    tz
+                )))}
             },
             None => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
                 physical.iter().map(|ts| {
