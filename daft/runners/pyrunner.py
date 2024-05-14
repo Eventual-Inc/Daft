@@ -246,6 +246,7 @@ class PyRunner(Runner[MicroPartition]):
                             inflight_tasks_resources.values(),
                             len(final_results),
                             results_buffer_size,
+                            is_final,
                         ):
                             # Insufficient resources; await some tasks.
                             break
@@ -330,6 +331,7 @@ class PyRunner(Runner[MicroPartition]):
         inflight_resources: Iterable[ResourceRequest],
         final_result_len: int,
         results_buffer_size: int | None,
+        is_final: bool,
     ) -> bool:
         self._check_resource_requests(resource_request)
 
@@ -342,7 +344,7 @@ class PyRunner(Runner[MicroPartition]):
 
         buffer_okay = True
         if results_buffer_size is not None:
-            buffer_okay = final_result_len < results_buffer_size + 1
+            buffer_okay = not is_final or (final_result_len < results_buffer_size + 1)
 
         return all((cpus_okay, gpus_okay, memory_okay, buffer_okay))
 
