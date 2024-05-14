@@ -27,6 +27,7 @@ class ProgressBar:
                 ipython = get_ipython()
 
                 # write to sys.stdout if in jupyter notebook
+                # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
                 if ipython is not None and "IPKernelApp" in ipython.config:
 
                     class tqdm(_tqdm):  # type: ignore[no-redef]
