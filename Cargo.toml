@@ -120,7 +120,7 @@ sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 tokio = {version = "1.37.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
-tokio-util = "0.7.8"
+tokio-util = "0.7.11"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
