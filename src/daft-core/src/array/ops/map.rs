@@ -6,11 +6,7 @@ use crate::{
     DataType, Series,
 };
 
-fn single_map_get(
-    structs: &Series,
-    key_to_get: &Series,
-    value_type: &DataType,
-) -> DaftResult<Series> {
+fn single_map_get(structs: &Series, key_to_get: &Series) -> DaftResult<Series> {
     let (keys, values) = {
         let struct_array = structs.struct_()?;
         (struct_array.get("key")?, struct_array.get("value")?)
@@ -18,7 +14,7 @@ fn single_map_get(
     let mask = keys.equal(key_to_get)?;
     let filtered = values.filter(&mask)?;
     if filtered.is_empty() {
-        Ok(Series::full_null("value", value_type, 1))
+        Ok(Series::full_null("value", values.data_type(), 1))
     } else if filtered.len() == 1 {
         Ok(filtered)
     } else {
@@ -52,9 +48,7 @@ impl MapArray {
                 let mut result = Vec::with_capacity(self.len());
                 for series in self.physical.into_iter() {
                     match series {
-                        Some(s) if !s.is_empty() => {
-                            result.push(single_map_get(&s, key_to_get, &value_type)?)
-                        }
+                        Some(s) if !s.is_empty() => result.push(single_map_get(&s, key_to_get)?),
                         _ => result.push(Series::full_null("value", &value_type, 1)),
                     }
                 }
@@ -64,9 +58,7 @@ impl MapArray {
                 let mut result = Vec::with_capacity(len);
                 for (i, series) in self.physical.into_iter().enumerate() {
                     match (series, key_to_get.slice(i, i + 1)?) {
-                        (Some(s), k) if !s.is_empty() => {
-                            result.push(single_map_get(&s, &k, &value_type)?)
-                        }
+                        (Some(s), k) if !s.is_empty() => result.push(single_map_get(&s, &k)?),
                         _ => result.push(Series::full_null("value", &value_type, 1)),
                     }
                 }
