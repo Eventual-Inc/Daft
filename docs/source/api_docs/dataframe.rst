@@ -112,6 +112,18 @@ Execution
 .. NOTE::
     These methods will execute the operations in your DataFrame and **are blocking**.
 
+Data Retrieval
+**************
+
+These methods will run the dataframe and retrieve them to where the code is being run.
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/dataframe_methods
+
+    DataFrame.to_pydict
+    DataFrame.iter_partitions
+
 Materialization
 ***************
 
