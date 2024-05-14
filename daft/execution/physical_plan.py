@@ -52,7 +52,8 @@ if TYPE_CHECKING:
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
-# A PhysicalPlan that is complete and will only yield PartitionTasks or final PartitionTs.
+# A PhysicalPlan that is complete and will only yield PartitionTasks and a boolean indicating whether
+# or not this PartitionTask is part of the final result set
 MaterializedPhysicalPlan = Iterator[Tuple[Optional[PartitionTask[PartitionT]], bool]]
 
 

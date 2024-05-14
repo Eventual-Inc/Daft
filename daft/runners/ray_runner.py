@@ -603,14 +603,12 @@ class Scheduler:
                 next_step, is_final = next(tasks)
 
                 while is_active():  # Loop: Dispatch -> await.
-                    # If result(s) are done, yield it to the consumer
+                    # Attempt to yield one materialized result before dispatching
                     if len(results_buffer) > 0 and results_buffer[0].done():
-                        logger.debug("Results completely materialized, placing it into queue.")
                         place_in_queue(results_buffer.pop(0).result())
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
                     if max_results_buffer_size is not None and len(results_buffer) >= max_results_buffer_size:
-                        logger.debug("Results buffer is full, awaiting for some tasks to complete.")
                         _await_inflight_tasks()
                         continue
 
@@ -624,11 +622,6 @@ class Scheduler:
                         max_inflight_tasks = cores + self.max_task_backlog
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
                         dispatches_allowed = min(cores, dispatches_allowed)
-                        dispatches_allowed = (
-                            dispatches_allowed
-                            if max_results_buffer_size is None
-                            else min(dispatches_allowed, max_results_buffer_size - len(results_buffer))
-                        )
 
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed and is_active():
@@ -637,6 +630,13 @@ class Scheduler:
                                 break
 
                             if is_final:
+                                # If results buffer is maxed out on capacity, we break the accumulation of tasks to dispatch
+                                if (
+                                    max_results_buffer_size is not None
+                                    and len(results_buffer) >= max_results_buffer_size
+                                ):
+                                    break
+
                                 # Keep track of tasks which are part of the final result set
                                 assert isinstance(
                                     next_step, SingleOutputPartitionTask
@@ -679,7 +679,13 @@ class Scheduler:
                         # Dispatch all available tasks
                         _dispatch_tasks(tasks_to_dispatch)
 
-                        if dispatches_allowed == 0 or next_step is None:
+                        # Conditions to stop dispatching
+                        is_resources_exhausted = dispatches_allowed == 0
+                        is_waiting_on_work = next_step is None
+                        is_results_buffer_full = (
+                            max_results_buffer_size is not None and len(results_buffer) >= max_results_buffer_size
+                        )
+                        if is_resources_exhausted or is_waiting_on_work or is_results_buffer_full:
                             break
 
                     # Await a batch of tasks.
@@ -689,16 +695,18 @@ class Scheduler:
                         next_step, is_final = next(tasks)
 
             except StopIteration as e:
-                # Wait for all tasks in results_buffer to be completed
+                # Make sure to dispatch the last batch of tasks
                 _dispatch_tasks(tasks_to_dispatch)
-                logger.debug("Flushing rest of results")
+
+                # Drain the results buffer
                 for task in results_buffer:
                     while True:
                         _await_inflight_tasks()
                         if task.done():
                             place_in_queue(task.result())
                             break
-                logger.debug("Finished flushing results")
+
+                # Propagate StopIteration to consumer
                 place_in_queue(e)
 
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread

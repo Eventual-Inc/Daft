@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Iterable, Iterator
@@ -199,8 +200,7 @@ class PyRunner(Runner[MicroPartition]):
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
-
-        results_buffer: list[physical_plan.SingleOutputPartitionTask] = []
+        results_buffer: deque[physical_plan.SingleOutputPartitionTask] = deque()
 
         def _await_at_least_one_task():
             # Await at least one task and process the results.
@@ -225,13 +225,14 @@ class PyRunner(Runner[MicroPartition]):
 
                 # Dispatch->Await loop.
                 while True:
+                    # Attempt to yield one materialized result before dispatching
                     if results_buffer and results_buffer[0].done():
-                        materialized_result = results_buffer.pop(0).result()
+                        materialized_result = results_buffer.popleft().result()
                         assert isinstance(materialized_result, PyMaterializedResult)
                         yield materialized_result
 
                     # Skip task dispatching and go back to waiting on results if result buffer is already too full
-                    if results_buffer_size is not None and len(results_buffer) >= results_buffer_size + 1:
+                    if results_buffer_size is not None and len(results_buffer) > results_buffer_size:
                         _await_at_least_one_task()
                         continue
 
@@ -244,15 +245,19 @@ class PyRunner(Runner[MicroPartition]):
                         if not self._can_admit_task(
                             next_step.resource_request,
                             inflight_tasks_resources.values(),
-                            len(results_buffer),
-                            results_buffer_size,
-                            is_final,
                         ):
                             # Insufficient resources; await some tasks.
+                            break
+                        elif (
+                            results_buffer_size is not None and is_final and (len(results_buffer) > results_buffer_size)
+                        ):
+                            # Insufficient capacity on the results buffer; await some tasks
                             break
 
                         else:
                             # next_task is a task to run.
+
+                            # Add to the results buffer if this is a final PartitionTask
                             if is_final:
                                 assert isinstance(next_step, physical_plan.SingleOutputPartitionTask)
                                 results_buffer.append(next_step)
@@ -303,9 +308,10 @@ class PyRunner(Runner[MicroPartition]):
                         next_step, is_final = next(plan)
 
             except StopIteration:
+                # Drain the results buffer
                 while results_buffer:
                     if results_buffer[0].done():
-                        materialized_result = results_buffer.pop(0).result()
+                        materialized_result = results_buffer.popleft().result()
                         assert isinstance(materialized_result, PyMaterializedResult)
                         yield materialized_result
                     else:
@@ -329,9 +335,6 @@ class PyRunner(Runner[MicroPartition]):
         self,
         resource_request: ResourceRequest,
         inflight_resources: Iterable[ResourceRequest],
-        final_result_len: int,
-        results_buffer_size: int | None,
-        is_final: bool,
     ) -> bool:
         self._check_resource_requests(resource_request)
 
@@ -342,11 +345,7 @@ class PyRunner(Runner[MicroPartition]):
             resource_request.memory_bytes or 0
         ) <= self.bytes_memory
 
-        buffer_okay = True
-        if results_buffer_size is not None:
-            buffer_okay = not is_final or (final_result_len < results_buffer_size + 1)
-
-        return all((cpus_okay, gpus_okay, memory_okay, buffer_okay))
+        return all((cpus_okay, gpus_okay, memory_okay))
 
     @staticmethod
     def build_partitions(
