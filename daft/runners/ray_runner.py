@@ -460,7 +460,7 @@ class Scheduler:
             assert isinstance(result, RayMaterializedResult)
             return result
         else:
-            assert isinstance(result, StopIteration)
+            assert isinstance(partition_task, StopIteration)
             return partition_task
 
     def start_plan(
