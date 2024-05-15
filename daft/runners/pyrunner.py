@@ -225,18 +225,8 @@ class PyRunner(Runner[MicroPartition]):
 
                 # Dispatch->Await loop.
                 while True:
-                    # Attempt to yield one materialized result before dispatching
-                    if results_buffer and results_buffer[0].done():
-                        materialized_result = results_buffer.popleft().result()
-                        assert isinstance(materialized_result, PyMaterializedResult)
-                        yield materialized_result
-
-                    # Skip task dispatching and go back to waiting on results if result buffer is already too full
-                    if results_buffer_size is not None and len(results_buffer) > results_buffer_size:
-                        _await_at_least_one_task()
-                        continue
-
                     # Dispatch loop.
+                    num_dispatched = 0
                     while True:
                         if next_step is None:
                             # Blocked on already dispatched tasks; await some tasks.
@@ -255,8 +245,6 @@ class PyRunner(Runner[MicroPartition]):
                             break
 
                         else:
-                            # next_task is a task to run.
-
                             # Add to the results buffer if this is a final PartitionTask
                             if is_final:
                                 assert isinstance(next_step, physical_plan.SingleOutputPartitionTask)
@@ -283,6 +271,7 @@ class PyRunner(Runner[MicroPartition]):
 
                             else:
                                 # Submit the task for execution.
+                                num_dispatched += 1
                                 logger.debug("Submitting task for execution: %s", next_step)
 
                                 # update progress bar
@@ -302,7 +291,14 @@ class PyRunner(Runner[MicroPartition]):
 
                             next_step, is_final = next(plan)
 
-                    _await_at_least_one_task()
+                    # Yield a result if no more dispatching is possible
+                    if num_dispatched == 0 and results_buffer and results_buffer[0].done():
+                        materialized_result = results_buffer.popleft().result()
+                        assert isinstance(materialized_result, PyMaterializedResult)
+                        yield materialized_result
+                    # If not, wait for work to be done and then go back to dispatching
+                    else:
+                        _await_at_least_one_task()
 
                     if next_step is None:
                         next_step, is_final = next(plan)
