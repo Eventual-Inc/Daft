@@ -1,3 +1,4 @@
+use crate::datatypes::TimeUnit;
 use crate::series::array_impl::IntoSeries;
 use crate::{datatypes::DataType, series::Series};
 
@@ -37,12 +38,80 @@ impl Series {
 
     pub fn dt_hour(&self) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::Timestamp(..) => {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
                 let ts_array = self.timestamp()?;
-                Ok(ts_array.hour()?.into_series())
+                Ok(ts_array.time(&tu)?.hour()?.into_series())
+            }
+            DataType::Time(_) => {
+                let time_array = self.time()?;
+                Ok(time_array.hour()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run day() operation on temporal types, got {}",
+                "Can only run hour() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_minute(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.time(&tu)?.minute()?.into_series())
+            }
+            DataType::Time(_) => {
+                let time_array = self.time()?;
+                Ok(time_array.minute()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run minute() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_second(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.time(&tu)?.second()?.into_series())
+            }
+            DataType::Time(_) => {
+                let time_array = self.time()?;
+                Ok(time_array.second()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run second() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_time(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(tu, _) => {
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                    _ => TimeUnit::Microseconds,
+                };
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.time(&tu)?.into_series())
+            }
+            DataType::Time(_) => Ok(self.clone()),
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run time() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }

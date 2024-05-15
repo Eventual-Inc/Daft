@@ -765,6 +765,15 @@ class SeriesDateNamespace(SeriesNamespace):
     def hour(self) -> Series:
         return Series._from_pyseries(self._series.dt_hour())
 
+    def minute(self) -> Series:
+        return Series._from_pyseries(self._series.dt_minute())
+
+    def second(self) -> Series:
+        return Series._from_pyseries(self._series.dt_second())
+
+    def time(self) -> Series:
+        return Series._from_pyseries(self._series.dt_time())
+
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
 

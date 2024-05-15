@@ -20,6 +20,7 @@ use crate::{
     utils::display_table::display_time64,
     with_match_daft_logical_primitive_types,
 };
+
 use common_error::{DaftError, DaftResult};
 
 use arrow2::{

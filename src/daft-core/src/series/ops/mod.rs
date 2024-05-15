@@ -11,7 +11,6 @@ pub mod cast;
 pub mod ceil;
 pub mod comparison;
 pub mod concat;
-pub mod date;
 pub mod downcast;
 mod exp;
 pub mod filter;
@@ -38,6 +37,7 @@ pub mod sort;
 pub mod sqrt;
 pub mod struct_;
 pub mod take;
+pub mod time;
 mod trigonometry;
 pub mod utf8;
 
