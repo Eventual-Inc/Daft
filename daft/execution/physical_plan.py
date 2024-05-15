@@ -19,7 +19,7 @@ import logging
 import math
 import pathlib
 from collections import deque
-from typing import TYPE_CHECKING, Generator, Generic, Iterable, Iterator, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Generator, Generic, Iterable, Iterator, TypeVar, Union
 
 from daft.context import get_context
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
@@ -52,9 +52,8 @@ if TYPE_CHECKING:
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
-# A PhysicalPlan that is complete and will only yield PartitionTasks and a boolean indicating whether
-# or not this PartitionTask is part of the final result set
-MaterializedPhysicalPlan = Iterator[Tuple[Optional[PartitionTask[PartitionT]], bool]]
+# A PhysicalPlan that is complete and will only yield PartitionTasks or final PartitionTs.
+MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], MaterializedResult[PartitionT]]]
 
 
 def _stage_id_counter():
@@ -1460,31 +1459,42 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
 
 def materialize(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    results_buffer_size: int | None,
 ) -> MaterializedPhysicalPlan:
     """Materialize the child plan.
 
-    Repeatedly yields either a PartitionTask (to produce an intermediate partition) and
-    a boolean indicating whether or not this is a final result.
-
-    Args:
-        child_plan: Child "in progress" plan
+    Repeatedly yields either a PartitionTask (to produce an intermediate partition)
+    or a PartitionT (which is part of the final result).
     """
 
+    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     stage_id = next(stage_id_counter)
+    while True:
+        # Check if any inputs finished executing.
+        while len(materializations) > 0 and materializations[0].done():
+            done_task = materializations.popleft()
+            yield done_task.result()
 
-    # Materialize a single dependency.
-    for step in child_plan:
-        # None indicates that no forward progress can be made yet
-        if step is None:
-            yield (step, False)
-        # PartitionTaskBuilder indicates that this is a final materialization
-        elif isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
-            yield (step, True)
-        # PartitionTask indicates an intermediate result
-        else:
-            assert isinstance(step, PartitionTask)
-            yield (step, False)
+        # If the buffer has too many results already, we yield None until some are completed
+        if results_buffer_size is not None and len(materializations) >= results_buffer_size:
+            yield None
+
+        # Materialize a single dependency.
+        try:
+            step = next(child_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                materializations.append(step)
+            assert isinstance(step, (PartitionTask, type(None)))
+
+            yield step
+
+        except StopIteration:
+            if len(materializations) > 0:
+                logger.debug("materialize blocked on completion of all sources: %s", materializations)
+                yield None
+            else:
+                return
 
 
 def enumerate_open_executions(

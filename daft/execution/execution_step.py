@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import pathlib
-import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
@@ -171,25 +170,13 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
     # When available, the partition created from running the PartitionTask.
     _result: None | MaterializedResult[PartitionT] = None
 
-    # Condition variable to allow for waiting on result
-    _done_cv: threading.Condition = threading.Condition()
-
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
         [partition] = result
-
-        with self._done_cv:
-            self._result = partition
-            self._done_cv.notify_all()
+        self._result = partition
 
     def done(self) -> bool:
         return self._result is not None
-
-    def result_or_wait(self) -> MaterializedResult[PartitionT]:
-        with self._done_cv:
-            while not self.done():
-                self._done_cv.wait()
-            return self.result()
 
     def result(self) -> MaterializedResult[PartitionT]:
         assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"

@@ -117,36 +117,65 @@ def test_iter_partitions_with_buffer_limit_1(tmp_path, make_df):
     df = make_df({"a": list(range(8))}).into_partitions(4).with_column("b", write_file(daft.col("a")))
     it = df.iter_partitions(results_buffer_size=1)
 
-    data = []
+    # RayRunner has a minimum queue depth of 3, because of the components of the pipeline
+    # (MaterializedPhysicalPlan -> RayRunner dispatch stack -> Output Queue)
+    if daft.context.get_context().runner_config.name == "ray":
+        data = []
 
-    assert os.listdir(files_location) == [], "Directory should have no files initially"
+        assert os.listdir(files_location) == [], "Directory should have no files initially"
 
-    data.append(next(it))
-    time.sleep(0.5)
-    assert (
-        len(os.listdir(files_location)) == 2
-    ), "First iteration should trigger 2 calls of write_file, one for the iterator result and one for the buffer"
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 3
+        ), "First iteration should trigger 4 calls of write_file, one for the iterator result and 3 for the buffer"
 
-    data.append(next(it))
-    time.sleep(0.5)
-    assert (
-        len(os.listdir(files_location)) == 3
-    ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 4
+        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
 
-    data.append(next(it))
-    time.sleep(0.5)
-    assert (
-        len(os.listdir(files_location)) == 4
-    ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+        for _ in range(2):
+            data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 4
+        ), "Last iteration should not trigger anymore writes, and just consume items from buffer"
 
-    data.append(next(it))
-    time.sleep(0.5)
-    assert (
-        len(os.listdir(files_location)) == 4
-    ), "Last iteration should not trigger anymore writes, and just consume the last item"
+        with pytest.raises(StopIteration):
+            next(it)
+    else:
+        data = []
 
-    with pytest.raises(StopIteration):
-        next(it)
+        assert os.listdir(files_location) == [], "Directory should have no files initially"
+
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 2
+        ), "First iteration should trigger 2 calls of write_file, one for the iterator result and one for the buffer"
+
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 3
+        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 4
+        ), "Subsequent iteration should trigger 1 call of write_file to fill the buffer"
+
+        data.append(next(it))
+        time.sleep(0.5)
+        assert (
+            len(os.listdir(files_location)) == 4
+        ), "Last iteration should not trigger anymore writes, and just consume the last item"
+
+        with pytest.raises(StopIteration):
+            next(it)
 
 
 def test_iter_partitions_with_buffer_limit_2(tmp_path, make_df):

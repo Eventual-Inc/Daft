@@ -30,12 +30,9 @@ class PhysicalPlanScheduler:
         return self._scheduler.repr_ascii(simple=False)
 
     def to_partition_tasks(
-        self,
-        psets: dict[str, list[PartitionT]],
+        self, psets: dict[str, list[PartitionT]], results_buffer_size: int | None
     ) -> physical_plan.MaterializedPhysicalPlan:
-        return physical_plan.materialize(
-            self._scheduler.to_partition_tasks(psets),
-        )
+        return physical_plan.materialize(self._scheduler.to_partition_tasks(psets), results_buffer_size)
 
 
 class AdaptivePhysicalPlanScheduler:

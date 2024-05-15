@@ -438,8 +438,9 @@ class Scheduler:
 
         self.execution_configs_objref_by_df: dict[str, ray.ObjectRef] = dict()
         self.threads_by_df: dict[str, threading.Thread] = dict()
-        self.results_by_df: dict[str, Queue[SingleOutputPartitionTask]] = {}
+        self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
+        self.results_buffer_size_by_df: dict[str, int | None] = dict()
 
         self.use_ray_tqdm = use_ray_tqdm
 
@@ -454,14 +455,9 @@ class Scheduler:
             return StopIteration()
 
         # Common case: get the next result from the thread.
-        partition_task = self.results_by_df[result_uuid].get()
-        if isinstance(partition_task, SingleOutputPartitionTask):
-            result = partition_task.result_or_wait()
-            assert isinstance(result, RayMaterializedResult)
-            return result
-        else:
-            assert isinstance(partition_task, StopIteration)
-            return partition_task
+        result = self.results_by_df[result_uuid].get()
+
+        return result
 
     def start_plan(
         self,
@@ -472,8 +468,9 @@ class Scheduler:
         results_buffer_size: int | None = None,
     ) -> None:
         self.execution_configs_objref_by_df[result_uuid] = ray.put(daft_execution_config)
-        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+        self.results_by_df[result_uuid] = Queue(maxsize=1 or -1)
         self.active_by_df[result_uuid] = True
+        self.results_buffer_size_by_df[result_uuid] = results_buffer_size
 
         t = threading.Thread(
             target=self._run_plan,
@@ -500,6 +497,7 @@ class Scheduler:
             del self.threads_by_df[result_uuid]
             del self.active_by_df[result_uuid]
             del self.results_by_df[result_uuid]
+            del self.results_buffer_size_by_df[result_uuid]
 
     def _run_plan(
         self,
@@ -508,8 +506,10 @@ class Scheduler:
         result_uuid: str,
     ) -> None:
         # Get executable tasks from plan scheduler.
+        results_buffer_size = self.results_buffer_size_by_df[result_uuid]
         tasks = plan_scheduler.to_partition_tasks(
             psets,
+            results_buffer_size and max(results_buffer_size - 1, 1),
         )
 
         daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
@@ -535,26 +535,9 @@ class Scheduler:
                 except Full:
                     pass
 
-        def _dispatch_tasks(tasks_to_dispatch: list[PartitionTask]):
-            # Dispatch the batch of tasks.
-            logger.debug(
-                "%ss: RayRunner dispatching %s tasks",
-                (datetime.now() - start).total_seconds(),
-                len(tasks_to_dispatch),
-            )
-
-            for task in tasks_to_dispatch:
-                results = _build_partitions(daft_execution_config, task)
-                logger.debug("%s -> %s", task, results)
-                inflight_tasks[task.id()] = task
-                for result in results:
-                    inflight_ref_to_task[result] = task.id()
-
-                pbar.mark_task_start(task)
-
         with profiler(profile_filename):
             try:
-                next_step, is_final = next(tasks)
+                next_step = next(tasks)
 
                 while is_active():  # Loop: Dispatch -> await.
                     while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
@@ -574,18 +557,15 @@ class Scheduler:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break
 
-                            # Attempt to place result in the buffer before adding to the dispatch batch.
-                            if is_final:
-                                try:
-                                    assert isinstance(next_step, SingleOutputPartitionTask)
-                                    self.results_by_df[result_uuid].put(next_step, timeout=0.1)
-                                except Full:
-                                    # If the buffer is full, proceed directly to dispatch of the current batch
-                                    # without the current step since there is no capacity to run it.
-                                    break
+                            elif isinstance(next_step, MaterializedResult):
+                                # A final result.
+                                place_in_queue(next_step)
+                                next_step = next(tasks)
+
+                            # next_step is a task.
 
                             # If it is a no-op task, just run it locally immediately.
-                            if len(next_step.instructions) == 0:
+                            elif len(next_step.instructions) == 0:
                                 logger.debug("Running task synchronously in main thread: %s", next_step)
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 [single_partial] = next_step.partial_metadatas
@@ -607,27 +587,33 @@ class Scheduler:
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
-                                next_step, is_final = next(tasks)
+                                next_step = next(tasks)
 
                             else:
                                 # Add the task to the batch.
                                 tasks_to_dispatch.append(next_step)
-                                next_step, is_final = next(tasks)
+                                next_step = next(tasks)
+
+                        # Dispatch the batch of tasks.
+                        logger.debug(
+                            "%ss: RayRunner dispatching %s tasks",
+                            (datetime.now() - start).total_seconds(),
+                            len(tasks_to_dispatch),
+                        )
 
                         if not is_active():
                             break
 
-                        # Dispatch all available tasks
-                        _dispatch_tasks(tasks_to_dispatch)
+                        for task in tasks_to_dispatch:
+                            results = _build_partitions(daft_execution_config, task)
+                            logger.debug("%s -> %s", task, results)
+                            inflight_tasks[task.id()] = task
+                            for result in results:
+                                inflight_ref_to_task[result] = task.id()
 
-                        # Conditions to stop dispatching
-                        is_resources_exhausted = dispatches_allowed == 0
-                        is_waiting_on_work = next_step is None
-                        is_results_buffer_full = (
-                            self.results_by_df[result_uuid].maxsize != -1
-                            and self.results_by_df[result_uuid].qsize() >= self.results_by_df[result_uuid].maxsize
-                        )
-                        if is_resources_exhausted or is_waiting_on_work or is_results_buffer_full:
+                            pbar.mark_task_start(task)
+
+                        if dispatches_allowed == 0 or next_step is None:
                             break
 
                     # Await a batch of tasks.
@@ -676,13 +662,9 @@ class Scheduler:
                     )
 
                     if next_step is None:
-                        next_step, is_final = next(tasks)
+                        next_step = next(tasks)
 
             except StopIteration as e:
-                # Make sure to dispatch the last batch of tasks
-                _dispatch_tasks(tasks_to_dispatch)
-
-                # Propagate StopIteration to consumer
                 place_in_queue(e)
 
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread

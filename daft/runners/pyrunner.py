@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from collections import deque
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Iterable, Iterator
@@ -160,9 +159,10 @@ class PyRunner(Runner[MicroPartition]):
                 # don't store partition sets in variable to avoid reference
                 tasks = plan_scheduler.to_partition_tasks(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    results_buffer_size,
                 )
                 del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(tasks, results_buffer_size)
+                results_gen = self._physical_plan_to_partitions(tasks)
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -180,10 +180,10 @@ class PyRunner(Runner[MicroPartition]):
             plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
             psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
             # Get executable tasks from planner.
-            tasks = plan_scheduler.to_partition_tasks(psets)
+            tasks = plan_scheduler.to_partition_tasks(psets, results_buffer_size)
             del psets
             with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                results_gen = self._physical_plan_to_partitions(tasks, results_buffer_size)
+                results_gen = self._physical_plan_to_partitions(tasks)
                 yield from results_gen
 
     def run_iter_tables(
@@ -193,35 +193,16 @@ class PyRunner(Runner[MicroPartition]):
             yield result.partition()
 
     def _physical_plan_to_partitions(
-        self,
-        plan: physical_plan.MaterializedPhysicalPlan[MicroPartition],
-        results_buffer_size: int | None,
+        self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
     ) -> Iterator[PyMaterializedResult]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
-        results_buffer: deque[physical_plan.SingleOutputPartitionTask] = deque()
-
-        def _await_at_least_one_task():
-            # Await at least one task and process the results.
-            assert len(future_to_task) > 0, "Scheduler deadlocked! This should never happen. Please file an issue."
-            done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
-            for done_future in done_set:
-                done_id = future_to_task.pop(done_future)
-                del inflight_tasks_resources[done_id]
-                done_task = inflight_tasks.pop(done_id)
-                materialized_results = done_future.result()
-
-                pbar.mark_task_done(done_task)
-
-                logger.debug("Task completed: %s -> <%s partitions>", done_id, len(materialized_results))
-
-                done_task.set_result(materialized_results)
 
         pbar = ProgressBar(use_ray_tqdm=False)
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
-                next_step, is_final = next(plan)
+                next_step = next(plan)
 
                 # Dispatch->Await loop.
                 while True:
@@ -231,23 +212,20 @@ class PyRunner(Runner[MicroPartition]):
                             # Blocked on already dispatched tasks; await some tasks.
                             break
 
-                        if not self._can_admit_task(
-                            next_step.resource_request,
-                            inflight_tasks_resources.values(),
-                        ):
+                        elif isinstance(next_step, MaterializedResult):
+                            assert isinstance(next_step, PyMaterializedResult)
+
+                            # A final result.
+                            yield next_step
+                            next_step = next(plan)
+                            continue
+
+                        elif not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values()):
                             # Insufficient resources; await some tasks.
-                            break
-                        elif (
-                            results_buffer_size is not None and is_final and (len(results_buffer) > results_buffer_size)
-                        ):
-                            # Insufficient capacity on the results buffer; await some tasks
                             break
 
                         else:
-                            # Add to the results buffer if this is a final PartitionTask
-                            if is_final:
-                                assert isinstance(next_step, physical_plan.SingleOutputPartitionTask)
-                                results_buffer.append(next_step)
+                            # next_task is a task to run.
 
                             # Run the task in the main thread, instead of the thread pool, in certain conditions:
                             # - Threading is disabled in runner config.
@@ -287,32 +265,27 @@ class PyRunner(Runner[MicroPartition]):
                                 inflight_tasks[next_step.id()] = next_step
                                 inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
-                            next_step, is_final = next(plan)
+                            next_step = next(plan)
 
-                    # Yield a result if any result is ready
-                    #
-                    # NOTE: This means that the buffer is potentially not fully filled up at the point of the `yield`, since there
-                    # still might be buffer capacity for more dispatches
-                    if results_buffer and results_buffer[0].done():
-                        materialized_result = results_buffer.popleft().result()
-                        assert isinstance(materialized_result, PyMaterializedResult)
-                        yield materialized_result
-                    # If not, wait for work to be done and then go back to dispatching
-                    else:
-                        _await_at_least_one_task()
+                    # Await at least one task and process the results.
+                    if len(future_to_task) > 0:
+                        done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
+                        for done_future in done_set:
+                            done_id = future_to_task.pop(done_future)
+                            del inflight_tasks_resources[done_id]
+                            done_task = inflight_tasks.pop(done_id)
+                            materialized_results = done_future.result()
+
+                            pbar.mark_task_done(done_task)
+
+                            logger.debug("Task completed: %s -> <%s partitions>", done_id, len(materialized_results))
+
+                            done_task.set_result(materialized_results)
 
                     if next_step is None:
-                        next_step, is_final = next(plan)
+                        next_step = next(plan)
 
             except StopIteration:
-                # Drain the results buffer
-                while results_buffer:
-                    if results_buffer[0].done():
-                        materialized_result = results_buffer.popleft().result()
-                        assert isinstance(materialized_result, PyMaterializedResult)
-                        yield materialized_result
-                    else:
-                        _await_at_least_one_task()
                 pbar.close()
                 return
 
@@ -328,11 +301,7 @@ class PyRunner(Runner[MicroPartition]):
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
             )
 
-    def _can_admit_task(
-        self,
-        resource_request: ResourceRequest,
-        inflight_resources: Iterable[ResourceRequest],
-    ) -> bool:
+    def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
         self._check_resource_requests(resource_request)
 
         total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
