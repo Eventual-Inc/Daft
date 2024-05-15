@@ -289,7 +289,10 @@ class PyRunner(Runner[MicroPartition]):
 
                             next_step, is_final = next(plan)
 
-                    # Yield a result if no more dispatching is possible
+                    # Yield a result if any result is ready
+                    #
+                    # NOTE: This means that the buffer is potentially not fully filled up at the point of the `yield`, since there
+                    # still might be buffer capacity for more dispatches
                     if results_buffer and results_buffer[0].done():
                         materialized_result = results_buffer.popleft().result()
                         assert isinstance(materialized_result, PyMaterializedResult)
