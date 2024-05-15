@@ -292,7 +292,7 @@ class PyRunner(Runner[MicroPartition]):
                             next_step, is_final = next(plan)
 
                     # Yield a result if no more dispatching is possible
-                    if num_dispatched == 0 and results_buffer and results_buffer[0].done():
+                    if results_buffer and results_buffer[0].done():
                         materialized_result = results_buffer.popleft().result()
                         assert isinstance(materialized_result, PyMaterializedResult)
                         yield materialized_result
