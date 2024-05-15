@@ -4,8 +4,10 @@ mod endswith;
 mod extract;
 mod extract_all;
 mod find;
+mod ilike;
 mod left;
 mod length;
+mod like;
 mod lower;
 mod lpad;
 mod lstrip;
@@ -26,8 +28,10 @@ use endswith::EndswithEvaluator;
 use extract::ExtractEvaluator;
 use extract_all::ExtractAllEvaluator;
 use find::FindEvaluator;
+use ilike::IlikeEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
+use like::LikeEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
@@ -69,6 +73,8 @@ pub enum Utf8Expr {
     Rpad,
     Lpad,
     Repeat,
+    Like,
+    Ilike,
 }
 
 impl Utf8Expr {
@@ -97,6 +103,8 @@ impl Utf8Expr {
             Rpad => &RpadEvaluator {},
             Lpad => &LpadEvaluator {},
             Repeat => &RepeatEvaluator {},
+            Like => &LikeEvaluator {},
+            Ilike => &IlikeEvaluator {},
         }
     }
 }
@@ -265,6 +273,22 @@ pub fn repeat(data: ExprRef, count: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Repeat),
         inputs: vec![data, count],
+    }
+    .into()
+}
+
+pub fn like(data: ExprRef, pattern: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Like),
+        inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn ilike(data: ExprRef, pattern: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Ilike),
+        inputs: vec![data, pattern],
     }
     .into()
 }

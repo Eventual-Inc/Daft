@@ -1331,6 +1331,36 @@ class ExpressionStringNamespace(ExpressionNamespace):
         n_expr = Expression._to_expression(n)
         return Expression._from_pyexpr(self._expr.utf8_repeat(n_expr._expr))
 
+    def like(self, pattern: str | Expression) -> Expression:
+        """Checks whether each string matches the given SQL LIKE pattern, case sensitive
+
+        .. NOTE::
+            Use % as a multiple-character wildcard or _ as a single-character wildcard.
+
+        Example:
+            >>> col("x").str.like("foo%")
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_like(pattern_expr._expr))
+
+    def ilike(self, pattern: str | Expression) -> Expression:
+        """Checks whether each string matches the given SQL LIKE pattern, case insensitive
+
+        .. NOTE::
+            Use % as a multiple-character wildcard or _ as a single-character wildcard.
+
+        Example:
+            >>> col("x").str.ilike("foo%")
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
