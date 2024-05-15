@@ -226,7 +226,6 @@ class PyRunner(Runner[MicroPartition]):
                 # Dispatch->Await loop.
                 while True:
                     # Dispatch loop.
-                    num_dispatched = 0
                     while True:
                         if next_step is None:
                             # Blocked on already dispatched tasks; await some tasks.
@@ -271,7 +270,6 @@ class PyRunner(Runner[MicroPartition]):
 
                             else:
                                 # Submit the task for execution.
-                                num_dispatched += 1
                                 logger.debug("Submitting task for execution: %s", next_step)
 
                                 # update progress bar
