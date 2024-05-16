@@ -154,7 +154,7 @@ impl<'a> JsonReader<'a> {
 
         let tbl = tables_concat(tbls)?;
 
-        // The `limit` is not guaranteed, so we need to properly apply the limit after concatenating the
+        // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
         if let Some(limit) = self.n_rows {
             if tbl.len() > limit {
                 return tbl.head(limit);
@@ -167,13 +167,7 @@ impl<'a> JsonReader<'a> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
-        let daft_fields = Arc::new(
-            self.schema
-                .fields
-                .values()
-                .map(|f| Arc::new(f.clone()))
-                .collect::<Vec<_>>(),
-        );
+        let daft_fields = self.schema.fields.values().map(|f| Arc::new(f.clone()));
         let arrow_schema = self.schema.to_arrow()?;
 
         // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
@@ -225,7 +219,7 @@ impl<'a> JsonReader<'a> {
         }
         let columns = columns
             .into_values()
-            .zip(daft_fields.iter())
+            .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
                 Series::try_from_field_and_arrow_array(
@@ -414,7 +408,7 @@ fn calculate_chunks_and_size(n_threads: usize, chunk_size: usize, total: usize) 
 fn parse_raw_value<'a>(
     raw_value: &'a RawValue,
     scratch: &'a mut Vec<u8>,
-) -> std::result::Result<Value<'a>, super::Error> {
+) -> crate::Result<Value<'a>> {
     let bytes = raw_value.get().as_bytes();
     scratch.clear();
     // We need to clone the bytes here because the deserializer expects a mutable slice
