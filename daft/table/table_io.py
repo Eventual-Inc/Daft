@@ -653,7 +653,6 @@ def write_deltalake(
     large_dtypes: bool,
     base_path: str,
     current_version: int,
-    file_writer_spec: list[tuple[str, int | None]],
     io_config: IOConfig | None = None,
 ):
     from deltalake.schema import convert_pyarrow_table
@@ -665,9 +664,7 @@ def write_deltalake(
         get_partitions_from_path,
         try_get_table_and_table_uri,
     )
-    from pyarrow import dataset as ds
     from pyarrow.fs import PyFileSystem
-    from pyarrow.lib import RecordBatchReader
 
     from daft.delta_lake.delta_lake_storage_function import (
         _storage_config_to_storage_options,
@@ -713,13 +710,10 @@ def write_deltalake(
     arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
 
     execution_config = get_context().daft_execution_config
-    execution_config.parquet_inflation_factor
-
-    max_partitions = file_writer_spec[0][1]
-    max_open_files = file_writer_spec[1][1]
-    max_rows_per_file = file_writer_spec[2][1]
-    min_rows_per_group = file_writer_spec[3][1]
-    max_rows_per_group = file_writer_spec[4][1]
+    MAX_OPEN_FILE = execution_config.parquet_max_open_files
+    MAX_ROWS_PER_FILE = execution_config.parquet_max_rows_per_file
+    MIN_ROWS_PER_GROUP = execution_config.parquet_min_rows_per_group
+    MAX_ROWS_PER_GROUP = execution_config.parquet_max_rows_per_group
 
     file_options = pads.ParquetFileFormat().make_write_options(use_compliant_nested_type=False)
 
@@ -733,11 +727,10 @@ def write_deltalake(
         file_visitor=file_visitor,
         existing_data_behavior="overwrite_or_ignore",
         file_options=file_options,
-        max_partitions=max_partitions,
-        max_open_files=max_open_files,
-        max_rows_per_file=max_rows_per_file,
-        min_rows_per_group=min_rows_per_group,
-        max_rows_per_group=max_rows_per_group,
+        max_open_files=MAX_OPEN_FILE,
+        max_rows_per_file=MAX_ROWS_PER_FILE,
+        min_rows_per_group=MIN_ROWS_PER_GROUP,
+        max_rows_per_group=MAX_ROWS_PER_GROUP,
         filesystem=filesystem,
     )
 

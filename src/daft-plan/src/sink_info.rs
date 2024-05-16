@@ -108,7 +108,6 @@ pub struct DeltaLakeCatalogInfo {
     pub mode: String,
     pub current_version: i32,
     pub large_dtypes: bool,
-    pub file_writer_spec: Option<Vec<(String, Option<i32>)>>,
     pub io_config: Option<IOConfig>,
 }
 

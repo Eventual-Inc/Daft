@@ -2,14 +2,7 @@ from __future__ import annotations
 
 import itertools
 import pathlib
-import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Protocol
-else:
-    from typing import Protocol
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
@@ -420,7 +413,6 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     current_version: int
-    file_writer_spec: list[tuple[str, int | None]]
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -448,7 +440,6 @@ class WriteDeltaLake(SingleOutputInstruction):
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             current_version=self.current_version,
-            file_writer_spec=self.file_writer_spec,
             io_config=self.io_config,
         )
 

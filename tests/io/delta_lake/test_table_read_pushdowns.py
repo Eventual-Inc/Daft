@@ -14,7 +14,6 @@ import pyarrow.compute as pc
 import pytest
 
 import daft
-from daft.delta_lake.delta_lake_storage_function import _io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
 

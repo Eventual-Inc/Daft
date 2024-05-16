@@ -250,6 +250,10 @@ def set_execution_config(
     num_preview_rows: int | None = None,
     parquet_target_filesize: int | None = None,
     parquet_target_row_group_size: int | None = None,
+    parquet_max_open_files: int | None = None,
+    parquet_max_rows_per_file: int | None = None,
+    parquet_min_rows_per_group: int | None = None,
+    parquet_max_rows_per_group: int | None = None,
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
@@ -281,6 +285,27 @@ def set_execution_config(
             Default is 8.
         parquet_target_filesize: Target File Size when writing out Parquet Files. Defaults to 512MB
         parquet_target_row_group_size: Target Row Group Size when writing out Parquet Files. Defaults to 128MB
+        parquet_max_open_files: int, default 1024
+            If greater than 0 then this will limit the maximum number of
+            files that can be left open. If an attempt is made to open
+            too many files then the least recently used file will be closed.
+            If this setting is set too low you may end up fragmenting your
+            data into many small files.
+        parquet_max_rows_per_file: int, default 10 * 1024 * 1024
+            Maximum number of rows per file. If greater than 0 then this will
+            limit how many rows are placed in any single file. Otherwise there
+            will be no limit and one file will be created in each output
+            directory unless files need to be closed to respect max_open_files
+        parquet_min_rows_per_group: int, default 0
+            Minimum number of rows per group. When the value is greater than 0,
+            the dataset writer will batch incoming data and only write the row
+            groups to the disk when sufficient rows have accumulated.
+        parquet_max_rows_per_group: int, default 1024 * 1024
+            Maximum number of rows per group. If the value is greater than 0,
+            then the dataset writer may split up large incoming batches into
+            multiple row groups.  If this value is set, then min_rows_per_group
+            should also be set. Otherwise it could end up with very small row
+            groups.
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
@@ -302,6 +327,10 @@ def set_execution_config(
             num_preview_rows=num_preview_rows,
             parquet_target_filesize=parquet_target_filesize,
             parquet_target_row_group_size=parquet_target_row_group_size,
+            parquet_max_open_files=parquet_max_open_files,
+            parquet_max_rows_per_file=parquet_max_rows_per_file,
+            parquet_min_rows_per_group=parquet_min_rows_per_group,
+            parquet_max_rows_per_group=parquet_max_rows_per_group,
             parquet_inflation_factor=parquet_inflation_factor,
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,

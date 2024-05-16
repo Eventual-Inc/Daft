@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     FileFormat,
@@ -335,7 +335,6 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     current_version: int,
-    file_writer_spec: list[tuple[str, int | None]],
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -343,6 +342,5 @@ def write_deltalake(
         path,
         large_dtypes,
         current_version,
-        file_writer_spec,
         io_config,
     )

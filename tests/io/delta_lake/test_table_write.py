@@ -7,7 +7,7 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft.delta_lake.delta_lake_storage_function import _io_config_to_storage_options
+from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 
 
@@ -41,12 +41,25 @@ def test_deltalake_write_basic(tmp_path, base_table):
     assert read_delta.to_pyarrow_table() == base_table
 
 
+def test_deltalake_multi_write_basic(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    df = daft.from_arrow(base_table)
+    df.write_delta(str(path))
+    df.write_delta(str(path))
+    read_delta = deltalake.DeltaTable(str(path))
+    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    assert df.schema() == expected_schema
+    assert read_delta.version() == 1
+    assert read_delta.to_pyarrow_table() == pa.concat_tables([base_table, base_table])
+
+
 def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
     path, io_config, catalog_table = cloud_paths
     df = daft.from_arrow(base_table)
     df.write_delta(str(path), io_config=io_config)
-    storage_options = _io_config_to_storage_options(io_config, path) if io_config is not None else None
+    storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     read_delta = deltalake.DeltaTable(str(path), storage_options=storage_options)
     expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
     assert df.schema() == expected_schema

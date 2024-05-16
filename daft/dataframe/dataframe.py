@@ -17,7 +17,6 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Mapping,
     Optional,
     Set,
     Tuple,
@@ -551,11 +550,6 @@ class DataFrame:
         self,
         path: str,
         mode: str = "append",
-        max_partitions: Optional[int] = None,
-        max_open_files: int = 1024,
-        max_rows_per_file: int = 10 * 1024 * 1024,
-        min_rows_per_group: int = 64 * 1024,
-        max_rows_per_group: int = 128 * 1024,
         io_config: Optional[IOConfig] = None,
     ) -> None:
         # most of the code is inspired by delta-rs repo see daft/delta_lake/deltalake_license.txt for license
@@ -570,9 +564,7 @@ class DataFrame:
         from packaging.version import parse
 
         if mode not in ["append"]:
-            raise ValueError(
-                f"Mode {mode} is not supported. Only 'append' mode is supported"
-            )
+            raise ValueError(f"Mode {mode} is not supported. Only 'append' mode is supported")
 
         if parse(deltalake.__version__) < parse("0.14.0"):
             raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
@@ -608,20 +600,11 @@ class DataFrame:
         else:
             current_version = -1
 
-        file_writer_spec = []
-
-        file_writer_spec.append(("max_partitions", max_partitions))
-        file_writer_spec.append(("max_open_files", max_open_files))
-        file_writer_spec.append(("max_rows_per_file", max_rows_per_file))
-        file_writer_spec.append(("min_rows_per_group", min_rows_per_group))
-        file_writer_spec.append(("max_rows_per_group", max_rows_per_group))
-
         builder = self._builder.write_delta(
             path=path,
             mode=mode,
             current_version=current_version,
             large_dtypes=True,
-            file_writer_spec=file_writer_spec,
             io_config=io_config,
         )
         write_df = DataFrame(builder)

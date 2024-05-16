@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     CountMode,
@@ -251,7 +251,6 @@ class LogicalPlanBuilder:
         mode: str,
         current_version: int,
         large_dtypes: bool,
-        file_writer_spec: list[tuple[str, int | None]],
         io_config: IOConfig,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
@@ -261,7 +260,6 @@ class LogicalPlanBuilder:
             mode,
             current_version,
             large_dtypes,
-            file_writer_spec,
             io_config,
         )
         return LogicalPlanBuilder(builder)

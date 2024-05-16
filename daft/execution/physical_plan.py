@@ -21,7 +21,6 @@ import pathlib
 from collections import deque
 from typing import (
     TYPE_CHECKING,
-    Any,
     Generator,
     Generic,
     Iterable,
@@ -144,7 +143,6 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     current_version: int,
-    file_writer_spec: list[tuple[str, int | None]],
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -155,7 +153,6 @@ def deltalake_write(
                 base_path=base_path,
                 large_dtypes=large_dtypes,
                 current_version=current_version,
-                file_writer_spec=file_writer_spec,
                 io_config=io_config,
             ),
         )

@@ -433,7 +433,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::IcebergWrite(_) => ApproxStats::empty(),
             #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(_) => None,
+            Self::DeltaLakeWrite(_) => ApproxStats::empty(),
         }
     }
 
@@ -752,7 +752,6 @@ fn deltalake_write(
             &delta_lake_info.path,
             delta_lake_info.large_dtypes,
             delta_lake_info.current_version,
-            delta_lake_info.file_writer_spec.clone(),
             delta_lake_info
                 .io_config
                 .as_ref()
