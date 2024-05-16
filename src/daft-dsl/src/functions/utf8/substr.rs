@@ -26,12 +26,12 @@ impl FunctionEvaluator for SubstrEvaluator {
 
                 if data.dtype == DataType::Utf8
                     && start.dtype.is_integer()
-                    && length.dtype.is_integer()
+                    && (length.dtype.is_integer() || length.dtype.is_null())
                 {
                     Ok(Field::new(data.name, DataType::Utf8))
                 } else {
                     Err(DaftError::TypeError(format!(
-                        "Expects inputs to substr to be utf8, integer and integer but received {}, {} and {}",
+                        "Expects inputs to substr to be utf8, integer and integer or null but received {}, {} and {}",
                         data.dtype, start.dtype, length.dtype
                     )))
                 }

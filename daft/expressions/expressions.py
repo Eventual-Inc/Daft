@@ -1394,7 +1394,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
     
-    def substr(self, start: int | Expression, length: int | Expression) -> Expression:
+    def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring of a length 'length' starting from an index 'start'
 
         .. NOTE::

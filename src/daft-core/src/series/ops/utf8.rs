@@ -1,9 +1,8 @@
 use crate::array::ops::PadPlacement;
-use crate::series::Series;
-use common_error::{DaftError, DaftResult};
-
 use crate::series::array_impl::IntoSeries;
+use crate::series::Series;
 use crate::{datatypes::*, with_match_integer_daft_types};
+use common_error::{DaftError, DaftResult};
 
 impl Series {
     fn with_utf8_array(&self, f: impl Fn(&Utf8Array) -> DaftResult<Series>) -> DaftResult<Series> {
@@ -214,57 +213,30 @@ impl Series {
     }
 
     pub fn utf8_substr(&self, start: &Series, length: &Series) -> DaftResult<Series> {
-        if self.data_type() == &DataType::Null {
-            return Ok(self.clone());
-        }
-        if self.data_type() != &DataType::Utf8 {
-            return Err(DaftError::TypeError(format!(
-                "Substr not implemented for type {}",
-                self.data_type()
-            )));
-        }
-
-        // This part is only illustrative for now
-        match start.data_type() {
-            DataType::UInt32 => Ok(self
-                .utf8()?
-                .substr(start.u32()?, length.u32()?)?
-                .into_series()),
-            DataType::Int32 => Ok(self
-                .utf8()?
-                .substr(start.i32()?, length.i32()?)?
-                .into_series()),
-            DataType::UInt64 => Ok(self
-                .utf8()?
-                .substr(start.u64()?, length.u64()?)?
-                .into_series()),
-            DataType::Int64 => Ok(self
-                .utf8()?
-                .substr(start.i64()?, length.i64()?)?
-                .into_series()),
-            DataType::Int8 => Ok(self
-                .utf8()?
-                .substr(start.i8()?, length.i8()?)?
-                .into_series()),
-            DataType::UInt8 => Ok(self
-                .utf8()?
-                .substr(start.u8()?, length.u8()?)?
-                .into_series()),
-            DataType::Int16 => Ok(self
-                .utf8()?
-                .substr(start.i16()?, length.i16()?)?
-                .into_series()),
-            DataType::UInt16 => Ok(self
-                .utf8()?
-                .substr(start.u16()?, length.u16()?)?
-                .into_series()),
-            DataType::Int128 => Ok(self
-                .utf8()?
-                .substr(start.i128()?, length.i128()?)?
-                .into_series()),
-            dt => Err(DaftError::TypeError(format!(
-                "Substr not implemented for type {dt}"
-            ))),
-        }
+        self.with_utf8_array(|arr| {
+            if start.data_type().is_integer() {
+                with_match_integer_daft_types!(start.data_type(), |$T| {
+                if length.data_type().is_integer() {
+                    with_match_integer_daft_types!(length.data_type(), |$U| {
+                        Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                    })
+                } else if length.data_type().is_null() {
+                    Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Substr not implemented for length type {}",
+                        length.data_type()
+                    )))
+                }
+            })
+            } else if start.data_type().is_null() {
+                Ok(self.clone())
+            } else {
+                Err(DaftError::TypeError(format!(
+                    "Substr not implemented for start type {}",
+                    start.data_type()
+                )))
+            }
+        })
     }
 }
