@@ -738,9 +738,12 @@ class RayRunner(Runner[ray.ObjectRef]):
         max_task_backlog: int | None,
     ) -> None:
         super().__init__()
+
+        # Reuse the existing Ray context if already initialized
         if ray.is_initialized():
-            logger.warning("Ray has already been initialized, Daft will reuse the existing Ray context.")
-        self.ray_context = ray.init(address=address, ignore_reinit_error=True)
+            self.ray_context = ray.init(ignore_reinit_error=True)
+        else:
+            self.ray_context = ray.init(address=address)
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.

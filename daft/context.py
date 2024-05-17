@@ -39,13 +39,34 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     To use:
 
     1. PyRunner: set DAFT_RUNNER=py
-    2. RayRunner: set DAFT_RUNNER=ray and optionally DAFT_RAY_ADDRESS=ray://...
+    2. RayRunner: set DAFT_RUNNER=ray and optionally RAY_ADDRESS=ray://...
     """
+    task_backlog_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG")
     runner = os.getenv("DAFT_RUNNER") or "PY"
+
+    # Use Ray Runner if Ray has already been initialized
+    try:
+        import ray
+
+        if ray.is_initialized():
+            return _RayRunnerConfig(
+                address=None,  # No address supplied, use the existing connection
+                max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
+            )
+    except ImportError:
+        pass
+
+    # Retrieve the runner from the environment
     if runner.upper() == "RAY":
-        task_backlog_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG")
+        ray_address = os.getenv("RAY_ADDRESS")
+        if ray_address is not None:
+            warnings.warn(
+                "Detected usage of the $RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
+            )
+        else:
+            ray_address = os.getenv("RAY_ADDRESS")
         return _RayRunnerConfig(
-            address=os.getenv("DAFT_RAY_ADDRESS"),
+            address=ray_address,
             max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
         )
     elif runner.upper() == "PY":
@@ -66,7 +87,7 @@ class DaftContext:
     # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
     _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig()
 
-    _runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
+    _runner_config: _RunnerConfig | None = None
     _disallow_set_runner: bool = False
     _runner: Runner | None = None
 
@@ -100,13 +121,20 @@ class DaftContext:
     @property
     def runner_config(self) -> _RunnerConfig:
         with self._lock:
+            return self._get_runner_config()
+
+    def _get_runner_config(self) -> _RunnerConfig:
+        if self._runner_config is not None:
             return self._runner_config
+        self._runner_config = _get_runner_config_from_env()
+        return self._runner_config
 
     def _get_runner(self) -> Runner:
         if self._runner is not None:
             return self._runner
 
-        if self._runner_config.name == "ray":
+        runner_config = self._get_runner_config()
+        if runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
             assert isinstance(self._runner_config, _RayRunnerConfig)
@@ -114,27 +142,14 @@ class DaftContext:
                 address=self._runner_config.address,
                 max_task_backlog=self._runner_config.max_task_backlog,
             )
-        elif self._runner_config.name == "py":
+        elif runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
-
-            try:
-                import ray
-
-                if ray.is_initialized():
-                    logger.warning(
-                        "WARNING: Daft is NOT using Ray for execution!\n"
-                        "Daft is using the PyRunner but we detected an active Ray connection. "
-                        "If you intended to use the Daft RayRunner, please first run `daft.context.set_runner_ray()` "
-                        "before executing Daft queries."
-                    )
-            except ImportError:
-                pass
 
             assert isinstance(self._runner_config, _PyRunnerConfig)
             self._runner = PyRunner(use_thread_pool=self._runner_config.use_thread_pool)
 
         else:
-            raise NotImplementedError(f"Runner config implemented: {self._runner_config.name}")
+            raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
 
         # Mark DaftContext as having the runner set, which prevents any subsequent setting of the config
         # after the runner has been initialized once
@@ -165,7 +180,7 @@ def set_runner_ray(
     Alternatively, users can set this behavior via environment variables:
 
     1. DAFT_RUNNER=ray
-    2. Optionally, DAFT_RAY_ADDRESS=ray://...
+    2. Optionally, RAY_ADDRESS=ray://...
 
     **This function will throw an error if called multiple times in the same process.**
 
