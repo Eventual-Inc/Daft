@@ -193,6 +193,8 @@ def set_runner_ray(
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
+    import ray
+
     ctx = get_context()
     with ctx._lock:
         if ctx._disallow_set_runner:
@@ -202,6 +204,11 @@ def set_runner_ray(
                 )
                 return ctx
             raise RuntimeError("Cannot set runner more than once")
+
+        if ray.is_initialized() and address is not None:
+            warnings.warn(
+                f"Ray has already been initialized. Daft will ignore the supplied Ray address and default to using the existing Ray connection: {address}"
+            )
 
         ctx._runner_config = _RayRunnerConfig(
             address=address,
