@@ -1,7 +1,11 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    schema::{Schema, SchemaRef},
+    utils::arrow::cast_array_for_daft_if_needed,
+    Series,
+};
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
@@ -49,7 +53,7 @@ pub fn read_json_local(
 
 struct JsonReader<'a> {
     bytes: &'a [u8],
-    schema: Schema,
+    schema: SchemaRef,
     n_threads: usize,
     predicate: Option<Arc<Expr>>,
     sample_size: usize,
@@ -84,8 +88,8 @@ impl<'a> JsonReader<'a> {
             .as_ref()
             .and_then(|options| options.schema.as_ref())
         {
-            Some(schema) => schema.as_ref().clone(),
-            None => Schema::try_from(&infer_schema(bytes, None, None)?)?,
+            Some(schema) => schema.clone(),
+            None => Arc::new(Schema::try_from(&infer_schema(bytes, None, None)?)?),
         };
 
         let pool = if let Some(max_in_flight) = max_chunks_in_flight {
@@ -96,7 +100,7 @@ impl<'a> JsonReader<'a> {
         .context(RayonThreadPoolSnafu)?;
 
         let projected_schema = match convert_options.and_then(|options| options.include_columns) {
-            Some(projected_columns) => schema.project(&projected_columns)?,
+            Some(projected_columns) => Arc::new(schema.project(&projected_columns)?),
             None => schema,
         };
 
@@ -168,6 +172,7 @@ impl<'a> JsonReader<'a> {
         let scratch = &mut scratch;
 
         let daft_fields = self.schema.fields.values().map(|f| Arc::new(f.clone()));
+
         let arrow_schema = self.schema.to_arrow()?;
 
         // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.

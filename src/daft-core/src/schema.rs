@@ -18,7 +18,7 @@ use common_error::{DaftError, DaftResult};
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
@@ -170,7 +170,7 @@ impl Schema {
     }
 
     /// Returns a new schema with only the specified columns in the new schema
-    pub fn project<S: AsRef<str>>(self, columns: &[S]) -> DaftResult<Schema> {
+    pub fn project<S: AsRef<str>>(self: Arc<Self>, columns: &[S]) -> DaftResult<Schema> {
         let new_fields = columns
             .iter()
             .map(|i| {
