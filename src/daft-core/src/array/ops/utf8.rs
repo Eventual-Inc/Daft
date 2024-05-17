@@ -1033,6 +1033,14 @@ impl Utf8Array {
                                     })?;
                                     Ok(substring(val, s, Some(l)))
                                 }
+                                (Some(val), Some(s), None) => {
+                                    let s: usize = NumCast::from(*s).ok_or_else(|| {
+                                        DaftError::ComputeError(format!(
+                                            "Error in repeat: failed to cast start as usize {s}"
+                                        ))
+                                    })?;
+                                    Ok(substring(val, s, None))
+                                }
                                 _ => Ok(None),
                             })
                             .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
