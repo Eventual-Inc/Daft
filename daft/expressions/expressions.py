@@ -1395,16 +1395,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
     
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
-        """Extract a substring of a length 'length' starting from an index 'start'
+        """Extract a substring from a string, starting at a specified index and extending for a given length.
 
         .. NOTE::
-            If length not supplied, searches the entire string
+            If `length` is not provided, the substring will include all characters from `start` to the end of the string.
 
         Example:
             >>> col("x").str.substr(2, 2)
 
         Returns:
-            Expression: a String expression which is a substring of a provided string
+            Expression: A String expression representing the extracted substring.
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)

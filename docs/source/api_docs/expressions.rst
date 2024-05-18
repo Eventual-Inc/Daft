@@ -142,7 +142,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.repeat
    Expression.str.like
    Expression.str.ilike
-
+   Expression.str.substr
+   
 .. _api-expressions-temporal:
 
 Temporal
