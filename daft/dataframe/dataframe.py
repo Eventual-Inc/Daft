@@ -545,7 +545,6 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return with_operations
 
-    @DataframePublicAPI
     def write_delta(
         self,
         path: str,
