@@ -551,8 +551,6 @@ class DataFrame:
         mode: str = "append",
         io_config: Optional[IOConfig] = None,
     ) -> None:
-        # most of the code is inspired by delta-rs repo see daft/delta_lake/deltalake_license.txt for license
-
         import deltalake
         import pyarrow as pa
         from deltalake.schema import _convert_pa_schema_to_delta
