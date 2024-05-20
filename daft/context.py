@@ -58,10 +58,10 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 
     # Retrieve the runner from the environment
     if runner.upper() == "RAY":
-        ray_address = os.getenv("RAY_ADDRESS")
+        ray_address = os.getenv("DAFT_RAY_ADDRESS")
         if ray_address is not None:
             warnings.warn(
-                "Detected usage of the $RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
+                "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
             )
         else:
             ray_address = os.getenv("RAY_ADDRESS")
