@@ -623,7 +623,7 @@ impl Utf8Array {
             .zip(pattern_iter)
             .map(|(val, pat)| match (val, pat) {
                 (Some(val), Some(pat)) => {
-                    let pat = pat.replace("%", ".*").replace("_", ".");
+                    let pat = pat.replace('%', ".*").replace('_', ".");
                     let re = regex::Regex::new(&format!("^{}$", pat));
                     Ok(Some(re?.is_match(val)))
                 }
@@ -656,7 +656,7 @@ impl Utf8Array {
             .zip(pattern_iter)
             .map(|(val, pat)| match (val, pat) {
                 (Some(val), Some(pat)) => {
-                    let pat = pat.replace("%", ".*").replace("_", ".");
+                    let pat = pat.replace('%', ".*").replace('_', ".");
                     let re = regex::Regex::new(&format!("(?i)^{}$", pat).to_lowercase());
                     Ok(Some(re?.is_match(&val.to_lowercase())))
                 }
