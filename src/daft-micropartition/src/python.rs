@@ -5,6 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::{
+    join::JoinType,
     python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
     schema::Schema,
     Series,
@@ -254,13 +255,19 @@ impl PyMicroPartition {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
         let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             Ok(self
                 .inner
-                .hash_join(&right.inner, left_exprs.as_slice(), right_exprs.as_slice())?
+                .hash_join(
+                    &right.inner,
+                    left_exprs.as_slice(),
+                    right_exprs.as_slice(),
+                    how,
+                )?
                 .into())
         })
     }

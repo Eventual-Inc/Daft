@@ -153,6 +153,9 @@ Temporal
 
    Expression.dt.date
    Expression.dt.hour
+   Expression.dt.minute
+   Expression.dt.second
+   Expression.dt.time
    Expression.dt.day
    Expression.dt.month
    Expression.dt.year
@@ -180,6 +183,16 @@ Struct
    :template: autosummary/accessor_method.rst
 
    Expression.struct.get
+
+Map
+######
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.map.get
 
 .. _api-expressions-images:
 

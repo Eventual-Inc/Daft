@@ -256,8 +256,6 @@ class MicroPartition:
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
     ) -> MicroPartition:
-        if how != JoinType.Inner:
-            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
@@ -270,7 +268,7 @@ class MicroPartition:
         right_exprs = [e._expr for e in right_on]
 
         return MicroPartition._from_pymicropartition(
-            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs)
+            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how)
         )
 
     def sort_merge_join(

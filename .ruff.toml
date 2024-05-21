@@ -1,7 +1,7 @@
 fix = true
 indent-width = 4
 line-length = 120
-target-version = "py37"
+target-version = "py38"
 
 [format]
 # Like Black, indent with spaces, rather than tabs.
@@ -14,7 +14,7 @@ quote-style = "double"
 skip-magic-trailing-comma = false
 
 [lint]
-exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py"]
+exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py", "daft/pickle/compat.py"]
 extend-select = [
   "UP",  # pyupgrade
   "LOG",  # flake8-logging

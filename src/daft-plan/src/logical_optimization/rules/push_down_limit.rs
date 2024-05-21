@@ -51,22 +51,21 @@ impl OptimizerRule for PushDownLimit {
                     LogicalPlan::Source(source) => {
                         match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
-                            #[cfg(feature = "python")]
-                            SourceInfo::InMemoryInfo(_) => Ok(Transformed::No(plan)),
+                            SourceInfo::InMemory(_) => Ok(Transformed::No(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
-                            SourceInfo::ExternalInfo(external_info)
+                            SourceInfo::External(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
                                     && existing_limit <= limit =>
                             {
                                 Ok(Transformed::No(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
-                            SourceInfo::ExternalInfo(external_info) => {
+                            SourceInfo::External(external_info) => {
                                 let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
-                                    SourceInfo::ExternalInfo(new_external_info).into(),
+                                    SourceInfo::External(new_external_info).into(),
                                 ))
                                 .into();
                                 let out_plan = if external_info.scan_op.0.can_absorb_limit() {
@@ -75,6 +74,9 @@ impl OptimizerRule for PushDownLimit {
                                     plan.with_new_children(&[new_source]).into()
                                 };
                                 Ok(Transformed::Yes(out_plan))
+                            }
+                            SourceInfo::PlaceHolder(..) => {
+                                panic!("PlaceHolderInfo should not exist for optimization!");
                             }
                         }
                     }
@@ -249,7 +251,7 @@ mod tests {
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let plan =
-            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5)?
+            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5, 3)?
                 .limit(5, false)?
                 .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;

@@ -1,14 +1,8 @@
-import sys
-
+import lance
 import pyarrow as pa
 import pytest
 
 import daft
-
-if sys.version_info[:2] < (3, 8):
-    pytest.skip(allow_module_level=True, reason="LanceDB does not support Python 3.7 and below")
-else:
-    import lance
 
 TABLE_NAME = "my_table"
 data = {
@@ -16,6 +10,9 @@ data = {
     "lat": [45.5, 40.1],
     "long": [-122.7, -74.1],
 }
+
+PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="lance only supported if pyarrow >= 8.0.0")
 
 
 @pytest.fixture(scope="function")

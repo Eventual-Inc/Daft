@@ -2,18 +2,11 @@ from __future__ import annotations
 
 import datetime
 import itertools
-import sys
-
-import pytz
-
-if sys.version_info < (3, 8):
-    pass
-else:
-    pass
 from typing import Callable
 
 import pyarrow as pa
 import pytest
+import pytz
 
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection

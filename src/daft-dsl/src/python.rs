@@ -477,6 +477,21 @@ impl PyExpr {
         Ok(hour(self.into()).into())
     }
 
+    pub fn dt_minute(&self) -> PyResult<Self> {
+        use functions::temporal::minute;
+        Ok(minute(self.into()).into())
+    }
+
+    pub fn dt_second(&self) -> PyResult<Self> {
+        use functions::temporal::second;
+        Ok(second(self.into()).into())
+    }
+
+    pub fn dt_time(&self) -> PyResult<Self> {
+        use functions::temporal::time;
+        Ok(time(self.into()).into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         use functions::temporal::month;
         Ok(month(self.into()).into())
@@ -676,6 +691,11 @@ impl PyExpr {
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(self.into(), name).into())
+    }
+
+    pub fn map_get(&self, key: &Self) -> PyResult<Self> {
+        use crate::functions::map::get;
+        Ok(get(self.into(), key.into()).into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {

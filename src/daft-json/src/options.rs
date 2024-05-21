@@ -123,11 +123,13 @@ impl_bincode_py_state_serialization!(JsonConvertOptions);
 /// Options for parsing JSON files.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
-pub struct JsonParseOptions {}
+pub struct JsonParseOptions {
+    pub sample_size: Option<usize>,
+}
 
 impl JsonParseOptions {
     pub fn new_internal() -> Self {
-        Self {}
+        Self { sample_size: None }
     }
 }
 

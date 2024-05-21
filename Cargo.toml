@@ -95,7 +95,7 @@ members = [
 
 [workspace.dependencies]
 async-compat = "0.2.3"
-async-compression = {version = "0.4.7", features = ["tokio", "all-algorithms"]}
+async-compression = {version = "0.4.10", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.6.0"
 chrono = "0.4.26"
@@ -120,7 +120,7 @@ sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 tokio = {version = "1.37.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
-tokio-util = "0.7.8"
+tokio-util = "0.7.11"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
@@ -147,7 +147,7 @@ package = "parquet2"
 rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py37"]
+features = ["extension-module", "multiple-pymethods", "abi3-py38"]
 version = "0.19.2"
 
 [workspace.dependencies.pyo3-log]

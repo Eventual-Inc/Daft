@@ -327,8 +327,6 @@ class Table:
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
     ) -> Table:
-        if how != JoinType.Inner:
-            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
@@ -340,7 +338,9 @@ class Table:
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Table._from_pytable(self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs))
+        return Table._from_pytable(
+            self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs, how=how)
+        )
 
     def sort_merge_join(
         self,

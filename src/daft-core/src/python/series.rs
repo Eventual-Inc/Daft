@@ -454,6 +454,18 @@ impl PySeries {
         Ok(self.series.dt_hour()?.into())
     }
 
+    pub fn dt_minute(&self) -> PyResult<Self> {
+        Ok(self.series.dt_minute()?.into())
+    }
+
+    pub fn dt_second(&self) -> PyResult<Self> {
+        Ok(self.series.dt_second()?.into())
+    }
+
+    pub fn dt_time(&self) -> PyResult<Self> {
+        Ok(self.series.dt_time()?.into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         Ok(self.series.dt_month()?.into())
     }
@@ -507,6 +519,10 @@ impl PySeries {
 
     pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
         Ok(self.series.list_get(&idx.series, &default.series)?.into())
+    }
+
+    pub fn map_get(&self, key: &Self) -> PyResult<Self> {
+        Ok(self.series.map_get(&key.series)?.into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

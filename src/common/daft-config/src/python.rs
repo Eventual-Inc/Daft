@@ -74,6 +74,14 @@ impl PyDaftExecutionConfig {
     pub fn new() -> Self {
         PyDaftExecutionConfig::default()
     }
+
+    #[staticmethod]
+    pub fn from_env() -> Self {
+        PyDaftExecutionConfig {
+            config: Arc::new(DaftExecutionConfig::from_env()),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn with_config_values(
         &self,
@@ -91,6 +99,7 @@ impl PyDaftExecutionConfig {
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
+        enable_aqe: Option<bool>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -139,6 +148,10 @@ impl PyDaftExecutionConfig {
         }
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
+        }
+
+        if let Some(enable_aqe) = enable_aqe {
+            config.enable_aqe = enable_aqe;
         }
 
         Ok(PyDaftExecutionConfig {
@@ -209,6 +222,10 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
+    }
+    #[getter]
+    fn enable_aqe(&self) -> PyResult<bool> {
+        Ok(self.config.enable_aqe)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

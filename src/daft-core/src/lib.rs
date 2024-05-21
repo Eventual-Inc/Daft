@@ -7,6 +7,7 @@ pub mod count_mode;
 pub mod datatypes;
 #[cfg(feature = "python")]
 pub mod ffi;
+pub mod join;
 pub mod kernels;
 #[cfg(feature = "python")]
 pub mod python;
@@ -18,6 +19,7 @@ use pyo3::prelude::*;
 
 pub use count_mode::CountMode;
 pub use datatypes::DataType;
+pub use join::{JoinStrategy, JoinType};
 pub use series::{IntoSeries, Series};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -33,6 +35,8 @@ pub const DAFT_BUILD_TYPE: &str = {
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<CountMode>()?;
+    parent.add_class::<JoinType>()?;
+    parent.add_class::<JoinStrategy>()?;
 
     Ok(())
 }

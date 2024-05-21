@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import sys
-from typing import Any, TypeVar
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
+from typing import Any, Literal, TypeVar
 
 import pyarrow as pa
 
@@ -573,6 +567,10 @@ class Series:
         return SeriesListNamespace.from_series(self)
 
     @property
+    def map(self) -> SeriesMapNamespace:
+        return SeriesMapNamespace.from_series(self)
+
+    @property
     def image(self) -> SeriesImageNamespace:
         return SeriesImageNamespace.from_series(self)
 
@@ -767,6 +765,15 @@ class SeriesDateNamespace(SeriesNamespace):
     def hour(self) -> Series:
         return Series._from_pyseries(self._series.dt_hour())
 
+    def minute(self) -> Series:
+        return Series._from_pyseries(self._series.dt_minute())
+
+    def second(self) -> Series:
+        return Series._from_pyseries(self._series.dt_second())
+
+    def time(self) -> Series:
+        return Series._from_pyseries(self._series.dt_time())
+
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
 
@@ -810,6 +817,11 @@ class SeriesListNamespace(SeriesNamespace):
 
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
+
+
+class SeriesMapNamespace(SeriesNamespace):
+    def get(self, key: Series) -> Series:
+        return Series._from_pyseries(self._series.map_get(key._series))
 
 
 class SeriesImageNamespace(SeriesNamespace):

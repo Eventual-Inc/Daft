@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import builtins
 import os
-import sys
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, TypeVar, overload
 
 import pyarrow as pa
 
@@ -25,17 +24,12 @@ from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
-if sys.version_info < (3, 8):
-    from typing_extensions import Literal
-else:
-    from typing import Literal
-
 if TYPE_CHECKING:
     from daft.io import IOConfig
 
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
-accessor_namespace_property: type[property] = property
+property = property
 if os.getenv("DAFT_SPHINX_BUILD") == "1":
     from typing import Any
 
@@ -55,7 +49,7 @@ if os.getenv("DAFT_SPHINX_BUILD") == "1":
             except (AttributeError, ImportError):
                 return self  # type: ignore[return-value]
 
-    accessor_namespace_property = sphinx_accessor
+    property = sphinx_accessor  # type: ignore[misc]
 
 
 def lit(value: object) -> Expression:
@@ -118,47 +112,52 @@ class Expression:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
-    @accessor_namespace_property
+    @property
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def float(self) -> ExpressionFloatNamespace:
         """Access methods that work on columns of floats"""
         return ExpressionFloatNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def url(self) -> ExpressionUrlNamespace:
         """Access methods that work on columns of URLs"""
         return ExpressionUrlNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def list(self) -> ExpressionListNamespace:
         """Access methods that work on columns of lists"""
         return ExpressionListNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def struct(self) -> ExpressionStructNamespace:
         """Access methods that work on columns of structs"""
         return ExpressionStructNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
+    def map(self) -> ExpressionMapNamespace:
+        """Access methods that work on columns of maps"""
+        return ExpressionMapNamespace.from_expression(self)
+
+    @property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def partitioning(self) -> ExpressionPartitioningNamespace:
         """Access methods that support partitioning operators"""
         return ExpressionPartitioningNamespace.from_expression(self)
 
-    @accessor_namespace_property
+    @property
     def json(self) -> ExpressionJsonNamespace:
         """Access methods that work on columns of json"""
         return ExpressionJsonNamespace.from_expression(self)
@@ -813,6 +812,39 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_hour())
 
+    def minute(self) -> Expression:
+        """Retrieves the minute for a datetime column
+
+        Example:
+            >>> col("x").dt.minute()
+
+        Returns:
+            Expression: a UInt32 expression with just the minute extracted from a datetime column
+        """
+        return Expression._from_pyexpr(self._expr.dt_minute())
+
+    def second(self) -> Expression:
+        """Retrieves the second for a datetime column
+
+        Example:
+            >>> col("x").dt.second()
+
+        Returns:
+            Expression: a UInt32 expression with just the second extracted from a datetime column
+        """
+        return Expression._from_pyexpr(self._expr.dt_second())
+
+    def time(self) -> Expression:
+        """Retrieves the time for a datetime column
+
+        Example:
+            >>> col("x").dt.time()
+
+        Returns:
+            Expression: a Time expression
+        """
+        return Expression._from_pyexpr(self._expr.dt_time())
+
     def month(self) -> Expression:
         """Retrieves the month for a datetime column
 
@@ -1423,6 +1455,43 @@ class ExpressionStructNamespace(ExpressionNamespace):
             Expression: the field expression
         """
         return Expression._from_pyexpr(self._expr.struct_get(name))
+
+
+class ExpressionMapNamespace(ExpressionNamespace):
+    def get(self, key: Expression) -> Expression:
+        """Retrieves the value for a key in a map column
+
+        Example:
+            >>> import pyarrrow as pa
+            >>> import daft
+            >>> pa_array = pa.array([[(1, 2)],[],[(2,1)]], type=pa.map_(pa.int64(), pa.int64()))
+            >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+            >>> df = df.with_column("1", df["map_col"].map.get(1))
+            >>> df.show()
+            ╭───────────────────────────────────────┬───────╮
+            │ map_col                               ┆ 1     │
+            │ ---                                   ┆ ---   │
+            │ Map[Struct[key: Int64, value: Int64]] ┆ Int64 │
+            ╞═══════════════════════════════════════╪═══════╡
+            │ [{key: 1,                             ┆ 2     │
+            │ value: 2,                             ┆       │
+            │ }]                                    ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []                                    ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: 2,                             ┆ None  │
+            │ value: 1,                             ┆       │
+            │ }]                                    ┆       │
+            ╰───────────────────────────────────────┴───────╯
+
+        Args:
+            key: the key to retrieve
+
+        Returns:
+            Expression: the value expression
+        """
+        key_expr = Expression._to_expression(key)
+        return Expression._from_pyexpr(self._expr.map_get(key_expr._expr))
 
 
 class ExpressionsProjection(Iterable[Expression]):

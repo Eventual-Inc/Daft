@@ -40,13 +40,11 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     import dask
-    import pandas as pd
-    import pyarrow as pa
-    import torch.utils.data.Dataset as TorchDataset
-    import torch.utils.data.IterableDataset as TorchIterableDataset
-    from pyiceberg.table import Table as IcebergTable
-    from ray import ObjectRef as RayObjectRef
-    from ray.data.dataset import Dataset as RayDataset
+    import pandas
+    import pyarrow
+    import pyiceberg
+    import ray
+    import torch
 
 from daft.logical.schema import Schema
 
@@ -92,15 +90,19 @@ class DataFrame:
         else:
             num_partitions = self._result_cache.num_partitions()
             size_bytes = self._result_cache.size_bytes()
+            num_rows = self._result_cache.num_rows()
+
             # Partition set should always be set on cache entry.
             assert (
-                num_partitions is not None and size_bytes is not None
+                num_partitions is not None and size_bytes is not None and num_rows is not None
             ), "Partition set should always be set on cache entry"
+
             return self.__builder.from_in_memory_scan(
                 self._result_cache,
                 self.__builder.schema(),
                 num_partitions=num_partitions,
                 size_bytes=size_bytes,
+                num_rows=num_rows,
             )
 
     def _get_current_builder(self) -> LogicalPlanBuilder:
@@ -210,11 +212,14 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[MicroPartition, "RayObjectRef"]]:
+    def iter_partitions(self) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
+
+        .. WARNING::
+            This method is experimental and may change in future versions.
         """
         if self._result is not None:
             # If the dataframe has already finished executing,
@@ -288,16 +293,16 @@ class DataFrame:
         return cls._from_tables(data_vpartition)
 
     @classmethod
-    def _from_arrow(cls, data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
-        """Creates a DataFrame from a pyarrow Table."""
+    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"]]) -> "DataFrame":
+        """Creates a DataFrame from a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__."""
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    def _from_pandas(cls, data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
-        """Creates a Daft DataFrame from a pandas DataFrame."""
+    def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
+        """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
@@ -324,9 +329,11 @@ class DataFrame:
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
+        num_rows = len(result_pset)
+
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes
+            cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes, num_rows=num_rows
         )
 
         df = cls(builder)
@@ -437,15 +444,15 @@ class DataFrame:
         return result_df
 
     @DataframePublicAPI
-    def write_iceberg(self, table: "IcebergTable", mode: str = "append") -> "DataFrame":
-        """Writes the DataFrame to an Iceberg Table, returning a new DataFrame with the operations that occurred.
+    def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
+        """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            table (IcebergTable): Destination Iceberg Table to write dataframe to.
+            table (pyiceberg.table.Table): Destination `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
 
         Returns:
@@ -455,11 +462,15 @@ class DataFrame:
         if len(table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned Iceberg tables")
 
+        import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
+
+        if parse(pa.__version__) < parse("8.0.0"):
+            raise ValueError(f"Write Iceberg is only supported on pyarrow>=8.0.0, found {pa.__version__}")
 
         from pyiceberg.table import _MergingSnapshotProducer
         from pyiceberg.table.snapshots import Operation
@@ -476,7 +487,7 @@ class DataFrame:
         else:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
-        # We perform the merge here since IcebergTable is not pickle-able
+        # We perform the merge here since table is not pickle-able
         # We should be able to move to a transaction API for iceberg 0.7.0
         merge = _MergingSnapshotProducer(operation=operation, table=table)
 
@@ -508,7 +519,6 @@ class DataFrame:
             size.append(data_file.file_size_in_bytes)
 
         merge.commit()
-        import pyarrow as pa
 
         from daft import from_pydict
 
@@ -933,9 +943,9 @@ class DataFrame:
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
-            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame.. Defaults to None.
+            left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame. Defaults to None.
             right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
-            how (str, optional): what type of join to performing, currently only `inner` is supported. Defaults to "inner".
+            how (str, optional): what type of join to perform; currently "inner", "left", "right", and "outer" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
 
@@ -955,9 +965,12 @@ class DataFrame:
             left_on = on
             right_on = on
         join_type = JoinType.from_join_type_str(how)
-        if join_type != JoinType.Inner:
-            raise ValueError(f"Only inner joins are currently supported, but got: {how}")
         join_strategy = JoinStrategy.from_join_strategy_str(strategy) if strategy is not None else None
+
+        if join_strategy == JoinStrategy.SortMerge and join_type != JoinType.Inner:
+            raise ValueError("Sort merge join only supports inner joins")
+        if join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
+            raise ValueError("Broadcast join does not support outer joins")
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
@@ -1565,12 +1578,12 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pd.DataFrame":
-        """Converts the current DataFrame to a pandas DataFrame.
+    def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pandas.DataFrame":
+        """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
         If results have not computed yet, collect will be called.
 
         Returns:
-            pd.DataFrame: pandas DataFrame converted from a Daft DataFrame
+            pandas.DataFrame: `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__ converted from a Daft DataFrame
 
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
@@ -1586,12 +1599,12 @@ class DataFrame:
         return pd_df
 
     @DataframePublicAPI
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pa.Table":
-        """Converts the current DataFrame to a pyarrow Table.
+    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pyarrow.Table":
+        """Converts the current DataFrame to a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__.
         If results have not computed yet, collect will be called.
 
         Returns:
-            pyarrow.Table: pyarrow Table converted from a Daft DataFrame
+            pyarrow.Table: `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__ converted from a Daft DataFrame
 
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
@@ -1620,7 +1633,7 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
-    def to_torch_map_dataset(self) -> "TorchDataset":
+    def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
         """Convert the current DataFrame into a map-style
         `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
         for use with PyTorch.
@@ -1642,7 +1655,7 @@ class DataFrame:
         return DaftTorchDataset(self.to_pydict(), len(self))
 
     @DataframePublicAPI
-    def to_torch_iter_dataset(self) -> "TorchIterableDataset":
+    def to_torch_iter_dataset(self) -> "torch.utils.data.IterableDataset":
         """Convert the current DataFrame into a
         `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__
         for use with PyTorch.
@@ -1667,14 +1680,14 @@ class DataFrame:
         return DaftTorchIterableDataset(self)
 
     @DataframePublicAPI
-    def to_ray_dataset(self) -> "RayDataset":
-        """Converts the current DataFrame to a Ray Dataset which is useful for running distributed ML model training in Ray
+    def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
+        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray
 
         .. NOTE::
             This function can only work if Daft is running using the RayRunner
 
         Returns:
-            RayDataset: Ray dataset
+            ray.data.dataset.DataSet: `Ray dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__
         """
         from daft.runners.ray_runner import RayPartitionSet
 
@@ -1686,8 +1699,8 @@ class DataFrame:
         return partition_set.to_ray_dataset()
 
     @classmethod
-    def _from_ray_dataset(cls, ds: "RayDataset") -> "DataFrame":
-        """Creates a DataFrame from a Ray Dataset."""
+    def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
+        """Creates a DataFrame from a `Ray Dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__."""
         context = get_context()
         if context.runner_config.name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
@@ -1700,12 +1713,14 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
+        num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
+            num_rows=num_rows,
         )
         df = cls(builder)
         df._result_cache = cache_entry
@@ -1730,8 +1745,8 @@ class DataFrame:
     def to_dask_dataframe(
         self,
         meta: Union[
-            "pd.DataFrame",
-            "pd.Series",
+            "pandas.DataFrame",
+            "pandas.Series",
             Dict[str, Any],
             Iterable[Any],
             Tuple[Any],
@@ -1747,7 +1762,7 @@ class DataFrame:
             This function can only work if Daft is running using the RayRunner.
 
         Args:
-            meta: An empty pandas DataFrame or Series that matches the dtypes and column
+            meta: An empty pandas `DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__ or `Series <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.Series.html>`__ that matches the dtypes and column
                 names of the stream. This metadata is necessary for many algorithms in
                 dask dataframe to work. For ease of use, some alternative inputs are
                 also available. Instead of a DataFrame, a dict of ``{name: dtype}`` or
@@ -1789,12 +1804,14 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
+        num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
+            num_rows=num_rows,
         )
 
         df = cls(builder)

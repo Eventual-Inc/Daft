@@ -108,7 +108,8 @@ def test_series_timestamp_day_operation(tz) -> None:
     assert expected == days.to_pylist()
 
 
-def test_series_timestamp_hour() -> None:
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_hour_operation(tz) -> None:
     from datetime import datetime
 
     def ts_maker(h):
@@ -119,12 +120,110 @@ def test_series_timestamp_hour() -> None:
     input = [1, 5, 14, None, 23, None, 21]
 
     input_ts = list(map(ts_maker, input))
-    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    days = s.dt.hour()
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    hours = s.dt.hour()
 
-    assert days.datatype() == DataType.uint32()
+    assert hours.datatype() == DataType.uint32()
 
-    assert input == days.to_pylist()
+    expected = [h and (h + 8) % 24 for h in input] if tz in {"+08:00", "Asia/Singapore"} else input
+    assert expected == hours.to_pylist()
+
+
+def test_series_time_hour() -> None:
+    from datetime import datetime
+
+    def ts_maker(h):
+        if h is None:
+            return None
+        return datetime(2023, 1, 26, h, 1, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    hours = s.dt.hour()
+
+    assert hours.datatype() == DataType.uint32()
+
+    assert input == hours.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_minute_operation(tz) -> None:
+    from datetime import datetime
+
+    def ts_maker(mi):
+        if mi is None:
+            return None
+        return datetime(2023, 1, 26, 23, mi, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    minutes = s.dt.minute()
+
+    assert minutes.datatype() == DataType.uint32()
+
+    assert input == minutes.to_pylist()
+
+
+def test_series_time_minute() -> None:
+    from datetime import datetime
+
+    def ts_maker(mi):
+        if mi is None:
+            return None
+        return datetime(2023, 1, 26, 23, mi, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    minutes = s.dt.minute()
+
+    assert minutes.datatype() == DataType.uint32()
+
+    assert input == minutes.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_second_operation(tz) -> None:
+    from datetime import datetime
+
+    def ts_maker(s):
+        if s is None:
+            return None
+        return datetime(2023, 1, 26, 23, 1, s)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    seconds = s.dt.second()
+
+    assert seconds.datatype() == DataType.uint32()
+
+    assert input == seconds.to_pylist()
+
+
+def test_series_time_second() -> None:
+    from datetime import datetime
+
+    def ts_maker(s):
+        if s is None:
+            return None
+        return datetime(2023, 1, 26, 23, 1, s)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.time(TimeUnit.ns()))
+    seconds = s.dt.second()
+
+    assert seconds.datatype() == DataType.uint32()
+
+    assert input == seconds.to_pylist()
 
 
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])

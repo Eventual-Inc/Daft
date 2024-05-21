@@ -2,7 +2,10 @@ mod date;
 mod day;
 mod day_of_week;
 mod hour;
+mod minute;
 mod month;
+mod second;
+mod time;
 mod truncate;
 mod year;
 
@@ -10,7 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::functions::temporal::{
     date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
-    month::MonthEvaluator, truncate::TruncateEvaluator, year::YearEvaluator,
+    minute::MinuteEvaluator, month::MonthEvaluator, second::SecondEvaluator, time::TimeEvaluator,
+    truncate::TruncateEvaluator, year::YearEvaluator,
 };
 use crate::{Expr, ExprRef};
 
@@ -20,10 +24,13 @@ use super::FunctionEvaluator;
 pub enum TemporalExpr {
     Day,
     Hour,
+    Minute,
+    Second,
     Month,
     Year,
     DayOfWeek,
     Date,
+    Time,
     Truncate(String),
 }
 
@@ -38,6 +45,9 @@ impl TemporalExpr {
             Year => &YearEvaluator {},
             DayOfWeek => &DayOfWeekEvaluator {},
             Date => &DateEvaluator {},
+            Minute => &MinuteEvaluator {},
+            Second => &SecondEvaluator {},
+            Time => &TimeEvaluator {},
             Truncate(..) => &TruncateEvaluator {},
         }
     }
@@ -62,6 +72,30 @@ pub fn day(input: ExprRef) -> ExprRef {
 pub fn hour(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Hour),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn minute(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Minute),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn second(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Second),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn time(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Time),
         inputs: vec![input],
     }
     .into()

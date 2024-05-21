@@ -9,6 +9,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
 use daft_core::count_mode::CountMode;
+use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
 use daft_dsl::ExprRef;
@@ -27,11 +28,11 @@ use crate::logical_plan::LogicalPlan;
 use crate::partitioning::{
     ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
+use crate::physical_ops::*;
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::SourceInfo;
+use crate::source_info::{PlaceHolderInfo, SourceInfo};
 use crate::FileFormat;
-use crate::{physical_ops::*, JoinStrategy};
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -40,7 +41,7 @@ pub(super) fn translate_single_logical_node(
 ) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
-            SourceInfo::ExternalInfo(ScanExternalInfo {
+            SourceInfo::External(ScanExternalInfo {
                 pushdowns,
                 scan_op,
                 source_schema,
@@ -82,16 +83,22 @@ pub(super) fn translate_single_logical_node(
                     )
                 }
             }
-            #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(mem_info) => {
+            SourceInfo::InMemory(mem_info) => {
+                let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
+                        .into()
+                });
+
                 let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
-                        .into(),
+                    clustering_spec,
                 ))
                 .arced();
                 Ok(scan)
+            }
+            SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
+                panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
         LogicalPlan::Project(LogicalProject {
@@ -478,23 +485,23 @@ pub(super) fn translate_single_logical_node(
                 } else {
                     false
                 };
+            let left_stats = left_physical.approximate_stats();
+            let right_stats = right_physical.approximate_stats();
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
-            let (smaller_size_bytes, left_is_larger) = match (
-                left_physical.approximate_size_bytes(),
-                right_physical.approximate_size_bytes(),
-            ) {
-                (Some(left_size_bytes), Some(right_size_bytes)) => {
-                    if right_size_bytes < left_size_bytes {
-                        (Some(right_size_bytes), true)
-                    } else {
-                        (Some(left_size_bytes), false)
+            let (smaller_size_bytes, left_is_larger) =
+                match (left_stats.upper_bound_bytes, right_stats.upper_bound_bytes) {
+                    (Some(left_size_bytes), Some(right_size_bytes)) => {
+                        if right_size_bytes < left_size_bytes {
+                            (Some(right_size_bytes), true)
+                        } else {
+                            (Some(left_size_bytes), false)
+                        }
                     }
-                }
-                (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
-                (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
-                (None, None) => (None, false),
-            };
+                    (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
+                    (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
+                    (None, None) => (None, false),
+                };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned
             } else {
@@ -512,19 +519,24 @@ pub(super) fn translate_single_logical_node(
                             )
                     })
                 };
-                // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
+                // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
                     && let Some(smaller_size_bytes) = smaller_size_bytes
                     && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
+                    && (*join_type == JoinType::Inner
+                        || (*join_type == JoinType::Left && left_is_larger)
+                        || (*join_type == JoinType::Right && !left_is_larger))
                 {
                     JoinStrategy::Broadcast
                 // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
                 // TODO(Clark): Support non-primitive dtypes for sort-merge join (e.g. temporal types).
                 // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
+                // TODO(Kevin): Support sort-merge join for other types of joins.
                 } else if is_primitive(left_on)
                     && is_primitive(right_on)
                     && (is_left_sort_partitioned || is_right_sort_partitioned)
+                    && *join_type == JoinType::Inner
                     && (!is_larger_partitioned
                         || (left_is_larger && is_left_sort_partitioned
                             || !left_is_larger && is_right_sort_partitioned))
@@ -537,23 +549,38 @@ pub(super) fn translate_single_logical_node(
             });
             match join_strategy {
                 JoinStrategy::Broadcast => {
-                    // If either the left or right side of the join are very small tables, perform a broadcast join with the
-                    // entire smaller table broadcast to each of the partitions of the larger table.
-                    if left_is_larger {
-                        // These will get swapped back when doing the actual local joins.
+                    let is_swapped = match (join_type, left_is_larger) {
+                        (JoinType::Left, _) => true,
+                        (JoinType::Right, _) => false,
+                        (JoinType::Inner, left_is_larger) => left_is_larger,
+                        (JoinType::Outer, _) => {
+                            return Err(common_error::DaftError::ValueError(
+                                "Broadcast join does not support outer joins.".to_string(),
+                            ));
+                        }
+                    };
+
+                    if is_swapped {
                         (left_physical, right_physical) = (right_physical, left_physical);
                     }
+
                     Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
                         left_physical,
                         right_physical,
                         left_on.clone(),
                         right_on.clone(),
                         *join_type,
-                        left_is_larger,
+                        is_swapped,
                     ))
                     .arced())
                 }
                 JoinStrategy::SortMerge => {
+                    if *join_type != JoinType::Inner {
+                        return Err(common_error::DaftError::ValueError(
+                            "Sort-merge join currently only supports inner joins".to_string(),
+                        ));
+                    }
+
                     let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
                         // Use the special-purpose presorting that ensures join inputs are sorted with aligned
                         // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).

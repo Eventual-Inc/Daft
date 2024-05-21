@@ -10,17 +10,20 @@ use crate::{
     physical_planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
+    PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
-use daft_core::schema::Schema;
-use daft_core::schema::SchemaRef;
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    schema::{Schema, SchemaRef},
+};
 use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
 use {
+    crate::physical_planner::python::AdaptivePhysicalPlanScheduler,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::{physical_plan::PhysicalPlanRef, source_info::InMemoryInfo},
     common_daft_config::PyDaftExecutionConfig,
@@ -149,13 +152,16 @@ impl LogicalPlanBuilder {
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize,
     ) -> DaftResult<Self> {
-        let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
+        let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
             num_partitions,
             size_bytes,
+            num_rows,
+            None, // TODO(sammy) thread through clustering spec to Python
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
@@ -168,7 +174,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
-        let source_info = SourceInfo::ExternalInfo(ScanExternalInfo::new(
+        let source_info = SourceInfo::External(ScanExternalInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),
@@ -549,6 +555,7 @@ impl PyLogicalPlanBuilder {
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
+        num_rows: usize,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
@@ -556,6 +563,7 @@ impl PyLogicalPlanBuilder {
             schema.into(),
             num_partitions,
             size_bytes,
+            num_rows,
         )?
         .into())
     }
@@ -767,32 +775,34 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self) -> PyResult<Self> {
-        let optimizer = Optimizer::new(Default::default());
-        let unoptimized_plan = self.builder.build();
-        let optimized_plan = optimizer.optimize(
-            unoptimized_plan,
-            |new_plan, rule_batch, pass, transformed, seen| {
-                if transformed {
-                    log::debug!(
-                        "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
-                        rule_batch,
-                        pass,
-                        if seen { "an already seen" } else { "a new" },
-                        new_plan.repr_ascii(true),
-                    );
-                } else {
-                    log::debug!(
-                        "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
-                        rule_batch,
-                        pass,
-                        new_plan.repr_ascii(true),
-                    );
-                }
-            },
-        )?;
-        let builder = LogicalPlanBuilder::new(optimized_plan);
-        Ok(builder.into())
+    pub fn optimize(&self, py: Python) -> PyResult<Self> {
+        py.allow_threads(|| {
+            let optimizer = Optimizer::new(Default::default());
+            let unoptimized_plan = self.builder.build();
+            let optimized_plan = optimizer.optimize(
+                unoptimized_plan,
+                |new_plan, rule_batch, pass, transformed, seen| {
+                    if transformed {
+                        log::debug!(
+                            "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                            rule_batch,
+                            pass,
+                            if seen { "an already seen" } else { "a new" },
+                            new_plan.repr_ascii(true),
+                        );
+                    } else {
+                        log::debug!(
+                            "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                            rule_batch,
+                            pass,
+                            new_plan.repr_ascii(true),
+                        );
+                    }
+                },
+            )?;
+            let builder = LogicalPlanBuilder::new(optimized_plan);
+            Ok(builder.into())
+        })
     }
 
     /// Finalize the logical plan, translate the logical plan to a physical plan, and return
@@ -812,6 +822,20 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
+    }
+
+    pub fn to_adaptive_physical_plan_scheduler(
+        &self,
+        py: Python,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<AdaptivePhysicalPlanScheduler> {
+        py.allow_threads(|| {
+            let logical_plan = self.builder.build();
+            Ok(AdaptivePhysicalPlanScheduler::new(
+                logical_plan,
+                cfg.config.clone(),
+            ))
+        })
     }
 }
 
