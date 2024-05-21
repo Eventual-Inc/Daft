@@ -18,11 +18,14 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 lexical-core = {version = "0.8"}
 log = {workspace = true}
+memchr = "2.7.2"
+memmap2 = "0.9.4"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
+serde_json = {workspace = true, features = ["raw_value"]}
 simd-json = {version = "0.13", features = ["known-key"]}
 simdutf8 = "0.1.3"
 snafu = {workspace = true}

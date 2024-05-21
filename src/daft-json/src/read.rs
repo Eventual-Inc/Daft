@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_dsl::optimization::get_required_columns;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{get_runtime, parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{decoding::deserialize_records, ArrowSnafu, ChunkSnafu};
+use crate::{decoding::deserialize_records, local::read_json_local, ArrowSnafu, ChunkSnafu};
 use crate::{
     schema::read_json_schema_single, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
 };
@@ -132,7 +132,7 @@ pub fn read_json_bulk(
 
 // Parallel version of table concat
 // get rid of this once Table APIs are parallel
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -175,6 +175,18 @@ async fn read_json_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
+    let (source_type, fixed_uri) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        return read_json_local(
+            fixed_uri.as_ref(),
+            convert_options,
+            parse_options,
+            read_options,
+            max_chunks_in_flight,
+        );
+    }
+
     let predicate = convert_options.as_ref().and_then(|p| p.predicate.clone());
 
     let limit = convert_options.as_ref().and_then(|opts| opts.limit);
