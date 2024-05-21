@@ -1,9 +1,19 @@
-use std::hash::Hasher;
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    time::{Duration, SystemTime},
+};
 
+use aws_credential_types::{
+    provider::{error::CredentialsError, ProvideCredentials},
+    Credentials,
+};
 use common_error::DaftError;
+use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use crate::{config, s3_provider::S3CredentialsProvider};
+use crate::{config, s3::S3CredentialsProvider};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -14,6 +24,7 @@ use crate::{config, s3_provider::S3CredentialsProvider};
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     credentials_provider: Custom credentials provider function, should return a `S3Credentials` object
+///     buffer_time: Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
 ///     max_connections: Maximum number of connections to S3 at any time, defaults to 64
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
@@ -64,7 +75,7 @@ pub struct S3Credentials {
 ///
 /// Args:
 ///     storage_account: Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
-///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
+///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KxEY` environment variable
 ///     anonymous: Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///
 /// Example:
@@ -203,6 +214,7 @@ impl S3Config {
         session_token: Option<String>,
         access_key: Option<String>,
         credentials_provider: Option<&PyAny>,
+        buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
         connect_timeout_ms: Option<u64>,
@@ -226,9 +238,13 @@ impl S3Config {
                 session_token: session_token.or(def.session_token),
                 access_key: access_key.or(def.access_key),
                 credentials_provider: credentials_provider
-                    .map(|p| S3CredentialsProvider::new(py, p))
+                    .map(|p| {
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                            as Box<dyn S3CredentialsProvider>)
+                    })
                     .transpose()?
                     .or(def.credentials_provider),
+                buffer_time: buffer_time.or(def.buffer_time),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(def.max_connections_per_io_thread),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
@@ -259,6 +275,7 @@ impl S3Config {
         session_token: Option<String>,
         access_key: Option<String>,
         credentials_provider: Option<&PyAny>,
+        buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
         connect_timeout_ms: Option<u64>,
@@ -281,9 +298,13 @@ impl S3Config {
                 session_token: session_token.or_else(|| self.config.session_token.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
-                    .map(|p| S3CredentialsProvider::new(py, p))
+                    .map(|p| {
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                            as Box<dyn S3CredentialsProvider>)
+                    })
                     .transpose()?
                     .or_else(|| self.config.credentials_provider.clone()),
+                buffer_time: buffer_time.or(self.config.buffer_time),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(self.config.max_connections_per_io_thread),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
@@ -362,11 +383,17 @@ impl S3Config {
     /// Custom credentials provider function
     #[getter]
     pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
-        Ok(self
-            .config
-            .credentials_provider
-            .as_ref()
-            .map(|p| p.provider.as_ref(py).into()))
+        Ok(self.config.credentials_provider.as_ref().and_then(|p| {
+            p.as_any()
+                .downcast_ref::<PyS3CredentialsProvider>()
+                .map(|p| p.provider.as_ref(py).into())
+        }))
+    }
+
+    /// AWS Buffer Time in Seconds
+    #[getter]
+    pub fn buffer_time(&self) -> PyResult<Option<u64>> {
+        Ok(self.config.buffer_time)
     }
 
     /// AWS Retry Initial Backoff Time in Milliseconds
@@ -449,16 +476,25 @@ impl S3Credentials {
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<u64>,
-    ) -> Self {
-        S3Credentials {
+        expiry: Option<&PyAny>,
+    ) -> PyResult<Self> {
+        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
+        let expiry = expiry
+            .map(|e| {
+                let ts = e.call_method0("timestamp")?.extract()?;
+
+                Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
+            })
+            .transpose()?;
+
+        Ok(S3Credentials {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
                 session_token,
                 expiry,
             },
-        }
+        })
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
@@ -479,8 +515,102 @@ impl S3Credentials {
 
     /// AWS Session Token
     #[getter]
-    pub fn session_token(&self) -> PyResult<Option<String>> {
-        Ok(self.credentials.session_token.clone())
+    pub fn expiry<'a>(&self, py: Python<'a>) -> PyResult<Option<&'a PyAny>> {
+        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
+        self.credentials
+            .expiry
+            .map(|e| {
+                let datetime = py.import("datetime")?;
+
+                datetime.getattr("datetime")?.call_method1(
+                    "fromtimestamp",
+                    (e.duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs_f64(),),
+                )
+            })
+            .transpose()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PyS3CredentialsProvider {
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub provider: PyObject,
+    pub hash: isize,
+}
+
+impl PyS3CredentialsProvider {
+    pub fn new(py: Python, provider: &PyAny) -> PyResult<Self> {
+        Ok(PyS3CredentialsProvider {
+            provider: provider.to_object(py),
+            hash: provider.hash()?,
+        })
+    }
+}
+
+impl ProvideCredentials for PyS3CredentialsProvider {
+    fn provide_credentials<'a>(
+        &'a self,
+    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        aws_credential_types::provider::future::ProvideCredentials::ready(
+            Python::with_gil(|py| {
+                let py_creds = self.provider.call0(py)?;
+                py_creds.extract::<S3Credentials>(py)
+            })
+            .map_err(|e| CredentialsError::provider_error(Box::new(e)))
+            .map(|creds| {
+                Credentials::new(
+                    creds.credentials.key_id,
+                    creds.credentials.access_key,
+                    creds.credentials.session_token,
+                    creds.credentials.expiry,
+                    "daft_custom_provider",
+                )
+            }),
+        )
+    }
+}
+
+impl PartialEq for PyS3CredentialsProvider {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl Eq for PyS3CredentialsProvider {}
+
+impl Hash for PyS3CredentialsProvider {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+#[typetag::serde]
+impl S3CredentialsProvider for PyS3CredentialsProvider {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn S3CredentialsProvider> {
+        Box::new(self.clone())
+    }
+
+    fn dyn_eq(&self, other: &dyn S3CredentialsProvider) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state)
     }
 }
 

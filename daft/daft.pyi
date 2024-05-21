@@ -1,4 +1,5 @@
 import builtins
+import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -439,6 +440,7 @@ class S3Config:
         session_token: str | None = None,
         access_key: str | None = None,
         credentials_provider: Callable[[], S3Credentials] | None = None,
+        buffer_time: int | None = None,
         max_connections: int | None = None,
         retry_initial_backoff_ms: int | None = None,
         connect_timeout_ms: int | None = None,
@@ -487,9 +489,11 @@ class S3Credentials:
     key_id: str
     access_key: str
     session_token: str | None
-    expiry: int | None
+    expiry: datetime.datetime | None
 
-    def __init__(self, key_id: str, access_key: str, session_token: str | None = None, expiry: int | None = None): ...
+    def __init__(
+        self, key_id: str, access_key: str, session_token: str | None = None, expiry: datetime.datetime | None = None
+    ): ...
 
 class AzureConfig:
     """

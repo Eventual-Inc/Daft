@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 #[cfg(feature = "python")]
 use {
-    daft_scan::py_object_serde::{deserialize_py_object, serialize_py_object},
+    common_py_serde::{deserialize_py_object, serialize_py_object},
     pyo3::{PyObject, Python},
     std::hash::Hasher,
 };

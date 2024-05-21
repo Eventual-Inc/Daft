@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import io
 import os
 import time
@@ -72,10 +73,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             key_id=aws_credentials["AWS_ACCESS_KEY_ID"],
             access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=aws_credentials["AWS_SESSION_TOKEN"],
-            # there may be 0 to 10 seconds of jitter applied by the cache,
-            # so with a 15 second expiry, we can expect to see one call to get_credentials
-            # between 0 and 5 seconds and another call after 15 seconds.
-            expiry=int(time.time()) + 15,
+            expiry=(datetime.datetime.now() + datetime.timedelta(seconds=1)),
         )
 
     static_config = daft.io.IOConfig(
@@ -94,6 +92,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             endpoint_url=server_url,
             region_name="us-west-2",
             credentials_provider=get_credentials,
+            buffer_time=0,
             use_ssl=False,
         )
     )
@@ -110,7 +109,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     df = daft.read_parquet(s3_file_path, io_config=dynamic_config)
     assert count_get_credentials == 1
 
-    time.sleep(15)
+    time.sleep(1)
     df.collect()
     assert count_get_credentials == 2
 

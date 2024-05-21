@@ -954,10 +954,22 @@ dependencies = [
 name = "common-io-config"
 version = "0.2.0-dev0"
 dependencies = [
+ "aws-credential-types",
+ "chrono",
  "common-error",
+ "common-py-serde",
  "pyo3",
  "serde",
  "serde_json",
+ "typetag",
+]
+
+[[package]]
+name = "common-py-serde"
+version = "0.2.0-dev0"
+dependencies = [
+ "pyo3",
+ "serde",
 ]
 
 [[package]]
@@ -1429,6 +1441,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-io-config",
+ "common-py-serde",
  "common-treenode",
  "daft-core",
  "daft-dsl",
@@ -1453,6 +1466,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-io-config",
+ "common-py-serde",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1584,6 +1598,16 @@ name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+
+[[package]]
+name = "erased-serde"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24e2389d65ab4fab27dc2a5de7b191e1f6617d1f1c8855c0dc569c94a4cbb18d"
+dependencies = [
+ "serde",
+ "typeid",
+]
 
 [[package]]
 name = "errno"
@@ -4100,10 +4124,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
+name = "typeid"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "059d83cc991e7a42fc37bd50941885db0888e34209f8cfd9aab07ddec03bc9cf"
+
+[[package]]
 name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
+
+[[package]]
+name = "typetag"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "661d18414ec032a49ece2d56eee03636e43c4e8d577047ab334c0ba892e29aaf"
+dependencies = [
+ "erased-serde",
+ "inventory",
+ "once_cell",
+ "serde",
+ "typetag-impl",
+]
+
+[[package]]
+name = "typetag-impl"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac73887f47b9312552aa90ef477927ff014d63d1920ca8037c6c1951eab64bb1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.57",
+]
 
 [[package]]
 name = "unicase"
