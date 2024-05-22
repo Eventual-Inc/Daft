@@ -560,7 +560,9 @@ class Scheduler:
                             # If it is a no-op task, just run it locally immediately.
                             elif len(next_step.instructions) == 0:
                                 logger.debug("Running task synchronously in main thread: %s", next_step)
-                                assert isinstance(next_step, SingleOutputPartitionTask)
+                                assert (
+                                    len(next_step.partial_metadatas) == 1
+                                ), "No-op tasks must have one output by definition, since there are no instructions to run"
                                 [single_partial] = next_step.partial_metadatas
                                 if single_partial.num_rows is None:
                                     [single_meta] = ray.get(get_metas.remote(next_step.inputs))
@@ -577,6 +579,7 @@ class Scheduler:
                                             )
                                         ]
                                     )
+
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
