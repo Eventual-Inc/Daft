@@ -1211,7 +1211,7 @@ def test_series_utf8_substr(data, start, length, expected) -> None:
     assert result.to_pylist() == expected
 
 
-def test_length_is_none() -> None:
+def test_series_utf8_substr_length_is_none() -> None:
     s = Series.from_arrow(pa.array(["foo", "bar", "baz"], type=pa.string()))
     start = Series.from_arrow(pa.array([0, 1, 2], type=pa.uint32()))
     result = s.str.substr(start, None)

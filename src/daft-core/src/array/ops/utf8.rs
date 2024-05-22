@@ -271,19 +271,22 @@ fn replace_on_literal<'a>(
 }
 
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
-    let mut char_indices = s.char_indices().skip(start);
-    let len = match len {
-        Some(len) => {
-            if len == 0 {
-                return None;
-            } else {
-                len
-            }
-        }
-        None => s.len(),
-    };
+    let mut char_indices = s.char_indices();
 
-    if let Some((start_pos, _)) = char_indices.next() {
+    if let Some((start_pos, _)) = char_indices.nth(start) {
+        let len = match len {
+            Some(len) => {
+                if len == 0 {
+                    return None;
+                } else {
+                    len
+                }
+            }
+            None => {
+                return Some(&s[start_pos..]);
+            }
+        };
+
         let end_pos = char_indices
             .nth(len.saturating_sub(1))
             .map_or(s.len(), |(idx, _)| idx);
@@ -902,16 +905,16 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn substr<I, U>(
+    pub fn substr<I, J>(
         &self,
         start: &DataArray<I>,
-        length: Option<&DataArray<U>>,
+        length: Option<&DataArray<J>>,
     ) -> DaftResult<Utf8Array>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
-        U: DaftIntegerType,
-        <U as DaftNumericType>::Native: Ord,
+        J: DaftIntegerType,
+        <J as DaftNumericType>::Native: Ord,
     {
         let (is_full_null, expected_size) = parse_inputs(self, &[start])
             .map_err(|e| DaftError::ValueError(format!("Error in substr: {e}")))?;

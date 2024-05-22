@@ -216,18 +216,18 @@ impl Series {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {
                 with_match_integer_daft_types!(start.data_type(), |$T| {
-                if length.data_type().is_integer() {
-                    with_match_integer_daft_types!(length.data_type(), |$U| {
-                        Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
-                    })
-                } else if length.data_type().is_null() {
-                    Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Substr not implemented for length type {}",
-                        length.data_type()
-                    )))
-                }
+                    if length.data_type().is_integer() {
+                        with_match_integer_daft_types!(length.data_type(), |$U| {
+                            Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                        })
+                    } else if length.data_type().is_null() {
+                        Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                    } else {
+                        Err(DaftError::TypeError(format!(
+                            "Substr not implemented for length type {}",
+                            length.data_type()
+                        )))
+                    }
             })
             } else if start.data_type().is_null() {
                 Ok(self.clone())
