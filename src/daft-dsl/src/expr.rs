@@ -49,6 +49,7 @@ pub enum Expr {
     NotNull(ExprRef),
     FillNull(ExprRef, ExprRef),
     IsIn(ExprRef, ExprRef),
+    Between(ExprRef, ExprRef, ExprRef),
     Literal(lit::LiteralValue),
     IfElse {
         if_true: ExprRef,
@@ -464,6 +465,10 @@ impl Expr {
         Expr::IsIn(self, items).into()
     }
 
+    pub fn between(self: ExprRef, lower: ExprRef, upper: ExprRef) -> ExprRef {
+        Expr::Between(self, lower, upper).into()
+    }
+
     pub fn eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Eq, self, other)
     }
@@ -533,6 +538,12 @@ impl Expr {
                 let items_id = items.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
+            Between(expr, lower, upper) => {
+                let child_id = expr.semantic_id(schema);
+                let lower_id = lower.semantic_id(schema);
+                let upper_id = upper.semantic_id(schema);
+                FieldID::new(format!("{child_id}.between({lower_id},{upper_id})"))
+            }
             Function { func, inputs } => function_semantic_id(func, inputs, schema),
             BinaryOp { op, left, right } => {
                 let left_id = left.semantic_id(schema);
@@ -579,6 +590,7 @@ impl Expr {
                 vec![left.clone(), right.clone()]
             }
             IsIn(expr, items) => vec![expr.clone(), items.clone()],
+            Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
             IfElse {
                 if_true,
                 if_false,
@@ -616,6 +628,11 @@ impl Expr {
             IsIn(..) => IsIn(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
+            ),
+            Between(..) => Between(
+                children.first().expect("Should have 1 child").clone(),
+                children.get(1).expect("Should have 2 child").clone(),
+                children.get(2).expect("Should have 3 child").clone()
             ),
             FillNull(..) => FillNull(
                 children.first().expect("Should have 1 child").clone(),
@@ -670,6 +687,18 @@ impl Expr {
                 let (result_type, _intermediate, _comp_type) =
                     left_field.dtype.membership_op(&right_field.dtype)?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
+            },
+            Between(value,lower, upper) => {
+                let value_field = value.to_field(schema)?;
+                let lower_field = lower.to_field(schema)?;
+                let upper_field = upper.to_field(schema)?;
+                let (lower_result_type, _intermediate, _comp_type) =
+                    value_field.dtype.membership_op(&lower_field.dtype)?;
+                let (upper_result_type, _intermediate, _comp_type) =
+                    value_field.dtype.membership_op(&upper_field.dtype)?;
+                let (result_type, _intermediate, _comp_type) =
+                    lower_result_type.membership_op(&upper_result_type)?;
+                Ok(Field::new(value_field.name.as_str(), result_type))
             }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
@@ -763,6 +792,7 @@ impl Expr {
             NotNull(expr) => expr.name(),
             FillNull(expr, ..) => expr.name(),
             IsIn(expr, ..) => expr.name(),
+            Between(expr, ..) => expr.name(),
             Literal(..) => "literal",
             Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
@@ -853,6 +883,7 @@ impl Expr {
                 Expr::Agg(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
+                | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
@@ -894,6 +925,7 @@ impl Display for Expr {
             NotNull(expr) => write!(f, "not_null({expr})"),
             FillNull(expr, fill_value) => write!(f, "fill_null({expr}, {fill_value})"),
             IsIn(expr, items) => write!(f, "{expr} in {items}"),
+            Between(expr, lower, upper) => write!(f, "{expr} in [{lower},{upper}]"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => function_display(f, func, inputs),
             IfElse {
