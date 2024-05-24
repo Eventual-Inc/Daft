@@ -5,7 +5,8 @@ use crate::{
     IntoSeries, Series,
 };
 
-use super::py_between_op_utilfn;
+#[cfg(feature = "python")]
+use crate::series::ops::py_between_op_utilfn;
 
 impl Series {
     pub fn between(&self, lower: &Series, upper: &Series) -> DaftResult<Series> {
