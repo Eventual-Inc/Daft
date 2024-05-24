@@ -61,6 +61,10 @@ impl Sink {
                     res.push(format!("Sink: Iceberg({})", iceberg_info.table_name));
                     res.extend(iceberg_info.multiline_display());
                 }
+                crate::sink_info::CatalogType::DeltaLake(deltalake_info) => {
+                    res.push(format!("Sink: DeltaLake({})", deltalake_info.path));
+                    res.extend(deltalake_info.multiline_display());
+                }
             },
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

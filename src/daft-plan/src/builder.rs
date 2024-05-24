@@ -503,6 +503,34 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn delta_write(
+        &self,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        current_version: i32,
+        large_dtypes: bool,
+        io_config: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        use crate::sink_info::DeltaLakeCatalogInfo;
+        let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
+            catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
+                path,
+                mode,
+                current_version,
+                large_dtypes,
+                io_config,
+            }),
+            catalog_columns: columns_name,
+        });
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(logical_plan.into())
+    }
+
     pub fn build(&self) -> Arc<LogicalPlan> {
         self.plan.clone()
     }
@@ -766,6 +794,29 @@ impl PyLogicalPlanBuilder {
                 iceberg_properties,
                 io_config.map(|cfg| cfg.config),
                 catalog_columns,
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn delta_write(
+        &self,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        current_version: i32,
+        large_dtypes: bool,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .delta_write(
+                path,
+                columns_name,
+                mode,
+                current_version,
+                large_dtypes,
+                io_config.map(|cfg| cfg.config),
             )?
             .into())
     }

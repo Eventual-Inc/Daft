@@ -704,6 +704,14 @@ pub(super) fn translate_single_logical_node(
                         ))
                         .arced())
                     }
+                    crate::sink_info::CatalogType::DeltaLake(deltalake_info) => {
+                        Ok(PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite::new(
+                            schema.clone(),
+                            deltalake_info.clone(),
+                            input_physical,
+                        ))
+                        .arced())
+                    }
                 },
             }
         }

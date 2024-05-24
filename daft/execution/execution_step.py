@@ -409,6 +409,42 @@ class WriteIceberg(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class WriteDeltaLake(SingleOutputInstruction):
+    base_path: str
+    large_dtypes: bool
+    current_version: int
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._write_deltalake(inputs)
+
+    def _write_deltalake(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        partition = self._handle_file_write(
+            input=input,
+        )
+        return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
+
+    def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
+        return table_io.write_deltalake(
+            input,
+            large_dtypes=self.large_dtypes,
+            base_path=self.base_path,
+            current_version=self.current_version,
+            io_config=self.io_config,
+        )
+
+
+@dataclass(frozen=True)
 class Filter(SingleOutputInstruction):
     predicate: ExpressionsProjection
 

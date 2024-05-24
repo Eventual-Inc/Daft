@@ -94,6 +94,10 @@ impl PyDaftExecutionConfig {
         num_preview_rows: Option<usize>,
         parquet_target_filesize: Option<usize>,
         parquet_target_row_group_size: Option<usize>,
+        parquet_max_open_files: Option<usize>,
+        parquet_max_rows_per_file: Option<usize>,
+        parquet_min_rows_per_group: Option<usize>,
+        parquet_max_rows_per_group: Option<usize>,
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
@@ -132,6 +136,18 @@ impl PyDaftExecutionConfig {
         }
         if let Some(parquet_target_row_group_size) = parquet_target_row_group_size {
             config.parquet_target_row_group_size = parquet_target_row_group_size;
+        }
+        if let Some(parquet_max_open_files) = parquet_max_open_files {
+            config.parquet_max_open_files = parquet_max_open_files
+        }
+        if let Some(parquet_max_rows_per_file) = parquet_max_rows_per_file {
+            config.parquet_max_rows_per_file = parquet_max_rows_per_file;
+        }
+        if let Some(parquet_min_rows_per_group) = parquet_min_rows_per_group {
+            config.parquet_min_rows_per_group = parquet_min_rows_per_group;
+        }
+        if let Some(parquet_max_rows_per_group) = parquet_max_rows_per_group {
+            config.parquet_max_rows_per_group = parquet_max_rows_per_group;
         }
         if let Some(parquet_inflation_factor) = parquet_inflation_factor {
             config.parquet_inflation_factor = parquet_inflation_factor;
@@ -197,6 +213,26 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_parquet_target_row_group_size(&self) -> PyResult<usize> {
         Ok(self.config.parquet_target_row_group_size)
+    }
+
+    #[getter]
+    fn get_parquet_max_open_files(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_max_open_files)
+    }
+
+    #[getter]
+    fn get_parquet_max_rows_per_file(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_max_rows_per_file)
+    }
+
+    #[getter]
+    fn get_parquet_min_rows_per_group(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_min_rows_per_group)
+    }
+
+    #[getter]
+    fn get_parquet_max_rows_per_group(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_max_rows_per_group)
     }
 
     #[getter]
