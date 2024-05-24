@@ -472,22 +472,24 @@ def q16(get_df: GetDFFunc) -> DataFrame:
 
     supplier = get_df("supplier")
 
-    suppkeys = supplier.where(col("S_COMMENT").str.match(".*Customer.*Complaints.*")).select(col("S_SUPPKEY"))
+    suppkeys = supplier.where(col("S_COMMENT").str.match(".*Customer.*Complaints.*")).select(
+        col("S_SUPPKEY"), col("S_SUPPKEY").alias("PS_SUPPKEY_RIGHT")
+    )
 
     daft_df = (
         part.join(partsupp, left_on=col("P_PARTKEY"), right_on=col("PS_PARTKEY"))
         .where(
             (col("P_BRAND") != "Brand#45")
             & ~col("P_TYPE").str.startswith("MEDIUM POLISHED")
-            & (col("P_SIZE").isin([49, 14, 23, 45, 19, 3, 36, 9]))
+            & (col("P_SIZE").is_in([49, 14, 23, 45, 19, 3, 36, 9]))
         )
-        .join(suppkeys, left_on=col("PS_SUPPKEY"), right_on=col("S_SUPPKEY"), how="left")
-        .where(col("PS_SUPPKEY").is_null())
+        .join(suppkeys, left_on="PS_SUPPKEY", right_on="S_SUPPKEY", how="left")
+        .where(col("PS_SUPPKEY_RIGHT").is_null())
         .select("P_BRAND", "P_TYPE", "P_SIZE", "PS_SUPPKEY")
         .distinct()
         .groupby("P_BRAND", "P_TYPE", "P_SIZE")
         .agg(col("PS_SUPPKEY").count().alias("supplier_cnt"))
-        .sort(["supplier_cnt", "P_BRAND", "P_TYPE", "P_SIZE"])
+        .sort(["supplier_cnt", "P_BRAND", "P_TYPE", "P_SIZE"], desc=[True, False, False, False])
     )
 
     return daft_df
