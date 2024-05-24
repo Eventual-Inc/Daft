@@ -99,6 +99,14 @@ def python_list_membership_check(
         return [elem in right_pylist for elem in left_pylist]
 
 
+def python_list_between_check(
+    value_pylist: list,
+    lower_pylist: list,
+    upper_pylist: list
+) -> list:
+    return [v <= u and v>=l for v, l, u in zip(value_pylist, lower_pylist, upper_pylist)]
+
+
 def map_operator_arrow_semantics(
     operator: Callable[[Any, Any], Any],
     left_pylist: list,
