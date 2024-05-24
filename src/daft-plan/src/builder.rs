@@ -60,6 +60,7 @@ fn check_for_agg(expr: &ExprRef) -> bool {
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
         Function { inputs, .. } => inputs.iter().any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
+        Between(v, l, u)  => check_for_agg(v) || check_for_agg(l) || check_for_agg(u),
         IfElse {
             if_true,
             if_false,
