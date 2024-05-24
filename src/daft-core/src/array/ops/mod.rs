@@ -25,6 +25,7 @@ mod hash;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
+mod between;
 mod json;
 mod len;
 mod list;
@@ -81,7 +82,8 @@ pub trait DaftCompare<Rhs> {
     fn lte(&self, rhs: Rhs) -> Self::Output;
 }
 
-pub trait DaftLogical<Rhs> {
+pub trait DaftLogical<Rhs>
+{
     type Output;
 
     /// and.
@@ -97,6 +99,11 @@ pub trait DaftLogical<Rhs> {
 pub trait DaftIsIn<Rhs> {
     type Output;
     fn is_in(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftBetween<Lower, Upper> {
+    type Output;
+    fn between(&self, lower: Lower, upper: Upper) -> Self::Output;
 }
 
 pub trait DaftIsNull {
