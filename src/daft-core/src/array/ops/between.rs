@@ -30,7 +30,7 @@ where
 
     fn between(&self, lower: &DataArray<T>, upper: &DataArray<T>) -> Self::Output {
         match  (self.len(), lower.len(), upper.len()) {
-            (v_size, l_size, u_size) if (v_size == l_size && v_size == u_size) => {
+            (v_size, l_size, u_size) if (v_size == l_size && v_size == u_size) || (l_size == 1 && u_size == 1) => {
                 let gte_res = self.gte(lower)?;
                 let lte_res = self.lte(upper)?;
                 let res = gte_res.and(&lte_res);
