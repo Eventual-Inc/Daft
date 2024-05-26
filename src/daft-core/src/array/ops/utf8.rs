@@ -618,19 +618,31 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-        let arrow_result = self_iter
-            .zip(pattern_iter)
-            .map(|(val, pat)| match (val, pat) {
-                (Some(val), Some(pat)) => {
-                    let pat = pat.replace('%', ".*").replace('_', ".");
-                    let re = regex::Regex::new(&format!("^{}$", pat));
-                    Ok(Some(re?.is_match(val)))
-                }
-                _ => Ok(None),
-            })
-            .collect::<DaftResult<arrow2::array::BooleanArray>>()?;
-
+        let arrow_result = match pattern.len() {
+            1 => {
+                let pat = pattern.get(0).unwrap();
+                let pat = pat.replace('%', ".*").replace('_', ".");
+                let re = regex::Regex::new(&format!("^{}$", pat));
+                let re = re?;
+                self_iter
+                    .map(|val| Some(re.is_match(val?)))
+                    .collect::<arrow2::array::BooleanArray>()
+            }
+            _ => {
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+                self_iter
+                    .zip(pattern_iter)
+                    .map(|(val, pat)| match (val, pat) {
+                        (Some(val), Some(pat)) => {
+                            let pat = pat.replace('%', ".*").replace('_', ".");
+                            let re = regex::Regex::new(&format!("^{}$", pat));
+                            Ok(Some(re?.is_match(val)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::BooleanArray>>()?
+            }
+        };
         let result = BooleanArray::from((self.name(), Box::new(arrow_result)));
         assert_eq!(result.len(), expected_size);
         Ok(result)
@@ -651,18 +663,32 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-        let arrow_result = self_iter
-            .zip(pattern_iter)
-            .map(|(val, pat)| match (val, pat) {
-                (Some(val), Some(pat)) => {
-                    let pat = pat.replace('%', ".*").replace('_', ".");
-                    let re = regex::Regex::new(&format!("(?i)^{}$", pat).to_lowercase());
-                    Ok(Some(re?.is_match(&val.to_lowercase())))
-                }
-                _ => Ok(None),
-            })
-            .collect::<DaftResult<arrow2::array::BooleanArray>>()?;
+
+        let arrow_result = match pattern.len() {
+            1 => {
+                let pat = pattern.get(0).unwrap();
+                let pat = pat.replace('%', ".*").replace('_', ".");
+                let re = regex::Regex::new(&format!("(?i)^{}$", pat));
+                let re = re?;
+                self_iter
+                    .map(|val| Some(re.is_match(val?)))
+                    .collect::<arrow2::array::BooleanArray>()
+            }
+            _ => {
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+                self_iter
+                    .zip(pattern_iter)
+                    .map(|(val, pat)| match (val, pat) {
+                        (Some(val), Some(pat)) => {
+                            let pat = pat.replace('%', ".*").replace('_', ".");
+                            let re = regex::Regex::new(&format!("(?i)^{}$", pat));
+                            Ok(Some(re?.is_match(val)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::BooleanArray>>()?
+            }
+        };
 
         let result = BooleanArray::from((self.name(), Box::new(arrow_result)));
         assert_eq!(result.len(), expected_size);
