@@ -40,8 +40,8 @@ def test_table_expr_between_scalars(value, lower, upper, expected) -> None:
         pytest.param([1., 2., 3., 4.], [1, 1, 1, 1], [2., 2., 2., 2.], [True, True, False, False], id="FloatIntFloat"),
         pytest.param(
             [datetime.datetime(2023, 1, 1), datetime.datetime(2022, 1, 1)],
-            datetime.datetime(2022, 12, 30),
-            datetime.datetime(2023, 1, 2),
+             [datetime.datetime(2022, 12, 30), datetime.datetime(2022, 12, 30)],
+             [datetime.datetime(2023, 1, 2), datetime.datetime(2023, 1, 2)],
             [True, False],
             id="Datetime",
         ),
