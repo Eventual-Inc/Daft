@@ -83,6 +83,7 @@ Logical
     Expression.__ne__
     Expression.__gt__
     Expression.__ge__
+    Expression.between
     Expression.is_in
 
 .. _api=aggregation-expression:
