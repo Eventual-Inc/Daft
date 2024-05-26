@@ -92,3 +92,19 @@ where
         ))
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use crate::{array::ops::DaftBetween, datatypes::Int64Array};
+    use common_error::DaftResult;
+
+    #[test]
+    fn test_between() -> DaftResult<()> {
+        let array = Int64Array::arange("a", 1, 5, 1)?;
+        assert_eq!(array.len(), 4);
+        let result: Vec<_> = array.between(1, 2)?.into_iter().collect();
+        assert_eq!(result[..], [Some(true), Some(true), Some(false), Some(false)]);
+        Ok(())
+    }
+}
