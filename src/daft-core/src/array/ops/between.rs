@@ -95,7 +95,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{array::ops::DaftBetween, datatypes::Int64Array};
+    use crate::{
+        array::ops::{full::FullNull, DaftBetween},
+        datatypes::{BooleanArray, Int64Array, Int64Type},
+        DataType,
+    };
     use common_error::DaftResult;
 
     #[test]
@@ -117,6 +121,16 @@ mod tests {
         let upper = Int64Array::arange("upper", -2, 8, 4)?;
         let result: Vec<_> = value.between(&lower, &upper)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_between_two_null_arrays() -> DaftResult<()> {
+        let value = Int64Array::full_null("value", &DataType::Int64, 2);
+        let lower = Int64Array::full_null("lower", &DataType::Int64, 2);
+        let upper = Int64Array::full_null("upper", &DataType::Int64, 2);
+        let result: Vec<_> = value.between(&lower, &upper)?.into_iter().collect();
+        assert_eq!(result[..], [None, None]);
         Ok(())
     }
 }

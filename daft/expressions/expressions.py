@@ -670,15 +670,19 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
         """
-        if not isinstance(lower, Expression):
-            if not (isinstance(lower, int) or isinstance(lower, float) or isinstance(upper, datetime)):
-                lower = item_to_series("lower", lower)
-            lower = Expression._to_expression(lower)
 
-        if not isinstance(upper, Expression):
-            if not (isinstance(upper, int) or isinstance(upper, float) or isinstance(upper, datetime)):
-                upper = item_to_series("upper", upper)
-            upper = Expression._to_expression(upper)
+        def cast_to_series_if_needed(item):
+            if not isinstance(item, Expression):
+                if not (
+                    isinstance(item, int) or isinstance(item, float) or isinstance(item, datetime) or (item is None)
+                ):
+                    item = item_to_series("item", item)
+            return item
+
+        lower = cast_to_series_if_needed(lower)
+        upper = cast_to_series_if_needed(upper)
+        lower = Expression._to_expression(lower)
+        upper = Expression._to_expression(upper)
 
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
