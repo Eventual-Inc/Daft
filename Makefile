@@ -2,11 +2,11 @@
 
 SHELL=/bin/bash
 VENV = .venv
-IS_M1 ?= 1
+IS_M1 ?= 0
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
-HYPOTHESIS_SEED ?= 1
+HYPOTHESIS_SEED ?= 0
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -31,11 +31,11 @@ endif
 
 .PHONY: hooks
 hooks: .venv
-	source $(CONDA_PREFIX)/bin/activate && pre-commit install --install-hooks
+	source $(VENV_BIN)/activate && pre-commit install --install-hooks
 
 .PHONY: build
 build: .venv  ## Compile and install Daft for development
-	$(CONDA_PREFIX)/bin/maturin develop --extras=all
+	@unset CONDA_PREFIX && $(VENV_BIN)/maturin develop --extras=all
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Daft binary
@@ -43,7 +43,7 @@ build-release: .venv  ## Compile and install a faster Daft binary
 
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(CONDA_PREFIX)/bin/pytest tests/table/test_between.py --hypothesis-seed=$(HYPOTHESIS_SEED)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
 .PHONY: clean
 clean:
