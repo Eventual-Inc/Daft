@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn test_between_two_null_arrays() -> DaftResult<()> {
+    fn test_between_all_null_arrays() -> DaftResult<()> {
         let value = Int64Array::full_null("value", &DataType::Int64, 2);
         let lower = Int64Array::full_null("lower", &DataType::Int64, 2);
         let upper = Int64Array::full_null("upper", &DataType::Int64, 2);
