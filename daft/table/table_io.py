@@ -648,6 +648,95 @@ def write_iceberg(
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
 
+def write_deltalake(
+    mp: MicroPartition,
+    large_dtypes: bool,
+    base_path: str,
+    current_version: int,
+    io_config: IOConfig | None = None,
+):
+    from deltalake.schema import convert_pyarrow_table
+    from deltalake.writer import (
+        AddAction,
+        DeltaJSONEncoder,
+        DeltaStorageHandler,
+        get_file_stats_from_metadata,
+        get_partitions_from_path,
+        try_get_table_and_table_uri,
+    )
+    from pyarrow.fs import PyFileSystem
+
+    from daft.delta_lake.delta_lake_storage_function import (
+        _storage_config_to_storage_options,
+    )
+
+    data_files: list[AddAction] = []
+
+    def file_visitor(written_file: Any) -> None:
+        path, partition_values = get_partitions_from_path(written_file.path)
+        stats = get_file_stats_from_metadata(written_file.metadata)
+
+        import json
+        from datetime import datetime
+
+        from daft.utils import ARROW_VERSION
+
+        # PyArrow added support for written_file.size in 9.0.0
+        if ARROW_VERSION >= (9, 0, 0):
+            size = written_file.size
+        elif filesystem is not None:
+            size = filesystem.get_file_info([path])[0].size
+        else:
+            size = 0
+
+        data_files.append(
+            AddAction(
+                path,
+                size,
+                partition_values,
+                int(datetime.now().timestamp() * 1000),
+                True,
+                json.dumps(stats, cls=DeltaJSONEncoder),
+            )
+        )
+
+    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
+    storage_options = _storage_config_to_storage_options(storage_config, base_path)
+    table, table_uri = try_get_table_and_table_uri(base_path, storage_options)
+    filesystem = PyFileSystem(DeltaStorageHandler(table_uri, storage_options))
+
+    arrow_table = mp.to_arrow()
+    arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
+
+    execution_config = get_context().daft_execution_config
+    MAX_OPEN_FILE = execution_config.parquet_max_open_files
+    MAX_ROWS_PER_FILE = execution_config.parquet_max_rows_per_file
+    MIN_ROWS_PER_GROUP = execution_config.parquet_min_rows_per_group
+    MAX_ROWS_PER_GROUP = execution_config.parquet_max_rows_per_group
+
+    file_options = pads.ParquetFileFormat().make_write_options(use_compliant_nested_type=False)
+
+    pads.write_dataset(
+        arrow_batch,
+        base_dir="/",
+        basename_template=f"{current_version + 1}-{uuid4()}-{{i}}.parquet",
+        format="parquet",
+        partitioning=None,
+        schema=None,
+        file_visitor=file_visitor,
+        existing_data_behavior="overwrite_or_ignore",
+        file_options=file_options,
+        max_open_files=MAX_OPEN_FILE,
+        max_rows_per_file=MAX_ROWS_PER_FILE,
+        min_rows_per_group=MIN_ROWS_PER_GROUP,
+        max_rows_per_group=MAX_ROWS_PER_GROUP,
+        filesystem=filesystem,
+    )
+
+    return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
+
+
 def _write_tabular_arrow_table(
     arrow_table: pa.Table,
     schema: pa.Schema | None,

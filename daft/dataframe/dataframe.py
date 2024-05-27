@@ -27,9 +27,20 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest
+from daft.daft import (
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    NativeStorageConfig,
+    ResourceRequest,
+    StorageConfig,
+)
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
+from daft.delta_lake.delta_lake_storage_function import (
+    _storage_config_to_storage_options,
+)
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
@@ -533,6 +544,104 @@ class DataFrame:
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return with_operations
+
+    def write_delta(
+        self,
+        path: str,
+        mode: str = "append",
+        io_config: Optional[IOConfig] = None,
+    ) -> None:
+        import deltalake
+        import pyarrow as pa
+        from deltalake.schema import _convert_pa_schema_to_delta
+        from deltalake.writer import (
+            try_get_table_and_table_uri,
+            write_deltalake_pyarrow,
+        )
+        from packaging.version import parse
+
+        if mode not in ["append"]:
+            raise ValueError(f"Mode {mode} is not supported. Only 'append' mode is supported")
+
+        if parse(deltalake.__version__) < parse("0.14.0"):
+            raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
+        storage_options = _storage_config_to_storage_options(storage_config, path)
+        table, table_uri = try_get_table_and_table_uri(path, storage_options)
+        if table is not None:
+            storage_options = table._storage_options or {}
+            storage_options.update(storage_options or {})
+
+            table.update_incremental()
+
+        fields = [f for f in self.schema()]
+        pyarrow_fields = [pa.field(f.name, f.dtype.to_arrow_dtype()) for f in fields]
+        pyarrow_schema = pa.schema(pyarrow_fields)
+
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+        if table:
+            if delta_schema != table.schema().to_pyarrow(as_large_types=True):
+                raise ValueError(
+                    "Schema of data does not match table schema\n"
+                    f"Data schema:\n{delta_schema}\nTable Schema:\n{table.schema().to_pyarrow(as_large_types=True)}"
+                )
+            if mode == "error":
+                raise AssertionError("DeltaTable already exists.")
+            elif mode == "ignore":
+                return
+
+            current_version = table.version()
+
+        else:
+            current_version = -1
+
+        builder = self._builder.write_delta(
+            path=path,
+            mode=mode,
+            current_version=current_version,
+            large_dtypes=True,
+            io_config=io_config,
+        )
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        write_result = write_df.to_pydict()
+        assert "data_file" in write_result
+        data_files = write_result["data_file"]
+        add_action = []
+
+        operations = []
+        respath = []
+        size = []
+
+        for data_file in data_files:
+            operations.append("ADD")
+            respath.append(data_file.path)
+            size.append(data_file.size)
+            add_action.append(data_file)
+
+        if table is None:
+            write_deltalake_pyarrow(
+                table_uri,
+                delta_schema,
+                add_action,
+                mode,
+                [],
+                storage_options=storage_options,
+            )
+        else:
+            table._table.create_write_transaction(
+                add_action,
+                mode,
+                [],
+                delta_schema,
+                None,
+            )
+            table.update_incremental()
+
+        return None
 
     ###
     # DataFrame operations
