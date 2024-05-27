@@ -18,6 +18,8 @@ from daft.table import MicroPartition
         pytest.param([1.0, 2.0, 3.0, 4.0], None, 1, [None, None, None, None], id="FloatNullInt"),
         pytest.param([1.0, 2.0, 3.0, 4.0], 1, None, [None, None, None, None], id="FloatIntNull"),
         pytest.param([1.0, 2.0, 3.0, 4.0], None, None, [None, None, None, None], id="FloatNullNull"),
+        pytest.param([None, None, None, None], None, None, [None, None, None, None], id="NullNullNull"),
+        pytest.param([None, None, None, None], 1, 1, [None, None, None, None], id="NullIntInt"),
         pytest.param(
             [datetime.datetime(2023, 1, 1), datetime.datetime(2022, 1, 1)],
             datetime.datetime(2022, 12, 30),
