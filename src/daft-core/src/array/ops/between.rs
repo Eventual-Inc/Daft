@@ -115,9 +115,6 @@ mod tests {
         let value = Int64Array::arange("value", 1, 4, 1)?;
         let lower = Int64Array::arange("lower", 0, 6, 2)?;
         let upper = Int64Array::arange("upper", -2, 8, 4)?;
-        println!("{:?}", lower);
-        println!("{:?}", value);
-        println!("{:?}", upper);
         let result: Vec<_> = value.between(&lower, &upper)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
         Ok(())
