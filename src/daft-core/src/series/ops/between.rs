@@ -28,6 +28,11 @@ impl Series {
                     .downcast::<BooleanArray>()?
                     .clone()
                     .into_series()),
+                DataType::Null => Ok(Series::full_null(
+                    self.name(),
+                    &DataType::Boolean,
+                    self.len(),
+                )),
                 _ => with_match_numeric_daft_types!(comp_type, |$T| {
                         let casted_value = it_value.cast(&comp_type)?;
                         let casted_lower = it_lower.cast(&comp_type)?;
@@ -41,5 +46,21 @@ impl Series {
         } else {
             unreachable!()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{DataType, Series};
+
+    use common_error::DaftResult;
+
+    #[test]
+    fn test_between_all_null() -> DaftResult<()> {
+        let value = Series::full_null("value", &DataType::Null, 2);
+        let lower = Series::full_null("lower", &DataType::Int64, 2);
+        let upper = Series::full_null("upper", &DataType::Int64, 2);
+        _ = value.between(&lower, &upper)?;
+        Ok(())
     }
 }
