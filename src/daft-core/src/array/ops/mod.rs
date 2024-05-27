@@ -5,6 +5,7 @@ mod arange;
 mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
+mod between;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod ceil;
@@ -25,7 +26,6 @@ mod hash;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
-mod between;
 mod json;
 mod len;
 mod list;
@@ -82,8 +82,7 @@ pub trait DaftCompare<Rhs> {
     fn lte(&self, rhs: Rhs) -> Self::Output;
 }
 
-pub trait DaftLogical<Rhs>
-{
+pub trait DaftLogical<Rhs> {
     type Output;
 
     /// and.

@@ -129,7 +129,11 @@ pub(super) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<
 }
 
 #[cfg(feature = "python")]
-pub(super) fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> DaftResult<Series> {
+pub(super) fn py_between_op_utilfn(
+    value: &Series,
+    lower: &Series,
+    upper: &Series,
+) -> DaftResult<Series> {
     use crate::python::PySeries;
     use crate::DataType;
     use pyo3::prelude::*;
@@ -137,7 +141,7 @@ pub(super) fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Serie
     let value_casted = value.cast(&DataType::Python)?;
     let lower_casted = lower.cast(&DataType::Python)?;
     let upper_casted = upper.cast(&DataType::Python)?;
-    
+
     let value_pylist = PySeries::from(value_casted.clone()).to_pylist()?;
     let lower_pylist = PySeries::from(lower_casted.clone()).to_pylist()?;
     let upper_pylist = PySeries::from(upper_casted.clone()).to_pylist()?;

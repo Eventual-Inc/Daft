@@ -632,7 +632,7 @@ impl Expr {
             Between(..) => Between(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
-                children.get(2).expect("Should have 3 child").clone()
+                children.get(2).expect("Should have 3 child").clone(),
             ),
             FillNull(..) => FillNull(
                 children.first().expect("Should have 1 child").clone(),
@@ -687,8 +687,8 @@ impl Expr {
                 let (result_type, _intermediate, _comp_type) =
                     left_field.dtype.membership_op(&right_field.dtype)?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
-            },
-            Between(value,lower, upper) => {
+            }
+            Between(value, lower, upper) => {
                 let value_field = value.to_field(schema)?;
                 let lower_field = lower.to_field(schema)?;
                 let upper_field = upper.to_field(schema)?;

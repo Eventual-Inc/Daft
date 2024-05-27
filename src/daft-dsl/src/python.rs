@@ -436,7 +436,11 @@ impl PyExpr {
     }
 
     pub fn between(&self, lower: &Self, upper: &Self) -> PyResult<Self> {
-        Ok(self.expr.clone().between(lower.expr.clone(), upper.expr.clone()).into())
+        Ok(self
+            .expr
+            .clone()
+            .between(lower.expr.clone(), upper.expr.clone())
+            .into())
     }
 
     pub fn name(&self) -> PyResult<&str> {

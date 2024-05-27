@@ -31,7 +31,7 @@ endif
 
 .PHONY: hooks
 hooks: .venv
-	source $(VENV_BIN)/activate && pre-commit install --install-hooks
+	source $(CONDA_PREFIX)/bin/activate && pre-commit install --install-hooks
 
 .PHONY: build
 build: .venv  ## Compile and install Daft for development

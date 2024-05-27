@@ -286,7 +286,12 @@ fn replace_column_with_semantic_id(
                     Transformed::No(e)
                 } else {
                     Transformed::Yes(
-                        Expr::Between(child.unwrap().clone(), lower.unwrap().clone(), upper.unwrap().clone()).into(),
+                        Expr::Between(
+                            child.unwrap().clone(),
+                            lower.unwrap().clone(),
+                            upper.unwrap().clone(),
+                        )
+                        .into(),
                     )
                 }
             }
