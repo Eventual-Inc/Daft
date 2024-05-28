@@ -603,6 +603,98 @@ impl Utf8Array {
         Ok(result)
     }
 
+    pub fn like(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
+            .map_err(|e| DaftError::ValueError(format!("Error in like: {e}")))?;
+        if is_full_null {
+            return Ok(BooleanArray::full_null(
+                self.name(),
+                &DataType::Boolean,
+                expected_size,
+            ));
+        }
+        if expected_size == 0 {
+            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let arrow_result = match pattern.len() {
+            1 => {
+                let pat = pattern.get(0).unwrap();
+                let pat = pat.replace('%', ".*").replace('_', ".");
+                let re = regex::Regex::new(&format!("^{}$", pat));
+                let re = re?;
+                self_iter
+                    .map(|val| Some(re.is_match(val?)))
+                    .collect::<arrow2::array::BooleanArray>()
+            }
+            _ => {
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+                self_iter
+                    .zip(pattern_iter)
+                    .map(|(val, pat)| match (val, pat) {
+                        (Some(val), Some(pat)) => {
+                            let pat = pat.replace('%', ".*").replace('_', ".");
+                            let re = regex::Regex::new(&format!("^{}$", pat));
+                            Ok(Some(re?.is_match(val)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::BooleanArray>>()?
+            }
+        };
+        let result = BooleanArray::from((self.name(), Box::new(arrow_result)));
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
+    pub fn ilike(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
+            .map_err(|e| DaftError::ValueError(format!("Error in ilike: {e}")))?;
+        if is_full_null {
+            return Ok(BooleanArray::full_null(
+                self.name(),
+                &DataType::Boolean,
+                expected_size,
+            ));
+        }
+        if expected_size == 0 {
+            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+
+        let arrow_result = match pattern.len() {
+            1 => {
+                let pat = pattern.get(0).unwrap();
+                let pat = pat.replace('%', ".*").replace('_', ".");
+                let re = regex::Regex::new(&format!("(?i)^{}$", pat));
+                let re = re?;
+                self_iter
+                    .map(|val| Some(re.is_match(val?)))
+                    .collect::<arrow2::array::BooleanArray>()
+            }
+            _ => {
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+                self_iter
+                    .zip(pattern_iter)
+                    .map(|(val, pat)| match (val, pat) {
+                        (Some(val), Some(pat)) => {
+                            let pat = pat.replace('%', ".*").replace('_', ".");
+                            let re = regex::Regex::new(&format!("(?i)^{}$", pat));
+                            Ok(Some(re?.is_match(val)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::BooleanArray>>()?
+            }
+        };
+
+        let result = BooleanArray::from((self.name(), Box::new(arrow_result)));
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
     pub fn left<I>(&self, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
     where
         I: DaftIntegerType,

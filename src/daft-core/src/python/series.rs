@@ -438,6 +438,14 @@ impl PySeries {
         Ok(self.series.utf8_repeat(&n.series)?.into())
     }
 
+    pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_like(&pattern.series)?.into())
+    }
+
+    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_ilike(&pattern.series)?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

@@ -140,6 +140,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.rpad
    Expression.str.lpad
    Expression.str.repeat
+   Expression.str.like
+   Expression.str.ilike
 
 .. _api-expressions-temporal:
 

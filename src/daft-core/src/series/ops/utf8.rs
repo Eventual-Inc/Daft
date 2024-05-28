@@ -200,4 +200,16 @@ impl Series {
             }
         })
     }
+
+    pub fn utf8_like(&self, pattern: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            pattern.with_utf8_array(|pattern_arr| Ok(arr.like(pattern_arr)?.into_series()))
+        })
+    }
+
+    pub fn utf8_ilike(&self, pattern: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            pattern.with_utf8_array(|pattern_arr| Ok(arr.ilike(pattern_arr)?.into_series()))
+        })
+    }
 }

@@ -623,6 +623,16 @@ impl PyExpr {
         Ok(repeat(self.into(), n.into()).into())
     }
 
+    pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::like;
+        Ok(like(self.into(), pattern.into()).into())
+    }
+
+    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::ilike;
+        Ok(ilike(self.into(), pattern.into()).into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(self.into(), raise_error_on_failure).into())
