@@ -189,11 +189,9 @@ async fn read_parquet_single(
                     read_rows: table.len(),
                 })
             }
-            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: n.min(metadata_num_rows),
-                read_rows: table.len(),
-            }),
+            (_, Some(n)) if n < table.len() => {
+                return table.head(n);
+            }
             _ => Ok(()),
         }?;
     }
