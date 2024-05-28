@@ -10,6 +10,7 @@ import warnings
 from dataclasses import dataclass
 from functools import reduce
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     Callable,
@@ -128,7 +129,7 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_all: bool = False, simple: bool = False) -> None:
+    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[IO] = None) -> None:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -141,24 +142,25 @@ class DataFrame:
         """
 
         if self._result_cache is not None:
-            print("Result is cached and will skip computation\n")
-            print(self._builder.pretty_print(simple))
+            print("Result is cached and will skip computation\n", file=file)
+            print(self._builder.pretty_print(simple), file=file)
 
-            print("However here is the logical plan used to produce this result:\n")
+            print("However here is the logical plan used to produce this result:\n", file=file)
 
         builder = self.__builder
-        print("== Unoptimized Logical Plan ==\n")
-        print(builder.pretty_print(simple))
+        print("== Unoptimized Logical Plan ==\n", file=file)
+        print(builder.pretty_print(simple), file=file)
         if show_all:
-            print("\n== Optimized Logical Plan ==\n")
+            print("\n== Optimized Logical Plan ==\n", file=file)
             builder = builder.optimize()
-            print(builder.pretty_print(simple))
-            print("\n== Physical Plan ==\n")
+            print(builder.pretty_print(simple), file=file)
+            print("\n== Physical Plan ==\n", file=file)
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            print(physical_plan_scheduler.pretty_print(simple))
+            print(physical_plan_scheduler.pretty_print(simple), file=file)
         else:
             print(
-                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer."
+                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
+                file=file,
             )
 
     def num_partitions(self) -> int:
