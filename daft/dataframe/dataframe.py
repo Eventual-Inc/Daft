@@ -139,6 +139,8 @@ class DataFrame:
                 unoptimized logical plan.
             simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
                 of how each op is configured.
+            file (IO): Location to print the output to, or defaults to None which defaults to the default location for
+                print (in Python, that should be sys.stderr)
         """
 
         if self._result_cache is not None:
