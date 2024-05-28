@@ -29,6 +29,7 @@ Generic
    Expression.if_else
    Expression.is_null
    Expression.not_null
+   Expression.fill_null
    Expression.apply
 
 .. _api-numeric-expression-operations:
@@ -65,6 +66,22 @@ Numeric
     Expression.log
     Expression.ln
     Expression.exp
+
+.. _api-floating-expression-operations:
+
+Floats
+#######
+
+The following methods are available under the ``expr.float`` attribute.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+    Expression.float.is_nan
+    Expression.float.not_nan
+    Expression.float.fill_nan
 
 .. _api-comparison-expression:
 
