@@ -39,6 +39,5 @@ def test_fill_nan(binary_data_fixture):
         expr=col(lhs.name()).float.fill_nan(rhs),
         run_kernel=lambda: lhs.float.fill_nan(rhs),
         resolvable=lhs.datatype() in (DataType.float32(), DataType.float64())
-        and rhs.datatype() in (DataType.float32(), DataType.float64())
-        and lhs.datatype() == rhs.datatype(),
+        and rhs.datatype() in (DataType.float32(), DataType.float64()),
     )
