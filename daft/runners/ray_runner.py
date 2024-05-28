@@ -672,6 +672,10 @@ class Scheduler:
         pbar.close()
 
 
+SCHEDULER_ACTOR_NAME = "scheduler"
+SCHEDULER_ACTOR_NAMESPACE = "daft"
+
+
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
     def __init__(self, *n, **kw) -> None:
@@ -740,7 +744,11 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
-            self.scheduler_actor = SchedulerActor.remote(  # type: ignore
+            self.scheduler_actor = SchedulerActor.options(  # type: ignore
+                name=SCHEDULER_ACTOR_NAME,
+                namespace=SCHEDULER_ACTOR_NAMESPACE,
+                get_if_exists=True,
+            ).remote(  # type: ignore
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=True,
             )
