@@ -49,6 +49,7 @@ class TableParseCSVOptions:
     header_index: int | None = 0
     double_quote: bool = True
     quote: str | None = None
+    flexible: bool = False
     escape_char: str | None = None
     comment: str | None = None
     buffer_size: int | None = None

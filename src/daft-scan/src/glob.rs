@@ -159,8 +159,6 @@ impl GlobScanOperator {
             .into()),
         }?;
 
-        println!("schema_override: {:?}", schema_override);
-
         let schema = match schema_override {
             None => {
                 let inferred_schema = match file_format_config.as_ref() {
@@ -188,6 +186,7 @@ impl GlobScanOperator {
                         quote,
                         escape_char,
                         comment,
+                        flexible,
                         ..
                     }) => {
                         let (schema, _) = daft_csv::metadata::read_csv_schema(
@@ -197,6 +196,7 @@ impl GlobScanOperator {
                                 *delimiter,
                                 *double_quote,
                                 *quote,
+                                *flexible,
                                 *escape_char,
                                 *comment,
                             )?),

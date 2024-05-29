@@ -205,6 +205,7 @@ class CsvSourceConfig:
     quote: str | None
     escape_char: str | None
     comment: str | None
+    flexible: bool
     buffer_size: int | None
     chunk_size: int | None
 
@@ -212,6 +213,7 @@ class CsvSourceConfig:
         self,
         has_headers: bool,
         double_quote: bool,
+        flexible: bool,
         delimiter: str | None,
         quote: str | None,
         escape_char: str | None,
@@ -317,6 +319,7 @@ class CsvParseOptions:
     delimiter: str | None
     double_quote: bool
     quote: str | None
+    flexible: bool
     escape_char: str | None
     comment: str | None
 
@@ -326,6 +329,7 @@ class CsvParseOptions:
         delimiter: str | None = None,
         double_quote: bool = True,
         quote: str | None = None,
+        flexible: bool = False,
         escape_char: str | None = None,
         comment: str | None = None,
     ): ...
