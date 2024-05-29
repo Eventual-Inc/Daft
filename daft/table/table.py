@@ -577,6 +577,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
+    file_timeout_ms: int | None = 900_000,  # 15 minutes
 ) -> pa.Table:
     fields, metadata, columns = _read_parquet_into_pyarrow(
         uri=path,
@@ -587,6 +588,7 @@ def read_parquet_into_pyarrow(
         io_config=io_config,
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+        file_timeout_ms=file_timeout_ms,
     )
     schema = pa.schema(fields, metadata=metadata)
     columns = [pa.chunked_array(c, type=f.type) for f, c in zip(schema, columns)]  # type: ignore
