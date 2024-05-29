@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use common_error::DaftResult;
 
@@ -405,10 +405,11 @@ pub fn read_parquet_into_pyarrow(
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    file_timeout_ms: Option<i64>,
 ) -> DaftResult<ParquetPyarrowChunk> {
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        read_parquet_single_into_arrow(
+        let fut = read_parquet_single_into_arrow(
             uri,
             columns,
             start_offset,
@@ -418,8 +419,19 @@ pub fn read_parquet_into_pyarrow(
             io_stats,
             schema_infer_options,
             None,
-        )
-        .await
+        );
+        if let Some(timeout) = file_timeout_ms {
+            match tokio::time::timeout(Duration::from_millis(timeout as u64), fut).await {
+                Ok(result) => result,
+                Err(_) => Err(crate::Error::FileReadTimeout {
+                    path: uri.to_string(),
+                    duration_ms: timeout,
+                }
+                .into()),
+            }
+        } else {
+            fut.await
+        }
     })
 }
 
