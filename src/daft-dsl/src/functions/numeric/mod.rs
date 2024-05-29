@@ -24,6 +24,9 @@ use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
 
+// Wrapper struct to implement Eq and Hash traits for f64.
+// This is necessary to use f64 as a key in a HashMap.
+// The Log enum in the NumericExpr enum uses this wrapper to store the base value for the log function.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct F64Wrapper(f64);
 
