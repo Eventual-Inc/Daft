@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 import uuid
+import warnings
 from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
@@ -741,6 +742,10 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Reuse the existing Ray context if already initialized
         if ray.is_initialized():
+            if address is not None:
+                warnings.warn(
+                    f"Ray has already been initialized. Daft will default to using the existing Ray connection and ignore the supplied address: {address}"
+                )
             self.ray_context = ray.init(ignore_reinit_error=True)
         else:
             self.ray_context = ray.init(address=address)
