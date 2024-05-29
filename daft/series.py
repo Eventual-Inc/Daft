@@ -413,7 +413,7 @@ class Series:
         Args:
             base: The base of the logarithm.
         """
-        return Series._from_pyseries(self._series.log())
+        return Series._from_pyseries(self._series.log(base))
 
     def ln(self) -> Series:
         """The elementwise ln of a numeric series"""

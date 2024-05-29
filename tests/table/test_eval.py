@@ -362,16 +362,16 @@ def test_table_log10_bad_input() -> None:
 )
 def test_table_numeric_log(base: float) -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
-    log_table = table.eval_expression_list([col("a").log(base=base), col("b").log(base=base)])
-    assert [math.log(x=v, base=base) if v is not None else v for v in table.get_column("a").to_pylist()] == log_table.get_column(
-        "a"
-    ).to_pylist()
-    assert [math.log(x=v, base=base) if v is not None else v for v in table.get_column("b").to_pylist()] == log_table.get_column(
-        "b"
-    ).to_pylist()
+    log_table = table.eval_expression_list([col("a").log(base), col("b").log(base)])
+    assert [
+        math.log(v, base) if v is not None else v for v in table.get_column("a").to_pylist()
+    ] == log_table.get_column("a").to_pylist()
+    assert [
+        math.log(v, base) if v is not None else v for v in table.get_column("b").to_pylist()
+    ] == log_table.get_column("b").to_pylist()
 
 
-def test_table_log10_bad_input() -> None:
+def test_table_log_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
     with pytest.raises(ValueError, match="Expected input to log to be numeric"):

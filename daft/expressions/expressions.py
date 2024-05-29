@@ -415,13 +415,13 @@ class Expression:
         expr = self._expr.log10()
         return Expression._from_pyexpr(expr)
 
-    def log(self, base: float = math.e) -> Expression:
+    def log(self, base: float = math.e) -> Expression:  # type: ignore
         """The elementwise log with given base, of a numeric expression (``expr.log(base = math.e)``)
         Args:
             base: The base of the logarithm. Defaults to e.
         """
-        assert isinstance(base, float)
-        expr = self._expr.log(base)
+        assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
+        expr = self._expr.log(float(base))
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:
