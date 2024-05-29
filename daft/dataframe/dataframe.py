@@ -4,13 +4,13 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import io
 import os
 import pathlib
 import warnings
 from dataclasses import dataclass
 from functools import reduce
 from typing import (
-    IO,
     TYPE_CHECKING,
     Any,
     Callable,
@@ -129,7 +129,7 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[IO] = None) -> None:
+    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[io.IOBase] = None) -> None:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -139,7 +139,7 @@ class DataFrame:
                 unoptimized logical plan.
             simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
                 of how each op is configured.
-            file (IO): Location to print the output to, or defaults to None which defaults to the default location for
+            file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stderr)
         """
 
