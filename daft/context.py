@@ -47,38 +47,43 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     use_thread_pool = bool(int(use_thread_pool_env)) if use_thread_pool_env is not None else None
 
     ray_is_initialized = False
+    in_ray_worker = False
     try:
         import ray
 
         if ray.is_initialized():
             ray_is_initialized = True
+            # Check if running inside a Ray worker
+            if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
+                in_ray_worker = True
     except ImportError:
         pass
 
-    # Retrieve the runner from the environment
-    if runner_from_envvar is not None:
-        if runner_from_envvar.upper() == "RAY":
-            ray_address = os.getenv("DAFT_RAY_ADDRESS")
-            if ray_address is not None:
-                warnings.warn(
-                    "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
-                )
-            else:
-                ray_address = os.getenv("RAY_ADDRESS")
-            return _RayRunnerConfig(
-                address=ray_address,
-                max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
+    # Retrieve the runner from environment variables
+    if runner_from_envvar and runner_from_envvar.upper() == "RAY":
+        ray_address = os.getenv("DAFT_RAY_ADDRESS")
+        if ray_address is not None:
+            warnings.warn(
+                "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
             )
-        elif runner_from_envvar.upper() == "PY":
-            return _PyRunnerConfig(use_thread_pool=use_thread_pool)
         else:
-            raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner_from_envvar}")
-    # Use Ray Runner if Ray has already been initialized
-    elif ray_is_initialized:
+            ray_address = os.getenv("RAY_ADDRESS")
+        return _RayRunnerConfig(
+            address=ray_address,
+            max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
+        )
+    elif runner_from_envvar and runner_from_envvar.upper() == "PY":
+        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+    elif runner_from_envvar is not None:
+        raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner_from_envvar}")
+
+    # Retrieve the runner from current initialized Ray environment, only if not running in a Ray worker
+    elif ray_is_initialized and not in_ray_worker:
         return _RayRunnerConfig(
             address=None,  # No address supplied, use the existing connection
             max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
         )
+
     # Fall back on PyRunner
     else:
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
