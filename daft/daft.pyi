@@ -727,6 +727,7 @@ class ScanOperatorHandle:
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
         schema_hint: PySchema | None = None,
+        schema_override: PySchema | None = None,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...

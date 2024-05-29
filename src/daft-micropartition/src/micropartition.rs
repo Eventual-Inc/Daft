@@ -172,7 +172,7 @@ fn materialize_scan_task(
                         col_names
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
-                        None,
+                        Some(schema_of_file),
                         scan_task.pushdowns.filters.clone(),
                     );
                     let parse_options = CsvParseOptions::new_with_defaults(

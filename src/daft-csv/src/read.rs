@@ -380,6 +380,7 @@ async fn read_csv_single_into_stream(
         .escape(parse_options.escape_char)
         .comment(parse_options.comment)
         .buffer_capacity(buffer_size)
+        .flexible(true)
         .create_reader(reader.compat());
     let read_stream = read_into_byterecord_chunk_stream(
         reader,
