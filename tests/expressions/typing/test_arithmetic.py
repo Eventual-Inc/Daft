@@ -141,9 +141,7 @@ def test_log10(unary_data_fixture):
 
 @pytest.mark.parametrize(
     "base",
-    [
-        2, 10, 100, math.e
-    ],
+    [2, 10, 100, math.e],
 )
 def test_log(unary_data_fixture, base: float):
     arg = unary_data_fixture
