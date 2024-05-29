@@ -62,9 +62,9 @@ impl FunctionEvaluator for LogEvaluator {
                     FunctionExpr::Numeric(NumericExpr::Log(value)) => value,
                     _ => panic!("Expected Log Expr, got {expr}"),
                 };
-                
+
                 input.log(base.get_value())
-            },
+            }
             LogFunction::Ln => input.ln(),
         }
     }
