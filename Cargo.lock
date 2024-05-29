@@ -1179,6 +1179,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "lazy_static",
  "libc",
  "lzma-sys",
  "pyo3",

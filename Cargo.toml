@@ -13,6 +13,7 @@ daft-plan = {path = "src/daft-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+lazy_static = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
