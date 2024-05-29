@@ -5,16 +5,7 @@ import math
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Iterable,
-    Iterator,
-    Literal,
-    TypeVar,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, TypeVar, overload
 
 import pyarrow as pa
 
@@ -89,9 +80,7 @@ def lit(value: object) -> Expression:
         # pyo3 time (PyTime) is not available when running in abi3 mode, workaround
         pa_time = pa.scalar(value)
         i64_value = pa_time.cast(pa.int64()).as_py()
-        time_unit = TimeUnit.from_str(
-            pa.type_for_alias(str(pa_time.type)).unit
-        )._timeunit
+        time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
@@ -122,9 +111,7 @@ class Expression:
     _expr: _PyExpr = None  # type: ignore
 
     def __init__(self) -> None:
-        raise NotImplementedError(
-            "We do not support creating a Expression via __init__ "
-        )
+        raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
     @property
     def str(self) -> ExpressionStringNamespace:
@@ -190,12 +177,8 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(
-        func: Callable, expressions: builtins.list[Expression], return_dtype: DataType
-    ) -> Expression:
-        return Expression._from_pyexpr(
-            _udf(func, [e._expr for e in expressions], return_dtype._dtype)
-        )
+    def udf(func: Callable, expressions: builtins.list[Expression], return_dtype: DataType) -> Expression:
+        return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions], return_dtype._dtype))
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -465,9 +448,7 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def approx_percentiles(
-        self, percentiles: builtins.float | builtins.list[builtins.float]
-    ) -> Expression:
+    def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
         """Calculates the approximate percentile(s) for a column of numeric values
 
         For numeric columns, we use the `sketches_ddsketch crate <https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html>`_.
@@ -588,9 +569,7 @@ class Expression:
         """
         if_true = Expression._to_expression(if_true)
         if_false = Expression._to_expression(if_false)
-        return Expression._from_pyexpr(
-            self._expr.if_else(if_true._expr, if_false._expr)
-        )
+        return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
     def apply(self, func: Callable, return_dtype: DataType) -> Expression:
         """Apply a function on each value in a given expression
@@ -713,23 +692,17 @@ class Expression:
         return self._expr._input_mapping()
 
 
-SomeExpressionNamespace = TypeVar(
-    "SomeExpressionNamespace", bound="ExpressionNamespace"
-)
+SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
 
 class ExpressionNamespace:
     _expr: _PyExpr
 
     def __init__(self) -> None:
-        raise NotImplementedError(
-            "We do not support creating a ExpressionNamespace via __init__ "
-        )
+        raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
 
     @classmethod
-    def from_expression(
-        cls: type[SomeExpressionNamespace], expr: Expression
-    ) -> SomeExpressionNamespace:
+    def from_expression(cls: type[SomeExpressionNamespace], expr: Expression) -> SomeExpressionNamespace:
         ns = cls.__new__(cls)
         ns._expr = expr._expr
         return ns
@@ -775,28 +748,18 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
             if not (isinstance(max_connections, int) and max_connections > 0):
-                raise ValueError(
-                    f"Invalid value for `max_connections`: {max_connections}"
-                )
+                raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
             # Use the `max_connections` kwarg to override the value in S3Config
             # This is because the max parallelism is actually `min(S3Config's max_connections, url_download's max_connections)` under the hood.
             # However, default max_connections on S3Config is only 8, and even if we specify 32 here we are bottlenecked there.
             # Therefore for S3 downloads, we override `max_connections` kwarg to have the intended effect.
-            io_config = (
-                context.get_context().daft_planning_config.default_io_config
-                if io_config is None
-                else io_config
-            )
-            io_config = io_config.replace(
-                s3=io_config.s3.replace(max_connections=max_connections)
-            )
+            io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+            io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
 
             using_ray_runner = context.get_context().is_ray_runner
             return Expression._from_pyexpr(
-                self._expr.url_download(
-                    max_connections, raise_on_error, not using_ray_runner, io_config
-                )
+                self._expr.url_download(max_connections, raise_on_error, not using_ray_runner, io_config)
             )
         else:
             from daft.udf_library import url_udfs
@@ -925,9 +888,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.dt_day_of_week())
 
-    def truncate(
-        self, interval: str, relative_to: Expression | None = None
-    ) -> Expression:
+    def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval
 
         Example:
@@ -962,9 +923,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             Expression: a DateTime expression truncated to the specified interval
         """
         relative_to = Expression._to_expression(relative_to)
-        return Expression._from_pyexpr(
-            self._expr.dt_truncate(interval, relative_to._expr)
-        )
+        return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
@@ -1153,9 +1112,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             `extract_all`
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(
-            self._expr.utf8_extract(pattern_expr._expr, index)
-        )
+        return Expression._from_pyexpr(self._expr.utf8_extract(pattern_expr._expr, index))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -1206,16 +1163,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             `extract`
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(
-            self._expr.utf8_extract_all(pattern_expr._expr, index)
-        )
+        return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
-    def replace(
-        self,
-        pattern: str | Expression,
-        replacement: str | Expression,
-        regex: bool = False,
-    ) -> Expression:
+    def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
         """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
         Example:
@@ -1259,9 +1209,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
-        return Expression._from_pyexpr(
-            self._expr.utf8_replace(pattern_expr._expr, replacement_expr._expr, regex)
-        )
+        return Expression._from_pyexpr(self._expr.utf8_replace(pattern_expr._expr, replacement_expr._expr, regex))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column
@@ -1395,9 +1343,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(
-            self._expr.utf8_rpad(length_expr._expr, pad_expr._expr)
-        )
+        return Expression._from_pyexpr(self._expr.utf8_rpad(length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character
@@ -1414,9 +1360,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(
-            self._expr.utf8_lpad(length_expr._expr, pad_expr._expr)
-        )
+        return Expression._from_pyexpr(self._expr.utf8_lpad(length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times
@@ -1505,9 +1449,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
-        return Expression._from_pyexpr(
-            self._expr.list_get(idx_expr._expr, default_expr._expr)
-        )
+        return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -1605,9 +1547,7 @@ class ExpressionsProjection(Iterable[Expression]):
         seen: set[str] = set()
         for e in exprs:
             if e.name() in seen:
-                raise ValueError(
-                    f"Expressions must all have unique names; saw {e.name()} twice"
-                )
+                raise ValueError(f"Expressions must all have unique names; saw {e.name()} twice")
             seen.add(e.name())
 
         self._output_name_to_exprs = {e.name(): e for e in exprs}
@@ -1636,19 +1576,12 @@ class ExpressionsProjection(Iterable[Expression]):
         if not isinstance(other, ExpressionsProjection):
             return False
 
-        return len(self._output_name_to_exprs) == len(
-            other._output_name_to_exprs
-        ) and all(
+        return len(self._output_name_to_exprs) == len(other._output_name_to_exprs) and all(
             (s.name() == o.name()) and expr_structurally_equal(s, o)
-            for s, o in zip(
-                self._output_name_to_exprs.values(),
-                other._output_name_to_exprs.values(),
-            )
+            for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
         )
 
-    def union(
-        self, other: ExpressionsProjection, rename_dup: str | None = None
-    ) -> ExpressionsProjection:
+    def union(self, other: ExpressionsProjection, rename_dup: str | None = None) -> ExpressionsProjection:
         """Unions two Expressions. Output naming conflicts are handled with keyword arguments.
 
         Args:
@@ -1707,9 +1640,7 @@ class ExpressionsProjection(Iterable[Expression]):
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns."""
 
-    def decode(
-        self, on_error: Literal["raise"] | Literal["null"] = "raise"
-    ) -> Expression:
+    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Expression:
         """
         Decodes the binary data in this column into images.
 
@@ -1729,9 +1660,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         else:
             raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
-        return Expression._from_pyexpr(
-            self._expr.image_decode(raise_error_on_failure=raise_on_error)
-        )
+        return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """
@@ -1747,9 +1676,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         if isinstance(image_format, str):
             image_format = ImageFormat.from_format_string(image_format.upper())
         if not isinstance(image_format, ImageFormat):
-            raise ValueError(
-                f"image_format must be a string or ImageFormat variant, but got: {image_format}"
-            )
+            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
         return Expression._from_pyexpr(self._expr.image_encode(image_format))
 
     def resize(self, w: int, h: int) -> Expression:
@@ -1786,9 +1713,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 raise ValueError(
                     f"Expected `bbox` to be either a tuple of 4 ints or an Expression but received: {bbox}"
                 )
-            bbox = Expression._to_expression(bbox).cast(
-                DataType.fixed_size_list(DataType.uint64(), 4)
-            )
+            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
 
