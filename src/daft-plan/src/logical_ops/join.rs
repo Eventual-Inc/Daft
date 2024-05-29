@@ -75,13 +75,16 @@ impl Join {
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
         let output_schema = {
             let left_join_keys = left_on.iter().map(|e| e.name()).collect::<HashSet<_>>();
+            let right_join_keys = right_on.iter().map(|e| e.name()).collect::<HashSet<_>>();
             let left_schema = &left.schema().fields;
             let fields = left_schema
                 .iter()
                 .map(|(_, field)| field)
                 .cloned()
                 .chain(right.schema().fields.iter().filter_map(|(rname, rfield)| {
-                    if left_join_keys.contains(rname.as_str()) {
+                    if left_join_keys.contains(rname.as_str())
+                        && right_join_keys.contains(rname.as_str())
+                    {
                         right_input_mapping.insert(rname.clone(), rname.clone());
                         None
                     } else if left_schema.contains_key(rname) {
