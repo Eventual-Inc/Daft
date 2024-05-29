@@ -31,6 +31,23 @@ def test_invalid_join_strategies(make_df):
         df.join(df, on="A", strategy="broadcast", how="outer")
 
 
+def test_columns_after_join(make_df):
+    df1 = make_df(
+        {
+            "A": [1, 2, 3],
+        },
+    )
+
+    df2 = make_df({"A": [1, 2, 3], "B": [1, 2, 3]})
+
+    joined_df1 = df1.join(df2, left_on="A", right_on="B")
+    joined_df2 = df1.join(df2, left_on="A", right_on="A")
+
+    assert set(joined_df1.schema().column_names()) == set(["A", "B", "right.A"])
+
+    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+
+
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
