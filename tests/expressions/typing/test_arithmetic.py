@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import operator as ops
 
 import pytest
@@ -134,6 +135,22 @@ def test_log10(unary_data_fixture):
         data=(unary_data_fixture,),
         expr=col(arg.name()).log10(),
         run_kernel=lambda: arg.log10(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        2, 10, 100, math.e
+    ],
+)
+def test_log(unary_data_fixture, base: float):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log(base=base),
+        run_kernel=lambda: arg.log(base=base),
         resolvable=is_numeric(arg.datatype()),
     )
 

@@ -16,12 +16,31 @@ use round::RoundEvaluator;
 use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
 use sqrt::SqrtEvaluator;
+use std::hash::{Hash, Hasher};
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::{Expr, ExprRef};
 
 use super::FunctionEvaluator;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct F64Wrapper(f64);
+
+impl F64Wrapper {
+    // Method to get the inner f64 value
+    fn get_value(&self) -> f64 {
+        self.0
+    }
+}
+
+impl Eq for F64Wrapper {}
+impl Hash for F64Wrapper {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Use the to_bits method to convert the f64 into its raw bytes representation
+        self.0.to_bits().hash(state);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NumericExpr {
@@ -42,6 +61,7 @@ pub enum NumericExpr {
     Degrees,
     Log2,
     Log10,
+    Log(F64Wrapper),
     Ln,
     Exp,
 }
@@ -68,6 +88,7 @@ impl NumericExpr {
             Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
             Log2 => &LogEvaluator(log::LogFunction::Log2),
             Log10 => &LogEvaluator(log::LogFunction::Log10),
+            Log(_) => &LogEvaluator(log::LogFunction::Log),
             Ln => &LogEvaluator(log::LogFunction::Ln),
             Exp => &ExpEvaluator {},
         }
@@ -205,6 +226,14 @@ pub fn log2(input: ExprRef) -> ExprRef {
 pub fn log10(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Log10),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn log(input: ExprRef, base: f64) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Log(F64Wrapper(base))),
         inputs: vec![input],
     }
     .into()

@@ -205,6 +205,10 @@ impl PySeries {
         Ok(self.series.log10()?.into())
     }
 
+    pub fn log(&self, base: f64) -> PyResult<Self> {
+        Ok(self.series.log(base)?.into())
+    }
+
     pub fn ln(&self) -> PyResult<Self> {
         Ok(self.series.ln()?.into())
     }
