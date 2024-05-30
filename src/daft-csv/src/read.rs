@@ -1543,6 +1543,52 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_read_local_invalid_cols_header_mismatch_flexible() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_header_cols_mismatch.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            Some(CsvParseOptions::default().with_flexible(true)),
+            None,
+            io_client,
+            None,
+            true,
+            None,
+        )?;
+
+        assert_eq!(table.len(), 3);
+
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+
+        assert_eq!(table.get_column("sepal.length")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column("sepal.width")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column("petal.length")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column("petal.width")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column("variety")?.to_arrow().null_count(), 3);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_csv_read_local_invalid_no_header_variable_num_cols() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv",
@@ -1572,6 +1618,49 @@ mod tests {
                 .contains("found record with 5 fields, but the previous record has 4 fields"),
             "{}",
             err
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_invalid_no_header_variable_num_cols_flexible() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            Some(
+                CsvParseOptions::default()
+                    .with_has_header(false)
+                    .with_flexible(true),
+            ),
+            None,
+            io_client,
+            None,
+            true,
+            None,
+        )?;
+
+        assert_eq!(table.len(), 3);
+
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("column_1", DataType::Float64),
+                Field::new("column_2", DataType::Float64),
+                Field::new("column_3", DataType::Float64),
+                Field::new("column_4", DataType::Float64),
+            ])?
+            .into(),
         );
 
         Ok(())

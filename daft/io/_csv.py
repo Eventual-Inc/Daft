@@ -64,6 +64,9 @@ def read_csv(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
 
+    if schema_hints is not None and schema_override is not None:
+        raise ValueError("Cannot specify both schema_hints and schema_override")
+
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     csv_config = CsvSourceConfig(

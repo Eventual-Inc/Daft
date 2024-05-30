@@ -494,7 +494,7 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_csv_override_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -506,24 +506,29 @@ def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]],
         df = daft.read_csv(
             fname,
             delimiter="\t",
-            schema_hints={
-                "sepal_length": DataType.float32(),
-                "sepal_width": DataType.float32(),
-                "petal_length": DataType.float32(),
-                "petal_width": DataType.float32(),
+            schema_override={
+                "s_length": DataType.float32(),
+                "s_width": DataType.string(),
+                "p_length": DataType.float32(),
+                "p_width": DataType.string(),
                 "variety": DataType.string(),
             },
             use_native_downloader=use_native_downloader,
         )
-        assert df.column_names == COL_NAMES
+        assert df.column_names == ["s_length", "s_width", "p_length", "p_width", "variety"]
+        assert df.schema()["s_length"].dtype == DataType.float32()
+        assert df.schema()["s_width"].dtype == DataType.string()
+        assert df.schema()["p_length"].dtype == DataType.float32()
+        assert df.schema()["p_width"].dtype == DataType.string()
+        assert df.schema()["variety"].dtype == DataType.string()
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == COL_NAMES
+        assert list(pd_df.columns) == ["s_length", "s_width", "p_length", "p_width", "variety"]
         assert len(pd_df) == len(valid_data)
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_csv_specify_schema_no_headers(
+def test_create_dataframe_csv_override_schema_no_headers(
     valid_data: list[dict[str, float]], use_native_downloader
 ) -> None:
     with create_temp_filename() as fname:
@@ -533,25 +538,25 @@ def test_create_dataframe_csv_specify_schema_no_headers(
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        schema_hints_for_csv_without_headers = {
-            "column_1": DataType.float64(),
-            "column_2": DataType.float64(),
-            "column_3": DataType.float64(),
-            "column_4": DataType.float64(),
-            "column_5": DataType.string(),
+        schema_override_for_csv_without_headers = {
+            "c_1": DataType.float64(),
+            "c_2": DataType.float64(),
+            "c_3": DataType.float64(),
+            "c_4": DataType.float64(),
+            "c_5": DataType.string(),
         }
 
         df = daft.read_csv(
             fname,
             delimiter="\t",
-            schema_hints=schema_hints_for_csv_without_headers,
+            schema_override=schema_override_for_csv_without_headers,
             has_headers=False,
             use_native_downloader=use_native_downloader,
         )
-        assert df.column_names == list(schema_hints_for_csv_without_headers.keys())
+        assert df.column_names == list(schema_override_for_csv_without_headers.keys())
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == list(schema_hints_for_csv_without_headers.keys())
+        assert list(pd_df.columns) == list(schema_override_for_csv_without_headers.keys())
         assert len(pd_df) == len(valid_data)
 
 
@@ -636,6 +641,37 @@ def test_create_dataframe_csv_schema_hints_ignore_random_hint(
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_schema_hints_with_schema_override_throws_error(
+    valid_data: list[dict[str, float]], use_native_downloader
+) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
+        with pytest.raises(ValueError):
+            daft.read_csv(
+                fname,
+                delimiter="\t",
+                schema_override={
+                    "sepal_length": DataType.float32(),
+                    "sepal_width": DataType.float32(),
+                    "petal_length": DataType.float32(),
+                    "petal_width": DataType.float32(),
+                    "variety": DataType.string(),
+                },
+                schema_hints={
+                    "sepal_length": DataType.float64(),
+                    "sepal_width": DataType.float64(),
+                },
+                use_native_downloader=use_native_downloader,
+            )
 
 
 ###
