@@ -765,7 +765,6 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(pattern)}")
         assert self._series is not None and pattern._series is not None
         return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
-    
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
         if not isinstance(start, Series):

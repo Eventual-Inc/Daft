@@ -1181,6 +1181,7 @@ def test_series_utf8_ilike_empty_arrs() -> None:
     with pytest.raises(ValueError):
         s.str.ilike(pat)
 
+
 @pytest.mark.parametrize(
     ["data", "start", "length", "expected"],
     [
