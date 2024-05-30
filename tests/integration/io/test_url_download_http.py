@@ -28,20 +28,28 @@ def test_url_download_http_error_codes(nginx_config, use_native_downloader, stat
 
     # 404 should always be corner-cased to return FileNotFoundError regardless of I/O implementation
     if status_code == 404:
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError) as exc_info:
             df.collect()
+
     # When using fsspec, other error codes are bubbled up to the user as aiohttp.client_exceptions.ClientResponseError
     elif not use_native_downloader:
         # Ray runner has a pretty catastrophic failure when raising non-pickleable exceptions (ClientResponseError is not pickleable)
         # See Ray issue: https://github.com/ray-project/ray/issues/36893
         if skip_fsspec_downloader:
             pytest.skip()
-        with pytest.raises(ClientResponseError) as e:
+
+        with pytest.raises(RuntimeError) as exc_info:
             df.collect()
-        assert e.value.code == status_code
+
+        # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+        if daft.context.get_context().runner_config.name == "ray":
+            assert "ClientResponseError" in str(exc_info.value)
+        else:
+            assert isinstance(exc_info.value.__cause__, ClientResponseError)
+            assert exc_info.value.__cause__.code == status_code
     # When using native downloader, we throw a ValueError
     else:
         # NOTE: We may want to add better errors in the future to provide a better
         # user-facing I/O error with the error code
-        with pytest.raises(ValueError, match=f"{status_code}") as e:
+        with pytest.raises(ValueError, match=f"{status_code}"):
             df.collect()
