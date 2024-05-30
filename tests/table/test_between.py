@@ -100,15 +100,20 @@ def test_between_columns(value, lower, upper, expected) -> None:
     assert pydict["value"] == expected
 
 
-def test_between_badtype() -> None:
-    daft_table = MicroPartition.from_pydict({"a": ["str1", "str2"]})
+@pytest.mark.parametrize(
+    "value,lower,upper",
+    [
+        pytest.param(["str1", "str2"], 1, 2, id="StrIntInt"),
+        pytest.param([1, 2], "str", 1, id="IntStrInt"),
+    ],
+)
+def test_between_between_different_types(value, lower, upper) -> None:
+    daft_table = MicroPartition.from_pydict({"a": value})
     with pytest.raises(ValueError):
-        daft_table = daft_table.eval_expression_list([col("a").between("a", "b")])
-    with pytest.raises(ValueError):
-        daft_table = daft_table.eval_expression_list([col("a").between(1, 2)])
+        daft_table = daft_table.eval_expression_list([col("a").between(lower, upper)])
 
 
-def test_from_pydict_bad_input() -> None:
+def test_between_bad_input() -> None:
     daft_table = MicroPartition.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(ValueError, match="trying to compare different length arrays: a: 3 vs literal: 3 vs literal: 2"):
-        daft_table = daft_table.eval_expression_list([col("a").between([1, 2, 3], [1, 2])])
+    with pytest.raises(TypeError):
+        daft_table = daft_table.eval_expression_list([col("a").between([1, 2, 3], 1)])
