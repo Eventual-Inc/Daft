@@ -440,6 +440,14 @@ impl PyExpr {
         Ok(self.expr.clone().is_in(other.expr.clone()).into())
     }
 
+    pub fn between(&self, lower: &Self, upper: &Self) -> PyResult<Self> {
+        Ok(self
+            .expr
+            .clone()
+            .between(lower.expr.clone(), upper.expr.clone())
+            .into())
+    }
+
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name())
     }

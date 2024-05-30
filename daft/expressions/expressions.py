@@ -670,6 +670,22 @@ class Expression:
         expr = self._expr.is_in(other._expr)
         return Expression._from_pyexpr(expr)
 
+    def between(self, lower: Any, upper: Any) -> Expression:
+        """Checks if values in the Expression are between lower and upper, inclusive.
+
+        Example:
+            >>> # [1, 2, 3, 4] -> [True, True, False, False]
+            >>> col("x").between(1, 2)
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
+        """
+        lower = Expression._to_expression(lower)
+        upper = Expression._to_expression(upper)
+
+        expr = self._expr.between(lower._expr, upper._expr)
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 

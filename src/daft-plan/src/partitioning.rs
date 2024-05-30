@@ -278,6 +278,12 @@ fn translate_clustering_spec_expr(
             let newitems = translate_clustering_spec_expr(items, old_colname_to_new_colname)?;
             Ok(newchild.is_in(newitems))
         }
+        Expr::Between(child, lower, upper) => {
+            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+            let newlower = translate_clustering_spec_expr(lower, old_colname_to_new_colname)?;
+            let newupper = translate_clustering_spec_expr(upper, old_colname_to_new_colname)?;
+            Ok(newchild.between(newlower, newupper))
+        }
         Expr::IfElse {
             if_true,
             if_false,
