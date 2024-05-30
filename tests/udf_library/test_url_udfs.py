@@ -87,11 +87,16 @@ def test_download_with_missing_urls_reraise_errors(files, use_native_downloader)
         # TODO: Change to a FileNotFound Error
 
         if not use_native_downloader:
-            with pytest.raises(RuntimeError) as err:
+            with pytest.raises(RuntimeError) as exc_info:
                 df.collect()
-            assert isinstance(err.value.__cause__, FileNotFoundError)
+
+            # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+            if daft.context.get_context().runner_config.name == "ray":
+                assert "FileNotFoundError" in str(exc_info.value)
+            else:
+                assert isinstance(exc_info.value.__cause__, FileNotFoundError)
         else:
-            with pytest.raises(FileNotFoundError) as err:
+            with pytest.raises(FileNotFoundError):
                 df.collect()
 
 

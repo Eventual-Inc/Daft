@@ -68,7 +68,12 @@ def test_iter_exception(make_df):
     # Ensure the exception does trigger if execution continues.
     with pytest.raises(RuntimeError) as exc_info:
         list(it)
-    assert isinstance(exc_info.value.__cause__, MockException)
+
+    # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+    if daft.context.get_context().runner_config.name == "ray":
+        assert "MockException" in str(exc_info.value)
+    else:
+        assert isinstance(exc_info.value.__cause__, MockException)
 
 
 def test_iter_partitions_exception(make_df):
@@ -100,4 +105,9 @@ def test_iter_partitions_exception(make_df):
         res = list(it)
         if daft.context.get_context().runner_config.name == "ray":
             ray.get(res)
-    assert isinstance(exc_info.value.__cause__, MockException)
+
+    # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+    if daft.context.get_context().runner_config.name == "ray":
+        assert "MockException" in str(exc_info.value)
+    else:
+        assert isinstance(exc_info.value.__cause__, MockException)
