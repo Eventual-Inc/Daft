@@ -1545,7 +1545,7 @@ mod tests {
     #[test]
     fn test_csv_read_local_invalid_cols_header_mismatch_flexible() -> DaftResult<()> {
         let file = format!(
-            "{}/test/iris_tiny_invalid_header_cols_mismatch.csv",
+            "{}/test/iris_tiny_invalid_header_cols_mismatch.csv", // 5 cols in header with 4 cols in data
             env!("CARGO_MANIFEST_DIR"),
         );
 
@@ -1579,10 +1579,13 @@ mod tests {
             .into(),
         );
 
+        // First 4 cols should have no nulls
         assert_eq!(table.get_column("sepal.length")?.to_arrow().null_count(), 0);
         assert_eq!(table.get_column("sepal.width")?.to_arrow().null_count(), 0);
         assert_eq!(table.get_column("petal.length")?.to_arrow().null_count(), 0);
         assert_eq!(table.get_column("petal.width")?.to_arrow().null_count(), 0);
+
+        // Last col should have 3 nulls because of the missing data
         assert_eq!(table.get_column("variety")?.to_arrow().null_count(), 3);
 
         Ok(())
@@ -1626,7 +1629,7 @@ mod tests {
     #[test]
     fn test_csv_read_local_invalid_no_header_variable_num_cols_flexible() -> DaftResult<()> {
         let file = format!(
-            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv",
+            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv", // first and third row have 4 cols, second row has 5 cols
             env!("CARGO_MANIFEST_DIR"),
         );
 
@@ -1661,6 +1664,56 @@ mod tests {
                 Field::new("column_4", DataType::Float64),
             ])?
             .into(),
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_invalid_no_header_variable_num_cols_flexible_with_schema(
+    ) -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv", // first and third row have 4 cols, second row has 5 cols
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = Schema::new(vec![
+            Field::new("sepal.length", DataType::Float64),
+            Field::new("sepal.width", DataType::Float64),
+            Field::new("petal.length", DataType::Float64),
+            Field::new("petal.width", DataType::Float64),
+            Field::new("variety", DataType::Utf8),
+        ])?;
+
+        let table = read_csv(
+            file.as_ref(),
+            Some(CsvConvertOptions::default().with_schema(Some(schema.into()))),
+            Some(
+                CsvParseOptions::default()
+                    .with_has_header(false)
+                    .with_flexible(true),
+            ),
+            None,
+            io_client,
+            None,
+            true,
+            None,
+        )?;
+
+        assert_eq!(table.len(), 3);
+
+        assert_eq!(
+            table.get_column("variety")?.to_arrow(),
+            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+                None,
+                Some("Seratosa"),
+                None,
+            ])) as Box<dyn arrow2::array::Array>
         );
 
         Ok(())
