@@ -146,7 +146,7 @@ def test_between_bad_input() -> None:
         ),
     ],
 )
-def test_table_expr_between_single_scalars(value, lower, upper, expected) -> None:
+def test_table_expr_between_col_and_scalar(value, lower, upper, expected) -> None:
     table = {"value": value, "lower": lower}
     daft_table = MicroPartition.from_pydict(table)
     daft_table = daft_table.eval_expression_list([col("value").between(col("lower"), upper)])
