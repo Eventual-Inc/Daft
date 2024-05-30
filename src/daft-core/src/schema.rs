@@ -123,18 +123,33 @@ impl Schema {
         // Begin the header.
         res.push_str("<thead><tr>");
 
-        for (name, field) in &self.fields {
-            res.push_str(
-                "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
-            );
-            res.push_str(&html_escape::encode_text(name));
-            res.push_str("<br />");
-            res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
-            res.push_str("</th>");
-        }
+        // Add header for column name and type
+        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">Column Name</th>");
+        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">Type</th>");
 
         // End the header.
         res.push_str("</tr></thead>\n");
+
+        // Begin the body.
+        res.push_str("<tbody>\n");
+
+        for (name, field) in &self.fields {
+            res.push_str("<tr>");
+            res.push_str(
+                "<td style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+            );
+            res.push_str(&html_escape::encode_text(name));
+            res.push_str("</td>");
+            res.push_str(
+                "<td style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+            );
+            res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
+            res.push_str("</td>");
+            res.push_str("</tr>\n");
+        }
+
+        // End the body.
+        res.push_str("</tbody>\n");
 
         res.push_str("</table>");
 
