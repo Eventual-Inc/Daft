@@ -16,34 +16,14 @@ use round::RoundEvaluator;
 use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
 use sqrt::SqrtEvaluator;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::{Expr, ExprRef};
+use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 
 use super::FunctionEvaluator;
-
-// Wrapper struct to implement Eq and Hash traits for f64.
-// This is necessary to use f64 as a key in a HashMap.
-// The Log enum in the NumericExpr enum uses this wrapper to store the base value for the log function.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct F64Wrapper(f64);
-
-impl F64Wrapper {
-    // Method to get the inner f64 value
-    fn get_value(&self) -> f64 {
-        self.0
-    }
-}
-
-impl Eq for F64Wrapper {}
-impl Hash for F64Wrapper {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // Use the to_bits method to convert the f64 into its raw bytes representation
-        self.0.to_bits().hash(state);
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NumericExpr {
@@ -64,7 +44,7 @@ pub enum NumericExpr {
     Degrees,
     Log2,
     Log10,
-    Log(F64Wrapper),
+    Log(FloatWrapper<f64>),
     Ln,
     Exp,
 }
@@ -236,7 +216,7 @@ pub fn log10(input: ExprRef) -> ExprRef {
 
 pub fn log(input: ExprRef, base: f64) -> ExprRef {
     Expr::Function {
-        func: super::FunctionExpr::Numeric(NumericExpr::Log(F64Wrapper(base))),
+        func: super::FunctionExpr::Numeric(NumericExpr::Log(FloatWrapper(base))),
         inputs: vec![input],
     }
     .into()
