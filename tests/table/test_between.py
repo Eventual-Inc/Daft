@@ -98,3 +98,17 @@ def test_between_columns(value, lower, upper, expected) -> None:
     daft_table = daft_table.eval_expression_list([col("value").between(col("lower"), col("upper"))])
     pydict = daft_table.to_pydict()
     assert pydict["value"] == expected
+
+
+def test_between_badtype() -> None:
+    daft_table = MicroPartition.from_pydict({"a": ["str1", "str2"]})
+    with pytest.raises(ValueError):
+        daft_table = daft_table.eval_expression_list([col("a").between("a", "b")])
+    with pytest.raises(ValueError):
+        daft_table = daft_table.eval_expression_list([col("a").between(1, 2)])
+
+
+def test_from_pydict_bad_input() -> None:
+    daft_table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(ValueError, match="trying to compare different length arrays: a: 3 vs literal: 3 vs literal: 2"):
+        daft_table = daft_table.eval_expression_list([col("a").between([1, 2, 3], [1, 2])])
