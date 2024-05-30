@@ -97,7 +97,7 @@ where
 mod tests {
     use crate::{
         array::ops::{full::FullNull, DaftBetween},
-        datatypes::{BooleanArray, Int64Array, Int64Type},
+        datatypes::Int64Array,
         DataType,
     };
     use common_error::DaftResult;
