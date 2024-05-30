@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import math
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -412,6 +413,15 @@ class Expression:
     def log10(self) -> Expression:
         """The elementwise log base 10 of a numeric expression (``expr.log10()``)"""
         expr = self._expr.log10()
+        return Expression._from_pyexpr(expr)
+
+    def log(self, base: float = math.e) -> Expression:  # type: ignore
+        """The elementwise log with given base, of a numeric expression (``expr.log(base = math.e)``)
+        Args:
+            base: The base of the logarithm. Defaults to e.
+        """
+        assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
+        expr = self._expr.log(float(base))
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:

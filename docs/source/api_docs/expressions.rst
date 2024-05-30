@@ -62,6 +62,7 @@ Numeric
     Expression.degrees
     Expression.log2
     Expression.log10
+    Expression.log
     Expression.ln
     Expression.exp
 

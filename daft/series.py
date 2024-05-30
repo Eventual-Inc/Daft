@@ -408,6 +408,13 @@ class Series:
         """The elementwise log10 of a numeric series"""
         return Series._from_pyseries(self._series.log10())
 
+    def log(self, base: float) -> Series:
+        """The elementwise log with given base, of a numeric series.
+        Args:
+            base: The base of the logarithm.
+        """
+        return Series._from_pyseries(self._series.log(base))
+
     def ln(self) -> Series:
         """The elementwise ln of a numeric series"""
         return Series._from_pyseries(self._series.ln())

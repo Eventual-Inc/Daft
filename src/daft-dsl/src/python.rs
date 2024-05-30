@@ -280,6 +280,11 @@ impl PyExpr {
         Ok(log10(self.into()).into())
     }
 
+    pub fn log(&self, base: f64) -> PyResult<Self> {
+        use functions::numeric::log;
+        Ok(log(self.into(), base).into())
+    }
+
     pub fn ln(&self) -> PyResult<Self> {
         use functions::numeric::ln;
         Ok(ln(self.into()).into())
