@@ -136,12 +136,12 @@ impl Schema {
         for (name, field) in &self.fields {
             res.push_str("<tr>");
             res.push_str(
-                "<td style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+                "<td style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
             );
             res.push_str(&html_escape::encode_text(name));
             res.push_str("</td>");
             res.push_str(
-                "<td style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+                "<td style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
             );
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
             res.push_str("</td>");
@@ -150,6 +150,32 @@ impl Schema {
 
         // End the body.
         res.push_str("</tbody>\n");
+
+        res.push_str("</table>");
+
+        res
+    }
+
+    pub fn truncated_table_html(&self) -> String {
+        // Produces a <table> HTML element.
+
+        let mut res = "<table class=\"dataframe\">\n".to_string();
+
+        // Begin the header.
+        res.push_str("<thead><tr>");
+
+        for (name, field) in &self.fields {
+            res.push_str(
+                "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+            );
+            res.push_str(&html_escape::encode_text(name));
+            res.push_str("<br />");
+            res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
+            res.push_str("</th>");
+        }
+
+        // End the header.
+        res.push_str("</tr></thead>\n");
 
         res.push_str("</table>");
 

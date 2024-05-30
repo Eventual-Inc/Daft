@@ -9,6 +9,9 @@ from daft.table import Table
 
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
+TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
+TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
+
 
 def sort_arrow_table(tbl: pa.Table, sort_by: str):
     """In arrow versions < 7, pa.Table does not support sorting yet so we add a helper method here"""

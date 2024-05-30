@@ -8,14 +8,12 @@ import pytest
 from PIL import Image
 
 import daft
-from tests.utils import ANSI_ESCAPE
+from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
 
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
-TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
-TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
 
 
 def parse_str_table(
