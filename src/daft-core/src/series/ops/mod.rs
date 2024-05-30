@@ -142,6 +142,32 @@ pub(super) fn py_between_op_utilfn(
     let lower_casted = lower.cast(&DataType::Python)?;
     let upper_casted = upper.cast(&DataType::Python)?;
 
+    let (value_casted, lower_casted, upper_casted) =
+        match (value_casted.len(), lower_casted.len(), upper_casted.len()) {
+            (a, b, c) if a == b && b == c => (value_casted, lower_casted, upper_casted),
+            (1, a, b) if a == b => (value_casted.broadcast(a)?, lower_casted, upper_casted),
+            (a, 1, b) if a == b => (value_casted, lower_casted.broadcast(a)?, upper_casted),
+            (a, b, 1) if a == b => (value_casted, lower_casted, upper_casted.broadcast(a)?),
+            (a, 1, 1) => (
+                value_casted,
+                lower_casted.broadcast(a)?,
+                upper_casted.broadcast(a)?,
+            ),
+            (1, a, 1) => (
+                value_casted.broadcast(a)?,
+                lower_casted,
+                upper_casted.broadcast(a)?,
+            ),
+            (1, 1, a) => (
+                value_casted.broadcast(a)?,
+                lower_casted.broadcast(a)?,
+                upper_casted,
+            ),
+            (a, b, c) => {
+                panic!("Cannot apply operation on arrays of different lengths: {a} vs {b} vs {c}")
+            }
+        };
+
     let value_pylist = PySeries::from(value_casted.clone()).to_pylist()?;
     let lower_pylist = PySeries::from(lower_casted.clone()).to_pylist()?;
     let upper_pylist = PySeries::from(upper_casted.clone()).to_pylist()?;
