@@ -70,10 +70,15 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if isinstance(origin_T, type):
             return isinstance(value, origin_T)
 
-        # T is a `typing.Union` or `typing.Literal`
-        if origin_T in (Union, Literal):
-            inner_types = get_args(T)
-            return any(isinstance_helper(value, inner_type) for inner_type in inner_types)
+        # T is a `typing.Union`
+        if origin_T is Union:
+            union_types = get_args(T)
+            return any(isinstance_helper(value, union_type) for union_type in union_types)
+
+        # T is a `typing.Literal`
+        if origin_T is Literal:
+            literal_values = get_args(T)
+            return value in literal_values
 
         raise NotImplementedError(
             f"Unexpected error: Type checking is not implemented for type {T}. Sorry! Please file an issue."
