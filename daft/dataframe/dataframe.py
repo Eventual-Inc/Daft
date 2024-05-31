@@ -552,6 +552,7 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return with_operations
 
+    @DataframePublicAPI
     def write_delta(
         self,
         table: Union[str, pathlib.Path, "deltalake.DeltaTable"],
@@ -569,14 +570,14 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            table (Union[str, `pathlib.Path`, `deltalake.DeltaTable`]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
-            mode (Literal["append", "overwrite", "error", "ignore"], optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
-            schema_mode (Optional[Literal["merge", "overwrite"]], optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. `merge` is currently not supported.
-            name (Optional[str], optional): User-provided identifier for this table.
-            description (Optional[str], optional): User-provided description for this table.
-            configuration (Optional[Mapping[str, Optional[str]]], optional): A map containing configuration options for the metadata action.
-            custom_metadata (Optional[Dict[str, str]], optional): Custom metadata to add to the commit info.
-            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            table (Union[str, pathlib.Path, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
+            schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
+            name (str, optional): User-provided identifier for this table.
+            description (str, optional): User-provided description for this table.
+            configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
+            custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
+            io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The operations that occurred with this write.
