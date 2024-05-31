@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
-from typing import Any, Callable, ForwardRef, TypeVar, Union, get_args, get_origin
+from typing import Any, Callable, ForwardRef, Literal, TypeVar, Union, get_args, get_origin
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -70,10 +70,10 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if isinstance(origin_T, type):
             return isinstance(value, origin_T)
 
-        # T is a higher order type, like `typing.Union`
-        if origin_T is Union:
-            union_types = get_args(T)
-            return any(isinstance_helper(value, union_type) for union_type in union_types)
+        # T is a `typing.Union` or `typing.Literal`
+        if origin_T in (Union, Literal):
+            inner_types = get_args(T)
+            return any(isinstance_helper(value, inner_type) for inner_type in inner_types)
 
         raise NotImplementedError(
             f"Unexpected error: Type checking is not implemented for type {T}. Sorry! Please file an issue."
