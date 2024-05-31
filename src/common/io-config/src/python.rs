@@ -75,7 +75,7 @@ pub struct S3Credentials {
 ///
 /// Args:
 ///     storage_account: Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
-///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KxEY` environment variable
+///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
 ///     anonymous: Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///
 /// Example:
