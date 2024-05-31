@@ -18,27 +18,27 @@ use crate::{config, s3::S3CredentialsProvider};
 /// Create configurations to be used when accessing an S3-compatible system
 ///
 /// Args:
-///     region_name: Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
+///     region_name (str, optional): Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
 ///         If wrongly provided, Daft will attempt to auto-detect the buckets' region at the cost of extra S3 requests.
-///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
-///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
-///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
-///     credentials_provider: Custom credentials provider function, should return a `S3Credentials` object
-///     buffer_time: Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
-///     max_connections: Maximum number of connections to S3 at any time, defaults to 64
-///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
-///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
-///     connect_timeout_ms: Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 10 seconds
-///     read_timeout_ms: Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 10 seconds
-///     num_tries: Number of attempts to make a connection, defaults to 5
-///     retry_mode: Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
-///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
-///     use_ssl: Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
-///     verify_ssl: Whether or not to verify ssl certificates, which will access S3 without checking if the certs are valid, defaults to True
-///     check_hostname_ssl: Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
-///     requester_pays: Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
-///     force_virtual_addressing: Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
-///     profile_name: Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
+///     endpoint_url (str, optional): URL to the S3 endpoint, defaults to endpoints to AWS
+///     key_id (str, optional): AWS Access Key ID, defaults to auto-detection from the current environment
+///     access_key (str, optional): AWS Secret Access Key, defaults to auto-detection from the current environment
+///     credentials_provider (Callable[[], S3Credentials], optional): Custom credentials provider function, should return a `S3Credentials` object
+///     buffer_time (int, optional): Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
+///     max_connections (int, optional): Maximum number of connections to S3 at any time, defaults to 64
+///     session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 10 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 10 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
+///     retry_mode (str, optional): Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
+///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access S3 without any credentials
+///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
+///     verify_ssl (bool, optional): Whether or not to verify ssl certificates, which will access S3 without checking if the certs are valid, defaults to True
+///     check_hostname_ssl (bool, optional): Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
+///     requester_pays (bool, optional): Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
+///     force_virtual_addressing (bool, optional): Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
+///     profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
 ///
 /// Example:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
@@ -52,16 +52,16 @@ pub struct S3Config {
 /// Create credentials to be used when accessing an S3-compatible system
 ///
 /// Args:
-///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
-///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
-///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
-///     expiry: Expiry time of the credentials as a Unix timestamp in integer seconds, credentials are assumed to be permanent if not provided
+///     key_id (str): AWS Access Key ID, defaults to auto-detection from the current environment
+///     access_key (str): AWS Secret Access Key, defaults to auto-detection from the current environment
+///     session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     expiry (datetime.datetime, optional): Expiry time of the credentials, credentials are assumed to be permanent if not provided
 ///
 /// Example:
 ///     >>> get_credentials = lambda: S3Credentials(
 ///     ...     key_id="xxx",
 ///     ...     access_key="xxx",
-///     ...     expiry=int(time.time()) + 3600
+///     ...     expiry=(datetime.datetime.now() + datetime.timedelta(hours=1))
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
