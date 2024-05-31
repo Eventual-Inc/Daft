@@ -293,7 +293,6 @@ def set_execution_config(
     with ctx._lock:
         old_daft_execution_config = ctx._daft_execution_config if config is None else config
 
-        # TODO: Re-addd Parquet configs when we are ready to support Delta Lake writes
         new_daft_execution_config = old_daft_execution_config.with_config_values(
             scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
             scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,

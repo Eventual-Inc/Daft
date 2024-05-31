@@ -1444,10 +1444,6 @@ class PyDaftExecutionConfig:
         num_preview_rows: int | None = None,
         parquet_target_filesize: int | None = None,
         parquet_target_row_group_size: int | None = None,
-        parquet_max_open_files: int | None = None,
-        parquet_max_rows_per_file: int | None = None,
-        parquet_min_rows_per_group: int | None = None,
-        parquet_max_rows_per_group: int | None = None,
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
@@ -1471,14 +1467,6 @@ class PyDaftExecutionConfig:
     def parquet_target_filesize(self) -> int: ...
     @property
     def parquet_target_row_group_size(self) -> int: ...
-    @property
-    def parquet_max_open_files(self) -> int: ...
-    @property
-    def parquet_max_rows_per_file(self) -> int: ...
-    @property
-    def parquet_min_rows_per_group(self) -> int: ...
-    @property
-    def parquet_max_rows_per_group(self) -> int: ...
     @property
     def parquet_inflation_factor(self) -> float: ...
     @property
