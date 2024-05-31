@@ -655,31 +655,39 @@ def write_deltalake(
     current_version: int,
     io_config: IOConfig | None = None,
 ):
+    import json
+    from datetime import datetime
+
+    import deltalake
     from deltalake.schema import convert_pyarrow_table
     from deltalake.writer import (
         AddAction,
         DeltaJSONEncoder,
         DeltaStorageHandler,
-        get_file_stats_from_metadata,
         get_partitions_from_path,
-        try_get_table_and_table_uri,
     )
+    from packaging.version import parse
     from pyarrow.fs import PyFileSystem
 
     from daft.delta_lake.delta_lake_storage_function import (
         _storage_config_to_storage_options,
     )
+    from daft.utils import ARROW_VERSION
 
     data_files: list[AddAction] = []
+
+    # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" argument
+    # https://github.com/delta-io/delta-rs/blob/353e08be0202c45334dcdceee65a8679f35de710/python/deltalake/writer.py#L725
+    if parse(deltalake.__version__) < parse("0.17.4"):
+        get_file_stats_from_metadata = deltalake.writer.get_file_stats_from_metadata
+    else:
+
+        def get_file_stats_from_metadata(metadata):
+            deltalake.writer.get_file_stats_from_metadata(metadata, -1)
 
     def file_visitor(written_file: Any) -> None:
         path, partition_values = get_partitions_from_path(written_file.path)
         stats = get_file_stats_from_metadata(written_file.metadata)
-
-        import json
-        from datetime import datetime
-
-        from daft.utils import ARROW_VERSION
 
         # PyArrow added support for written_file.size in 9.0.0
         if ARROW_VERSION >= (9, 0, 0):
@@ -703,8 +711,7 @@ def write_deltalake(
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
     storage_options = _storage_config_to_storage_options(storage_config, base_path)
-    table, table_uri = try_get_table_and_table_uri(base_path, storage_options)
-    filesystem = PyFileSystem(DeltaStorageHandler(table_uri, storage_options))
+    filesystem = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
 
     arrow_table = mp.to_arrow()
     arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
