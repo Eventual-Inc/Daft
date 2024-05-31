@@ -38,5 +38,6 @@ These configurations are most often used as inputs to Daft DataFrame reading I/O
 
     daft.io.IOConfig
     daft.io.S3Config
+    daft.io.S3Credentials
     daft.io.GCSConfig
     daft.io.AzureConfig

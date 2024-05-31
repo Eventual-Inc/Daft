@@ -8,7 +8,7 @@ use std::hash::Hash;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 #[cfg(feature = "python")]
 use {
-    crate::py_object_serde::{deserialize_py_object, serialize_py_object},
+    common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_core::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
