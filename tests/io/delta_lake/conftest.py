@@ -20,7 +20,7 @@ from pytest_lazyfixture import lazy_fixture
 import daft
 from daft import DataCatalogTable, DataCatalogType
 from daft.object_store_options import io_config_to_storage_options
-from tests.io.delta_lake.mock_aws_server import start_service, stop_process
+from tests.io.mock_aws_server import start_service, stop_process
 
 
 @pytest.fixture(params=[1, 2, 8])
