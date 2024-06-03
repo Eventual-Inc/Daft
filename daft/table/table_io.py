@@ -36,6 +36,7 @@ from daft.filesystem import (
     get_protocol_from_path,
 )
 from daft.logical.schema import Schema
+from daft.object_store_options import io_config_to_storage_options
 from daft.runners.partitioning import (
     TableParseCSVOptions,
     TableParseParquetOptions,
@@ -652,7 +653,6 @@ def write_deltalake(
     mp: MicroPartition,
     large_dtypes: bool,
     base_path: str,
-    current_version: int,
     io_config: IOConfig | None = None,
 ):
     import json
@@ -669,9 +669,6 @@ def write_deltalake(
     from packaging.version import parse
     from pyarrow.fs import PyFileSystem
 
-    from daft.delta_lake.delta_lake_storage_function import (
-        _storage_config_to_storage_options,
-    )
     from daft.utils import ARROW_VERSION
 
     protocol = get_protocol_from_path(base_path)
@@ -714,8 +711,7 @@ def write_deltalake(
     is_local_fs = canonicalized_protocol == "file"
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
-    storage_options = _storage_config_to_storage_options(storage_config, base_path)
+    storage_options = io_config_to_storage_options(io_config, base_path)
     fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
 
     arrow_table = mp.to_arrow()

@@ -249,7 +249,6 @@ class LogicalPlanBuilder:
         self,
         path: str | pathlib.Path,
         mode: str,
-        current_version: int,
         large_dtypes: bool,
         io_config: IOConfig,
     ) -> LogicalPlanBuilder:
@@ -258,7 +257,6 @@ class LogicalPlanBuilder:
             str(path),
             columns_name,
             mode,
-            current_version,
             large_dtypes,
             io_config,
         )

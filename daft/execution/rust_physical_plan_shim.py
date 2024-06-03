@@ -334,13 +334,11 @@ def write_deltalake(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     path: str,
     large_dtypes: bool,
-    current_version: int,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
         input,
         path,
         large_dtypes,
-        current_version,
         io_config,
     )

@@ -26,6 +26,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -35,18 +36,14 @@ from daft.daft import (
     IOConfig,
     JoinStrategy,
     JoinType,
-    NativeStorageConfig,
     ResourceRequest,
-    StorageConfig,
 )
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
-from daft.delta_lake.delta_lake_storage_function import (
-    _storage_config_to_storage_options,
-)
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
+from daft.object_store_options import io_config_to_storage_options
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import MicroPartition
@@ -605,23 +602,28 @@ class DataFrame:
             raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
 
         if isinstance(table, (str, pathlib.Path)):
-            path = str(table)
-            storage_options = _storage_config_to_storage_options(
-                storage_config, path, dynamo_table_name=dynamo_table_name
-            )
-            table = try_get_deltatable(path, storage_options=storage_options)
+            table_uri = str(table)
+            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            table = try_get_deltatable(table_uri, storage_options=storage_options)
         elif isinstance(table, deltalake.DeltaTable):
-            path = table.table_uri
+            table_uri = table.table_uri
             storage_options = table._storage_options or {}
-            new_storage_options = _storage_config_to_storage_options(
-                storage_config, path, dynamo_table_name=dynamo_table_name
-            )
-            storage_options.update(new_storage_options)
+            new_storage_options = io_config_to_storage_options(io_config, table_uri)
+            storage_options.update(new_storage_options or {})
         else:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+
+        # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
+        scheme = urlparse(table_uri).scheme
+        if scheme == "s3" or scheme == "s3a":
+            if dynamo_table_name is not None:
+                storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
+                storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
+            else:
+                storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
+                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
         delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
@@ -647,15 +649,9 @@ class DataFrame:
                     }
                 )
 
-            current_version = table.version()
-
-        else:
-            current_version = -1
-
         builder = self._builder.write_delta(
-            path,
+            table_uri,
             mode,
-            current_version,
             large_dtypes=True,
             io_config=io_config,
         )
@@ -683,7 +679,7 @@ class DataFrame:
 
         if table is None:
             write_deltalake_pyarrow(
-                path,
+                table_uri,
                 delta_schema,
                 add_action,
                 mode,

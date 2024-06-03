@@ -14,9 +14,9 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
+from daft.object_store_options import io_config_to_storage_options
 
 logger = logging.getLogger(__name__)
 

@@ -142,7 +142,6 @@ def deltalake_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
     base_path: str,
     large_dtypes: bool,
-    current_version: int,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -152,7 +151,6 @@ def deltalake_write(
             execution_step.WriteDeltaLake(
                 base_path=base_path,
                 large_dtypes=large_dtypes,
-                current_version=current_version,
                 io_config=io_config,
             ),
         )

@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from daft.io.object_store_options import io_config_to_storage_options
+from daft.object_store_options import io_config_to_storage_options
 
 deltalake = pytest.importorskip("deltalake")
 import sys
