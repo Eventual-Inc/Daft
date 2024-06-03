@@ -562,6 +562,7 @@ class DataFrame:
         description: Optional[str] = None,
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
+        dynamo_table_name: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -577,6 +578,7 @@ class DataFrame:
             description (str, optional): User-provided description for this table.
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
+            dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -589,7 +591,7 @@ class DataFrame:
         import pyarrow as pa
         from deltalake.schema import _convert_pa_schema_to_delta
         from deltalake.writer import (
-            try_get_table_and_table_uri,
+            try_get_deltatable,
             write_deltalake_pyarrow,
         )
         from packaging.version import parse
@@ -606,23 +608,27 @@ class DataFrame:
         storage_config = StorageConfig.native(NativeStorageConfig(False, io_config))
 
         if isinstance(table, (str, pathlib.Path)):
-            storage_options = _storage_config_to_storage_options(storage_config, str(table))
-            table, path = try_get_table_and_table_uri(table, storage_options)
+            path = str(table)
+            storage_options = _storage_config_to_storage_options(
+                storage_config, path, dynamo_table_name=dynamo_table_name
+            )
+            table = try_get_deltatable(path, storage_options=storage_options)
         elif isinstance(table, deltalake.DeltaTable):
             path = table.table_uri
-        else:
-            raise ValueError(f"Table type must be str, pathlib.Path, or deltalake.DeltaTable, found {type(table)}")
-
-        if table is not None:
             storage_options = table._storage_options or {}
-            storage_options.update(storage_options or {})
-
-            table.update_incremental()
+            new_storage_options = _storage_config_to_storage_options(
+                storage_config, path, dynamo_table_name=dynamo_table_name
+            )
+            storage_options.update(new_storage_options)
+        else:
+            raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
         delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
 
         if table:
+            table.update_incremental()
+
             table_schema = table.schema().to_pyarrow(as_large_types=True)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(

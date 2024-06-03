@@ -96,6 +96,25 @@ def test_deltalake_write_overwrite_basic(tmp_path):
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
 
+def test_deltalake_write_overwrite_cloud(cloud_paths):
+    deltalake = pytest.importorskip("deltalake")
+    path, io_config, catalog_table = cloud_paths
+    df1 = daft.from_pydict({"a": [1, 2]})
+    df1.write_delta(str(path), io_config=io_config)
+
+    df2 = daft.from_pydict({"a": [3, 4]})
+    result = df2.write_delta(str(path), mode="overwrite", io_config=io_config)
+    result = result.to_pydict()
+    assert result["operation"] == ["ADD", "DELETE"]
+    assert result["rows"] == [2, 2]
+
+    storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
+    read_delta = deltalake.DeltaTable(str(path), storage_options=storage_options)
+    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    assert df2.schema() == expected_schema
+    assert read_delta.to_pyarrow_table() == df2.to_arrow()
+
+
 def test_deltalake_write_overwrite_multi_partition(tmp_path):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
