@@ -71,12 +71,16 @@ pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
 
-/// Create configurations to be used when accessing Azure Blob Storage
+/// Create configurations to be used when accessing Azure Blob Storage. To authenticate with Microsoft Entra ID, `tenant_id`, `client_id`, and `client_secret` must be provided.
 ///
 /// Args:
-///     storage_account: Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
-///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
-///     anonymous: Whether or not to use "anonymous mode", which will access Azure without any credentials
+///     storage_account (str): Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
+///     access_key (str, optional): Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
+///     sas_token (str, optional): Shared Access Signature token, defaults to reading from `AZURE_STORAGE_SAS_TOKEN` environment variable
+///     tenant_id (str, optional): Azure Tenant ID
+///     client_id (str, optional): Azure Client ID
+///     client_secret (str, optional): Azure Client Secret
+///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///
 /// Example:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
@@ -621,6 +625,10 @@ impl AzureConfig {
     pub fn new(
         storage_account: Option<String>,
         access_key: Option<String>,
+        sas_token: Option<String>,
+        tenant_id: Option<String>,
+        client_id: Option<String>,
+        client_secret: Option<String>,
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
@@ -630,6 +638,10 @@ impl AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.or(def.access_key),
+                sas_token: sas_token.or(def.sas_token),
+                tenant_id: tenant_id.or(def.tenant_id),
+                client_id: client_id.or(def.client_id),
+                client_secret: client_secret.or(def.client_secret),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
@@ -637,10 +649,15 @@ impl AzureConfig {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
         storage_account: Option<String>,
         access_key: Option<String>,
+        sas_token: Option<String>,
+        tenant_id: Option<String>,
+        client_id: Option<String>,
+        client_secret: Option<String>,
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
@@ -649,6 +666,10 @@ impl AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
+                sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
+                tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
+                client_id: client_id.or_else(|| self.config.client_id.clone()),
+                client_secret: client_secret.or_else(|| self.config.client_secret.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
@@ -670,6 +691,26 @@ impl AzureConfig {
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
+    }
+
+    #[getter]
+    pub fn sas_token(&self) -> PyResult<Option<String>> {
+        Ok(self.config.sas_token.clone())
+    }
+
+    #[getter]
+    pub fn tenant_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.tenant_id.clone())
+    }
+
+    #[getter]
+    pub fn client_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.client_id.clone())
+    }
+
+    #[getter]
+    pub fn client_secret(&self) -> PyResult<Option<String>> {
+        Ok(self.config.client_secret.clone())
     }
 
     /// Whether access is anonymous
