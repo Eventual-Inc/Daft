@@ -23,7 +23,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
         S3_SESSION_TOKEN,
     )
 
-    from daft.io import GCSConfig, IOConfig, S3Config
+    from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
     s3_mapping = {
         S3_REGION: "region_name",
@@ -44,6 +44,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
         s3_config = None
 
     gcs_config = None
+    azure_config = None
     if parse(pyiceberg.__version__) >= parse("0.5.0"):
         from pyiceberg.io import GCS_PROJECT_ID
 
@@ -59,8 +60,26 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
         if len(gcs_args) > 0:
             gcs_config = GCSConfig(**gcs_args)
 
-    if s3_config is not None or gcs_config is not None:
-        return IOConfig(s3=s3_config, gcs=gcs_config)
+        azure_mapping = {
+            "adlfs.account-name": "storage_account",
+            "adlfs.account-key": "access_key",
+            "adlfs.sas-token": "sas_token",
+            "adlfs.tenant-id": "tenant_id",
+            "adlfs.client-id": "client_id",
+            "adlfs.client-secret": "client_secret",
+        }
+
+        azure_args = dict()  # type: ignore
+        for pyiceberg_key, daft_key in azure_mapping.items():
+            value = props.get(pyiceberg_key, None)
+            if value is not None:
+                azure_args[daft_key] = value
+
+        if len(azure_args) > 0:
+            azure_config = AzureConfig(**azure_args)
+
+    if any([s3_config, gcs_config, azure_config]):
+        return IOConfig(s3=s3_config, gcs=gcs_config, azure=azure_config)
     else:
         return None
 

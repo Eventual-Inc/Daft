@@ -503,6 +503,10 @@ class AzureConfig:
 
     storage_account: str | None
     access_key: str | None
+    sas_token: str | None
+    tenant_id: str | None
+    client_id: str | None
+    client_secret: str | None
     anonymous: str | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
@@ -511,6 +515,10 @@ class AzureConfig:
         self,
         storage_account: str | None = None,
         access_key: str | None = None,
+        sas_token: str | None = None,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         anonymous: str | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
@@ -519,6 +527,10 @@ class AzureConfig:
         self,
         storage_account: str | None = None,
         access_key: str | None = None,
+        sas_token: str | None = None,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         anonymous: str | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
