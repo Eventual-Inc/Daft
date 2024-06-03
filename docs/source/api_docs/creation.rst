@@ -100,7 +100,7 @@ Delta Lake
     :nosignatures:
     :toctree: doc_gen/io_functions
 
-    read_delta_lake
+    read_deltalake
 
 Apache Hudi
 ~~~~~~~~~~~

@@ -34,7 +34,7 @@ def test_deltalake_write_basic(tmp_path, base_table):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
-    result = df.write_delta(str(path))
+    result = df.write_deltalake(str(path))
     result = result.to_pydict()
     assert result["operation"] == ["ADD"]
     assert result["rows"] == [base_table.num_rows]
@@ -49,9 +49,9 @@ def test_deltalake_multi_write_basic(tmp_path, base_table):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
-    df.write_delta(str(path))
+    df.write_deltalake(str(path))
 
-    result = df.write_delta(str(path))
+    result = df.write_deltalake(str(path))
     result = result.to_pydict()
     assert result["operation"] == ["ADD"]
     assert result["rows"] == [base_table.num_rows]
@@ -67,7 +67,7 @@ def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
     path, io_config, catalog_table = cloud_paths
     df = daft.from_arrow(base_table)
-    result = df.write_delta(str(path), io_config=io_config)
+    result = df.write_deltalake(str(path), io_config=io_config)
     result = result.to_pydict()
     assert result["operation"] == ["ADD"]
     assert result["rows"] == [base_table.num_rows]
@@ -82,10 +82,10 @@ def test_deltalake_write_overwrite_basic(tmp_path):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df1 = daft.from_pydict({"a": [1, 2]})
-    df1.write_delta(str(path))
+    df1.write_deltalake(str(path))
 
     df2 = daft.from_pydict({"a": [3, 4]})
-    result = df2.write_delta(str(path), mode="overwrite")
+    result = df2.write_deltalake(str(path), mode="overwrite")
     result = result.to_pydict()
     assert result["operation"] == ["ADD", "DELETE"]
     assert result["rows"] == [2, 2]
@@ -100,10 +100,10 @@ def test_deltalake_write_overwrite_cloud(cloud_paths):
     deltalake = pytest.importorskip("deltalake")
     path, io_config, catalog_table = cloud_paths
     df1 = daft.from_pydict({"a": [1, 2]})
-    df1.write_delta(str(path), io_config=io_config)
+    df1.write_deltalake(str(path), io_config=io_config)
 
     df2 = daft.from_pydict({"a": [3, 4]})
-    result = df2.write_delta(str(path), mode="overwrite", io_config=io_config)
+    result = df2.write_deltalake(str(path), mode="overwrite", io_config=io_config)
     result = result.to_pydict()
     assert result["operation"] == ["ADD", "DELETE"]
     assert result["rows"] == [2, 2]
@@ -120,11 +120,11 @@ def test_deltalake_write_overwrite_multi_partition(tmp_path):
     path = tmp_path / "some_table"
     df1 = daft.from_pydict({"a": [1, 2, 3, 4]})
     df1 = df1.repartition(2)
-    df1.write_delta(str(path))
+    df1.write_deltalake(str(path))
 
     df2 = daft.from_pydict({"a": [5, 6, 7, 8]})
     df2 = df2.repartition(2)
-    result = df2.write_delta(str(path), mode="overwrite")
+    result = df2.write_deltalake(str(path), mode="overwrite")
     result = result.to_pydict()
     assert result["operation"] == ["ADD", "ADD", "DELETE", "DELETE"]
 
@@ -138,10 +138,10 @@ def test_deltalake_write_overwrite_schema(tmp_path):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df1 = daft.from_pydict({"a": [1, 2]})
-    df1.write_delta(str(path))
+    df1.write_deltalake(str(path))
 
     df2 = daft.from_pydict({"b": [3, 4]})
-    result = df2.write_delta(str(path), mode="overwrite", schema_mode="overwrite")
+    result = df2.write_deltalake(str(path), mode="overwrite", schema_mode="overwrite")
     result = result.to_pydict()
     assert result["operation"] == ["ADD", "DELETE"]
 
@@ -154,27 +154,27 @@ def test_deltalake_write_overwrite_schema(tmp_path):
 def test_deltalake_write_overwrite_error_schema(tmp_path):
     path = tmp_path / "some_table"
     df1 = daft.from_pydict({"a": [1, 2]})
-    df1.write_delta(str(path), mode="overwrite")
+    df1.write_deltalake(str(path), mode="overwrite")
     df2 = daft.from_pydict({"b": [3, 4]})
     with pytest.raises(ValueError):
-        df2.write_delta(str(path), mode="overwrite")
+        df2.write_deltalake(str(path), mode="overwrite")
 
 
 def test_deltalake_write_error(tmp_path, base_table):
     path = tmp_path / "some_table"
     df = daft.from_arrow(base_table)
-    df.write_delta(str(path), mode="error")
+    df.write_deltalake(str(path), mode="error")
     with pytest.raises(AssertionError):
-        df.write_delta(str(path), mode="error")
+        df.write_deltalake(str(path), mode="error")
 
 
 def test_deltalake_write_ignore(tmp_path):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
     df1 = daft.from_pydict({"a": [1, 2]})
-    df1.write_delta(str(path), mode="ignore")
+    df1.write_deltalake(str(path), mode="ignore")
     df2 = daft.from_pydict({"a": [3, 4]})
-    result = df2.write_delta(str(path), mode="ignore")
+    result = df2.write_deltalake(str(path), mode="ignore")
     result = result.to_arrow()
     assert result.num_rows == 0
 

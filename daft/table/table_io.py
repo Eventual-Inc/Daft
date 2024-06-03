@@ -653,6 +653,7 @@ def write_deltalake(
     mp: MicroPartition,
     large_dtypes: bool,
     base_path: str,
+    version: int,
     io_config: IOConfig | None = None,
 ):
     import json
@@ -748,6 +749,7 @@ def write_deltalake(
         rows_per_row_group=rows_per_row_group,
         create_dir=is_local_fs,
         file_visitor=file_visitor,
+        version=version,
     )
 
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
@@ -764,6 +766,7 @@ def _write_tabular_arrow_table(
     rows_per_row_group: int,
     create_dir: bool,
     file_visitor: Callable | None,
+    version: int | None = None,
 ):
     kwargs = dict()
 
@@ -777,11 +780,16 @@ def _write_tabular_arrow_table(
     if ARROW_VERSION >= (8, 0, 0) and not create_dir:
         kwargs["create_dir"] = False
 
+    if version is not None:
+        basename_template = f"{version}-{uuid4()}-{{i}}.{format.default_extname}"
+    else:
+        basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
+
     pads.write_dataset(
         arrow_table,
         schema=schema,
         base_dir=full_path,
-        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+        basename_template=basename_template,
         format=format,
         partitioning=None,
         file_options=opts,

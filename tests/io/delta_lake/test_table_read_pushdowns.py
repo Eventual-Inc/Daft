@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
 def test_read_predicate_pushdown_on_data(deltalake_table):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     df = df.where(df["a"] == 2)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
     expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
@@ -40,7 +40,7 @@ def test_read_predicate_pushdown_on_data(deltalake_table):
 def test_read_predicate_pushdown_on_part(deltalake_table, partition_generator):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     part_idx = 2
     partition_generator, _ = partition_generator
     part_value = partition_generator(part_idx)
@@ -59,7 +59,7 @@ def test_read_predicate_pushdown_on_part(deltalake_table, partition_generator):
 def test_read_predicate_pushdown_on_part_non_eq(deltalake_table, partition_generator):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     part_idx = 3
     partition_generator, _ = partition_generator
     part_value = partition_generator(part_idx)
@@ -78,7 +78,7 @@ def test_read_predicate_pushdown_on_part_non_eq(deltalake_table, partition_gener
 def test_read_predicate_pushdown_on_part_and_data(deltalake_table, partition_generator):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     part_idx = 2
     partition_generator, _ = partition_generator
     part_value = partition_generator(part_idx)
@@ -102,7 +102,7 @@ def test_read_predicate_pushdown_on_part_and_data(deltalake_table, partition_gen
 def test_read_predicate_pushdown_on_part_and_data_same_clause(deltalake_table, partition_generator):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     partition_generator, col = partition_generator
     df = df.where(df["part_idx"] < df[col])
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
@@ -118,7 +118,7 @@ def test_read_predicate_pushdown_on_part_empty(deltalake_table, partition_genera
     deltalake = pytest.importorskip("deltalake")
     partition_generator, _ = partition_generator
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     # There should only be num_partitions partitions; see local_deltalake_table fixture.
     part_value = partition_generator(num_partitions)
     if part_value is None:
@@ -135,7 +135,7 @@ def test_read_predicate_pushdown_on_part_empty(deltalake_table, partition_genera
 
 def test_read_select_partition_key(deltalake_table):
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
 
     df = df.select("part_idx", "a")
 
@@ -151,7 +151,7 @@ def test_read_select_partition_key(deltalake_table):
 
 def test_read_select_partition_key_with_filter(deltalake_table):
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
 
     df = df.select("part_idx", "a")
     df = df.where(df["a"] < 5)
@@ -172,7 +172,7 @@ def test_read_select_partition_key_with_filter(deltalake_table):
 )
 def test_read_select_only_partition_key(deltalake_table):
     path, catalog_table, io_config, tables = deltalake_table
-    df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
 
     df = df.select("part_idx")
 

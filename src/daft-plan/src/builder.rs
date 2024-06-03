@@ -511,6 +511,7 @@ impl LogicalPlanBuilder {
         path: String,
         columns_name: Vec<String>,
         mode: String,
+        version: i32,
         large_dtypes: bool,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
@@ -519,6 +520,7 @@ impl LogicalPlanBuilder {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
                 path,
                 mode,
+                version,
                 large_dtypes,
                 io_config,
             }),
@@ -803,6 +805,7 @@ impl PyLogicalPlanBuilder {
         path: String,
         columns_name: Vec<String>,
         mode: String,
+        version: i32,
         large_dtypes: bool,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
@@ -812,6 +815,7 @@ impl PyLogicalPlanBuilder {
                 path,
                 columns_name,
                 mode,
+                version,
                 large_dtypes,
                 io_config.map(|cfg| cfg.config),
             )?

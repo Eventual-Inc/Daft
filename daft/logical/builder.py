@@ -245,10 +245,11 @@ class LogicalPlanBuilder:
         builder = self._builder.iceberg_write(name, location, spec_id, schema, props, columns, io_config)
         return LogicalPlanBuilder(builder)
 
-    def write_delta(
+    def write_deltalake(
         self,
         path: str | pathlib.Path,
         mode: str,
+        version: int,
         large_dtypes: bool,
         io_config: IOConfig,
     ) -> LogicalPlanBuilder:
@@ -257,6 +258,7 @@ class LogicalPlanBuilder:
             str(path),
             columns_name,
             mode,
+            version,
             large_dtypes,
             io_config,
         )

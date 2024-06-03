@@ -1447,6 +1447,7 @@ class LogicalPlanBuilder:
         path: str,
         columns_name: list[str],
         mode: str,
+        version: int,
         large_dtypes: bool,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...

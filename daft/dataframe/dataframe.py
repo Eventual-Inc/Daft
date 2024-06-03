@@ -29,6 +29,7 @@ from typing import (
 from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
+from daft.catalog import DataCatalogTable
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
@@ -550,9 +551,9 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_delta(
+    def write_deltalake(
         self,
-        table: Union[str, pathlib.Path, "deltalake.DeltaTable"],
+        table: Union[str, pathlib.Path, DataCatalogTable, "deltalake.DeltaTable"],
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
         name: Optional[str] = None,
@@ -568,7 +569,7 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            table (Union[str, pathlib.Path, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
             name (str, optional): User-provided identifier for this table.
@@ -596,15 +597,21 @@ class DataFrame:
         from daft import from_pydict
 
         if schema_mode == "merge":
-            raise ValueError("Schema mode' merge' is not currently supported for write_delta.")
+            raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
         if parse(deltalake.__version__) < parse("0.14.0"):
             raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        if isinstance(table, (str, pathlib.Path)):
-            table_uri = str(table)
+        if isinstance(table, (str, pathlib.Path, DataCatalogTable)):
+            if isinstance(table, str):
+                table_uri = table
+            elif isinstance(table, pathlib.Path):
+                table_uri = str(table)
+            else:
+                table_uri = table.table_uri(io_config)
+
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
             table = try_get_deltatable(table_uri, storage_options=storage_options)
         elif isinstance(table, deltalake.DeltaTable):
@@ -648,10 +655,14 @@ class DataFrame:
                         "file_name": pa.array([], type=pa.string()),
                     }
                 )
+            version = table.version() + 1
+        else:
+            version = 0
 
-        builder = self._builder.write_delta(
+        builder = self._builder.write_deltalake(
             table_uri,
             mode,
+            version,
             large_dtypes=True,
             io_config=io_config,
         )
