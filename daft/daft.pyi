@@ -1,4 +1,5 @@
 import builtins
+import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -417,6 +418,7 @@ class S3Config:
     key_id: str | None
     session_token: str | None
     access_key: str | None
+    credentials_provider: Callable[[], S3Credentials] | None
     max_connections: int
     retry_initial_backoff_ms: int
     connect_timeout_ms: int
@@ -438,6 +440,8 @@ class S3Config:
         key_id: str | None = None,
         session_token: str | None = None,
         access_key: str | None = None,
+        credentials_provider: Callable[[], S3Credentials] | None = None,
+        buffer_time: int | None = None,
         max_connections: int | None = None,
         retry_initial_backoff_ms: int | None = None,
         connect_timeout_ms: int | None = None,
@@ -459,6 +463,7 @@ class S3Config:
         key_id: str | None = None,
         session_token: str | None = None,
         access_key: str | None = None,
+        credentials_provider: Callable[[], S3Credentials] | None = None,
         max_connections: int | None = None,
         retry_initial_backoff_ms: int | None = None,
         connect_timeout_ms: int | None = None,
@@ -480,6 +485,16 @@ class S3Config:
     def from_env() -> S3Config:
         """Creates an S3Config, retrieving credentials and configurations from the current environment"""
         ...
+
+class S3Credentials:
+    key_id: str
+    access_key: str
+    session_token: str | None
+    expiry: datetime.datetime | None
+
+    def __init__(
+        self, key_id: str, access_key: str, session_token: str | None = None, expiry: datetime.datetime | None = None
+    ): ...
 
 class AzureConfig:
     """

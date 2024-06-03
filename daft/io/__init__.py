@@ -7,6 +7,7 @@ from daft.daft import (
     GCSConfig,
     IOConfig,
     S3Config,
+    S3Credentials,
     set_io_pool_num_threads,
 )
 from daft.io._csv import read_csv
@@ -47,6 +48,7 @@ __all__ = [
     "read_sql",
     "IOConfig",
     "S3Config",
+    "S3Credentials",
     "AzureConfig",
     "GCSConfig",
     "set_io_pool_num_threads",
