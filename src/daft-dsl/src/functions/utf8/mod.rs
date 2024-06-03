@@ -20,6 +20,7 @@ mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
+mod substr;
 mod upper;
 
 use capitalize::CapitalizeEvaluator;
@@ -44,6 +45,7 @@ use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
+use substr::SubstrEvaluator;
 use upper::UpperEvaluator;
 
 use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
@@ -75,6 +77,7 @@ pub enum Utf8Expr {
     Repeat,
     Like,
     Ilike,
+    Substr,
 }
 
 impl Utf8Expr {
@@ -105,6 +108,7 @@ impl Utf8Expr {
             Repeat => &RepeatEvaluator {},
             Like => &LikeEvaluator {},
             Ilike => &IlikeEvaluator {},
+            Substr => &SubstrEvaluator {},
         }
     }
 }
@@ -289,6 +293,14 @@ pub fn ilike(data: ExprRef, pattern: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Ilike),
         inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn substr(data: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Substr),
+        inputs: vec![data, start, length],
     }
     .into()
 }

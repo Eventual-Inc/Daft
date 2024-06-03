@@ -450,6 +450,13 @@ impl PySeries {
         Ok(self.series.utf8_ilike(&pattern.series)?.into())
     }
 
+    pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .utf8_substr(&start.series, &length.series)?
+            .into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }
