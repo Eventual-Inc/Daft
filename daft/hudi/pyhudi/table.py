@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from collections import defaultdict
 from dataclasses import dataclass
 
 import pyarrow as pa
 import pyarrow.fs as pafs
 
+from daft.filesystem import join_path
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
 from daft.hudi.pyhudi.utils import (
@@ -92,7 +92,7 @@ class FileSystemView:
 class HudiTableProps:
     def __init__(self, fs: pafs.FileSystem, base_path: str):
         self._props = {}
-        hoodie_properties_file = os.path.join(base_path, ".hoodie", "hoodie.properties")
+        hoodie_properties_file = join_path(fs, base_path, ".hoodie", "hoodie.properties")
         with fs.open_input_file(hoodie_properties_file) as f:
             lines = f.readall().decode("utf-8").splitlines()
             for line in lines:

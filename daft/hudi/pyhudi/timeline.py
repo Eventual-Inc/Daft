@@ -9,6 +9,8 @@ import pyarrow as pa
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 
+from daft.filesystem import join_path
+
 
 class State(Enum):
     REQUESTED = 0
@@ -47,7 +49,7 @@ class Timeline:
         return len(self.completed_commit_instants) > 0
 
     def _load_completed_commit_instants(self):
-        timeline_path = os.path.join(self.base_path, ".hoodie")
+        timeline_path = join_path(self.fs, self.base_path, ".hoodie")
         write_action_exts = {".commit"}
         commit_instants = []
         for file_info in self.fs.get_file_info(pafs.FileSelector(timeline_path)):
@@ -61,7 +63,9 @@ class Timeline:
     def get_latest_commit_metadata(self) -> dict:
         if not self.has_completed_commit:
             return {}
-        latest_instant_file_path = os.path.join(self.base_path, ".hoodie", self.completed_commit_instants[-1].file_name)
+        latest_instant_file_path = join_path(
+            self.fs, self.base_path, ".hoodie", self.completed_commit_instants[-1].file_name
+        )
         with self.fs.open_input_file(latest_instant_file_path) as f:
             return json.load(f)
 
@@ -71,6 +75,6 @@ class Timeline:
             return pa.schema([])
 
         _, write_stats = next(iter(latest_commit_metadata["partitionToWriteStats"].items()))
-        base_file_path = os.path.join(self.base_path, write_stats[0]["path"])
+        base_file_path = join_path(self.fs, self.base_path, write_stats[0]["path"])
         with self.fs.open_input_file(base_file_path) as f:
             return pq.read_schema(f)
