@@ -8,6 +8,10 @@ use serde::Serialize;
 pub struct AzureConfig {
     pub storage_account: Option<String>,
     pub access_key: Option<String>,
+    pub sas_token: Option<String>,
+    pub tenant_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
     pub anonymous: bool,
     pub endpoint_url: Option<String>,
     pub use_ssl: bool,
@@ -18,6 +22,10 @@ impl Default for AzureConfig {
         Self {
             storage_account: None,
             access_key: None,
+            sas_token: None,
+            tenant_id: None,
+            client_id: None,
+            client_secret: None,
             anonymous: false,
             endpoint_url: None,
             use_ssl: true,
@@ -34,7 +42,19 @@ impl AzureConfig {
         if let Some(access_key) = &self.access_key {
             res.push(format!("Access key = {}", access_key));
         }
-        res.push(format!("Anoynmous = {}", self.anonymous));
+        if let Some(sas_token) = &self.sas_token {
+            res.push(format!("Shared Access Signature = {}", sas_token));
+        }
+        if let Some(tenant_id) = &self.tenant_id {
+            res.push(format!("Tenant ID = {}", tenant_id));
+        }
+        if let Some(client_id) = &self.client_id {
+            res.push(format!("Client ID = {}", client_id));
+        }
+        if let Some(client_secret) = &self.client_secret {
+            res.push(format!("Client Secret = {}", client_secret));
+        }
+        res.push(format!("Anonymous = {}", self.anonymous));
         if let Some(endpoint_url) = &self.endpoint_url {
             res.push(format!("Endpoint URL = {}", endpoint_url));
         }
@@ -50,10 +70,22 @@ impl Display for AzureConfig {
             "AzureConfig
     storage_account: {:?}
     access_key: {:?}
+    sas_token: {:?}
+    tenant_id: {:?}
+    client_id: {:?}
+    client_secret: {:?}
     anonymous: {:?}
     endpoint_url: {:?}
     use_ssl: {:?}",
-            self.storage_account, self.access_key, self.anonymous, self.endpoint_url, self.use_ssl
+            self.storage_account,
+            self.access_key,
+            self.sas_token,
+            self.tenant_id,
+            self.client_id,
+            self.client_secret,
+            self.anonymous,
+            self.endpoint_url,
+            self.use_ssl
         )
     }
 }

@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use azure_core::{auth::TokenCredential, new_http_client};
+use azure_identity::{ClientSecretCredential, DefaultAzureCredential};
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
@@ -19,6 +21,7 @@ use common_io_config::AzureConfig;
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com";
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -109,15 +112,47 @@ impl AzureBlobSource {
             // TODO(Clark): Allow no storage account + anonymous access + custom endpoint.
             return Err(Error::StorageAccountNotSet.into());
         };
+
+        let access_key = config
+            .access_key
+            .clone()
+            .or_else(|| std::env::var("AZURE_STORAGE_KEY").ok());
+        let sas_token = config
+            .sas_token
+            .clone()
+            .or_else(|| std::env::var("AZURE_STORAGE_SAS_TOKEN").ok());
+
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
-        } else if let Some(access_key) = &config.access_key {
+        } else if let Some(access_key) = access_key {
             StorageCredentials::access_key(&storage_account, access_key)
-        } else if let Ok(access_key) = std::env::var("AZURE_STORAGE_KEY") {
-            StorageCredentials::access_key(&storage_account, access_key)
+        } else if let Some(sas_token) = sas_token {
+            StorageCredentials::sas_token(sas_token)
+                .map_err(|e| Error::AzureGeneric { source: e })?
+        } else if let Some(tenant_id) = &config.tenant_id
+            && let Some(client_id) = &config.client_id
+            && let Some(client_secret) = &config.client_secret
+        {
+            StorageCredentials::token_credential(Arc::new(ClientSecretCredential::new(
+                new_http_client(),
+                tenant_id.clone(),
+                client_id.clone(),
+                client_secret.clone(),
+                Default::default(),
+            )))
         } else {
-            log::warn!("Azure access key not found, Set either `AzureConfig.access_key` or the `AZURE_STORAGE_KEY` environment variable. Defaulting to anonymous mode.");
-            StorageCredentials::anonymous()
+            let default_creds = Arc::new(DefaultAzureCredential::default());
+
+            if default_creds
+                .get_token(AZURE_STORAGE_RESOURCE)
+                .await
+                .is_ok()
+            {
+                StorageCredentials::token_credential(default_creds)
+            } else {
+                log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
+                StorageCredentials::anonymous()
+            }
         };
         let endpoint_url = if let Some(endpoint_url) = &config.endpoint_url {
             Some(endpoint_url.clone())
