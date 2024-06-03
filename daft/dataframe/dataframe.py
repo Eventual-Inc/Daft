@@ -29,7 +29,6 @@ from typing import (
 from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
-from daft.catalog import DataCatalogTable
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
@@ -44,7 +43,6 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.object_store_options import io_config_to_storage_options
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import MicroPartition
@@ -58,6 +56,8 @@ if TYPE_CHECKING:
     import pyiceberg
     import ray
     import torch
+
+    from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
 
@@ -553,7 +553,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_deltalake(
         self,
-        table: Union[str, pathlib.Path, DataCatalogTable, "deltalake.DeltaTable"],
+        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable"],
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
         name: Optional[str] = None,
@@ -595,6 +595,8 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.io import DataCatalogTable
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")

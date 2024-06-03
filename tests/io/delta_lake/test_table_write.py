@@ -7,8 +7,8 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
-from daft.object_store_options import io_config_to_storage_options
 
 
 @contextlib.contextmanager

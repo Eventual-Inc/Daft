@@ -5,9 +5,9 @@ from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.catalog import DataCatalogTable
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.io.catalog import DataCatalogTable
 from daft.logical.builder import LogicalPlanBuilder
 
 

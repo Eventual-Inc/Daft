@@ -18,7 +18,7 @@ from daft.io._json import read_json
 from daft.io._lance import read_lance
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
-from daft.catalog import DataCatalogTable, DataCatalogType
+from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 
 
