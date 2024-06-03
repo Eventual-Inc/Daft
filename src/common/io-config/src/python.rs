@@ -71,7 +71,9 @@ pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
 
-/// Create configurations to be used when accessing Azure Blob Storage. To authenticate with Microsoft Entra ID, `tenant_id`, `client_id`, and `client_secret` must be provided.
+/// Create configurations to be used when accessing Azure Blob Storage.
+/// To authenticate with Microsoft Entra ID, `tenant_id`, `client_id`, and `client_secret` must be provided.
+/// If no credentials are provided, Daft will attempt to fetch credentials from the environment.
 ///
 /// Args:
 ///     storage_account (str): Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.

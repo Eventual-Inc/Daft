@@ -54,7 +54,7 @@ impl AzureConfig {
         if let Some(client_secret) = &self.client_secret {
             res.push(format!("Client Secret = {}", client_secret));
         }
-        res.push(format!("Anoynmous = {}", self.anonymous));
+        res.push(format!("Anonymous = {}", self.anonymous));
         if let Some(endpoint_url) = &self.endpoint_url {
             res.push(format!("Endpoint URL = {}", endpoint_url));
         }
