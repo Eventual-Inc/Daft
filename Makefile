@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 SHELL=/bin/bash
-VENV = .venv
+VENV = venv
 IS_M1 ?= 0
 
 # Hypothesis

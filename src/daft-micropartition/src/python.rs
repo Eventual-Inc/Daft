@@ -27,7 +27,7 @@ use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone)]
-struct PyMicroPartition {
+pub struct PyMicroPartition {
     inner: Arc<MicroPartition>,
 }
 
@@ -35,7 +35,7 @@ struct PyMicroPartition {
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(PySchema {
-            schema: self.inner.schema.clone(),
+            schema: self.inner.schema(),
         })
     }
 
@@ -884,9 +884,19 @@ pub(crate) fn read_sql_into_py_table(
 
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
-        PyMicroPartition {
-            inner: Arc::new(value),
-        }
+        Arc::new(value).into()
+    }
+}
+
+impl From<Arc<MicroPartition>> for PyMicroPartition {
+    fn from(value: Arc<MicroPartition>) -> Self {
+        PyMicroPartition { inner: value }
+    }
+}
+
+impl From<PyMicroPartition> for Arc<MicroPartition> {
+    fn from(value: PyMicroPartition) -> Self {
+        value.inner
     }
 }
 

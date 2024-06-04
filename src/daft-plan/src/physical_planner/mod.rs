@@ -9,12 +9,11 @@ use crate::LogicalPlan;
 use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;
 mod planner;
-#[cfg(feature = "python")]
-pub mod python;
+pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 mod translate;
 
 /// Translate a logical plan to a physical plan.
-pub fn plan(
+pub fn logical_to_physical(
     logical_plan: Arc<LogicalPlan>,
     cfg: Arc<DaftExecutionConfig>,
 ) -> DaftResult<PhysicalPlanRef> {

@@ -122,7 +122,7 @@ impl PushDownProjection {
                 let new_plan: LogicalPlan = Project::try_new(
                     upstream_projection.input.clone(),
                     merged_projection,
-                    ResourceRequest::max(&[
+                    ResourceRequest::max_all(&[
                         &upstream_projection.resource_request,
                         &projection.resource_request,
                     ]),

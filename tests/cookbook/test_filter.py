@@ -15,16 +15,22 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
         pytest.param(
             lambda daft_df: (
                 daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk").select(
-                    col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
                 )
             ),
             id="where..select",
         ),
         pytest.param(
             lambda daft_df: (
-                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
-                    col("Complaint Type") == "Noise - Street/Sidewalk"
-                )
+                daft_df.select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                ).where(col("Complaint Type") == "Noise - Street/Sidewalk")
             ),
             id="select..where",
         ),
@@ -53,13 +59,23 @@ def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_np
                         | (col("Complaint Type") == "Noise - Commercial")
                     )
                     & (col("Borough") == "BROOKLYN")
-                ).select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                ).select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                )
             ),
             id="where..select",
         ),
         pytest.param(
             lambda daft_df: (
-                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                daft_df.select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                ).where(
                     (
                         (col("Complaint Type") == "Noise - Street/Sidewalk")
                         | (col("Complaint Type") == "Noise - Commercial")
@@ -71,7 +87,12 @@ def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_np
         ),
         pytest.param(
             lambda daft_df: (
-                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor")).where(
+                daft_df.select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                ).where(
                     (col("Borough") == "BROOKLYN")
                     & (
                         (col("Complaint Type") == "Noise - Street/Sidewalk")
@@ -105,21 +126,36 @@ def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repart
             lambda daft_df: (
                 daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
                 .where(col("Borough") == "BROOKLYN")
-                .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                .select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                )
             ),
             id="where..where..select",
         ),
         pytest.param(
             lambda daft_df: (
                 daft_df.where(col("Complaint Type") == "Noise - Street/Sidewalk")
-                .select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                .select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                )
                 .where(col("Borough") == "BROOKLYN")
             ),
             id="where..select..where",
         ),
         pytest.param(
             lambda daft_df: (
-                daft_df.select(col("Unique Key"), col("Complaint Type"), col("Borough"), col("Descriptor"))
+                daft_df.select(
+                    col("Unique Key"),
+                    col("Complaint Type"),
+                    col("Borough"),
+                    col("Descriptor"),
+                )
                 .where(col("Complaint Type") == "Noise - Street/Sidewalk")
                 .where(col("Borough") == "BROOKLYN")
             ),

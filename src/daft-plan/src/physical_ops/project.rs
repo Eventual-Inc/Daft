@@ -66,7 +66,7 @@ mod tests {
 
     use crate::{
         partitioning::{ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig},
-        physical_planner::plan,
+        physical_planner::logical_to_physical,
         test::{dummy_scan_node, dummy_scan_operator},
     };
 
@@ -89,7 +89,7 @@ mod tests {
         .select(expressions)?
         .build();
 
-        let physical_plan = plan(logical_plan, cfg)?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
@@ -126,7 +126,7 @@ mod tests {
         .select(projection)?
         .build();
 
-        let physical_plan = plan(logical_plan, cfg)?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
 
         let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
         assert_eq!(
@@ -153,7 +153,7 @@ mod tests {
         .select(expressions)?
         .build();
 
-        let physical_plan = plan(logical_plan, cfg)?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
 
         let expected_clustering_spec =
             ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));

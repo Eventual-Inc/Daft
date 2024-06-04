@@ -914,7 +914,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::physical_plan::PhysicalPlan;
-    use crate::physical_planner::plan;
+    use crate::physical_planner::logical_to_physical;
     use crate::test::{dummy_scan_node, dummy_scan_operator};
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
@@ -931,13 +931,13 @@ mod tests {
         .into_partitions(10)?
         .filter(col("a").lt(lit(2)))?;
         assert_eq!(
-            plan(builder.build(), cfg.clone())?
+            logical_to_physical(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             10
         );
         let logical_plan = builder.into_partitions(10)?.build();
-        let physical_plan = plan(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
         // Check that the last repartition was dropped (the last op should be the filter).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
@@ -955,13 +955,13 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]));
         assert_eq!(
-            plan(builder.build(), cfg.clone())?
+            logical_to_physical(builder.build(), cfg.clone())?
                 .clustering_spec()
                 .num_partitions(),
             1
         );
         let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
-        let physical_plan = plan(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
     }
@@ -980,7 +980,7 @@ mod tests {
         .filter(col("a").lt(lit(2)))?
         .hash_repartition(Some(10), vec![col("a")])?
         .build();
-        let physical_plan = plan(logical_plan, cfg)?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
@@ -1000,7 +1000,7 @@ mod tests {
         .aggregate(vec![col("a").sum()], vec![col("b")])?
         .hash_repartition(Some(10), vec![col("b")])?
         .build();
-        let physical_plan = plan(logical_plan, cfg)?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
         Ok(())
