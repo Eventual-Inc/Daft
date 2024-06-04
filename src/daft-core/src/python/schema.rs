@@ -70,6 +70,10 @@ impl PySchema {
         Ok(self.schema.repr_html())
     }
 
+    pub fn _truncated_table_html(&self) -> PyResult<String> {
+        Ok(self.schema.truncated_table_html())
+    }
+
     pub fn _truncated_table_string(&self) -> PyResult<String> {
         Ok(self.schema.truncated_table_string())
     }

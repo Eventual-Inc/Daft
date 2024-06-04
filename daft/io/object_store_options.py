@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
+from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
@@ -53,6 +53,14 @@ def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict[str, str
         storage_options["account_name"] = azure_config.storage_account
     if azure_config.access_key is not None:
         storage_options["access_key"] = azure_config.access_key
+    if azure_config.sas_token is not None:
+        storage_options["sas_token"] = azure_config.sas_token
+    if azure_config.tenant_id is not None:
+        storage_options["tenant_id"] = azure_config.tenant_id
+    if azure_config.client_id is not None:
+        storage_options["client_id"] = azure_config.client_id
+    if azure_config.client_secret is not None:
+        storage_options["client_secret"] = azure_config.client_secret
     if azure_config.endpoint_url is not None:
         storage_options["endpoint"] = azure_config.endpoint_url
     if azure_config.use_ssl is not None:

@@ -365,6 +365,9 @@ impl Table {
             IsIn(child, items) => self
                 .eval_expression(child)?
                 .is_in(&self.eval_expression(items)?),
+            Between(child, lower, upper) => self
+                .eval_expression(child)?
+                .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;

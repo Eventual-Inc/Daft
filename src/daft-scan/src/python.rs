@@ -1,7 +1,7 @@
 use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
 use serde::{Deserialize, Serialize};
 
-use crate::py_object_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{deserialize_py_object, serialize_py_object};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(

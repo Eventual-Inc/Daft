@@ -1,4 +1,5 @@
 import builtins
+import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -417,6 +418,7 @@ class S3Config:
     key_id: str | None
     session_token: str | None
     access_key: str | None
+    credentials_provider: Callable[[], S3Credentials] | None
     max_connections: int
     retry_initial_backoff_ms: int
     connect_timeout_ms: int
@@ -438,6 +440,8 @@ class S3Config:
         key_id: str | None = None,
         session_token: str | None = None,
         access_key: str | None = None,
+        credentials_provider: Callable[[], S3Credentials] | None = None,
+        buffer_time: int | None = None,
         max_connections: int | None = None,
         retry_initial_backoff_ms: int | None = None,
         connect_timeout_ms: int | None = None,
@@ -459,6 +463,7 @@ class S3Config:
         key_id: str | None = None,
         session_token: str | None = None,
         access_key: str | None = None,
+        credentials_provider: Callable[[], S3Credentials] | None = None,
         max_connections: int | None = None,
         retry_initial_backoff_ms: int | None = None,
         connect_timeout_ms: int | None = None,
@@ -481,6 +486,16 @@ class S3Config:
         """Creates an S3Config, retrieving credentials and configurations from the current environment"""
         ...
 
+class S3Credentials:
+    key_id: str
+    access_key: str
+    session_token: str | None
+    expiry: datetime.datetime | None
+
+    def __init__(
+        self, key_id: str, access_key: str, session_token: str | None = None, expiry: datetime.datetime | None = None
+    ): ...
+
 class AzureConfig:
     """
     I/O configuration for accessing Azure Blob Storage.
@@ -488,6 +503,10 @@ class AzureConfig:
 
     storage_account: str | None
     access_key: str | None
+    sas_token: str | None
+    tenant_id: str | None
+    client_id: str | None
+    client_secret: str | None
     anonymous: str | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
@@ -496,6 +515,10 @@ class AzureConfig:
         self,
         storage_account: str | None = None,
         access_key: str | None = None,
+        sas_token: str | None = None,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         anonymous: str | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
@@ -504,6 +527,10 @@ class AzureConfig:
         self,
         storage_account: str | None = None,
         access_key: str | None = None,
+        sas_token: str | None = None,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         anonymous: str | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
@@ -911,6 +938,7 @@ class PySchema:
     def __reduce__(self) -> tuple: ...
     def __repr__(self) -> str: ...
     def _repr_html_(self) -> str: ...
+    def _truncated_table_html(self) -> str: ...
     def _truncated_table_string(self) -> str: ...
 
 class PyExpr:
@@ -932,6 +960,7 @@ class PyExpr:
     def radians(self) -> PyExpr: ...
     def log2(self) -> PyExpr: ...
     def log10(self) -> PyExpr: ...
+    def log(self, base: float) -> PyExpr: ...
     def ln(self) -> PyExpr: ...
     def exp(self) -> PyExpr: ...
     def if_else(self, if_true: PyExpr, if_false: PyExpr) -> PyExpr: ...
@@ -966,6 +995,7 @@ class PyExpr:
     def not_null(self) -> PyExpr: ...
     def fill_null(self, fill_value: PyExpr) -> PyExpr: ...
     def is_in(self, other: PyExpr) -> PyExpr: ...
+    def between(self, lower: PyExpr, upper: PyExpr) -> PyExpr: ...
     def name(self) -> str: ...
     def to_field(self, schema: PySchema) -> PyField: ...
     def to_sql(self) -> str: ...
@@ -1006,6 +1036,7 @@ class PyExpr:
     def utf8_repeat(self, n: PyExpr) -> PyExpr: ...
     def utf8_like(self, pattern: PyExpr) -> PyExpr: ...
     def utf8_ilike(self, pattern: PyExpr) -> PyExpr: ...
+    def utf8_substr(self, start: PyExpr, length: PyExpr) -> PyExpr: ...
     def image_decode(self, raise_error_on_failure: bool) -> PyExpr: ...
     def image_encode(self, image_format: ImageFormat) -> PyExpr: ...
     def image_resize(self, w: int, h: int) -> PyExpr: ...
@@ -1098,6 +1129,7 @@ class PySeries:
     def radians(self) -> PySeries: ...
     def log2(self) -> PySeries: ...
     def log10(self) -> PySeries: ...
+    def log(self, base: float) -> PySeries: ...
     def ln(self) -> PySeries: ...
     def exp(self) -> PySeries: ...
     @staticmethod
@@ -1130,6 +1162,7 @@ class PySeries:
     def utf8_repeat(self, n: PySeries) -> PySeries: ...
     def utf8_like(self, pattern: PySeries) -> PySeries: ...
     def utf8_ilike(self, pattern: PySeries) -> PySeries: ...
+    def utf8_substr(self, start: PySeries, length: PySeries | None = None) -> PySeries: ...
     def is_nan(self) -> PySeries: ...
     def dt_date(self) -> PySeries: ...
     def dt_day(self) -> PySeries: ...
@@ -1416,7 +1449,7 @@ class LogicalPlanBuilder:
         path: str,
         columns_name: list[str],
         mode: str,
-        current_version: int,
+        version: int,
         large_dtypes: bool,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
@@ -1440,10 +1473,6 @@ class PyDaftExecutionConfig:
         num_preview_rows: int | None = None,
         parquet_target_filesize: int | None = None,
         parquet_target_row_group_size: int | None = None,
-        parquet_max_open_files: int | None = None,
-        parquet_max_rows_per_file: int | None = None,
-        parquet_min_rows_per_group: int | None = None,
-        parquet_max_rows_per_group: int | None = None,
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
@@ -1467,14 +1496,6 @@ class PyDaftExecutionConfig:
     def parquet_target_filesize(self) -> int: ...
     @property
     def parquet_target_row_group_size(self) -> int: ...
-    @property
-    def parquet_max_open_files(self) -> int: ...
-    @property
-    def parquet_max_rows_per_file(self) -> int: ...
-    @property
-    def parquet_min_rows_per_group(self) -> int: ...
-    @property
-    def parquet_max_rows_per_group(self) -> int: ...
     @property
     def parquet_inflation_factor(self) -> float: ...
     @property

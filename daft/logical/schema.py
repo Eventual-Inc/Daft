@@ -128,6 +128,9 @@ class Schema:
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()
 
+    def _truncated_table_html(self) -> str:
+        return self._schema._truncated_table_html()
+
     def _truncated_table_string(self) -> str:
         return self._schema._truncated_table_string()
 

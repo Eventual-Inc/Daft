@@ -118,6 +118,7 @@ def test_str_capitalize():
         pytest.param(lambda data, pat: data.str.left(pat), id="left"),
         pytest.param(lambda data, pat: data.str.right(pat), id="right"),
         pytest.param(lambda data, pat: data.str.repeat(pat), id="repeat"),
+        pytest.param(lambda data, pat: data.str.substr(pat, pat), id="susbtr"),
     ],
 )
 def test_str_int_compares(binary_data_fixture, op, request):

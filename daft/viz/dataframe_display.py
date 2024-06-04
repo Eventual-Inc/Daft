@@ -43,7 +43,7 @@ class DataFrameDisplay:
         if self.preview.preview_partition is not None:
             res += self.preview.preview_partition.to_table()._repr_html_()
         else:
-            res += self.schema._repr_html_()
+            res += self.schema._truncated_table_html()
 
         res += f"\n<small>{self._get_user_message()}</small>\n</div>"
 
