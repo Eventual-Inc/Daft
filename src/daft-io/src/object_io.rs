@@ -63,12 +63,11 @@ impl GetResult {
                 let mut result = collect_bytes(stream, size).await;
                 drop(permit); // drop permit to ensure quota
                 for _ in 0..tries {
-                    if let Err(super::Error::SocketError { .. }) = result
+                    // if let Err(super::Error::SocketError { .. }) = result
+                    if let Err(err) = result
                         && let Some(rp) = &retry_params
                     {
-                        log::warn!(
-                            "Received Socket Error, Attempting retry.\nDetails\n {result:#?}"
-                        );
+                        log::warn!("Received Socket Error, Attempting retry.\nDetails\n {err}");
                         get_result = rp
                             .source
                             .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
