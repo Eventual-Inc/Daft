@@ -37,7 +37,7 @@ ALL_TABLES = [
 
 
 class MetricsBuilder:
-    NUM_TPCH_QUESTIONS = 10
+    NUM_TPCH_QUESTIONS = 22
 
     HEADERS = [
         "started_at",
@@ -133,7 +133,7 @@ def run_all_benchmarks(
     daft_context = get_context()
     metrics_builder = MetricsBuilder(daft_context.runner_config.name)
 
-    for i in range(1, 11):
+    for i in range(1, 23):
         if i in skip_questions:
             logger.warning("Skipping TPC-H q%s", i)
             continue
