@@ -13,10 +13,10 @@ use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
 
 pub struct StreamingRetryParams {
-    source: Arc<dyn ObjectSource>,
-    input: String,
-    range: Option<Range<usize>>,
-    io_stats: Option<IOStatsRef>,
+    pub source: Arc<dyn ObjectSource>,
+    pub input: String,
+    pub range: Option<Range<usize>>,
+    pub io_stats: Option<IOStatsRef>,
 }
 
 pub enum GetResult {
@@ -83,6 +83,15 @@ impl GetResult {
                     }
                 }
                 result
+            }
+        }
+    }
+
+    pub fn with_retry(self, params: StreamingRetryParams) -> Self {
+        match self {
+            GetResult::File(..) => self,
+            GetResult::Stream(s, size, permit, _) => {
+                GetResult::Stream(s, size, permit, Some(Box::new(params)))
             }
         }
     }

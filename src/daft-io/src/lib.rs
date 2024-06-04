@@ -13,6 +13,7 @@ mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;
+use google_cloud_storage::http::object_access_controls::get;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
@@ -20,6 +21,7 @@ pub mod python;
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;
 pub use object_io::GetResult;
+use object_io::StreamingRetryParams;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use stats::{IOStatsContext, IOStatsRef};
@@ -233,7 +235,15 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
-        source.get(path.as_ref(), range, io_stats).await
+        let get_result = source
+            .get(path.as_ref(), range.clone(), io_stats.clone())
+            .await?;
+        Ok(get_result.with_retry(StreamingRetryParams {
+            source,
+            input,
+            range: range,
+            io_stats: io_stats,
+        }))
     }
 
     pub async fn single_url_get_size(
