@@ -63,22 +63,26 @@ impl GetResult {
                 let mut result = collect_bytes(stream, size).await;
                 drop(permit); // drop permit to ensure quota
                 for _ in 0..tries {
-                    // if let Err(super::Error::SocketError { .. }) = result
-                    if let Err(ref err) = result
-                        && let Some(rp) = &retry_params
-                    {
-                        log::warn!("Received Socket Error, Attempting retry.\nDetails\n {err}");
-                        get_result = rp
-                            .source
-                            .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
-                            .await?;
-                        if let GetResult::Stream(stream, size, ..) = get_result {
-                            result = collect_bytes(stream, size).await;
-                        } else {
-                            unreachable!("Retrying a stream should always be a stream");
+                    match result {
+                        Err(super::Error::SocketError { .. })
+                        | Err(super::Error::UnableToReadBytes { .. })
+                            if let Some(rp) = &retry_params =>
+                        {
+                            log::warn!(
+                                "Received Socket Error, Attempting retry.\nDetails\n {}",
+                                result.err().unwrap()
+                            );
+                            get_result = rp
+                                .source
+                                .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
+                                .await?;
+                            if let GetResult::Stream(stream, size, ..) = get_result {
+                                result = collect_bytes(stream, size).await;
+                            } else {
+                                unreachable!("Retrying a stream should always be a stream");
+                            }
                         }
-                    } else {
-                        break;
+                        _ => break,
                     }
                 }
                 result
