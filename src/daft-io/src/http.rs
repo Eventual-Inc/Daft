@@ -214,6 +214,7 @@ impl ObjectSource for HttpSource {
             io_stats_on_bytestream(stream, io_stats),
             size_bytes,
             None,
+            None,
         ))
     }
 

@@ -647,6 +647,7 @@ impl S3LikeSource {
                         stream,
                         Some(v.content_length as usize),
                         Some(permit),
+                        None,
                     ))
                 }
 
@@ -933,7 +934,7 @@ impl ObjectSource for S3LikeSource {
             .await?;
 
         if io_stats.is_some() {
-            if let GetResult::Stream(stream, num_bytes, permit) = get_result {
+            if let GetResult::Stream(stream, num_bytes, permit, retry_params) = get_result {
                 if let Some(is) = io_stats.as_ref() {
                     is.mark_get_requests(1)
                 }
@@ -941,6 +942,7 @@ impl ObjectSource for S3LikeSource {
                     io_stats_on_bytestream(stream, io_stats),
                     num_bytes,
                     permit,
+                    retry_params,
                 ))
             } else {
                 panic!("This should always be a stream");

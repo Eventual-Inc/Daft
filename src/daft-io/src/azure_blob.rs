@@ -484,6 +484,7 @@ impl ObjectSource for AzureBlobSource {
             io_stats_on_bytestream(Box::pin(stream), io_stats),
             None,
             None,
+            None,
         ))
     }
 
