@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
+from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:

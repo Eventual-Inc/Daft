@@ -106,7 +106,7 @@ impl IcebergCatalogInfo {
 pub struct DeltaLakeCatalogInfo {
     pub path: String,
     pub mode: String,
-    pub current_version: i32,
+    pub version: i32,
     pub large_dtypes: bool,
     pub io_config: Option<IOConfig>,
 }
@@ -116,7 +116,7 @@ impl PartialEq for DeltaLakeCatalogInfo {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
             && self.mode == other.mode
-            && self.current_version == other.current_version
+            && self.version == other.version
             && self.large_dtypes == other.large_dtypes
             && self.io_config == other.io_config
     }
@@ -130,7 +130,7 @@ impl Hash for DeltaLakeCatalogInfo {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.path.hash(state);
         self.mode.hash(state);
-        self.current_version.hash(state);
+        self.version.hash(state);
         self.large_dtypes.hash(state);
         self.io_config.hash(state);
     }
@@ -142,7 +142,7 @@ impl DeltaLakeCatalogInfo {
         let mut res = vec![];
         res.push(format!("Table Name = {}", self.path));
         res.push(format!("Mode = {}", self.mode));
-        res.push(format!("Current Version = {}", self.current_version));
+        res.push(format!("Version = {}", self.version));
         res.push(format!("Large Dtypes = {}", self.large_dtypes));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
