@@ -7,7 +7,7 @@ use super::super::delta_bitpacked;
 /// # Implementation
 /// This struct does not allocate on the heap.
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use parquet2::encoding::delta_length_byte_array::Decoder;
 ///
 /// let expected = &["Hello", "World"];

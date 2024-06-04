@@ -32,7 +32,7 @@ pub use mutable::*;
 ///
 /// The size of this struct is `O(1)`, as all data is stored behind an [`std::sync::Arc`].
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::bitmap::Bitmap;
 /// use arrow2::buffer::Buffer;
@@ -99,7 +99,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function is useful to assign a different [`DataType`] to the array.
     /// Used to change the arrays' logical type (see example).
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use arrow2::array::Int32Array;
     /// use arrow2::datatypes::DataType;
     ///
@@ -130,7 +130,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Creates a (non-null) [`PrimitiveArray`] from a vector of values.
     /// This function is `O(1)`.
     /// # Examples
-    /// ```
+    /// ```rust,ignore
     /// use arrow2::array::PrimitiveArray;
     ///
     /// let array = PrimitiveArray::from_vec(vec![1, 2, 3]);

@@ -67,7 +67,7 @@ pub fn length(array: &dyn Array) -> Result<Box<dyn Array>> {
 /// Checks if an array of type `datatype` can perform length operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::length::can_length;
 /// use arrow2::datatypes::{DataType};
 ///

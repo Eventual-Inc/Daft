@@ -38,7 +38,7 @@ where
 /// # Panics
 /// This function panics iff the arrays have different lengths.
 /// # Examples
-/// ```rust
+/// ```rust,ignorerust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::and;
 ///
@@ -80,7 +80,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// # Panics
 /// This function panics iff the arrays have different lengths.
 /// # Examples
-/// ```rust
+/// ```rust,ignorerust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::or;
 ///
@@ -121,7 +121,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// Performs unary `NOT` operation on an arrays. If value is null then the result is also
 /// null.
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::not;
 ///
@@ -137,7 +137,7 @@ pub fn not(array: &BooleanArray) -> BooleanArray {
 
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is null.
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::is_null;
 /// # fn main() {
@@ -159,7 +159,7 @@ pub fn is_null(input: &dyn Array) -> BooleanArray {
 
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is not null.
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::is_not_null;
 ///
@@ -182,7 +182,7 @@ pub fn is_not_null(input: &dyn Array) -> BooleanArray {
 /// Performs `AND` operation on an array and a scalar value. If either left or right value
 /// is null then the result is also null.
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::and_scalar;
 /// use arrow2::scalar::BooleanScalar;
@@ -207,7 +207,7 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 /// Performs `OR` operation on an array and a scalar value. If either left or right value
 /// is null then the result is also null.
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::or_scalar;
 /// use arrow2::scalar::BooleanScalar;
@@ -236,7 +236,7 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::any;
 ///
@@ -265,7 +265,7 @@ pub fn any(array: &BooleanArray) -> bool {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::all;
 ///

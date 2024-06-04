@@ -1,7 +1,6 @@
-use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::prelude::*;
 
 use super::*;
-use crate::types::simd::*;
 use crate::types::{days_ms, f16, i256, months_days_ns};
 
 macro_rules! simd8 {

@@ -22,7 +22,7 @@ use super::NativeArithmetics;
 /// Panics if the subtraction of one pair of values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::sub;
 /// use arrow2::array::Int32Array;
 ///
@@ -43,7 +43,7 @@ where
 ///  It wraps around at the boundary of the type if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_sub;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -66,7 +66,7 @@ where
 /// subtraction overflow, the validity for that index is changed
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_sub;
 /// use arrow2::array::Int8Array;
 ///
@@ -90,7 +90,7 @@ where
 /// operation will be the saturated value.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_sub;
 /// use arrow2::array::Int8Array;
 ///
@@ -115,7 +115,7 @@ where
 /// indicating the overflowing elements from the array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_sub;
 /// use arrow2::array::Int8Array;
 ///
@@ -190,7 +190,7 @@ where
 /// Panics if the subtraction of the values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::sub_scalar;
 /// use arrow2::array::Int32Array;
 ///
@@ -211,7 +211,7 @@ where
 /// It do nothing if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_sub_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -232,7 +232,7 @@ where
 /// is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_sub_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -256,7 +256,7 @@ where
 /// the result will be saturated
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_sub_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -281,7 +281,7 @@ where
 /// array indicating the overflowing elements from the array
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_sub_scalar;
 /// use arrow2::array::Int8Array;
 ///

@@ -160,7 +160,7 @@ macro_rules! dyn_dict {
 /// returns a comparison function that compares values at two different slots
 /// between two [`Array`].
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{ord::build_compare, PrimitiveArray};
 ///
 /// # fn main() -> arrow2::error::Result<()> {

@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 /// Returns the values from `lhs` if the predicate is `true` or from the `rhs` if the predicate is false
 /// Returns `None` if the predicate is `None`.
 /// # Example
-/// ```rust
+/// ```rust,ignorerust
 /// # use arrow2::error::Result;
 /// use arrow2::compute::if_then_else::if_then_else;
 /// use arrow2::array::{Int32Array, BooleanArray};

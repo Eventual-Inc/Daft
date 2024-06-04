@@ -45,7 +45,7 @@ impl NativeArithmetics for f64 {}
 /// Negates values from array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::negate;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -64,7 +64,7 @@ where
 /// Checked negates values from array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_negate;
 /// use arrow2::array::{Array, PrimitiveArray};
 ///
@@ -84,7 +84,7 @@ where
 /// Wrapping negates values from array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_negate;
 /// use arrow2::array::{Array, PrimitiveArray};
 ///

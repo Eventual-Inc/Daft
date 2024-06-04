@@ -184,7 +184,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Used to change the arrays' logical type (see example). This updates the array
     /// in place and does not clone the array.
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use arrow2::array::Int32Array;
     /// use arrow2::datatypes::DataType;
     ///
@@ -205,7 +205,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Used to change the arrays' logical type (see example). Unlike, this clones the array
     /// in order to return a new array.
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use arrow2::array::Int32Array;
     /// use arrow2::datatypes::DataType;
     ///
@@ -527,7 +527,7 @@ macro_rules! impl_to {
         /// Used to change the arrays' logical type (see example). Unlike, this clones the array
         /// in order to return a new array.
         /// # Example
-        /// ```
+        /// ```rust,ignore
         /// use arrow2::array::Int32Array;
         /// use arrow2::datatypes::DataType;
         ///

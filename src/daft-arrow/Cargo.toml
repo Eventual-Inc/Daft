@@ -4,12 +4,7 @@ rustc_version = "0.4.0"
 [dependencies]
 # Faster hashing
 ahash = "0.8"
-arrow-array = {version = ">=40", optional = true}
-# Support conversion to/from arrow-rs
-arrow-buffer = {version = ">=40", optional = true}
-arrow-data = {version = ">=40", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
-arrow-schema = {version = ">=40", optional = true}
 # to read IPC as a stream
 async-stream = {version = "0.3.2", optional = true}
 # avro support
@@ -94,7 +89,6 @@ tokio = {version = "1", features = ["macros", "rt", "fs", "io-util"]}
 tokio-util = {version = "0.7", features = ["compat"]}
 
 [features]
-arrow = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 benchmarks = ["rand"]
 compute = [
   "compute_aggregate",
@@ -152,8 +146,6 @@ compute_utf8 = []
 compute_window = ["compute_concatenate"]
 default = []
 full = [
-  "arrow",
-  "io_odbc",
   "io_csv",
   "io_csv_async",
   "io_json",
@@ -167,7 +159,6 @@ full = [
   "io_parquet_async",
   "io_parquet_compression",
   "io_avro",
-  "io_orc",
   "io_avro_compression",
   "io_avro_async",
   "regex",
@@ -197,8 +188,8 @@ io_json = ["io_json_read", "io_json_write"]
 io_json_integration = ["hex", "serde", "serde_derive", "serde_json", "io_ipc"]
 io_json_read = ["json-deserializer", "indexmap", "lexical-core"]
 io_json_write = ["streaming-iterator", "fallible-streaming-iterator", "lexical-core"]
-io_odbc = ["odbc-api"]
-io_orc = ["orc-format"]
+# io_odbc = ["odbc-api"]
+# io_orc = ["orc-format"]
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
 io_parquet = ["parquet2", "io_ipc", "base64", "streaming-iterator", "fallible-streaming-iterator"]
 io_parquet_async = ["futures", "io_parquet", "parquet2/async"]

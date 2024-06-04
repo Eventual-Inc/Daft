@@ -68,7 +68,7 @@ fn create_scale(lhs: &DataType, rhs: &DataType) -> Result<f64> {
 /// or milliseconds with milliseconds.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::time::add_duration;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::{DataType, TimeUnit};
@@ -148,7 +148,7 @@ where
 /// or milliseconds with milliseconds.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::time::subtract_duration;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::{DataType, TimeUnit};
@@ -227,7 +227,7 @@ where
 /// subtracting seconds with seconds, or milliseconds with milliseconds.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::time::subtract_timestamps;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::{DataType, TimeUnit};

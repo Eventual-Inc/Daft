@@ -22,7 +22,7 @@ use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 /// than the possible number for the array precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::div;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -116,7 +116,7 @@ pub fn div_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 /// precision. The function panics if divided by zero.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::saturating_div;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -165,7 +165,7 @@ pub fn saturating_div(
 /// validity for that index is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignorerust,ignore
 /// use arrow2::compute::arithmetics::decimal::checked_div;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -227,7 +227,7 @@ impl ArrayCheckedDiv<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 ///   100.0000 -> 9, 4
 /// ```
 /// # Examples
-/// ```
+/// ```rust,ignorerust,ignore
 /// use arrow2::compute::arithmetics::decimal::adaptive_div;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;

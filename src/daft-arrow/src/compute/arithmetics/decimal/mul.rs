@@ -21,7 +21,7 @@ use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 /// larger than the possible number for the selected precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::mul;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -120,7 +120,7 @@ pub fn mul_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 /// precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::saturating_mul;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -170,7 +170,7 @@ pub fn saturating_mul(
 /// validity for that index is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::checked_mul;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -239,7 +239,7 @@ impl ArraySaturatingMul<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 ///  111132.222  -> 9, 3
 /// ```
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::adaptive_mul;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;

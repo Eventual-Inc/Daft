@@ -108,7 +108,7 @@ fn a_like_utf8<O: Offset, F: Fn(bool) -> bool>(
 /// * the arrays have a different length
 /// * any of the patterns is not valid
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{Utf8Array, BooleanArray};
 /// use arrow2::compute::like::like_utf8;
 ///
@@ -189,7 +189,7 @@ fn a_like_utf8_scalar<O: Offset, F: Fn(bool) -> bool>(
 /// * the arrays have a different length
 /// * any of the patterns is not valid
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{Utf8Array, BooleanArray};
 /// use arrow2::compute::like::like_utf8_scalar;
 ///
@@ -266,7 +266,7 @@ fn a_like_binary<O: Offset, F: Fn(bool) -> bool>(
 /// * the arrays have a different length
 /// * any of the patterns is not valid
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{BinaryArray, BooleanArray};
 /// use arrow2::compute::like::like_binary;
 ///
@@ -340,7 +340,7 @@ fn a_like_binary_scalar<O: Offset, F: Fn(bool) -> bool>(
 /// * the arrays have a different length
 /// * any of the patterns is not valid
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{BinaryArray, BooleanArray};
 /// use arrow2::compute::like::like_binary_scalar;
 ///

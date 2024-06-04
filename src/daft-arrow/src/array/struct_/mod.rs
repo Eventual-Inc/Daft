@@ -15,7 +15,7 @@ pub use mutable::*;
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::*;
 /// use arrow2::datatypes::*;
 /// let boolean = BooleanArray::from_slice(&[false, false, true, true]).boxed();

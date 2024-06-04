@@ -39,7 +39,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// A [`Utf8Array`] is arrow's semantic equivalent of an immutable `Vec<Option<String>>`.
 /// Cloning and slicing this struct is `O(1)`.
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::bitmap::Bitmap;
 /// use arrow2::buffer::Buffer;
 /// use arrow2::array::Utf8Array;

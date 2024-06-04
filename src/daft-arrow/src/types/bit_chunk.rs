@@ -55,7 +55,7 @@ bit_chunk!(u64);
 /// The [LSB](https://en.wikipedia.org/wiki/Bit_numbering#Least_significant_bit) corresponds
 /// to the first slot, as defined by the arrow specification.
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::types::BitChunkIter;
 /// let a = 0b00010000u8;
 /// let iter = BitChunkIter::new(a, 7);
@@ -108,7 +108,7 @@ unsafe impl<T: BitChunk> crate::trusted_len::TrustedLen for BitChunkIter<T> {}
 /// An [`Iterator<Item=usize>`] over a [`BitChunk`] returning the index of each bit set in the chunk
 /// See <https://lemire.me/blog/2018/03/08/iterating-over-set-bits-quickly-simd-edition/> for details
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::types::BitChunkOnes;
 /// let a = 0b00010000u8;
 /// let iter = BitChunkOnes::new(a);

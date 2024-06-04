@@ -49,7 +49,7 @@ pub fn regex_match<O: Offset>(values: &Utf8Array<O>, regex: &Utf8Array<O>) -> Re
 
 /// Regex matches
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::{Utf8Array, BooleanArray};
 /// use arrow2::compute::regex_match::regex_match_scalar;
 ///

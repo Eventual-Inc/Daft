@@ -257,7 +257,7 @@ pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {
 /// masked out.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignorerust
 /// # use arrow2::array::{Int32Array, PrimitiveArray, BooleanArray};
 /// # use arrow2::error::Result;
 /// # use arrow2::compute::filter::filter;

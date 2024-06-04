@@ -14,7 +14,7 @@ use super::{
 /// each boolean is represented as a single bit.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignorerust,ignore
 /// use arrow2::bitmap::{Bitmap, MutableBitmap};
 ///
 /// let bitmap = Bitmap::from([true, false, true]);

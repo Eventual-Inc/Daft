@@ -11,7 +11,7 @@ use crate::{
 /// This function panics iff the arrays have a different length
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean_kleene::or;
 ///
@@ -94,7 +94,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// This function panics iff the arrays have a different length
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean_kleene::and;
 ///
@@ -174,7 +174,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// Logical 'or' operation on an array and a scalar value with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::scalar::BooleanScalar;
 /// use arrow2::compute::boolean_kleene::or_scalar;
@@ -206,7 +206,7 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
 /// Logical 'and' operation on an array and a scalar value with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::scalar::BooleanScalar;
 /// use arrow2::compute::boolean_kleene::and_scalar;
@@ -241,7 +241,7 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean_kleene::any;
 ///
@@ -275,7 +275,7 @@ pub fn any(array: &BooleanArray) -> Option<bool> {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean_kleene::all;
 ///

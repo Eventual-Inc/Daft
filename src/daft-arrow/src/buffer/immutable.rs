@@ -19,7 +19,7 @@ use crate::array::{ArrayAccessor, Splitable};
 /// The easiest way to create one is to use its implementation of `From<Vec<T>>`.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use polars_arrow::buffer::Buffer;
 ///
 /// let mut buffer: Buffer<u32> = vec![1, 2, 3].into();

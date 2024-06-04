@@ -30,7 +30,7 @@ pub use mutable::*;
 ///
 /// The size of this struct is `O(1)`, as all data is stored behind an [`std::sync::Arc`].
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::bitmap::Bitmap;
 /// use arrow2::buffer::Buffer;

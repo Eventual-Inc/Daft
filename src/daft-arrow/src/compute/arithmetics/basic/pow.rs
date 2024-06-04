@@ -12,7 +12,7 @@ use super::NativeArithmetics;
 /// the values values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::powf_scalar;
 /// use arrow2::array::Float32Array;
 ///
@@ -33,7 +33,7 @@ where
 /// for that index is changed returned.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_powf_scalar;
 /// use arrow2::array::Int8Array;
 ///

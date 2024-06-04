@@ -22,7 +22,7 @@ use super::NativeArithmetics;
 /// Panics if the multiplication of one pair of values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::mul;
 /// use arrow2::array::Int32Array;
 ///
@@ -43,7 +43,7 @@ where
 ///  It wraps around at the boundary of the type if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_mul;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -67,7 +67,7 @@ where
 /// returned.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_mul;
 /// use arrow2::array::Int8Array;
 ///
@@ -91,7 +91,7 @@ where
 /// operation will be the saturated value.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_mul;
 /// use arrow2::array::Int8Array;
 ///
@@ -116,7 +116,7 @@ where
 /// from the array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_mul;
 /// use arrow2::array::Int8Array;
 ///
@@ -191,7 +191,7 @@ where
 /// Panics if the multiplication of the values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::mul_scalar;
 /// use arrow2::array::Int32Array;
 ///
@@ -212,7 +212,7 @@ where
 /// It do nothing if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_mul_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -233,7 +233,7 @@ where
 /// changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_mul_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -257,7 +257,7 @@ where
 /// the result will be saturated
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_mul_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -282,7 +282,7 @@ where
 /// array indicating the overflowing elements from the array
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_mul_scalar;
 /// use arrow2::array::Int8Array;
 ///

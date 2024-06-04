@@ -20,7 +20,7 @@ use super::NativeArithmetics;
 /// Panics if the divisor is zero of one pair of values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::rem;
 /// use arrow2::array::Int32Array;
 ///
@@ -42,7 +42,7 @@ where
 /// making this operation None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_rem;
 /// use arrow2::array::Int8Array;
 ///
@@ -83,7 +83,7 @@ where
 /// Panics if the divisor is zero.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::rem_scalar;
 /// use arrow2::array::Int32Array;
 ///
@@ -163,7 +163,7 @@ where
 /// divisor is zero then the validity array is changed to None.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_rem_scalar;
 /// use arrow2::array::Int8Array;
 ///

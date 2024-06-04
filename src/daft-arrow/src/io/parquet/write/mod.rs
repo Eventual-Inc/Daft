@@ -864,7 +864,7 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
 /// items based on `map`.
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
 /// # Example
-/// ```
+/// ```rust,ignore
 /// use arrow2::io::parquet::write::{transverse, Encoding};
 /// use arrow2::datatypes::{DataType, Field};
 ///

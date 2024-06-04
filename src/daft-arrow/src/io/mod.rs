@@ -2,13 +2,6 @@
 //! Contains modules to interface with other formats such as [`csv`],
 //! [`parquet`], [`json`], [`ipc`], [`mod@print`] and [`avro`].
 
-#[cfg(feature = "io_odbc")]
-pub mod odbc;
-
-#[cfg(feature = "io_orc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_orc")))]
-pub mod orc;
-
 #[cfg(any(
     feature = "io_csv_read",
     feature = "io_csv_read_async",
@@ -34,10 +27,6 @@ pub mod ndjson;
 #[cfg(feature = "io_ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc")))]
 pub mod ipc;
-
-#[cfg(feature = "io_flight")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_flight")))]
-pub mod flight;
 
 #[cfg(feature = "io_json_integration")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_json_integration")))]

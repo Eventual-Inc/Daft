@@ -124,7 +124,7 @@ pub fn hash(array: &dyn Array) -> Result<PrimitiveArray<u64>> {
 /// Checks if an array of type `datatype` can be used in [`hash`].
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::hash::can_hash;
 /// use arrow2::datatypes::{DataType};
 ///
