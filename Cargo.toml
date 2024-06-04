@@ -49,8 +49,8 @@ publish = false
 version = "0.2.0-dev0"
 
 [patch.crates-io]
-arrow2 = {path = "src/arrow2"}
-parquet2 = {path = "src/parquet2"}
+arrow2 = {path = "src/daft-arrow"}
+parquet2 = {path = "src/daft-arrow-parquet"}
 
 [profile.dev]
 overflow-checks = false
@@ -78,8 +78,8 @@ tikv-jemallocator = {version = "0.5.4", features = [
 
 [workspace]
 members = [
-  "src/arrow2",
-  "src/parquet2",
+  "src/daft-arrow",
+  "src/daft-arrow-parquet",
   "src/common/error",
   "src/common/io-config",
   "src/common/treenode",
@@ -141,9 +141,7 @@ tokio-util = "0.7.11"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
-package = "arrow2"
-# branch = "daft-fork"
-path = "src/arrow2"
+path = "src/daft-arrow"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
@@ -157,8 +155,7 @@ version = "0.4.19"
 
 [workspace.dependencies.parquet2]
 features = ['async']
-package = "parquet2"
-path = "src/parquet2"
+path = "src/daft-arrow-parquet"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py38"]
