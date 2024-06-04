@@ -383,14 +383,8 @@ def q12(get_df: GetDFFunc) -> DataFrame:
         )
         .groupby(col("L_SHIPMODE"))
         .agg(
-            ((col("O_ORDERPRIORITY") == "1-URGENT") | (col("O_ORDERPRIORITY") == "2-HIGH"))
-            .if_else(1, 0)
-            .sum()
-            .alias("high_line_count"),
-            ((col("O_ORDERPRIORITY") != "1-URGENT") & (col("O_ORDERPRIORITY") != "2-HIGH"))
-            .if_else(1, 0)
-            .sum()
-            .alias("low_line_count"),
+            col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"]).if_else(1, 0).sum().alias("high_line_count"),
+            (~col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"])).if_else(1, 0).sum().alias("low_line_count"),
         )
         .sort(col("L_SHIPMODE"))
     )
@@ -636,7 +630,6 @@ def q21(get_df: GetDFFunc) -> DataFrame:
 
     daft_df = (
         res_1.select("L_SUPPKEY", "L_ORDERKEY")
-        .distinct()
         .groupby("L_ORDERKEY")
         .agg(col("L_SUPPKEY").count().alias("nunique_col"))
         .join(res_1, on="L_ORDERKEY")
@@ -667,7 +660,7 @@ def q22(get_df: GetDFFunc) -> DataFrame:
         res_1.where(col("C_ACCTBAL") > 0).agg(col("C_ACCTBAL").mean().alias("avg_acctbal")).with_column("lit", lit(1))
     )
 
-    res_3 = orders.select("O_CUSTKEY").distinct()
+    res_3 = orders.select("O_CUSTKEY")
 
     daft_df = (
         res_1.join(res_3, left_on="C_CUSTKEY", right_on="O_CUSTKEY", how="left")
