@@ -260,6 +260,9 @@ class SQLScanOperator(ScanOperator):
         # sqlglot does not support "postgresql" dialect, it only supports "postgres"
         if target_dialect == "postgresql":
             target_dialect = "postgres"
+        # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
+        elif target_dialect == "mssql":
+            target_dialect = "tsql"
 
         if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
             raise ValueError(

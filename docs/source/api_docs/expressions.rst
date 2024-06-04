@@ -62,6 +62,7 @@ Numeric
     Expression.degrees
     Expression.log2
     Expression.log10
+    Expression.log
     Expression.ln
     Expression.exp
 
@@ -83,6 +84,7 @@ Logical
     Expression.__ne__
     Expression.__gt__
     Expression.__ge__
+    Expression.between
     Expression.is_in
 
 .. _api=aggregation-expression:
@@ -140,6 +142,9 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.rpad
    Expression.str.lpad
    Expression.str.repeat
+   Expression.str.like
+   Expression.str.ilike
+   Expression.str.substr
 
 .. _api-expressions-temporal:
 

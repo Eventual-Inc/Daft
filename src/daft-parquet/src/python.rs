@@ -93,6 +93,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
         let read_parquet_result = py.allow_threads(|| {
             let io_client = get_io_client(
@@ -115,6 +116,7 @@ pub mod pylib {
                 None,
                 runtime_handle,
                 schema_infer_options,
+                file_timeout_ms,
             )
         })?;
         let (schema, all_arrays) = read_parquet_result;

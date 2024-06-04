@@ -4,8 +4,10 @@ mod endswith;
 mod extract;
 mod extract_all;
 mod find;
+mod ilike;
 mod left;
 mod length;
+mod like;
 mod lower;
 mod lpad;
 mod lstrip;
@@ -18,6 +20,7 @@ mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
+mod substr;
 mod upper;
 
 use capitalize::CapitalizeEvaluator;
@@ -26,8 +29,10 @@ use endswith::EndswithEvaluator;
 use extract::ExtractEvaluator;
 use extract_all::ExtractAllEvaluator;
 use find::FindEvaluator;
+use ilike::IlikeEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
+use like::LikeEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
@@ -40,6 +45,7 @@ use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
+use substr::SubstrEvaluator;
 use upper::UpperEvaluator;
 
 use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
@@ -69,6 +75,9 @@ pub enum Utf8Expr {
     Rpad,
     Lpad,
     Repeat,
+    Like,
+    Ilike,
+    Substr,
 }
 
 impl Utf8Expr {
@@ -97,6 +106,9 @@ impl Utf8Expr {
             Rpad => &RpadEvaluator {},
             Lpad => &LpadEvaluator {},
             Repeat => &RepeatEvaluator {},
+            Like => &LikeEvaluator {},
+            Ilike => &IlikeEvaluator {},
+            Substr => &SubstrEvaluator {},
         }
     }
 }
@@ -265,6 +277,30 @@ pub fn repeat(data: ExprRef, count: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Repeat),
         inputs: vec![data, count],
+    }
+    .into()
+}
+
+pub fn like(data: ExprRef, pattern: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Like),
+        inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn ilike(data: ExprRef, pattern: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Ilike),
+        inputs: vec![data, pattern],
+    }
+    .into()
+}
+
+pub fn substr(data: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Substr),
+        inputs: vec![data, start, length],
     }
     .into()
 }

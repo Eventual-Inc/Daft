@@ -16,10 +16,12 @@ use round::RoundEvaluator;
 use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
 use sqrt::SqrtEvaluator;
+use std::hash::Hash;
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::{Expr, ExprRef};
+use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 
 use super::FunctionEvaluator;
 
@@ -42,6 +44,7 @@ pub enum NumericExpr {
     Degrees,
     Log2,
     Log10,
+    Log(FloatWrapper<f64>),
     Ln,
     Exp,
 }
@@ -68,6 +71,7 @@ impl NumericExpr {
             Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
             Log2 => &LogEvaluator(log::LogFunction::Log2),
             Log10 => &LogEvaluator(log::LogFunction::Log10),
+            Log(_) => &LogEvaluator(log::LogFunction::Log),
             Ln => &LogEvaluator(log::LogFunction::Ln),
             Exp => &ExpEvaluator {},
         }
@@ -205,6 +209,14 @@ pub fn log2(input: ExprRef) -> ExprRef {
 pub fn log10(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Log10),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn log(input: ExprRef, base: f64) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Log(FloatWrapper(base))),
         inputs: vec![input],
     }
     .into()

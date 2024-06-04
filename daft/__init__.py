@@ -25,6 +25,7 @@ if "COV_CORE_SOURCE" in os.environ:
 
 from daft.daft import build_type as _build_type
 from daft.daft import version as _version
+from daft.daft import refresh_logger as _refresh_logger
 
 
 def get_version() -> str:
@@ -33,6 +34,11 @@ def get_version() -> str:
 
 def get_build_type() -> str:
     return _build_type()
+
+
+def refresh_logger() -> None:
+    """Refreshes Daft's internal rust logging to the current python log level"""
+    _refresh_logger()
 
 
 __version__ = get_version()
@@ -72,6 +78,7 @@ from daft.io import (
     DataCatalogType,
     from_glob_path,
     read_csv,
+    read_deltalake,
     read_delta_lake,
     read_hudi,
     read_iceberg,
@@ -97,6 +104,7 @@ __all__ = [
     "read_parquet",
     "read_hudi",
     "read_iceberg",
+    "read_deltalake",
     "read_delta_lake",
     "read_sql",
     "read_lance",
@@ -112,6 +120,7 @@ __all__ = [
     "Series",
     "TimeUnit",
     "register_viz_hook",
+    "refresh_logger",
     "udf",
     "ResourceRequest",
     "set_planning_config",

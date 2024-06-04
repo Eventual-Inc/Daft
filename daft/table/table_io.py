@@ -648,6 +648,113 @@ def write_iceberg(
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
 
+def write_deltalake(
+    mp: MicroPartition,
+    large_dtypes: bool,
+    base_path: str,
+    version: int,
+    io_config: IOConfig | None = None,
+):
+    import json
+    from datetime import datetime
+
+    import deltalake
+    from deltalake.schema import convert_pyarrow_table
+    from deltalake.writer import (
+        AddAction,
+        DeltaJSONEncoder,
+        DeltaStorageHandler,
+        get_partitions_from_path,
+    )
+    from packaging.version import parse
+    from pyarrow.fs import PyFileSystem
+
+    from daft.io.object_store_options import io_config_to_storage_options
+    from daft.utils import ARROW_VERSION
+
+    protocol = get_protocol_from_path(base_path)
+    canonicalized_protocol = canonicalize_protocol(protocol)
+
+    data_files: list[AddAction] = []
+
+    # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" argument
+    # https://github.com/delta-io/delta-rs/blob/353e08be0202c45334dcdceee65a8679f35de710/python/deltalake/writer.py#L725
+    if parse(deltalake.__version__) < parse("0.17.4"):
+        get_file_stats_from_metadata = deltalake.writer.get_file_stats_from_metadata
+    else:
+
+        def get_file_stats_from_metadata(metadata):
+            deltalake.writer.get_file_stats_from_metadata(metadata, -1)
+
+    def file_visitor(written_file: Any) -> None:
+        path, partition_values = get_partitions_from_path(written_file.path)
+        stats = get_file_stats_from_metadata(written_file.metadata)
+
+        # PyArrow added support for written_file.size in 9.0.0
+        if ARROW_VERSION >= (9, 0, 0):
+            size = written_file.size
+        elif fs is not None:
+            size = fs.get_file_info([path])[0].size
+        else:
+            size = 0
+
+        data_files.append(
+            AddAction(
+                path,
+                size,
+                partition_values,
+                int(datetime.now().timestamp() * 1000),
+                True,
+                json.dumps(stats, cls=DeltaJSONEncoder),
+            )
+        )
+
+    is_local_fs = canonicalized_protocol == "file"
+
+    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = io_config_to_storage_options(io_config, base_path)
+    fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
+
+    arrow_table = mp.to_arrow()
+    arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
+
+    execution_config = get_context().daft_execution_config
+
+    target_row_group_size = execution_config.parquet_target_row_group_size
+    inflation_factor = execution_config.parquet_inflation_factor
+    target_file_size = execution_config.parquet_target_filesize
+
+    size_bytes = arrow_table.nbytes
+
+    target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+    num_rows = len(arrow_table)
+
+    rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+
+    target_row_groups = max(math.ceil(size_bytes / target_row_group_size / inflation_factor), 1)
+    rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
+
+    opts = pads.ParquetFileFormat().make_write_options(use_compliant_nested_type=False)
+
+    format = pads.ParquetFileFormat()
+
+    _write_tabular_arrow_table(
+        arrow_table=arrow_batch,
+        schema=None,
+        full_path="/",
+        format=format,
+        opts=opts,
+        fs=fs,
+        rows_per_file=rows_per_file,
+        rows_per_row_group=rows_per_row_group,
+        create_dir=is_local_fs,
+        file_visitor=file_visitor,
+        version=version,
+    )
+
+    return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
+
+
 def _write_tabular_arrow_table(
     arrow_table: pa.Table,
     schema: pa.Schema | None,
@@ -659,6 +766,7 @@ def _write_tabular_arrow_table(
     rows_per_row_group: int,
     create_dir: bool,
     file_visitor: Callable | None,
+    version: int | None = None,
 ):
     kwargs = dict()
 
@@ -672,11 +780,16 @@ def _write_tabular_arrow_table(
     if ARROW_VERSION >= (8, 0, 0) and not create_dir:
         kwargs["create_dir"] = False
 
+    if version is not None:
+        basename_template = f"{version}-{uuid4()}-{{i}}.{format.default_extname}"
+    else:
+        basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
+
     pads.write_dataset(
         arrow_table,
         schema=schema,
         base_dir=full_path,
-        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+        basename_template=basename_template,
         format=format,
         partitioning=None,
         file_options=opts,

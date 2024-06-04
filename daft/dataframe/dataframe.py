@@ -4,11 +4,12 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import io
 import os
 import pathlib
 import warnings
 from dataclasses import dataclass
-from functools import reduce
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,17 +18,26 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
+    Mapping,
     Optional,
     Set,
     Tuple,
     TypeVar,
     Union,
 )
+from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest
+from daft.daft import (
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    ResourceRequest,
+)
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -40,11 +50,14 @@ from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     import dask
+    import deltalake
     import pandas
     import pyarrow
     import pyiceberg
     import ray
     import torch
+
+    from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
 
@@ -117,7 +130,7 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_all: bool = False, simple: bool = False) -> None:
+    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[io.IOBase] = None) -> None:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -127,27 +140,30 @@ class DataFrame:
                 unoptimized logical plan.
             simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
                 of how each op is configured.
+            file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
+                print (in Python, that should be sys.stdout)
         """
+        print_to_file = partial(print, file=file)
 
         if self._result_cache is not None:
-            print("Result is cached and will skip computation\n")
-            print(self._builder.pretty_print(simple))
+            print_to_file("Result is cached and will skip computation\n")
+            print_to_file(self._builder.pretty_print(simple))
 
-            print("However here is the logical plan used to produce this result:\n")
+            print_to_file("However here is the logical plan used to produce this result:\n", file=file)
 
         builder = self.__builder
-        print("== Unoptimized Logical Plan ==\n")
-        print(builder.pretty_print(simple))
+        print_to_file("== Unoptimized Logical Plan ==\n")
+        print_to_file(builder.pretty_print(simple))
         if show_all:
-            print("\n== Optimized Logical Plan ==\n")
+            print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
-            print(builder.pretty_print(simple))
-            print("\n== Physical Plan ==\n")
+            print_to_file(builder.pretty_print(simple))
+            print_to_file("\n== Physical Plan ==\n")
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            print(physical_plan_scheduler.pretty_print(simple))
+            print_to_file(physical_plan_scheduler.pretty_print(simple))
         else:
-            print(
-                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer."
+            print_to_file(
+                "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
             )
 
     def num_partitions(self) -> int:
@@ -532,6 +548,183 @@ class DataFrame:
         )
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
+        return with_operations
+
+    @DataframePublicAPI
+    def write_deltalake(
+        self,
+        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable"],
+        mode: Literal["append", "overwrite", "error", "ignore"] = "append",
+        schema_mode: Optional[Literal["merge", "overwrite"]] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        configuration: Optional[Mapping[str, Optional[str]]] = None,
+        custom_metadata: Optional[Dict[str, str]] = None,
+        dynamo_table_name: Optional[str] = None,
+        io_config: Optional[IOConfig] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
+
+        Args:
+            table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
+            schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
+            name (str, optional): User-provided identifier for this table.
+            description (str, optional): User-provided description for this table.
+            configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
+            custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
+            dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+
+        Returns:
+            DataFrame: The operations that occurred with this write.
+        """
+
+        import json
+
+        import deltalake
+        import pyarrow as pa
+        from deltalake.schema import _convert_pa_schema_to_delta
+        from deltalake.writer import (
+            try_get_deltatable,
+            write_deltalake_pyarrow,
+        )
+        from packaging.version import parse
+
+        from daft import from_pydict
+        from daft.io import DataCatalogTable
+        from daft.io.object_store_options import io_config_to_storage_options
+
+        if schema_mode == "merge":
+            raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
+
+        if parse(deltalake.__version__) < parse("0.14.0"):
+            raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        if isinstance(table, (str, pathlib.Path, DataCatalogTable)):
+            if isinstance(table, str):
+                table_uri = table
+            elif isinstance(table, pathlib.Path):
+                table_uri = str(table)
+            else:
+                table_uri = table.table_uri(io_config)
+
+            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            table = try_get_deltatable(table_uri, storage_options=storage_options)
+        elif isinstance(table, deltalake.DeltaTable):
+            table_uri = table.table_uri
+            storage_options = table._storage_options or {}
+            new_storage_options = io_config_to_storage_options(io_config, table_uri)
+            storage_options.update(new_storage_options or {})
+        else:
+            raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+
+        # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
+        scheme = urlparse(table_uri).scheme
+        if scheme == "s3" or scheme == "s3a":
+            if dynamo_table_name is not None:
+                storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
+                storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
+            else:
+                storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
+                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+        pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+
+        if table:
+            table.update_incremental()
+
+            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
+                raise ValueError(
+                    "Schema of data does not match table schema\n"
+                    f"Data schema:\n{delta_schema}\nTable Schema:\n{table_schema}"
+                )
+            if mode == "error":
+                raise AssertionError("Delta table already exists, write mode set to error.")
+            elif mode == "ignore":
+                return from_pydict(
+                    {
+                        "operation": pa.array([], type=pa.string()),
+                        "rows": pa.array([], type=pa.int64()),
+                        "file_size": pa.array([], type=pa.int64()),
+                        "file_name": pa.array([], type=pa.string()),
+                    }
+                )
+            version = table.version() + 1
+        else:
+            version = 0
+
+        builder = self._builder.write_deltalake(
+            table_uri,
+            mode,
+            version,
+            large_dtypes=True,
+            io_config=io_config,
+        )
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        write_result = write_df.to_pydict()
+        assert "data_file" in write_result
+        data_files = write_result["data_file"]
+        add_action = []
+
+        operations = []
+        paths = []
+        rows = []
+        sizes = []
+
+        for data_file in data_files:
+            stats = json.loads(data_file.stats)
+            operations.append("ADD")
+            paths.append(data_file.path)
+            rows.append(stats["numRecords"])
+            sizes.append(data_file.size)
+
+            add_action.append(data_file)
+
+        if table is None:
+            write_deltalake_pyarrow(
+                table_uri,
+                delta_schema,
+                add_action,
+                mode,
+                [],
+                name,
+                description,
+                configuration,
+                storage_options,
+                custom_metadata,
+            )
+        else:
+            if mode == "overwrite":
+                old_actions = table.get_add_actions()
+                old_actions_dict = old_actions.to_pydict()
+                for i in range(old_actions.num_rows):
+                    operations.append("DELETE")
+                    paths.append(old_actions_dict["path"][i])
+                    rows.append(old_actions_dict["num_records"][i])
+                    sizes.append(old_actions_dict["size_bytes"][i])
+
+            table._table.create_write_transaction(add_action, mode, [], delta_schema, None, custom_metadata)
+            table.update_incremental()
+
+        with_operations = from_pydict(
+            {
+                "operation": pa.array(operations, type=pa.string()),
+                "rows": pa.array(rows, type=pa.int64()),
+                "file_size": pa.array(sizes, type=pa.int64()),
+                "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
+            }
+        )
+
         return with_operations
 
     ###

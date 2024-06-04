@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 import pathlib
 import sys
 import urllib.parse
@@ -320,3 +321,19 @@ def glob_path_with_stats(
         num_rows.append(infos.get("rows"))
 
     return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
+
+
+###
+# Path joining
+###
+
+
+def join_path(fs: FileSystem, base_path: str, *sub_paths: str) -> str:
+    """
+    Join a base path with sub-paths using the appropriate path separator
+    for the given filesystem.
+    """
+    if isinstance(fs, LocalFileSystem):
+        return os.path.join(base_path, *sub_paths)
+    else:
+        return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"

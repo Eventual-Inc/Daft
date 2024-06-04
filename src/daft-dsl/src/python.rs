@@ -280,6 +280,11 @@ impl PyExpr {
         Ok(log10(self.into()).into())
     }
 
+    pub fn log(&self, base: f64) -> PyResult<Self> {
+        use functions::numeric::log;
+        Ok(log(self.into(), base).into())
+    }
+
     pub fn ln(&self) -> PyResult<Self> {
         use functions::numeric::ln;
         Ok(ln(self.into()).into())
@@ -433,6 +438,14 @@ impl PyExpr {
 
     pub fn is_in(&self, other: &Self) -> PyResult<Self> {
         Ok(self.expr.clone().is_in(other.expr.clone()).into())
+    }
+
+    pub fn between(&self, lower: &Self, upper: &Self) -> PyResult<Self> {
+        Ok(self
+            .expr
+            .clone()
+            .between(lower.expr.clone(), upper.expr.clone())
+            .into())
     }
 
     pub fn name(&self) -> PyResult<&str> {
@@ -621,6 +634,21 @@ impl PyExpr {
     pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
         use crate::functions::utf8::repeat;
         Ok(repeat(self.into(), n.into()).into())
+    }
+
+    pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::like;
+        Ok(like(self.into(), pattern.into()).into())
+    }
+
+    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::ilike;
+        Ok(ilike(self.into(), pattern.into()).into())
+    }
+
+    pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::substr;
+        Ok(substr(self.into(), start.into(), length.into()).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

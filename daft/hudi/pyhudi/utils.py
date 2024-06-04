@@ -7,6 +7,8 @@ import pyarrow as pa
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 
+from daft.filesystem import join_path
+
 
 @dataclass(init=False)
 class FsFileMetadata:
@@ -14,7 +16,7 @@ class FsFileMetadata:
         self.base_path = base_path
         self.path = path
         self.base_name = base_name
-        with fs.open_input_file(os.path.join(base_path, path)) as f:
+        with fs.open_input_file(join_path(fs, base_path, path)) as f:
             metadata = pq.read_metadata(f)
         self.size = metadata.serialized_size
         self.num_records = metadata.num_rows
@@ -70,7 +72,7 @@ class FsFileMetadata:
 def list_relative_file_paths(
     base_path: str, sub_path: str, fs: pafs.FileSystem, includes: list[str] | None
 ) -> list[FsFileMetadata]:
-    listed_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(os.path.join(base_path, sub_path)))
+    listed_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(join_path(fs, base_path, sub_path)))
     file_paths = []
     common_prefix_len = len(base_path) + 1
     for listed_path in listed_paths:

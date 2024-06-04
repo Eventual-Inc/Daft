@@ -275,6 +275,26 @@ fn replace_column_with_semantic_id(
                     )
                 }
             }
+            Expr::Between(child, lower, upper) => {
+                let child =
+                    replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema);
+                let lower =
+                    replace_column_with_semantic_id(lower.clone(), subexprs_to_replace, schema);
+                let upper =
+                    replace_column_with_semantic_id(upper.clone(), subexprs_to_replace, schema);
+                if child.is_no() && lower.is_no() && upper.is_no() {
+                    Transformed::No(e)
+                } else {
+                    Transformed::Yes(
+                        Expr::Between(
+                            child.unwrap().clone(),
+                            lower.unwrap().clone(),
+                            upper.unwrap().clone(),
+                        )
+                        .into(),
+                    )
+                }
+            }
             Expr::BinaryOp { op, left, right } => {
                 let left =
                     replace_column_with_semantic_id(left.clone(), subexprs_to_replace, schema);

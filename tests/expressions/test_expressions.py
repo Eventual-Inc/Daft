@@ -144,6 +144,15 @@ def test_repr_functions_log10() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_log() -> None:
+    a = col("a")
+    y = a.log()
+    repr_out = repr(y)
+    assert repr_out == "log(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_ln() -> None:
     a = col("a")
     y = a.ln()

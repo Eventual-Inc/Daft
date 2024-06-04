@@ -20,9 +20,7 @@ from pytest_lazyfixture import lazy_fixture
 import daft
 from daft import DataCatalogTable, DataCatalogType
 from daft.io.object_store_options import io_config_to_storage_options
-from tests.io.delta_lake.mock_aws_server import start_service, stop_process
-
-deltalake = pytest.importorskip("deltalake")
+from tests.io.mock_aws_server import start_service, stop_process
 
 
 @pytest.fixture(params=[1, 2, 8])
@@ -418,11 +416,16 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
         pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
     ],
 )
+def cloud_paths(request) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable | None]:
+    return request.param
+
+
+@pytest.fixture(scope="function")
 def deltalake_table(
-    request, base_table: pa.Table, num_partitions: int, partition_generator: callable
+    cloud_paths, base_table: pa.Table, num_partitions: int, partition_generator: callable
 ) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
     partition_generator, _ = partition_generator
-    path, io_config, catalog_table = request.param
+    path, io_config, catalog_table = cloud_paths
     storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     parts = []
     for i in range(num_partitions):
@@ -431,6 +434,7 @@ def deltalake_table(
         part = base_table.append_column("part_idx", pa.array([part_value if part_value is not None else i] * 3))
         parts.append(part)
     table = pa.concat_tables(parts)
+    deltalake = pytest.importorskip("deltalake")
     deltalake.write_deltalake(
         path,
         table,

@@ -60,6 +60,7 @@ fn check_for_agg(expr: &ExprRef) -> bool {
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
         Function { inputs, .. } => inputs.iter().any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
+        Between(v, l, u) => check_for_agg(v) || check_for_agg(l) || check_for_agg(u),
         IfElse {
             if_true,
             if_false,
@@ -503,6 +504,34 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn delta_write(
+        &self,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        version: i32,
+        large_dtypes: bool,
+        io_config: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        use crate::sink_info::DeltaLakeCatalogInfo;
+        let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
+            catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
+                path,
+                mode,
+                version,
+                large_dtypes,
+                io_config,
+            }),
+            catalog_columns: columns_name,
+        });
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(logical_plan.into())
+    }
+
     pub fn build(&self) -> Arc<LogicalPlan> {
         self.plan.clone()
     }
@@ -766,6 +795,29 @@ impl PyLogicalPlanBuilder {
                 iceberg_properties,
                 io_config.map(|cfg| cfg.config),
                 catalog_columns,
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn delta_write(
+        &self,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        version: i32,
+        large_dtypes: bool,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .delta_write(
+                path,
+                columns_name,
+                mode,
+                version,
+                large_dtypes,
+                io_config.map(|cfg| cfg.config),
             )?
             .into())
     }

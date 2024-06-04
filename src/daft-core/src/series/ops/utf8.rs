@@ -1,9 +1,8 @@
 use crate::array::ops::PadPlacement;
-use crate::series::Series;
-use common_error::{DaftError, DaftResult};
-
 use crate::series::array_impl::IntoSeries;
+use crate::series::Series;
 use crate::{datatypes::*, with_match_integer_daft_types};
+use common_error::{DaftError, DaftResult};
 
 impl Series {
     fn with_utf8_array(&self, f: impl Fn(&Utf8Array) -> DaftResult<Series>) -> DaftResult<Series> {
@@ -196,6 +195,46 @@ impl Series {
                 Err(DaftError::TypeError(format!(
                     "Repeat not implemented for nchar type {}",
                     n.data_type()
+                )))
+            }
+        })
+    }
+
+    pub fn utf8_like(&self, pattern: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            pattern.with_utf8_array(|pattern_arr| Ok(arr.like(pattern_arr)?.into_series()))
+        })
+    }
+
+    pub fn utf8_ilike(&self, pattern: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            pattern.with_utf8_array(|pattern_arr| Ok(arr.ilike(pattern_arr)?.into_series()))
+        })
+    }
+
+    pub fn utf8_substr(&self, start: &Series, length: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            if start.data_type().is_integer() {
+                with_match_integer_daft_types!(start.data_type(), |$T| {
+                    if length.data_type().is_integer() {
+                        with_match_integer_daft_types!(length.data_type(), |$U| {
+                            Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                        })
+                    } else if length.data_type().is_null() {
+                        Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                    } else {
+                        Err(DaftError::TypeError(format!(
+                            "Substr not implemented for length type {}",
+                            length.data_type()
+                        )))
+                    }
+            })
+            } else if start.data_type().is_null() {
+                Ok(self.clone())
+            } else {
+                Err(DaftError::TypeError(format!(
+                    "Substr not implemented for start type {}",
+                    start.data_type()
                 )))
             }
         })

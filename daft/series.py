@@ -408,6 +408,13 @@ class Series:
         """The elementwise log10 of a numeric series"""
         return Series._from_pyseries(self._series.log10())
 
+    def log(self, base: float) -> Series:
+        """The elementwise log with given base, of a numeric series.
+        Args:
+            base: The base of the logarithm.
+        """
+        return Series._from_pyseries(self._series.log(base))
+
     def ln(self) -> Series:
         """The elementwise ln of a numeric series"""
         return Series._from_pyseries(self._series.ln())
@@ -753,6 +760,29 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(n)}")
         assert self._series is not None and n._series is not None
         return Series._from_pyseries(self._series.utf8_repeat(n._series))
+
+    def like(self, pattern: Series) -> Series:
+        if not isinstance(pattern, Series):
+            raise ValueError(f"expected another Series but got {type(pattern)}")
+        assert self._series is not None and pattern._series is not None
+        return Series._from_pyseries(self._series.utf8_like(pattern._series))
+
+    def ilike(self, pattern: Series) -> Series:
+        if not isinstance(pattern, Series):
+            raise ValueError(f"expected another Series but got {type(pattern)}")
+        assert self._series is not None and pattern._series is not None
+        return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
+
+    def substr(self, start: Series, length: Series | None = None) -> Series:
+        if not isinstance(start, Series):
+            raise ValueError(f"expected another Series but got {type(start)}")
+        if length is not None and not isinstance(length, Series):
+            raise ValueError(f"expected another Series but got {type(length)}")
+        if length is None:
+            length = Series.from_arrow(pa.array([None]))
+
+        assert self._series is not None and start._series is not None
+        return Series._from_pyseries(self._series.utf8_substr(start._series, length._series))
 
 
 class SeriesDateNamespace(SeriesNamespace):

@@ -101,16 +101,18 @@ class IcebergScanOperator(ScanOperator):
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
 
-    def _iceberg_record_to_partition_spec(self, record: Record) -> daft.table.Table | None:
+    def _iceberg_record_to_partition_spec(self, spec: IcebergPartitionSpec, record: Record) -> daft.table.Table | None:
+        partition_fields = iceberg_partition_spec_to_fields(self._table.schema(), spec)
         arrays = dict()
-        assert len(record._position_to_field_name) == len(self._partition_keys)
-        for name, value, pfield in zip(record._position_to_field_name, record.record_fields(), self._partition_keys):
+        assert len(record._position_to_field_name) == len(partition_fields)
+        for idx, pfield in enumerate(partition_fields):
             field = Field._from_pyfield(pfield.field)
             field_name = field.name
             field_dtype = field.dtype
             arrow_type = field_dtype.to_arrow_dtype()
-            assert name == field_name
-            arrays[name] = daft.Series.from_arrow(pa.array([value], type=arrow_type), name=name).cast(field_dtype)
+            arrays[field_name] = daft.Series.from_arrow(pa.array([record[idx]], type=arrow_type), name=field_name).cast(
+                field_dtype
+            )
         if len(arrays) > 0:
             return daft.table.Table.from_pydict(arrays)
         else:
@@ -162,7 +164,7 @@ class IcebergScanOperator(ScanOperator):
                 raise NotImplementedError("Iceberg Merge-on-Read currently not supported, please make an issue!")
 
             # TODO: Thread in Statistics to each ScanTask: P2
-            pspec = self._iceberg_record_to_partition_spec(file.partition)
+            pspec = self._iceberg_record_to_partition_spec(self._table.specs()[file.spec_id], file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,

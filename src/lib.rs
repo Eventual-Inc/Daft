@@ -33,8 +33,11 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 
 #[cfg(feature = "python")]
 pub mod pylib {
+    use lazy_static::lazy_static;
     use pyo3::prelude::*;
-
+    lazy_static! {
+        static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
+    }
     #[pyfunction]
     pub fn version() -> &'static str {
         daft_core::VERSION
@@ -45,9 +48,15 @@ pub mod pylib {
         daft_core::DAFT_BUILD_TYPE
     }
 
+    #[pyfunction]
+    pub fn refresh_logger() {
+        LOG_RESET_HANDLE.reset();
+    }
+
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-        pyo3_log::init();
+        refresh_logger();
+
         common_daft_config::register_modules(_py, m)?;
         common_system_info::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
@@ -63,6 +72,7 @@ pub mod pylib {
         daft_scan::register_modules(_py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
+        m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         Ok(())
     }
 }

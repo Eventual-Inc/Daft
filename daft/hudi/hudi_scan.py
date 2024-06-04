@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Iterator
 
 import daft
@@ -12,7 +11,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.filesystem import _resolve_paths_and_filesystem
+from daft.filesystem import _resolve_paths_and_filesystem, join_path
 from daft.hudi.pyhudi.table import HUDI_METAFIELD_PARTITION_PATH, HudiTable, HudiTableMetadata
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
@@ -23,8 +22,8 @@ logger = logging.getLogger(__name__)
 class HudiScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
-        resolved_path, resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.config.io_config)
-        self._table = HudiTable(table_uri, resolved_fs, resolved_path[0])
+        resolved_path, self._resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.config.io_config)
+        self._table = HudiTable(table_uri, self._resolved_fs, resolved_path[0])
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema)
         partition_fields = set(self._table.props.partition_fields)
@@ -69,7 +68,7 @@ class HudiScanOperator(ScanOperator):
             if limit_files and rows_left <= 0:
                 break
 
-            path = os.path.join(self._table.table_uri, files_metadata["path"][task_idx].as_py())
+            path = join_path(self._resolved_fs, self._table.table_uri, files_metadata["path"][task_idx].as_py())
             record_count = files_metadata["num_records"][task_idx].as_py()
             try:
                 size_bytes = files_metadata["size_bytes"][task_idx].as_py()

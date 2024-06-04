@@ -5,10 +5,12 @@ use crate::functions::FunctionExpr;
 use crate::ExprRef;
 
 use super::super::FunctionEvaluator;
+use super::NumericExpr;
 
 pub(super) enum LogFunction {
     Log2,
     Log10,
+    Log,
     Ln,
 }
 pub(super) struct LogEvaluator(pub LogFunction);
@@ -18,6 +20,7 @@ impl FunctionEvaluator for LogEvaluator {
         match self.0 {
             LogFunction::Log2 => "log2",
             LogFunction::Log10 => "log10",
+            LogFunction::Log => "log",
             LogFunction::Ln => "ln",
         }
     }
@@ -43,7 +46,7 @@ impl FunctionEvaluator for LogEvaluator {
         Ok(Field::new(field.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
         if inputs.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
@@ -54,6 +57,14 @@ impl FunctionEvaluator for LogEvaluator {
         match self.0 {
             LogFunction::Log2 => input.log2(),
             LogFunction::Log10 => input.log10(),
+            LogFunction::Log => {
+                let base = match expr {
+                    FunctionExpr::Numeric(NumericExpr::Log(value)) => value,
+                    _ => panic!("Expected Log Expr, got {expr}"),
+                };
+
+                input.log(base.0)
+            }
             LogFunction::Ln => input.ln(),
         }
     }

@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(result_flattening)]
+
 use common_error::DaftError;
 use snafu::Snafu;
 
@@ -21,6 +22,8 @@ pub enum Error {
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
+    #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
+    FileReadTimeout { path: String, duration_ms: i64 },
     #[snafu(display("Internal IO Error when Opening: {path}:\nDetails:\n{source}"))]
     InternalIOError {
         path: String,
@@ -189,6 +192,7 @@ impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         match err {
             Error::DaftIOError { source } => source.into(),
+            Error::FileReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
             _ => DaftError::External(err.into()),
         }
     }
