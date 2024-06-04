@@ -8,16 +8,32 @@ use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
 
 pub struct StreamingRetryParams {
-    pub source: Arc<dyn ObjectSource>,
-    pub input: String,
-    pub range: Option<Range<usize>>,
-    pub io_stats: Option<IOStatsRef>,
+    source: Arc<dyn ObjectSource>,
+    input: String,
+    range: Option<Range<usize>>,
+    io_stats: Option<IOStatsRef>,
+}
+
+impl StreamingRetryParams {
+    pub(crate) fn new(
+        source: Arc<dyn ObjectSource>,
+        input: String,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> Self {
+        Self {
+            source,
+            input,
+            range,
+            io_stats,
+        }
+    }
 }
 
 pub enum GetResult {
@@ -77,7 +93,7 @@ impl GetResult {
                             if let Some(rp) = &retry_params =>
                         {
                             let jitter = rand::thread_rng()
-                                .gen_range(0..((1 << attempt) * JITTER_MS))
+                                .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
                                 as u64;
                             let jitter = jitter.min(MAX_BACKOFF_MS);
 
