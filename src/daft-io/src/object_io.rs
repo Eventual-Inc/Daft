@@ -64,7 +64,7 @@ impl GetResult {
                 drop(permit); // drop permit to ensure quota
                 for _ in 0..tries {
                     // if let Err(super::Error::SocketError { .. }) = result
-                    if let Err(err) = result
+                    if let Err(ref err) = result
                         && let Some(rp) = &retry_params
                     {
                         log::warn!("Received Socket Error, Attempting retry.\nDetails\n {err}");
