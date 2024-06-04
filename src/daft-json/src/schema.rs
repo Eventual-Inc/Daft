@@ -122,7 +122,7 @@ pub(crate) async fn read_json_schema_single(
             Box::new(BufReader::new(File::open(file.path).await?)),
             max_bytes,
         ),
-        GetResult::Stream(stream, size, _) => (
+        GetResult::Stream(stream, size, ..) => (
             Box::new(StreamReader::new(stream)),
             // Truncate max_bytes to size if both are set.
             max_bytes.map(|m| size.map(|s| m.min(s)).unwrap_or(m)),

@@ -12,12 +12,20 @@ use tokio::sync::OwnedSemaphorePermit;
 use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
 
+pub struct StreamingRetryParams {
+    source: Arc<dyn ObjectSource>,
+    input: String,
+    range: Option<Range<usize>>,
+    io_stats: Option<IOStatsRef>,
+}
+
 pub enum GetResult {
     File(LocalFile),
     Stream(
         BoxStream<'static, super::Result<Bytes>>,
         Option<usize>,
         Option<OwnedSemaphorePermit>,
+        Option<Box<StreamingRetryParams>>,
     ),
 }
 
@@ -47,9 +55,35 @@ where
 impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
         use GetResult::*;
-        match self {
+        let mut get_result = self;
+        match get_result {
             File(f) => collect_file(f).await,
-            Stream(stream, size, _permit) => collect_bytes(stream, size).await,
+            Stream(stream, size, permit, retry_params) => {
+                let tries = 3;
+                let mut result = collect_bytes(stream, size).await;
+                drop(permit); // drop permit to ensure quota
+                for _ in 0..tries {
+                    if let Err(super::Error::SocketError { .. }) = result
+                        && let Some(rp) = &retry_params
+                    {
+                        log::warn!(
+                            "Received Socket Error, Attempting retry.\nDetails\n {result:#?}"
+                        );
+                        get_result = rp
+                            .source
+                            .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
+                            .await?;
+                        if let GetResult::Stream(stream, size, ..) = get_result {
+                            result = collect_bytes(stream, size).await;
+                        } else {
+                            unreachable!("Retrying a stream should always be a stream");
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                result
+            }
         }
     }
 }

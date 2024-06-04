@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
+#![feature(if_let_guard)]
 mod azure_blob;
 mod google_cloud;
 mod http;
