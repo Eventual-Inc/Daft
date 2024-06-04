@@ -32,7 +32,7 @@ pub fn row_group_metadata_to_table_stats(
         .map(|(field_name, field)| {
             if ColumnRangeStatistics::supports_dtype(&field.dtype) {
                 let stats: ColumnRangeStatistics = parquet_column_metadata
-                    .remove(field_name)
+                    .swap_remove(field_name)
                     .expect("Cannot find parsed Daft field in Parquet rowgroup metadata")
                     .transpose()
                     .context(super::UnableToParseParquetColumnStatisticsSnafu)?
