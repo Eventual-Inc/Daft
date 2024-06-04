@@ -62,6 +62,7 @@ impl GetResult {
                 let tries = 3;
                 let mut result = collect_bytes(stream, size).await;
                 drop(permit); // drop permit to ensure quota
+
                 for _ in 0..tries {
                     match result {
                         Err(super::Error::SocketError { .. })
@@ -76,8 +77,9 @@ impl GetResult {
                                 .source
                                 .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
                                 .await?;
-                            if let GetResult::Stream(stream, size, ..) = get_result {
+                            if let GetResult::Stream(stream, size, permit, _) = get_result {
                                 result = collect_bytes(stream, size).await;
+                                drop(permit); // drop permit to ensure quota
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
                             }
