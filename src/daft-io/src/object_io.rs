@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -7,7 +8,7 @@ use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
@@ -29,7 +30,11 @@ pub enum GetResult {
     ),
 }
 
-async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>
+async fn collect_bytes<S>(
+    mut stream: S,
+    size_hint: Option<usize>,
+    _permit: Option<OwnedSemaphorePermit>,
+) -> super::Result<Bytes>
 where
     S: Stream<Item = super::Result<Bytes>> + Send + Unpin,
 {
@@ -59,27 +64,35 @@ impl GetResult {
         match get_result {
             File(f) => collect_file(f).await,
             Stream(stream, size, permit, retry_params) => {
-                let tries = 3;
-                let mut result = collect_bytes(stream, size).await;
-                drop(permit); // drop permit to ensure quota
+                use rand::Rng;
+                const NUM_TRIES: u64 = 3;
+                const JITTER_MS: u64 = 2_500;
+                const MAX_BACKOFF_MS: u64 = 20_000;
 
-                for attempt in 1..tries {
+                let mut result = collect_bytes(stream, size, permit).await; // drop permit to ensure quota
+                for attempt in 1..NUM_TRIES {
                     match result {
                         Err(super::Error::SocketError { .. })
                         | Err(super::Error::UnableToReadBytes { .. })
                             if let Some(rp) = &retry_params =>
                         {
+                            let jitter = rand::thread_rng()
+                                .gen_range(0..((1 << attempt) * JITTER_MS))
+                                as u64;
+                            let jitter = jitter.min(MAX_BACKOFF_MS);
+
                             log::warn!(
-                                "Received Socket Error, Attempting retry attempt: {attempt}.\nDetails\n {}",
+                                "Received Socket Error when streaming bytes! Attempt {attempt} out of {NUM_TRIES} tries. Trying again in {jitter}ms\nDetails\n{}",
                                 result.err().unwrap()
                             );
+                            tokio::time::sleep(Duration::from_millis(jitter)).await;
+
                             get_result = rp
                                 .source
                                 .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
                                 .await?;
                             if let GetResult::Stream(stream, size, permit, _) = get_result {
-                                result = collect_bytes(stream, size).await;
-                                drop(permit); // drop permit to ensure quota
+                                result = collect_bytes(stream, size, permit).await;
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
                             }
