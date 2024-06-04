@@ -63,14 +63,14 @@ impl GetResult {
                 let mut result = collect_bytes(stream, size).await;
                 drop(permit); // drop permit to ensure quota
 
-                for _ in 0..tries {
+                for attempt in 1..tries {
                     match result {
                         Err(super::Error::SocketError { .. })
                         | Err(super::Error::UnableToReadBytes { .. })
                             if let Some(rp) = &retry_params =>
                         {
                             log::warn!(
-                                "Received Socket Error, Attempting retry.\nDetails\n {}",
+                                "Received Socket Error, Attempting retry attempt: {attempt}.\nDetails\n {}",
                                 result.err().unwrap()
                             );
                             get_result = rp
