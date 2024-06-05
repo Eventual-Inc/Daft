@@ -29,7 +29,6 @@
 //!
 //! [non-comparison sorts]:[https://en.wikipedia.org/wiki/Sorting_algorithm#Non-comparison_sorts]
 //! [radix sort]:[https://en.wikipedia.org/wiki/Radix_sort]
-//! [normalized for sorting]:[https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.83.1080&rep=rep1&type=pdf]
 //! [`memcmp`]:[https://www.man7.org/linux/man-pages/man3/memcmp.3.html]
 use std::{
     cmp::Ordering,
@@ -379,7 +378,7 @@ impl<'a> Eq for Row<'a> {}
 impl<'a> PartialOrd for Row<'a> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.data.partial_cmp(other.data)
+        Some(self.data.cmp(other.data))
     }
 }
 

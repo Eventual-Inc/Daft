@@ -4,7 +4,7 @@ use super::{ByteRecord, Reader};
 
 use crate::error::{Error, Result};
 
-/// Reads `len` rows from `reader` into `row`, skiping the first `skip`.
+/// Reads `len` rows from `reader` into `row`, skipping the first `skip`.
 /// This operation has minimal CPU work and is thus the fastest way to read through a CSV
 /// without deserializing the contents to Arrow.
 pub fn read_rows<R: Read>(

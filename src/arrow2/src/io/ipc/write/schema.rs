@@ -3,7 +3,7 @@ use arrow_format::ipc::planus::Builder;
 use crate::datatypes::{
     DataType, Field, IntegerType, IntervalUnit, Metadata, Schema, TimeUnit, UnionMode,
 };
-use crate::io::ipc::endianess::is_native_little_endian;
+use crate::io::ipc::endianness::is_native_little_endian;
 
 use super::super::IpcField;
 

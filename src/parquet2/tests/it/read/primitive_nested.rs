@@ -223,7 +223,7 @@ pub fn page_dict_to_array<T: NativeType>(
             ),
         ),
         (_, None) => Err(Error::OutOfSpec(
-            "A dictionary-encoded page MUST be preceeded by a dictionary page".to_string(),
+            "A dictionary-encoded page MUST be preceded by a dictionary page".to_string(),
         )),
         _ => todo!(),
     }

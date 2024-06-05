@@ -9,7 +9,7 @@ use super::{ByteRecord, Reader};
 
 /// Infers the [`Field`]s of a CSV file by reading through the first n records up to `max_rows`.
 /// Also returns the number of rows used to infer.
-/// Seeks back to the begining of the file _after_ the header
+/// Seeks back to the beginning of the file _after_ the header
 pub fn infer_schema<R: Read + Seek, F: Fn(&[u8]) -> DataType>(
     reader: &mut Reader<R>,
     max_rows: Option<usize>,

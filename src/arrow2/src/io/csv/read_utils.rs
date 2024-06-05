@@ -266,7 +266,7 @@ pub(crate) fn deserialize_column<B: ByteRecordGeneric>(
 
 /// Deserializes rows [`ByteRecord`] into [`Chunk`].
 /// Note that this is a convenience function: column deserialization
-/// is embarassingly parallel (e.g. rayon).
+/// is embarrassingly parallel (e.g. rayon).
 pub(crate) fn deserialize_batch<F, B: ByteRecordGeneric>(
     rows: &[B],
     fields: &[Field],

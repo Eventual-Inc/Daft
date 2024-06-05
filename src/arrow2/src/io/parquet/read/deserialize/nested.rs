@@ -34,7 +34,7 @@ where
     }))
 }
 
-pub fn columns_to_iter_recursive<'a, I: 'a>(
+pub fn columns_to_iter_recursive<'a, I>(
     mut columns: Vec<I>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
@@ -43,7 +43,7 @@ pub fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> Result<NestedArrayIter<'a>>
 where
-    I: Pages,
+    I: Pages + 'a,
 {
     use crate::datatypes::PhysicalType::*;
     use crate::datatypes::PrimitiveType::*;

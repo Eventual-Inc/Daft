@@ -8,7 +8,7 @@ use crate::io::csv::utils::merge_schema;
 use futures::{AsyncRead, AsyncSeek};
 
 /// Infers the [`Field`]s of a CSV file by reading through the first n records up to `max_rows`.
-/// Seeks back to the begining of the file _after_ the header
+/// Seeks back to the beginning of the file _after_ the header
 pub async fn infer_schema<R, F>(
     reader: &mut AsyncReader<R>,
     max_rows: Option<usize>,

@@ -14,7 +14,7 @@ pub trait Simd8Lanes<T>: Copy {
     fn from_incomplete_chunk(v: &[T], remaining: T) -> Self;
 }
 
-/// Trait implemented by implementors of [`Simd8Lanes`] whose [`Simd8`] implements [PartialEq].
+/// Trait implemented by implementers of [`Simd8Lanes`] whose [`Simd8`] implements [PartialEq].
 pub trait Simd8PartialEq: Copy {
     /// Equal
     fn eq(self, other: Self) -> u8;
@@ -22,7 +22,7 @@ pub trait Simd8PartialEq: Copy {
     fn neq(self, other: Self) -> u8;
 }
 
-/// Trait implemented by implementors of [`Simd8Lanes`] whose [`Simd8`] implements [PartialOrd].
+/// Trait implemented by implementers of [`Simd8Lanes`] whose [`Simd8`] implements [PartialOrd].
 pub trait Simd8PartialOrd: Copy {
     /// Less than or equal to
     fn lt_eq(self, other: Self) -> u8;

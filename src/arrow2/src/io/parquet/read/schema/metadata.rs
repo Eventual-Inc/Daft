@@ -60,7 +60,7 @@ pub(super) fn parse_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>
 ///
 /// This logic is adapted from a similar function in arrow-cpp
 /// See: `ApplyOriginalMetadata` in https://github.com/apache/arrow/blob/main/cpp/src/parquet/arrow/schema.cc#L976C14-L999
-fn apply_original_metadata<'a>(origin_field: &Field, inferred_field: &Field) -> Field {
+fn apply_original_metadata(origin_field: &Field, inferred_field: &Field) -> Field {
     let new_field = match (origin_field.data_type(), inferred_field.data_type()) {
         // Wrap inferred field into an Extension type
         (DataType::Extension(_, storage_dtype, _), _inferred_dtype) => {
@@ -149,7 +149,7 @@ fn apply_original_metadata<'a>(origin_field: &Field, inferred_field: &Field) -> 
 }
 
 /// Apply an Arrow schema on inferred fields
-pub fn apply_schema_to_fields<'a>(schema: &Schema, fields: &Vec<Field>) -> Vec<Field> {
+pub fn apply_schema_to_fields(schema: &Schema, fields: &[Field]) -> Vec<Field> {
     schema
         .fields
         .iter()

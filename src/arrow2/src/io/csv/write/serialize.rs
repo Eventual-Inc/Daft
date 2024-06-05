@@ -466,7 +466,7 @@ pub fn new_serializer<'a>(
     })
 }
 
-/// Helper for serializing a dictonary array. The generic parameters are:
+/// Helper for dictionary a dictionary array. The generic parameters are:
 /// - `K` for the type of the keys of the dictionary
 /// - `O` for the type of the offsets in the Utf8Array: {i32, i64}
 fn serialize_utf8_dict<'a, K: DictionaryKey, O: Offset>(

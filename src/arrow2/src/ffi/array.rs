@@ -201,7 +201,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
     if index >= array.n_buffers as usize {
         return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} 
+            "An ArrowArray of type {data_type:?}
              must have buffer {index}."
         )));
     }
@@ -209,7 +209,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
     let ptr = *buffers.add(index);
     if ptr.is_null() {
         return Err(Error::oos(format!(
-            "An array of type {data_type:?} 
+            "An array of type {data_type:?}
             must have a non-null buffer {index}"
         )));
     }
@@ -253,7 +253,7 @@ unsafe fn create_buffer<T: NativeType>(
         let dst_ptr: *mut u8 = std::mem::transmute(dst.as_mut_ptr());
         let bytes_to_copy = n_elem * std::mem::size_of::<T>();
         std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, bytes_to_copy);
-        // set length after copy incase of panic
+        // set length after copy in case of panic
         dst.set_len(n_elem);
         Ok(Buffer::from(dst))
     }
@@ -385,7 +385,7 @@ unsafe fn create_child(
 
     if index >= array.n_children as usize {
         return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} 
+            "An ArrowArray of type {data_type:?}
              must have child {index}."
         )));
     }

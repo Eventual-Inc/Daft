@@ -141,7 +141,7 @@ Unlike the numeric types, the string type does not support arithmetic operations
     +--------+--------+
     (Showing first 3 rows)
 
-There are also many string operators that are accessed through a separate :meth:`.str.* <daft.expressions.Expresison.str>` "method namespace".
+There are also many string operators that are accessed through a separate :meth:`.str.* <daft.expressions.Expression.str>` "method namespace".
 
 For example, to check if each element in column "B" contains the substring "a", we can use the :meth:`.str.contains <daft.expressions.expressions.ExpressionStringNamespace.contains>` method:
 

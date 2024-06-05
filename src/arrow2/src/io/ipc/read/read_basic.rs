@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::{bitmap::Bitmap, types::NativeType};
 
 use super::super::compression;
-use super::super::endianess::is_native_little_endian;
+use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 
 fn read_swapped<T: NativeType, R: Read + Seek>(

@@ -306,7 +306,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> Result<Box<dyn Array>
 }
 
 /// Returns a new [Chunk] with arrays containing only values matching the filter.
-/// This is a convenience function: filter multiple columns is embarassingly parallel.
+/// This is a convenience function: filter multiple columns is embarrassingly parallel.
 pub fn filter_chunk<A: AsRef<dyn Array>>(
     columns: &Chunk<A>,
     filter_values: &BooleanArray,

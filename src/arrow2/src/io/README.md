@@ -19,6 +19,6 @@ This document describes the overall design of this module.
     * functions that read "data" SHOULD consume a schema typically pre-read.
 * Implementations SHOULD separate IO-bounded operations from CPU-bounded operations.
   I.e. implementations SHOULD:
-    * contain functions that consume a `Read` implementor and output a "raw" struct, i.e. a struct that is e.g. compressed and serialized
+    * contain functions that consume a `Read` implementer and output a "raw" struct, i.e. a struct that is e.g. compressed and serialized
     * contain functions that consume a "raw" struct and convert it into Arrow.
     * offer each of these functions as independent public APIs, so that consumers can decide how to balance CPU-bounds and IO-bounds.

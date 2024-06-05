@@ -323,7 +323,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function returns a [`MutablePrimitiveArray`] (via [`std::sync::Arc::get_mut`]) iff both values
     /// and validity have not been cloned / are unique references to their underlying vectors.
     ///
-    /// This function is primarily used to re-use memory regions.
+    /// This function is primarily used to reuse memory regions.
     #[must_use]
     pub fn into_mut(self) -> Either<Self, MutablePrimitiveArray<T>> {
         use Either::*;

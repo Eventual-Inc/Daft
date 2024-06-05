@@ -260,8 +260,8 @@ where
 {
     let f = move |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            let nd = convert(*x);
-            write!(buf, "\"{nd}\"").unwrap();
+            let n = convert(*x);
+            write!(buf, "\"{n}\"").unwrap();
         } else {
             buf.extend_from_slice(b"null")
         }

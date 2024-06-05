@@ -397,7 +397,7 @@ fn cast_large_to_list(
     to_type: &DataType,
     options: CastOptions,
 ) -> Result<ListArray<i32>> {
-    let offsets = array.offsets().try_into().expect("Conver me to error");
+    let offsets = array.offsets().try_into().expect("Convert me to error");
     let values = cast(
         array.values().as_ref(),
         ListArray::<i32>::get_child_type(to_type),
