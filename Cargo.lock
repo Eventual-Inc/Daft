@@ -1677,7 +1677,6 @@ dependencies = [
 name = "daft-execution"
 version = "0.2.0-dev0"
 dependencies = [
- "async-stream",
  "async-trait",
  "common-error",
  "daft-core",
@@ -1688,20 +1687,14 @@ dependencies = [
  "daft-scan",
  "futures",
  "itertools 0.11.0",
- "lazy_static",
  "log",
  "pyo3",
- "pyo3-log",
  "rand 0.8.5",
  "rayon",
  "rstest",
- "serde",
- "serde_json",
  "snafu",
  "sysinfo",
  "tokio",
- "tokio-stream",
- "tokio-util",
 ]
 
 [[package]]

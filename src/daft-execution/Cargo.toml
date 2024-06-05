@@ -1,5 +1,4 @@
 [dependencies]
-async-stream = {workspace = true}
 async-trait = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -10,19 +9,13 @@ daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 futures = {workspace = true}
 itertools = {workspace = true}
-lazy_static = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rand = {workspace = true}
 rayon = {workspace = true}
-serde = {workspace = true, features = ["rc"]}
-serde_json = {workspace = true}
 snafu = {workspace = true}
 sysinfo = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = {workspace = true, features = ["io-util"]}
-tokio-util = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
