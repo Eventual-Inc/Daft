@@ -60,10 +60,10 @@ pub fn compress_zstd(_input_buf: &[u8], _output_buf: &[u8]) -> Result<()> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "io_ipc_compression")]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "io_ipc_compression")]
     #[test]
     #[cfg_attr(miri, ignore)] // ZSTD uses foreign calls that miri does not support
     fn round_trip_zstd() {
@@ -76,7 +76,6 @@ mod tests {
         assert_eq!(data, result);
     }
 
-    #[cfg(feature = "io_ipc_compression")]
     #[test]
     #[cfg_attr(miri, ignore)] // LZ4 uses foreign calls that miri does not support
     fn round_trip_lz4() {

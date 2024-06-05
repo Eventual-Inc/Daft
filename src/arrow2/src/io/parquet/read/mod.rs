@@ -64,7 +64,6 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
 
 /// Reads parquets' metadata asynchronously.
 #[cfg(feature = "io_parquet_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_parquet_async")))]
 pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
     reader: &mut R,
 ) -> Result<FileMetaData> {

@@ -308,7 +308,6 @@ pub fn read_columns_many<'a, R: Read + Seek>(
 /// it reads all the columns to memory from the row group associated to the requested fields.
 /// It does so asynchronously via `join_all`
 #[cfg(feature = "io_parquet_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_parquet_async")))]
 pub async fn read_columns_many_async<
     'a,
     'b,
