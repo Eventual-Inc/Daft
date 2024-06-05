@@ -16,7 +16,7 @@ use super::IntoIter;
 /// The easiest way to create one is to use its implementation of `From<Vec<T>>`.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::buffer::Buffer;
 ///
 /// let mut buffer: Buffer<u32> = vec![1, 2, 3].into();

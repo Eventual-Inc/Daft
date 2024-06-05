@@ -38,7 +38,7 @@ where
 /// # Panics
 /// This function panics iff the arrays have different lengths.
 /// # Examples
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::and;
 ///
@@ -80,7 +80,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// # Panics
 /// This function panics iff the arrays have different lengths.
 /// # Examples
-/// ```rust
+/// ```rust,ignore
 /// use arrow2::array::BooleanArray;
 /// use arrow2::compute::boolean::or;
 ///

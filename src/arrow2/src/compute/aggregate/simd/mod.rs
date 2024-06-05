@@ -100,12 +100,7 @@ pub(super) use simd_ord_int;
 simd_add!(i128x8, i128, 8, add);
 simd_ord_int!(i128x8, i128);
 
-#[cfg(not(feature = "simd"))]
+
 mod native;
-#[cfg(not(feature = "simd"))]
 pub use native::*;
-#[cfg(feature = "simd")]
-mod packed;
-#[cfg(feature = "simd")]
-#[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
-pub use packed::*;
+

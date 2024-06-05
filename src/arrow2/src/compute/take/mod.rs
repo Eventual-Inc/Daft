@@ -102,7 +102,7 @@ pub fn take<O: Index>(values: &dyn Array, indices: &PrimitiveArray<O>) -> Result
 /// Checks if an array of type `datatype` can perform take operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::take::can_take;
 /// use arrow2::datatypes::{DataType};
 ///

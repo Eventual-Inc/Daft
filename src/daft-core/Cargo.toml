@@ -1,34 +1,48 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["chrono-tz", "compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "compute_substring", "io_ipc"]}
+arrow2 = { workspace = true, features = [
+  "chrono-tz",
+  "compute_take",
+  "compute_cast",
+  "compute_aggregate",
+  "compute_if_then_else",
+  "compute_sort",
+  "compute_filter",
+  "compute_temporal",
+  "compute_comparison",
+  "compute_arithmetics",
+  "compute_concatenate",
+  "compute_substring",
+  "io_ipc",
+] }
 base64 = "0.22.0"
-bincode = {workspace = true}
-chrono = {workspace = true}
-chrono-tz = {workspace = true}
-comfy-table = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-daft-sketch = {path = "../daft-sketch", default-features = false}
+bincode = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+comfy-table = { workspace = true }
+common-error = { path = "../common/error", default-features = false }
+daft-sketch = { path = "../daft-sketch", default-features = false }
 dyn-clone = "1.0.17"
 fnv = "1.0.7"
-html-escape = {workspace = true}
-indexmap = {workspace = true, features = ["serde"]}
-itertools = {workspace = true}
-jaq-core = {workspace = true}
-jaq-interpret = {workspace = true}
-jaq-parse = {workspace = true}
-jaq-std = {workspace = true}
-lazy_static = {workspace = true}
-log = {workspace = true}
+html-escape = { workspace = true }
+indexmap = { workspace = true, features = ["serde"] }
+itertools = { workspace = true }
+jaq-core = { workspace = true }
+jaq-interpret = { workspace = true }
+jaq-parse = { workspace = true }
+jaq-std = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
 mur3 = "0.1.0"
 ndarray = "0.15.6"
-num-derive = {workspace = true}
-num-traits = {workspace = true}
-pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
-rand = {workspace = true}
-regex = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
-sketches-ddsketch = {workspace = true}
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-log = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sketches-ddsketch = { workspace = true }
 
 [dependencies.image]
 default-features = false
@@ -48,6 +62,6 @@ default = ["python"]
 python = ["dep:pyo3", "dep:numpy", "common-error/python"]
 
 [package]
-edition = {workspace = true}
+edition = { workspace = true }
 name = "daft-core"
-version = {workspace = true}
+version = { workspace = true }

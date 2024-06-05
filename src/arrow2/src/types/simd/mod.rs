@@ -49,14 +49,10 @@ pub trait Simd: NativeType {
     type Simd: NativeSimd<Native = Self>;
 }
 
-#[cfg(not(feature = "simd"))]
+
 mod native;
-#[cfg(not(feature = "simd"))]
 pub use native::*;
-#[cfg(feature = "simd")]
-mod packed;
-#[cfg(feature = "simd")]
-pub use packed::*;
+
 
 macro_rules! native_simd {
     ($name:tt, $type:ty, $lanes:expr, $mask:ty) => {

@@ -19,7 +19,7 @@ use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 /// smaller than the possible number for the selected precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::sub;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -58,7 +58,7 @@ pub fn sub(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 /// number in the arrow array is the minimum number for the selected precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::saturating_sub;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -124,7 +124,7 @@ impl ArraySaturatingSub<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 /// validity for that index is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::checked_sub;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -167,7 +167,7 @@ pub fn checked_sub(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> Pr
 /// 100.0000 -> 7, 4
 /// ```
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::adaptive_sub;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;

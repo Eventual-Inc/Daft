@@ -286,6 +286,17 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> 
     }
 }
 
+#[cfg(all(feature = "lz4", feature = "lz4_flex"))]
+#[inline]
+fn lz4_decompress_to_buffer(
+    _src: &[u8],
+    _uncompressed_size: Option<i32>,
+    _buffer: &mut [u8],
+) -> Result<usize> {
+    Err(Error::FeatureNotSupported(
+        "Both lz4 and lz4_flex features are enabled".to_string(),
+    ))
+}
 #[cfg(all(feature = "lz4", not(feature = "lz4_flex")))]
 #[inline]
 fn lz4_decompress_to_buffer(

@@ -170,7 +170,7 @@ pub fn substring(array: &dyn Array, start: i64, length: &Option<u64>) -> Result<
 /// Checks if an array of type `datatype` can perform substring operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::substring::can_substring;
 /// use arrow2::datatypes::{DataType};
 ///

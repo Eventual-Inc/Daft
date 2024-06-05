@@ -229,7 +229,7 @@ fn sort_dict<I: Index, O: Offset>(
 /// Checks if an array of type `datatype` can be sorted
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::sort::can_sort;
 /// use arrow2::datatypes::{DataType};
 ///

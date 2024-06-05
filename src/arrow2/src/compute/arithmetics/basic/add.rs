@@ -22,7 +22,7 @@ use super::NativeArithmetics;
 /// Panics if the sum of one pair of values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::add;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -43,7 +43,7 @@ where
 /// It wraps around at the boundary of the type if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_add;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -66,7 +66,7 @@ where
 /// overflows, the validity for that index is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_add;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -90,7 +90,7 @@ where
 /// will be the saturated value.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_add;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -115,7 +115,7 @@ where
 /// the overflowing elements from the array.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_add;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -190,7 +190,7 @@ where
 /// Panics if the sum of the values overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::add_scalar;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -211,7 +211,7 @@ where
 /// It do nothing if the result overflows.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::wrapping_add_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -232,7 +232,7 @@ where
 /// changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::checked_add_scalar;
 /// use arrow2::array::Int8Array;
 ///
@@ -256,7 +256,7 @@ where
 /// the result will be saturated
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::saturating_add_scalar;
 /// use arrow2::array::PrimitiveArray;
 ///
@@ -281,7 +281,7 @@ where
 /// indicating the overflowing elements from the array
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::basic::overflowing_add_scalar;
 /// use arrow2::array::PrimitiveArray;
 ///

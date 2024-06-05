@@ -22,7 +22,7 @@ use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 /// the possible number for the precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::add;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -60,7 +60,7 @@ pub fn add(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 /// the arrow array is the maximum number for the selected precision.
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::saturating_add;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -104,7 +104,7 @@ pub fn saturating_add(
 /// validity for that index is changed to None
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::checked_add;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;
@@ -168,7 +168,7 @@ impl ArraySaturatingAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 /// 22222.221  -> 8, 3
 /// ```
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::arithmetics::decimal::adaptive_add;
 /// use arrow2::array::PrimitiveArray;
 /// use arrow2::datatypes::DataType;

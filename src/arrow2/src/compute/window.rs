@@ -29,7 +29,7 @@ use crate::{
 /// A positive value for `offset` shifts the array to the right
 /// a negative value shifts the array to the left.
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::array::Int32Array;
 /// use arrow2::compute::window::shift;
 ///

@@ -5,7 +5,10 @@ license = "Apache-2.0"
 description = "Unofficial implementation of Apache Arrow spec in safe Rust"
 homepage = "https://github.com/jorgecarleitao/arrow2"
 repository = "https://github.com/jorgecarleitao/arrow2"
-authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arrow.apache.org>"]
+authors = [
+    "Jorge C. Leitao <jorgecarleitao@gmail.com>",
+    "Apache Arrow <dev@arrow.apache.org>",
+]
 keywords = ["arrow", "analytics"]
 edition = "2021"
 exclude = ["testing/"]
@@ -51,7 +54,9 @@ regex-syntax = { version = "0.7", optional = true }
 streaming-iterator = { version = "0.1", optional = true }
 fallible-streaming-iterator = { version = "0.1", optional = true }
 
-json-deserializer = { version = "0.4.4", optional = true, features = ["preserve_order"] }
+json-deserializer = { version = "0.4.4", optional = true, features = [
+    "preserve_order",
+] }
 indexmap = { version = "^1.6", optional = true }
 
 # used to print columns in a nice columnar format
@@ -86,7 +91,9 @@ orc-format = { version = "0.3.0", optional = true }
 # Arrow integration tests support
 serde = { version = "^1.0", features = ["rc"], optional = true }
 serde_derive = { version = "^1.0", optional = true }
-serde_json = { version = "^1.0", features = ["preserve_order"], optional = true }
+serde_json = { version = "^1.0", features = [
+    "preserve_order",
+], optional = true }
 
 # for division/remainder optimization at runtime
 strength_reduce = { version = "0.2", optional = true }
@@ -94,8 +101,7 @@ strength_reduce = { version = "0.2", optional = true }
 # For instruction multiversioning
 multiversion = { version = "0.7.3", optional = true }
 
-# For support for odbc
-odbc-api = { version = "0.36", optional = true }
+
 
 # Faster hashing
 ahash = "0.8"
@@ -104,10 +110,10 @@ ahash = "0.8"
 memchr = { version = "2.6", optional = true }
 
 # Support conversion to/from arrow-rs
-arrow-buffer = { version = ">=40", optional = true }
-arrow-schema = { version = ">=40", optional = true }
-arrow-data = { version = ">=40", optional = true }
-arrow-array = { version = ">=40", optional = true }
+arrow-buffer = { version = "=51.0.0", optional = true }
+arrow-schema = { version = "=51.0.0", optional = true }
+arrow-data = { version = "=51.0.0", optional = true }
+arrow-array = { version = "=51.0.0", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -145,7 +151,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 full = [
     "arrow",
-    "io_odbc",
     "io_csv",
     "io_csv_async",
     "io_json",
@@ -169,7 +174,6 @@ full = [
     "chrono-tz",
 ]
 arrow = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
-io_odbc = ["odbc-api"]
 io_csv = ["io_csv_read", "io_csv_write"]
 io_csv_async = ["io_csv_read_async"]
 io_csv_read = ["csv", "lexical-core"]
@@ -177,7 +181,11 @@ io_csv_read_async = ["csv-async", "lexical-core", "futures"]
 io_csv_write = ["csv-core", "streaming-iterator", "lexical-core"]
 io_json = ["io_json_read", "io_json_write"]
 io_json_read = ["json-deserializer", "indexmap", "lexical-core"]
-io_json_write = ["streaming-iterator", "fallible-streaming-iterator", "lexical-core"]
+io_json_write = [
+    "streaming-iterator",
+    "fallible-streaming-iterator",
+    "lexical-core",
+]
 io_ipc = ["arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
@@ -185,7 +193,13 @@ io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
-io_parquet = ["parquet2", "io_ipc", "base64", "streaming-iterator", "fallible-streaming-iterator"]
+io_parquet = [
+    "parquet2",
+    "io_ipc",
+    "base64",
+    "streaming-iterator",
+    "fallible-streaming-iterator",
+]
 io_parquet_async = ["futures", "io_parquet", "parquet2/async"]
 
 io_parquet_compression = [
@@ -193,7 +207,7 @@ io_parquet_compression = [
     "io_parquet_gzip",
     "io_parquet_snappy",
     "io_parquet_lz4",
-    "io_parquet_brotli"
+    "io_parquet_brotli",
 ]
 
 # sample testing of generated arrow data
@@ -211,9 +225,7 @@ io_parquet_brotli = ["parquet2/brotli"]
 io_parquet_bloom_filter = ["parquet2/bloom_filter"]
 
 io_avro = ["avro-schema", "streaming-iterator"]
-io_avro_compression = [
-    "avro-schema/compression",
-]
+io_avro_compression = ["avro-schema/compression"]
 io_avro_async = ["avro-schema/async"]
 
 io_orc = ["orc-format"]
@@ -274,7 +286,7 @@ compute = [
     "compute_take",
     "compute_temporal",
     "compute_utf8",
-    "compute_window"
+    "compute_window",
 ]
 benchmarks = ["rand"]
 serde_types = ["serde", "serde_derive"]
@@ -285,117 +297,3 @@ rustc_version = "0.4.0"
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]
-
-[[bench]]
-name = "take_kernels"
-harness = false
-
-[[bench]]
-name = "filter_kernels"
-harness = false
-
-[[bench]]
-name = "cast_kernels"
-harness = false
-
-[[bench]]
-name = "sort_kernel"
-harness = false
-
-[[bench]]
-name = "length_kernel"
-harness = false
-
-[[bench]]
-name = "count_zeros"
-harness = false
-
-[[bench]]
-name = "growable"
-harness = false
-
-[[bench]]
-name = "comparison_kernels"
-harness = false
-
-
-[[bench]]
-name = "read_parquet"
-harness = false
-
-[[bench]]
-name = "write_parquet"
-harness = false
-
-[[bench]]
-name = "aggregate"
-harness = false
-
-[[bench]]
-name = "write_ipc"
-harness = false
-
-[[bench]]
-name = "arithmetic_kernels"
-harness = false
-
-[[bench]]
-name = "bitmap"
-harness = false
-
-[[bench]]
-name = "concatenate"
-harness = false
-
-[[bench]]
-name = "bitmap_ops"
-harness = false
-
-[[bench]]
-name = "write_csv"
-harness = false
-
-[[bench]]
-name = "hash_kernel"
-harness = false
-
-[[bench]]
-name = "iter_utf8"
-harness = false
-
-[[bench]]
-name = "iter_list"
-harness = false
-
-[[bench]]
-name = "avro_read"
-harness = false
-
-[[bench]]
-name = "bitwise"
-harness = false
-
-[[bench]]
-name = "write_json"
-harness = false
-
-[[bench]]
-name = "read_json"
-harness = false
-
-[[bench]]
-name = "slices_iterator"
-harness = false
-
-[[bench]]
-name = "bitmap_assign_ops"
-harness = false
-
-[[bench]]
-name = "assign_ops"
-harness = false
-
-[[bench]]
-name = "like_kernels"
-harness = false
-

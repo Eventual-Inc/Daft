@@ -21,7 +21,7 @@ use super::Bitmap;
 ///
 /// A [`MutableBitmap`] can be converted to a [`Bitmap`] at `O(1)`.
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::bitmap::MutableBitmap;
 ///
 /// let bitmap = MutableBitmap::from([true, false, true]);

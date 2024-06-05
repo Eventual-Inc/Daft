@@ -1,6 +1,0 @@
-[book]
-authors = ["Jorge C. Leitao"]
-language = "en"
-multilingual = false
-src = "src"
-title = "arrow2 documentation"

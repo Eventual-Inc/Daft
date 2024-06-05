@@ -279,6 +279,7 @@ impl From<arrow_schema::DataType> for DataType {
             DataType::Decimal128(precision, scale) => Self::Decimal(precision as _, scale as _),
             DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
             DataType::RunEndEncoded(_, _) => panic!("Run-end encoding not supported by arrow2"),
+            _ => panic!("unsupported datatype: {:?}", value),
         }
     }
 }

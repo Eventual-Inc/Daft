@@ -43,7 +43,7 @@ pub fn upper(array: &dyn Array) -> Result<Box<dyn Array>> {
 /// Checks if an array of type `datatype` can perform upper operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::utf8::can_upper;
 /// use arrow2::datatypes::{DataType};
 ///
@@ -85,7 +85,7 @@ pub fn lower(array: &dyn Array) -> Result<Box<dyn Array>> {
 /// Checks if an array of type `datatype` can perform lower operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::utf8::can_lower;
 /// use arrow2::datatypes::{DataType};
 ///

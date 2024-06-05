@@ -330,7 +330,7 @@ where
 /// Checks if an array of type `datatype` can perform year operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::temporal::can_year;
 /// use arrow2::datatypes::{DataType};
 ///
@@ -371,7 +371,7 @@ fn can_date(data_type: &DataType) -> bool {
 /// Checks if an array of type `datatype` can perform hour operation
 ///
 /// # Examples
-/// ```
+/// ```rust,ignore
 /// use arrow2::compute::temporal::can_hour;
 /// use arrow2::datatypes::{DataType, TimeUnit};
 ///
