@@ -58,13 +58,32 @@ pub(crate) trait TreeDisplay {
         } else {
             self.get_multiline_representation()
         };
-        for (i, val) in lines.iter().enumerate() {
-            self.fmt_depth(depth, s)?;
-            match i {
-                0 => write!(s, "* ")?,
-                _ => write!(s, "|   ")?,
+        use terminal_size::{terminal_size, Width};
+        let size = terminal_size();
+        let term_width = if let Some((Width(w), _)) = size {
+            w as usize
+        } else {
+            88usize
+        };
+
+        let mut counter = 0;
+        for val in lines.iter() {
+            let base_characters = depth * 2;
+            let expected_chars = (term_width - base_characters - 8).max(8);
+            let sublines = textwrap::wrap(val, expected_chars);
+
+            for (i, sb) in sublines.iter().enumerate() {
+                self.fmt_depth(depth, s)?;
+                match counter {
+                    0 => write!(s, "* ")?,
+                    _ => write!(s, "|   ")?,
+                }
+                counter += 1;
+                match i {
+                    0 => writeln!(s, "{sb}")?,
+                    _ => writeln!(s, "  {sb}")?,
+                }
             }
-            writeln!(s, "{val}")?;
         }
 
         // Recursively handle children.
