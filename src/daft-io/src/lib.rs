@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
+#![feature(if_let_guard)]
 mod azure_blob;
 mod google_cloud;
 mod http;
@@ -19,6 +20,7 @@ pub mod python;
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;
 pub use object_io::GetResult;
+use object_io::StreamingRetryParams;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use stats::{IOStatsContext, IOStatsRef};
@@ -232,7 +234,10 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
-        source.get(path.as_ref(), range, io_stats).await
+        let get_result = source
+            .get(path.as_ref(), range.clone(), io_stats.clone())
+            .await?;
+        Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
 
     pub async fn single_url_get_size(

@@ -20,7 +20,7 @@ DATA = {
 TABLE = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()})
 EXPECTED_TYPES = {k: t for k, (_, t) in DATA.items()}
 
-from tests.utils import ANSI_ESCAPE
+from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
 
 
 def test_schema_len():
@@ -79,6 +79,17 @@ def test_truncated_repr():
     )
 
 
+def test_truncated_repr_html():
+    schema = TABLE.schema()
+    out_repr = schema._truncated_table_html()
+    assert (
+        out_repr
+        == f"""<table class="dataframe">
+<thead><tr><th {TH_STYLE}>int<br />Int64</th><th {TH_STYLE}>float<br />Float64</th><th {TH_STYLE}>string<br />Utf8</th><th {TH_STYLE}>bool<br />Boolean</th></tr></thead>
+</table>"""
+    )
+
+
 def test_repr():
     schema = TABLE.schema()
     out_repr = repr(schema)
@@ -97,6 +108,24 @@ def test_repr():
 │ bool        ┆ Boolean │
 ╰─────────────┴─────────╯
 """
+    )
+
+
+def test_repr_html():
+    schema = TABLE.schema()
+    out_repr = schema._repr_html_()
+    print(out_repr)
+    assert (
+        out_repr
+        == f"""<table class="dataframe">
+<thead><tr><th {TH_STYLE}>Column Name</th><th {TH_STYLE}>Type</th></tr></thead>
+<tbody>
+<tr><td {TD_STYLE}>int</td><td {TD_STYLE}>Int64</td></tr>
+<tr><td {TD_STYLE}>float</td><td {TD_STYLE}>Float64</td></tr>
+<tr><td {TD_STYLE}>string</td><td {TD_STYLE}>Utf8</td></tr>
+<tr><td {TD_STYLE}>bool</td><td {TD_STYLE}>Boolean</td></tr>
+</tbody>
+</table>"""
     )
 
 

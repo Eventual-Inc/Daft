@@ -16,7 +16,7 @@ impl GCSConfig {
         if let Some(project_id) = &self.project_id {
             res.push(format!("Project ID = {}", project_id));
         }
-        res.push(format!("Anoynmous = {}", self.anonymous));
+        res.push(format!("Anonymous = {}", self.anonymous));
         res
     }
 }

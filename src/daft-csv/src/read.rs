@@ -356,7 +356,7 @@ async fn read_csv_single_into_stream(
                         .unwrap_or(64 * 1024),
                 )
             }
-            GetResult::Stream(stream, _, _) => (
+            GetResult::Stream(stream, ..) => (
                 Box::new(StreamReader::new(stream)),
                 read_options
                     .as_ref()

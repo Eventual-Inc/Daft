@@ -23,8 +23,6 @@ pub use anonymous::AnonymousScanOperator;
 pub mod file_format;
 mod glob;
 use common_daft_config::DaftExecutionConfig;
-#[cfg(feature = "python")]
-pub mod py_object_serde;
 pub mod scan_task_iters;
 
 #[cfg(feature = "python")]

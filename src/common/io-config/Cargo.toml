@@ -1,12 +1,16 @@
 [dependencies]
+aws-credential-types = {version = "0.55.3"}
+chrono = {workspace = true}
 common-error = {path = "../error", default-features = false}
+common-py-serde = {path = "../py-serde", default-features = false}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
+typetag = "0.2.16"
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python"]
+python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
 
 [package]
 edition = {workspace = true}

@@ -60,6 +60,7 @@ fn check_for_agg(expr: &ExprRef) -> bool {
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
         Function { inputs, .. } => inputs.iter().any(check_for_agg),
         IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
+        Between(v, l, u) => check_for_agg(v) || check_for_agg(l) || check_for_agg(u),
         IfElse {
             if_true,
             if_false,
@@ -510,7 +511,7 @@ impl LogicalPlanBuilder {
         path: String,
         columns_name: Vec<String>,
         mode: String,
-        current_version: i32,
+        version: i32,
         large_dtypes: bool,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
@@ -519,7 +520,7 @@ impl LogicalPlanBuilder {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
                 path,
                 mode,
-                current_version,
+                version,
                 large_dtypes,
                 io_config,
             }),
@@ -804,7 +805,7 @@ impl PyLogicalPlanBuilder {
         path: String,
         columns_name: Vec<String>,
         mode: String,
-        current_version: i32,
+        version: i32,
         large_dtypes: bool,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
@@ -814,7 +815,7 @@ impl PyLogicalPlanBuilder {
                 path,
                 columns_name,
                 mode,
-                current_version,
+                version,
                 large_dtypes,
                 io_config.map(|cfg| cfg.config),
             )?

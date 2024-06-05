@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -12,16 +13,44 @@ use tokio::sync::OwnedSemaphorePermit;
 use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
 
+pub struct StreamingRetryParams {
+    source: Arc<dyn ObjectSource>,
+    input: String,
+    range: Option<Range<usize>>,
+    io_stats: Option<IOStatsRef>,
+}
+
+impl StreamingRetryParams {
+    pub(crate) fn new(
+        source: Arc<dyn ObjectSource>,
+        input: String,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> Self {
+        Self {
+            source,
+            input,
+            range,
+            io_stats,
+        }
+    }
+}
+
 pub enum GetResult {
     File(LocalFile),
     Stream(
         BoxStream<'static, super::Result<Bytes>>,
         Option<usize>,
         Option<OwnedSemaphorePermit>,
+        Option<Box<StreamingRetryParams>>,
     ),
 }
 
-async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>
+async fn collect_bytes<S>(
+    mut stream: S,
+    size_hint: Option<usize>,
+    _permit: Option<OwnedSemaphorePermit>,
+) -> super::Result<Bytes>
 where
     S: Stream<Item = super::Result<Bytes>> + Send + Unpin,
 {
@@ -47,9 +76,57 @@ where
 impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
         use GetResult::*;
-        match self {
+        let mut get_result = self;
+        match get_result {
             File(f) => collect_file(f).await,
-            Stream(stream, size, _permit) => collect_bytes(stream, size).await,
+            Stream(stream, size, permit, retry_params) => {
+                use rand::Rng;
+                const NUM_TRIES: u64 = 3;
+                const JITTER_MS: u64 = 2_500;
+                const MAX_BACKOFF_MS: u64 = 20_000;
+
+                let mut result = collect_bytes(stream, size, permit).await; // drop permit to ensure quota
+                for attempt in 1..NUM_TRIES {
+                    match result {
+                        Err(super::Error::SocketError { .. })
+                        | Err(super::Error::UnableToReadBytes { .. })
+                            if let Some(rp) = &retry_params =>
+                        {
+                            let jitter = rand::thread_rng()
+                                .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
+                                as u64;
+                            let jitter = jitter.min(MAX_BACKOFF_MS);
+
+                            log::warn!(
+                                "Received Socket Error when streaming bytes! Attempt {attempt} out of {NUM_TRIES} tries. Trying again in {jitter}ms\nDetails\n{}",
+                                result.err().unwrap()
+                            );
+                            tokio::time::sleep(Duration::from_millis(jitter)).await;
+
+                            get_result = rp
+                                .source
+                                .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
+                                .await?;
+                            if let GetResult::Stream(stream, size, permit, _) = get_result {
+                                result = collect_bytes(stream, size, permit).await;
+                            } else {
+                                unreachable!("Retrying a stream should always be a stream");
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+                result
+            }
+        }
+    }
+
+    pub fn with_retry(self, params: StreamingRetryParams) -> Self {
+        match self {
+            GetResult::File(..) => self,
+            GetResult::Stream(s, size, permit, _) => {
+                GetResult::Stream(s, size, permit, Some(Box::new(params)))
+            }
         }
     }
 }

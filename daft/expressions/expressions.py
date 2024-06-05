@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import math
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -414,6 +415,15 @@ class Expression:
         expr = self._expr.log10()
         return Expression._from_pyexpr(expr)
 
+    def log(self, base: float = math.e) -> Expression:  # type: ignore
+        """The elementwise log with given base, of a numeric expression (``expr.log(base = math.e)``)
+        Args:
+            base: The base of the logarithm. Defaults to e.
+        """
+        assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
+        expr = self._expr.log(float(base))
+        return Expression._from_pyexpr(expr)
+
     def ln(self) -> Expression:
         """The elementwise natural log of a numeric expression (``expr.ln()``)"""
         expr = self._expr.ln()
@@ -658,6 +668,22 @@ class Expression:
             other = Expression._to_expression(series)
 
         expr = self._expr.is_in(other._expr)
+        return Expression._from_pyexpr(expr)
+
+    def between(self, lower: Any, upper: Any) -> Expression:
+        """Checks if values in the Expression are between lower and upper, inclusive.
+
+        Example:
+            >>> # [1, 2, 3, 4] -> [True, True, False, False]
+            >>> col("x").between(1, 2)
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
+        """
+        lower = Expression._to_expression(lower)
+        upper = Expression._to_expression(upper)
+
+        expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
@@ -1393,6 +1419,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
+
+    def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
+        """Extract a substring from a string, starting at a specified index and extending for a given length.
+
+        .. NOTE::
+            If `length` is not provided, the substring will include all characters from `start` to the end of the string.
+
+        Example:
+            >>> col("x").str.substr(2, 2)
+
+        Returns:
+            Expression: A String expression representing the extracted substring.
+        """
+        start_expr = Expression._to_expression(start)
+        length_expr = Expression._to_expression(length)
+        return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
 
 
 class ExpressionListNamespace(ExpressionNamespace):

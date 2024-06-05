@@ -174,6 +174,7 @@ impl GCSClientWrapper {
             io_stats_on_bytestream(response, io_stats),
             size,
             None,
+            None,
         ))
     }
 

@@ -5,6 +5,7 @@ mod arange;
 mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
+mod between;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod ceil;
@@ -97,6 +98,11 @@ pub trait DaftLogical<Rhs> {
 pub trait DaftIsIn<Rhs> {
     type Output;
     fn is_in(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftBetween<Lower, Upper> {
+    type Output;
+    fn between(&self, lower: Lower, upper: Upper) -> Self::Output;
 }
 
 pub trait DaftIsNull {

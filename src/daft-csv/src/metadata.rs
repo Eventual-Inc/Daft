@@ -130,7 +130,7 @@ pub(crate) async fn read_csv_schema_single(
             )
             .await
         }
-        GetResult::Stream(stream, size, _) => {
+        GetResult::Stream(stream, size, ..) => {
             read_csv_schema_from_compressed_reader(
                 StreamReader::new(stream),
                 compression_codec,

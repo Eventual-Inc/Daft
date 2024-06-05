@@ -14,7 +14,9 @@ use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::{get_io_pool_num_threads, InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
-use aws_credential_types::cache::{ProvideCachedCredentials, SharedCredentialsCache};
+use aws_credential_types::cache::{
+    CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache,
+};
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sig_auth::signer::SigningRequirements;
 use common_io_config::S3Config;
@@ -354,6 +356,8 @@ async fn build_s3_conf(
             .or_default_provider()
             .await;
         Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider))
+    } else if let Some(provider) = &config.credentials_provider {
+        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider.clone()))
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
@@ -374,25 +378,28 @@ async fn build_s3_conf(
         builder.set_credentials_provider(provider);
         builder.build()
     } else {
-        let loader = aws_config::from_env();
-        let loader = if let Some(profile_name) = &config.profile_name {
-            loader.profile_name(profile_name)
-        } else {
-            loader
-        };
+        let mut loader = aws_config::from_env();
+        if let Some(profile_name) = &config.profile_name {
+            loader = loader.profile_name(profile_name);
+        }
 
         // Set region now to avoid imds
-        let loader = if let Some(region) = &config.region_name {
-            loader.region(Region::new(region.to_owned()))
-        } else {
-            loader
-        };
+        if let Some(region) = &config.region_name {
+            loader = loader.region(Region::new(region.to_owned()));
+        }
+
         // Set creds now to avoid imds
-        let loader = if let Some(provider) = provider {
-            loader.credentials_provider(provider)
-        } else {
-            loader
-        };
+        if let Some(provider) = provider {
+            loader = loader.credentials_provider(provider);
+        }
+
+        if let Some(buffer_time) = &config.buffer_time {
+            loader = loader.credentials_cache(
+                CredentialsCache::lazy_builder()
+                    .buffer_time(Duration::from_secs(*buffer_time))
+                    .into_credentials_cache(),
+            )
+        }
 
         loader.load().await
     };
@@ -640,6 +647,7 @@ impl S3LikeSource {
                         stream,
                         Some(v.content_length as usize),
                         Some(permit),
+                        None,
                     ))
                 }
 
@@ -926,7 +934,7 @@ impl ObjectSource for S3LikeSource {
             .await?;
 
         if io_stats.is_some() {
-            if let GetResult::Stream(stream, num_bytes, permit) = get_result {
+            if let GetResult::Stream(stream, num_bytes, permit, retry_params) = get_result {
                 if let Some(is) = io_stats.as_ref() {
                     is.mark_get_requests(1)
                 }
@@ -934,6 +942,7 @@ impl ObjectSource for S3LikeSource {
                     io_stats_on_bytestream(stream, io_stats),
                     num_bytes,
                     permit,
+                    retry_params,
                 ))
             } else {
                 panic!("This should always be a stream");

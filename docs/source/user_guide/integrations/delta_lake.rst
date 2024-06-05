@@ -21,7 +21,7 @@ Daft internally uses the `deltalake <https://pypi.org/project/deltalake/>`__ Pyt
 Reading a Table
 ***************
 
-A Delta Lake table can be read by providing :func:`daft.read_delta_lake` with the URI for your table.
+A Delta Lake table can be read by providing :func:`daft.read_deltalake` with the URI for your table.
 
 The below example uses the `deltalake <https://pypi.org/project/deltalake/>`__ Python package to create a local Delta Lake table for Daft to read, but Daft can also read Delta Lake tables from all of the major cloud stores.
 
@@ -47,7 +47,7 @@ After writing this local example table, we can easily read it into a Daft DataFr
     # Read Delta Lake table into a Daft DataFrame.
     import daft
 
-    df = daft.read_delta_lake("some-table")
+    df = daft.read_deltalake("some-table")
 
 Data Skipping Optimizations
 ***************************

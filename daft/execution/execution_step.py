@@ -412,7 +412,7 @@ class WriteIceberg(SingleOutputInstruction):
 class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
-    current_version: int
+    version: int
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -439,7 +439,7 @@ class WriteDeltaLake(SingleOutputInstruction):
             input,
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
-            current_version=self.current_version,
+            version=self.version,
             io_config=self.io_config,
         )
 

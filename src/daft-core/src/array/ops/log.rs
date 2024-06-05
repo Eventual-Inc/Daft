@@ -17,6 +17,10 @@ where
         self.apply(|v| v.log10())
     }
 
+    pub fn log(&self, base: T::Native) -> DaftResult<Self> {
+        self.apply(|v| v.log(base))
+    }
+
     pub fn ln(&self) -> DaftResult<Self> {
         self.apply(|v| v.ln())
     }

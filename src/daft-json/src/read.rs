@@ -335,7 +335,7 @@ async fn read_json_single_into_stream(
                         .unwrap_or(64),
                 )
             }
-            GetResult::Stream(stream, _, _) => (
+            GetResult::Stream(stream, ..) => (
                 Box::new(StreamReader::new(stream)),
                 // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
                 read_options
