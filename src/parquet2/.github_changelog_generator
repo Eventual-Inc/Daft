@@ -1,8 +1,0 @@
-since-tag=v0.17.1
-future-release=v0.17.2
-pr-wo-labels=false
-exclude-labels=no-changelog,question
-add-sections={"features":{"prefix":"**Enhancements:**","labels":["enhancement"]}, "documentation":{"prefix":"**Documentation updates:**","labels":["documentation"]}, "testing":{"prefix":"**Testing updates:**","labels":["testing"]}}
-enhancement-label=**New features:**
-enhancement-labels=feature
-base=CHANGELOG.md
