@@ -550,17 +550,33 @@ impl ObjectSource for AzureBlobSource {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
         // path can be root (buckets) or path prefix within a bucket.
-        let container = {
+        let (container, prefix) = {
             // "Container" is Azure's name for Bucket.
             //
             // fsspec supports two URI formats; for compatibility, we will support both as well.
             // PROTOCOL://container/path-part/file
             // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
             // See https://github.com/fsspec/adlfs/ for more details
+            //
+            // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
+            // but it is not documented
             let username = uri.username();
             match username {
-                "" => uri.host_str(),
-                _ => Some(username),
+                "" => match uri.host_str() {
+                    Some(host) => {
+                        if host.ends_with(".dfs.core.windows.net") {
+                            let mut path_segments = uri.path_segments().unwrap();
+                            let container = path_segments.next();
+                            let prefix = path_segments.collect::<Vec<_>>().join("/");
+
+                            (container, prefix)
+                        } else {
+                            (Some(host), uri.path().to_string())
+                        }
+                    }
+                    None => (None, "".to_string()),
+                },
+                _ => (Some(username), uri.path().to_string()),
             }
         };
 
@@ -574,12 +590,9 @@ impl ObjectSource for AzureBlobSource {
             // List containers.
             None => Ok(self.list_containers_stream(protocol, io_stats).await),
             // List a path within a container.
-            Some(container_name) => {
-                let prefix = uri.path();
-                Ok(self
-                    .list_directory_stream(protocol, container_name, prefix, posix, io_stats)
-                    .await)
-            }
+            Some(container_name) => Ok(self
+                .list_directory_stream(protocol, container_name, prefix.as_str(), posix, io_stats)
+                .await),
         }
     }
 
