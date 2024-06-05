@@ -50,7 +50,7 @@ for a detailed documentation of each of its APIs.
 * Extensive set of cargo feature flags to reduce compilation time and binary size
 * Fully-decoupled IO between CPU-bounded and IO-bounded tasks, allowing
   this crate to both be used in `async` contexts without blocking and leverage parallelism
-* Fastest known implementation of Avro and Parquet (e.g. faster than the official 
+* Fastest known implementation of Avro and Parquet (e.g. faster than the official
   C++ implementations)
 
 ## Safety and Security

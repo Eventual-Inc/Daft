@@ -1,6 +1,7 @@
+import os
+
 import pyarrow as pa
 import pyarrow.parquet
-import os
 
 PYARROW_PATH = "fixtures/pyarrow3"
 
@@ -122,9 +123,7 @@ def case_struct(size):
     )
 
 
-def write_pyarrow(
-    case, size=1, page_version=1, use_dictionary=False, compression=None
-):
+def write_pyarrow(case, size=1, page_version=1, use_dictionary=False, compression=None):
     data, schema, path = case(size)
 
     compression_path = f"/{compression}" if compression else ""

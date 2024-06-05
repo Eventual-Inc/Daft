@@ -69,5 +69,5 @@ within Rust's type safety mechanism.
 
     This is achieved by converting mutable versions to immutable counterparts (e.g. `MutableBitmap -> Bitmap`).
 
-    The rational is that `MutableArray`s can be used to perform in-place operations under 
+    The rational is that `MutableArray`s can be used to perform in-place operations under
     the arrow spec.

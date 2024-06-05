@@ -39,7 +39,7 @@ fn check(
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
                     Err(Error::oos(format!(
-                        "The children DataTypes of a StructArray must equal the children data types. 
+                        "The children DataTypes of a StructArray must equal the children data types.
                          However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
                     )))
                 } else {

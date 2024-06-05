@@ -106,10 +106,10 @@ There is also an implementation for the arrow format
 
 ### Higher Parallelism
 
-Typically, converting a page into memory is expensive and thus consider how to 
+Typically, converting a page into memory is expensive and thus consider how to
 distribute work across threads. E.g.
 
-```rust 
+```rust
 let handles = vec![];
 for column in columns {
     let column_meta = metadata.row_groups[row_group].column(column);

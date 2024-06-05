@@ -8,7 +8,7 @@ it MUST be on each module's `README.md`.
 
 Array equality is not defined in the Arrow specification. This crate follows the intent of the specification, but there is no guarantee that this no verification that this equals e.g. C++'s definition.
 
-There is a single source of truth about whether two arrays are equal, and that is via their 
+There is a single source of truth about whether two arrays are equal, and that is via their
 equality operators, defined on the module [`array/equal`](array/equal/mod.rs).
 
 Implementation MUST use these operators for asserting equality, so that all testing follows the same definition of array equality.

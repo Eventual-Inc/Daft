@@ -31,7 +31,7 @@ a new page is pulled.
 ### `PageState`
 
 As mentioned above, the iterator leverages the idea that we attach a state to a page. Recall
-that a page is essentially `[header][data]`. The `data` part contains encoded 
+that a page is essentially `[header][data]`. The `data` part contains encoded
 `[rep levels][def levels][non-null values]`. Some pages have an associated dictionary page,
 in which case the `non-null values` represent the indices.
 
@@ -40,7 +40,7 @@ Irrespectively of the physical type, the main idea is to split the page in two i
 * An iterator over `def levels`
 * An iterator over `non-null values`
 
-and progress the iterators as needed. In particular, for non-nested types, `def levels` is 
+and progress the iterators as needed. In particular, for non-nested types, `def levels` is
 a bitmap with the same representation as Arrow, in which case the validity is extended directly.
 
 The `non-null values` are "expanded" by filling null values with the default value of each physical
@@ -65,6 +65,6 @@ The `PageState` of nested types is composed by 4 iterators:
 * An iterator over `def levels`
 * An iterator over `non-null values`
 
-The idea is that an iterator of `rep, def` contain all the information to decode the 
+The idea is that an iterator of `rep, def` contain all the information to decode the
 nesting structure of an arrow array. The other two iterators are equivalent to the non-nested
 types with the exception that `def levels` are no equivalent to arrow bitmaps.

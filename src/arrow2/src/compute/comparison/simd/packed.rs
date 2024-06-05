@@ -1,4 +1,3 @@
-
 use std::simd::{SimdPartialEq, SimdPartialOrd, ToBitMask};
 
 use crate::types::simd::*;
