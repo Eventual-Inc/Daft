@@ -1228,6 +1228,7 @@ dependencies = [
  "daft-parquet",
  "daft-plan",
  "daft-scan",
+ "daft-scheduler",
  "daft-stats",
  "daft-table",
  "lazy_static",
@@ -1550,6 +1551,25 @@ dependencies = [
  "serde_json",
  "snafu",
  "tokio",
+]
+
+[[package]]
+name = "daft-scheduler"
+version = "0.2.0-dev0"
+dependencies = [
+ "bincode",
+ "common-daft-config",
+ "common-error",
+ "common-io-config",
+ "daft-core",
+ "daft-dsl",
+ "daft-plan",
+ "daft-scan",
+ "log",
+ "pyo3",
+ "pyo3-log",
+ "rstest",
+ "serde",
 ]
 
 [[package]]
