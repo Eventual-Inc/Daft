@@ -1,0 +1,13 @@
+[package]
+name = "arrow-parquet-integration-testing"
+version = "0.1.0"
+authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+clap = { version = "^3", features = ["derive"] }
+arrow2 = { path = "../", default-features = false, features = ["io_parquet", "io_json_integration", "io_parquet_compression"] }
+flate2 = "^1"
+serde = { version = "^1.0", features = ["rc"] }
+serde_derive = { version = "^1.0" }
+serde_json = { version = "^1.0", features = ["preserve_order"] }

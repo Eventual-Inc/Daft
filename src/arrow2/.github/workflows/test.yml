@@ -1,0 +1,191 @@
+name: Check and test
+
+on: [push, pull_request]
+
+jobs:
+  # test the crate
+  ubuntu-latest:
+    name: Test full
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true # needed to test IPC, which are located in a submodule
+      - name: Install Rust
+        run: rustup update stable
+      - name: Setup parquet files
+        run: |
+          apt update && apt install python3-pip python3-venv -y -q
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install pip --upgrade
+          pip install pyarrow==6 pyorc
+          python parquet_integration/write_parquet.py
+          python tests/it/io/orc/write.py
+          deactivate
+      - uses: Swatinem/rust-cache@v1
+      - name: Run
+        run: cargo test --features full
+
+  windows-and-macos:
+    name: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true # needed to test IPC, which are located in a submodule
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Run
+        shell: bash
+        run: |
+          cargo check --features full
+          cargo test --tests
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Install clippy
+        run: rustup component add clippy
+      - name: "clippy --all"
+        run: cargo clippy --all --features=full --tests -- -D warnings
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      - name: Run
+        run: cargo fmt --all -- --check
+
+  miri-checks:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-12-05
+          override: true
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: key1
+      - name: Install Miri
+        run: |
+          rustup component add miri
+          cargo miri setup
+
+      - name: Run
+        # --skip io: miri can't handle opening of files, so we skip those
+        run: cargo miri test --tests --features compute,chrono-tz
+
+  miri-checks-io:
+    name: MIRI on IO IPC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true # needed to test IPC, which are located in a submodule
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-12-05
+          override: true
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: key1
+      - name: Install Miri
+        run: |
+          rustup component add miri
+          cargo miri setup
+      - name: Run
+        run: MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test --tests --features io_ipc,io_json_integration io::ipc::write::write_sliced_list
+
+  miri-checks-mmap:
+    name: MIRI on IO IPC mmaping
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-12-05
+          override: true
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: key1
+      - name: Install Miri
+        run: |
+          rustup component add miri
+          cargo miri setup
+      - name: Run
+        run: cargo miri test --tests --features io_ipc io::ipc::mmap
+
+  feature-compilation:
+    name: Feature coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup update stable
+      - name: Setup all features
+        run: cargo install cargo-all-features
+      - uses: Swatinem/rust-cache@v1
+      - name: Run
+        run: cargo check-all-features
+      - name: Bench Check
+        run: cargo bench --no-run --features full,benchmarks
+
+  cross:
+    name: cross
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+          - i686-unknown-linux-gnu
+          - powerpc-unknown-linux-gnu
+          - powerpc64-unknown-linux-gnu
+          - mips-unknown-linux-gnu
+          - arm-linux-androideabi
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-12-05
+          target: ${{ matrix.target }}
+          override: true
+      - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: check
+          args: --features=compute_merge_sort,io_ipc,io_csv,io_print,io_json,io_parquet --target ${{ matrix.target }}
+
+  linux-simd-test:
+    name: SIMD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-12-05
+          override: true
+      - uses: Swatinem/rust-cache@v1
+      - name: Run
+        # no need to run over all features: simd only affects the core
+        run: cargo test --tests --no-default-features --features compute,simd

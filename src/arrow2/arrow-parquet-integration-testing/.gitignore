@@ -1,0 +1,8 @@
+target
+target-tarpaulin
+venv
+lcov.info
+Cargo.lock
+fixtures
+settings.json
+*.parquet

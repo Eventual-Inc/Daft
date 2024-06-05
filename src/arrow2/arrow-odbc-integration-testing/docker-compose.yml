@@ -1,0 +1,10 @@
+services:
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    ports:
+      - 1433:1433
+
+    environment:
+      - MSSQL_SA_PASSWORD=My@Test@Password1
+    command: ["/opt/mssql/bin/sqlservr", "--accept-eula", "--reset-sa-password"]

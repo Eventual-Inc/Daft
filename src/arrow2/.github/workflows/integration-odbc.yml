@@ -1,0 +1,40 @@
+name: Integration ODBC
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2017-latest-ubuntu
+        ports:
+          - 1433:1433
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: My@Test@Password1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install ODBC Drivers
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
+          apt-get update
+          ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          ln -s /opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.*.so.* /opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.so
+        shell: sudo bash {0}
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+          rustup component add rustfmt clippy
+      - uses: Swatinem/rust-cache@v1
+      - name: Test
+        run: cd arrow-odbc-integration-testing && cargo test

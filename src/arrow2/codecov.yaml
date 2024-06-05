@@ -1,0 +1,13 @@
+ignore:
+  # these files are auto-generated
+  - "src/io/ipc/gen"
+  - "arrow-flight/src/arrow-flight.protocol.rs"
+
+coverage:
+  status:
+    patch:
+      default:
+        informational: true
+    project:
+      default:
+        informational: true

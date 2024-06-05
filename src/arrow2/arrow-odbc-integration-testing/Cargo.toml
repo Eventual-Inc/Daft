@@ -1,0 +1,11 @@
+[package]
+name = "arrow-odbc-integration-testing"
+version = "0.1.0"
+authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+arrow2 = { path = "../", default-features = false, features = ["io_odbc"] }
+lazy_static = "1.4.0"
+# Function name macro is used to ensure unique table names in test
+stdext = "0.3.1"

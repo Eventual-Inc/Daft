@@ -1,0 +1,43 @@
+name: Check and test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Setup parquet files
+        run: |
+          apt update && apt install python3-pip python3-venv -y -q
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install pip --upgrade
+          pip install pyarrow==6
+          python tests/write_pyarrow.py
+          deactivate
+      - name: Run
+        run: |
+          cargo test --features full
+          cargo check # compiles without async
+      - name: Run lz4-flex
+        run: cargo test --no-default-features --features lz4_flex,bloom_filter,snappy,brotli,zstd,gzip,async
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Install clippy
+        run: rustup component add clippy
+      - name: "clippy"
+        run: cargo clippy

@@ -1,0 +1,10 @@
+[package]
+name = "parquet_read_parallel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrow2 = { path = "../../", default-features = false, features = ["io_parquet", "io_parquet_compression"] }
+rayon = { version = "1", default-features = false }
+log = "0.4"
+chrono = { version = "0.4", default_features = false, features = ["std", "clock"] }
