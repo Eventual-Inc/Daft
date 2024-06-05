@@ -255,7 +255,7 @@ fn deserialize_list_into<'a, O: Offset, A: Borrow<Value<'a>>>(
     target: &mut MutableListArray<O, Box<dyn MutableArray>>,
     rows: &[A],
 ) {
-    let empty = vec![];
+    let empty = [];
     let inner: Vec<_> = rows
         .iter()
         .flat_map(|row| match row.borrow() {

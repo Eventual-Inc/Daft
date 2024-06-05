@@ -25,7 +25,7 @@ use crate::{
     datatypes::DataType,
 };
 
-pub(self) mod physical_binary;
+mod physical_binary;
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
 /// that are infallibly downcasted to concrete types according to the [`Array::data_type`].
@@ -193,6 +193,7 @@ dyn_clone::clone_trait_object!(Array);
 
 /// A trait describing an array with a backing store that can be preallocated to
 /// a given size.
+#[allow(unused)]
 pub(crate) trait Container {
     /// Create this array with a given capacity.
     fn with_capacity(capacity: usize) -> Self

@@ -8,7 +8,6 @@ use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
 use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 
 use crate::error::Result;
-pub use crate::metadata::KeyValue;
 
 use crate::write::page::PageWriteSpec;
 

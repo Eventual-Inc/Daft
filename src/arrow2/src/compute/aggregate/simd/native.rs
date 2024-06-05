@@ -4,6 +4,7 @@ use crate::types::simd::*;
 
 use super::super::min_max::SimdOrd;
 use super::super::sum::Sum;
+#[allow(unused)]
 use super::{simd_add, simd_ord_int};
 
 simd_add!(u8x64, u8, 64, wrapping_add);

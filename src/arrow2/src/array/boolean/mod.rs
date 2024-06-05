@@ -17,6 +17,7 @@ mod from;
 mod iterator;
 mod mutable;
 
+#[allow(unused)] // it exports the 'IntoIterator' impl for BooleanArray
 pub use iterator::*;
 pub use mutable::*;
 

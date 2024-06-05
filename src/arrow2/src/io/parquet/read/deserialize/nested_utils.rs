@@ -8,7 +8,6 @@ use parquet2::{
 
 use crate::{array::Array, bitmap::MutableBitmap, error::Result};
 
-pub use super::utils::Zip;
 use super::utils::{DecodedState, MaybeNext};
 use super::{super::Pages, utils::PageState};
 

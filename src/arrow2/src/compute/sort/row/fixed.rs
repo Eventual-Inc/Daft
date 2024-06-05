@@ -24,6 +24,7 @@ use crate::{
 use super::{null_sentinel, Rows};
 
 pub trait FromSlice {
+    #[allow(dead_code)]
     fn from_slice(slice: &[u8], invert: bool) -> Self;
 }
 

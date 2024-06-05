@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use crate::trusted_len::TrustedLen;
 
 use super::NativeType;

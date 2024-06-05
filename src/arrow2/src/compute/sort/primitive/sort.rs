@@ -166,7 +166,6 @@ mod tests {
     use super::*;
 
     use crate::array::ord;
-    use crate::array::PrimitiveArray;
     use crate::datatypes::DataType;
 
     fn test_sort_primitive_arrays<T>(

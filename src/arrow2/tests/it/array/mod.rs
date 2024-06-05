@@ -137,6 +137,7 @@ fn test_with_validity() {
 
 // check that we ca derive stuff
 #[derive(PartialEq, Clone, Debug)]
+#[allow(dead_code)]
 struct A {
     array: Box<dyn Array>,
 }

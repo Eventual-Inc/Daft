@@ -525,6 +525,7 @@ mod tests {
             .map(|f| (f.name.clone(), f.clone()))
             .collect::<IndexMap<_, _>>();
         let (schema, is_projection) = match &projection {
+            #[allow(deprecated)]
             Some(projection) => (
                 projection
                     .iter()

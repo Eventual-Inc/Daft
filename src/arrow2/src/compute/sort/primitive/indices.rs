@@ -34,7 +34,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::array::ord;
     use crate::array::*;
     use crate::datatypes::DataType;
 

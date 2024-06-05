@@ -61,7 +61,7 @@ fn read_page<R: Read + Seek>(
     // deserialize [header]
     let mut reader = Cursor::new(buffer);
     let page_header = read_page_header(&mut reader, 1024 * 1024)?;
-    let header_size = reader.seek(SeekFrom::Current(0)).unwrap() as usize;
+    let header_size = reader.stream_position().unwrap() as usize;
     let buffer = reader.into_inner();
 
     // copy [data]
@@ -152,7 +152,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
     fn read_dict(&mut self) -> Option<Result<CompressedPage, Error>> {
         // a dictionary page exists iff the first data page is not at the start of
         // the column
-        let (start, length) = match self.pages.get(0) {
+        let (start, length) = match self.pages.front() {
             Some(page) => {
                 let length = (page.start - self.column_start) as usize;
                 if length > 0 {

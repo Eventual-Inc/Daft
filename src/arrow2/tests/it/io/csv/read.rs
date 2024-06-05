@@ -379,7 +379,7 @@ fn decimal_only_integer() -> Result<()> {
 
 #[test]
 fn boolean() -> Result<()> {
-    let input = vec!["true", "True", "False", "F", "t"];
+    let input = ["true", "True", "False", "F", "t"];
     let input = input.join("\n");
 
     let expected = BooleanArray::from(&[Some(true), Some(true), Some(false), None, None]);
@@ -392,7 +392,7 @@ fn boolean() -> Result<()> {
 
 #[test]
 fn float32() -> Result<()> {
-    let input = vec!["12.34", "12", "0.0", "inf", "-inf", "dd"];
+    let input = ["12.34", "12", "0.0", "inf", "-inf", "dd"];
     let input = input.join("\n");
 
     let expected = Float32Array::from(&[
@@ -411,7 +411,7 @@ fn float32() -> Result<()> {
 
 #[test]
 fn deserialize_binary() -> Result<()> {
-    let input = vec!["aa", "bb"];
+    let input = ["aa", "bb"];
     let input = input.join("\n");
 
     let expected = BinaryArray::<i32>::from([Some(b"aa"), Some(b"bb")]);
@@ -423,7 +423,7 @@ fn deserialize_binary() -> Result<()> {
 
 #[test]
 fn deserialize_timestamp() -> Result<()> {
-    let input = vec!["1996-12-19T16:34:57-02:00", "1996-12-19T16:34:58-02:00"];
+    let input = ["1996-12-19T16:34:57-02:00", "1996-12-19T16:34:58-02:00"];
     let input = input.join("\n");
 
     let data_type = DataType::Timestamp(TimeUnit::Millisecond, Some("-01:00".to_string()));

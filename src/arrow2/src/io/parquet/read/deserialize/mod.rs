@@ -17,7 +17,6 @@ use parquet2::schema::types::PrimitiveType;
 use crate::{
     array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray},
     datatypes::{DataType, Field, IntervalUnit},
-    error::Result,
     offset::Offsets,
 };
 

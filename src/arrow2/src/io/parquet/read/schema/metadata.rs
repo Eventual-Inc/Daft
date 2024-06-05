@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -64,7 +63,7 @@ pub(super) fn parse_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>
 fn apply_original_metadata<'a>(origin_field: &Field, inferred_field: &Field) -> Field {
     let new_field = match (origin_field.data_type(), inferred_field.data_type()) {
         // Wrap inferred field into an Extension type
-        (DataType::Extension(_, storage_dtype, _), inferred_dtype) => {
+        (DataType::Extension(_, storage_dtype, _), _inferred_dtype) => {
             // Recursively apply the origin_field (coerced into its storage type) to the inferred_field
             let origin_storage_field = Field::new(
                 origin_field.name.clone(),
@@ -93,7 +92,7 @@ fn apply_original_metadata<'a>(origin_field: &Field, inferred_field: &Field) -> 
         ) if inferred_tz.eq("+00:00") => {
             Field::new(
                 inferred_field.name.clone(),
-                DataType::Timestamp(inferred_tu.clone(), Some(origin_tz.clone())),
+                DataType::Timestamp(*inferred_tu, Some(origin_tz.clone())),
                 inferred_field.is_nullable,
             )
         }

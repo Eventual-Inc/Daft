@@ -44,6 +44,7 @@ impl<'a, O: Offset> ListArray<O> {
     }
 }
 
+#[allow(dead_code)]
 struct Iter<T, I: Iterator<Item = Option<T>>> {
     current: i32,
     offsets: std::vec::IntoIter<i32>,

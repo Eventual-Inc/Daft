@@ -15,10 +15,7 @@ pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::{
-    array::{
-        growable::{Growable, GrowableFixedSizeList},
-        *,
-    },
+    array::*,
     datatypes::*,
     error::{Error, Result},
     offset::{Offset, Offsets},
@@ -118,12 +115,12 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         }
         (List(list_from), LargeList(list_to)) if list_from == list_to => true,
         (LargeList(list_from), List(list_to)) if list_from == list_to => true,
-        (LargeList(list_from), FixedSizeList(list_to, _)) => {
-            can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
-        (FixedSizeList(list_from, _), LargeList(list_to)) => {
-            can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        // (LargeList(list_from), FixedSizeList(list_to, _)) => {
+        //     can_cast_types(&list_from.data_type, &list_to.data_type)
+        // }
+        // (FixedSizeList(list_from, _), LargeList(list_to)) => {
+        //     can_cast_types(&list_from.data_type, &list_to.data_type)
+        // }
         (_, List(list_to)) => can_cast_types(from_type, &list_to.data_type),
         (_, LargeList(list_to)) if from_type != &LargeBinary => {
             can_cast_types(from_type, &list_to.data_type)

@@ -62,7 +62,7 @@ fn consistency() {
         Interval(IntervalUnit::MonthDayNano),
     ];
 
-    let cases = datatypes.clone().into_iter().zip(datatypes.into_iter());
+    let cases = datatypes.clone().into_iter().zip(datatypes);
 
     cases.for_each(|(lhs, rhs)| {
         let lhs_a = new_empty_array(lhs.clone());

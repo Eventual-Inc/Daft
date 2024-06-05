@@ -1,5 +1,4 @@
 //! APIs to handle Parquet <-> Arrow schemas.
-use std::borrow::Cow;
 
 use crate::datatypes::{Schema, TimeUnit};
 use crate::error::Result;

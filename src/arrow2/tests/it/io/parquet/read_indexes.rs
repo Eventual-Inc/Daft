@@ -2,7 +2,6 @@ use std::io::Cursor;
 
 use arrow2::chunk::Chunk;
 use arrow2::error::Error;
-use arrow2::io::parquet::read::indexes;
 use arrow2::{array::*, datatypes::*, error::Result, io::parquet::read::*, io::parquet::write::*};
 
 /// Returns 2 sets of pages with different the same number of rows distributed un-evenly
@@ -120,7 +119,8 @@ fn read_with_indexes(
                 first_field_column
                     .iter()
                     .zip(selection)
-                    .filter_map(|(i, is_selected)| is_selected.then(|| *i))
+                    .filter(|&(_i, is_selected)| is_selected)
+                    .map(|(i, _is_selected)| *i)
                     .collect()
             })
         })

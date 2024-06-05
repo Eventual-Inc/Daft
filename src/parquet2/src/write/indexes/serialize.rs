@@ -4,7 +4,6 @@ use parquet_format_safe::OffsetIndex;
 use parquet_format_safe::PageLocation;
 
 use crate::error::{Error, Result};
-pub use crate::metadata::KeyValue;
 use crate::statistics::serialize_statistics;
 
 use crate::write::page::{is_data_page, PageWriteSpec};

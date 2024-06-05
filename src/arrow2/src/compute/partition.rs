@@ -21,7 +21,6 @@ use crate::array::ord::DynComparator;
 use crate::compute::sort::{build_compare, SortColumn};
 use crate::error::{Error, Result};
 use std::cmp::Ordering;
-use std::iter::Iterator;
 use std::ops::Range;
 
 /// Given a list of already sorted columns, find partition ranges that would partition

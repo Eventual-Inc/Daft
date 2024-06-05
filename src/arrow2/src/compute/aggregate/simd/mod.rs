@@ -101,4 +101,5 @@ simd_add!(i128x8, i128, 8, add);
 simd_ord_int!(i128x8, i128);
 
 mod native;
+#[allow(unused)]
 pub use native::*;

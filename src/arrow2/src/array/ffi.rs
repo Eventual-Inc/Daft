@@ -1,8 +1,6 @@
 use crate::datatypes::PhysicalType;
 use crate::{array::*, ffi};
 
-use crate::error::Result;
-
 /// Trait describing how a struct presents itself to the
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
 /// # Safety

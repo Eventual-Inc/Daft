@@ -59,6 +59,7 @@ pub use simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 use super::take::take_boolean;
 use crate::bitmap::{binary, Bitmap};
 use crate::compute;
+#[allow(unused)]
 pub(crate) use primitive::{
     compare_values_op as primitive_compare_values_op,
     compare_values_op_scalar as primitive_compare_values_op_scalar,

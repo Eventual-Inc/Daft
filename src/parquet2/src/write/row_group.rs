@@ -58,7 +58,7 @@ impl ColumnOffsetsMetadata {
 
 fn compute_num_rows(columns: &[(ColumnChunk, Vec<PageWriteSpec>)]) -> Result<i64> {
     columns
-        .get(0)
+        .first()
         .map(|(_, specs)| {
             let mut num_rows = 0;
             specs
@@ -108,7 +108,7 @@ where
 
     // compute row group stats
     let file_offset = columns
-        .get(0)
+        .first()
         .map(|(column_chunk, _)| {
             ColumnOffsetsMetadata::from_column_chunk(column_chunk).calc_row_group_file_offset()
         })
@@ -174,7 +174,7 @@ where
 
     // compute row group stats
     let file_offset = columns
-        .get(0)
+        .first()
         .map(|(column_chunk, _)| {
             ColumnOffsetsMetadata::from_column_chunk(column_chunk).calc_row_group_file_offset()
         })

@@ -1,5 +1,3 @@
-use crate::types::BitChunkIter;
-
 use super::*;
 
 native_simd!(u8x64, u8, 64, u64);

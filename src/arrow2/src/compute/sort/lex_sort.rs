@@ -78,6 +78,7 @@ fn build_is_valid(array: &dyn Array) -> IsValid {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_compare(array: &dyn Array, sort_option: SortOptions) -> Result<DynComparator> {
     build_compare_impl(array, sort_option, &ord::build_compare)
 }

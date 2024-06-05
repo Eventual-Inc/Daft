@@ -3,7 +3,6 @@
 
 use crate::array::*;
 use crate::datatypes::*;
-use std::sync::Arc;
 
 mod binary;
 pub use binary::GrowableBinary;

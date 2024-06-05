@@ -247,8 +247,8 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 
     values
         .iter()
-        .zip(nested.into_iter())
-        .zip(types.into_iter())
+        .zip(nested)
+        .zip(types)
         .zip(encoding.iter())
         .map(|(((values, nested), type_), encoding)| {
             array_to_pages(*values, type_, &nested, options, *encoding)
@@ -264,10 +264,9 @@ mod tests {
     use super::*;
 
     use crate::array::*;
-    use crate::bitmap::Bitmap;
     use crate::datatypes::*;
 
-    use super::super::{FieldInfo, ParquetPhysicalType, ParquetPrimitiveType};
+    use super::super::{FieldInfo, ParquetPhysicalType};
 
     #[test]
     fn test_struct() {

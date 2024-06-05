@@ -3,8 +3,7 @@ use arrow2::{
     array::*,
     bitmap::Bitmap,
     buffer::Buffer,
-    datatypes::{DataType, Field, Metadata, Schema, TimeUnit},
-    error::Result,
+    datatypes::{DataType, Field, Metadata, TimeUnit},
 };
 
 use super::*;

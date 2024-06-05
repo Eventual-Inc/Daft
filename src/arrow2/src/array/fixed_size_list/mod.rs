@@ -9,6 +9,8 @@ use super::{new_empty_array, new_null_array, Array};
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
+
+#[allow(unused)] // exports the `IntoIter` implementation for `FixedSizeListArray`
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;

@@ -100,21 +100,12 @@ where
     O: NativeType,
     F: Fn(I) -> Option<O>,
 {
-    let mut mut_bitmap = MutableBitmap::with_capacity(array.len());
+    let mut_bitmap = MutableBitmap::with_capacity(array.len());
 
     let values = array
         .values()
         .iter()
-        .map(|v| match op(*v) {
-            Some(val) => {
-                mut_bitmap.push(true);
-                val
-            }
-            None => {
-                mut_bitmap.push(false);
-                O::default()
-            }
-        })
+        .map(|v| op(*v).unwrap_or_default())
         .collect::<Vec<_>>()
         .into();
 
@@ -249,22 +240,13 @@ where
 {
     check_same_len(lhs, rhs).unwrap();
 
-    let mut mut_bitmap = MutableBitmap::with_capacity(lhs.len());
+    let mut_bitmap = MutableBitmap::with_capacity(lhs.len());
 
     let values = lhs
         .values()
         .iter()
         .zip(rhs.values().iter())
-        .map(|(l, r)| match op(*l, *r) {
-            Some(val) => {
-                mut_bitmap.push(true);
-                val
-            }
-            None => {
-                mut_bitmap.push(false);
-                T::default()
-            }
-        })
+        .map(|(l, r)| op(*l, *r).unwrap_or_default())
         .collect::<Vec<_>>()
         .into();
 

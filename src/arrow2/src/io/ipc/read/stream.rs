@@ -1,7 +1,6 @@
 use ahash::AHashMap;
 use std::io::Read;
 
-use arrow_format;
 use arrow_format::ipc::planus::ReadAsRoot;
 
 use crate::array::Array;

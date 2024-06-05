@@ -2,8 +2,6 @@ use ahash::AHashMap;
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use arrow_format;
-
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
@@ -292,29 +290,6 @@ pub fn read_dictionary<R: Read + Seek>(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn project_iter() {
-        let iter = 1..6;
-        let iter = ProjectionIter::new(&[0, 2, 4], iter);
-        let result: Vec<_> = iter.collect();
-        use ProjectionResult::*;
-        assert_eq!(
-            result,
-            vec![
-                Selected(1),
-                NotSelected(2),
-                Selected(3),
-                NotSelected(4),
-                Selected(5)
-            ]
-        )
-    }
-}
-
 pub fn prepare_projection(
     fields: &[Field],
     mut projection: Vec<usize>,
@@ -361,4 +336,27 @@ pub fn apply_projection(
         .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
 
     Chunk::new(new_arrays)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_iter() {
+        let iter = 1..6;
+        let iter = ProjectionIter::new(&[0, 2, 4], iter);
+        let result: Vec<_> = iter.collect();
+        use ProjectionResult::*;
+        assert_eq!(
+            result,
+            vec![
+                Selected(1),
+                NotSelected(2),
+                Selected(3),
+                NotSelected(4),
+                Selected(5)
+            ]
+        )
+    }
 }

@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 use crate::datatypes::*;
-use crate::error::{Error, Result};
+use crate::error::Error;
 use crate::offset::Offset;
 use crate::{array::*, types::NativeType};
 

@@ -137,7 +137,7 @@ fn main() -> Result<()> {
                 dict = Some(page);
             }
             Page::Data(page) => {
-                let _array = deserialize(&page, dict.as_ref())?;
+                deserialize(&page, dict.as_ref())?;
             }
         }
     }

@@ -1,7 +1,6 @@
 //! Contains operators to sort individual and slices of [`Array`]s.
 use std::cmp::Ordering;
 
-use crate::array::ord;
 use crate::compute::take;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
@@ -16,6 +15,7 @@ mod primitive;
 mod utf8;
 
 pub mod row;
+#[allow(unused)]
 pub(crate) use lex_sort::build_compare;
 pub use lex_sort::{lexsort, lexsort_to_indices, lexsort_to_indices_impl, SortColumn};
 
@@ -345,7 +345,7 @@ where
     let mut values = if options.nulls_first {
         null_indices.into_iter().chain(values).collect::<Vec<I>>()
     } else {
-        values.chain(null_indices.into_iter()).collect::<Vec<I>>()
+        values.chain(null_indices).collect::<Vec<I>>()
     };
 
     values.truncate(limit.unwrap_or(values.len()));

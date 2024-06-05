@@ -265,7 +265,9 @@ impl FixedSizeBinaryArray {
 }
 
 pub trait FixedSizeBinaryValues {
+    #[allow(dead_code)]
     fn values(&self) -> &[u8];
+    #[allow(dead_code)]
     fn size(&self) -> usize;
 }
 

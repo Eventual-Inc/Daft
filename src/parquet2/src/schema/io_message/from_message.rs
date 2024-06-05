@@ -619,10 +619,10 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use types::{IntegerType, PrimitiveLogicalType};
+    use types::IntegerType;
 
     use super::*;
-    use crate::schema::types::{GroupConvertedType, PhysicalType, PrimitiveConvertedType};
+    use crate::schema::types::PhysicalType;
 
     #[test]
     fn test_tokenize_empty_string() {

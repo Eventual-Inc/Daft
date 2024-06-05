@@ -149,7 +149,6 @@ impl<T, I: Iterator<Item = T>> Iterator for SliceFilteredIter<I> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::VecDeque;
 
     use super::*;
 

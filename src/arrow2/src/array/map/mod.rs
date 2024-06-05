@@ -10,6 +10,7 @@ use super::{new_empty_array, specification::try_check_offsets_bounds, Array};
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
+#[allow(unused)]
 pub use iterator::*;
 
 /// An array representing a (key, value), both of arbitrary logical types.

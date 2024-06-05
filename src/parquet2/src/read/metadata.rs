@@ -18,7 +18,7 @@ pub(super) fn metadata_len(buffer: &[u8], len: usize) -> i32 {
 
 // see (unstable) Seek::stream_len
 fn stream_len(seek: &mut impl Seek) -> std::result::Result<u64, std::io::Error> {
-    let old_pos = seek.seek(SeekFrom::Current(0))?;
+    let old_pos = seek.stream_position()?;
     let len = seek.seek(SeekFrom::End(0))?;
 
     // Avoid seeking a third time when we were already at the end of the

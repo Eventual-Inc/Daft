@@ -17,6 +17,8 @@ mod ffi;
 pub(super) mod fmt;
 mod from_natural;
 mod iterator;
+
+#[allow(unused)]
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;

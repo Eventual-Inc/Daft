@@ -34,9 +34,7 @@ use parquet2::read::{get_column_iterator, get_field_columns, read_metadata};
 use parquet2::read::{MutStreamingIterator, State};
 use parquet2::schema::types::GroupConvertedType;
 use parquet2::schema::types::ParquetType;
-use parquet2::schema::types::PhysicalType;
 use parquet2::schema::Repetition;
-use parquet2::statistics::{BinaryStatistics, BooleanStatistics, PrimitiveStatistics, Statistics};
 use parquet2::types::int96_to_i64_ns;
 use parquet2::FallibleStreamingIterator;
 

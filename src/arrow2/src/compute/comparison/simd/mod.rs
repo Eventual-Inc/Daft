@@ -124,4 +124,5 @@ macro_rules! simd8_native_all {
 }
 
 mod native;
+#[allow(unused)]
 pub use native::*;

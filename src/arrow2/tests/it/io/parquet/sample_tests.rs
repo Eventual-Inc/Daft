@@ -1,11 +1,9 @@
 use arrow2::io::parquet::write::*;
 use arrow2::{
-    chunk::Chunk,
     datatypes::{Field, Metadata, Schema},
     error::Result,
     io::parquet::read as p_read,
 };
-use std::borrow::Borrow;
 use std::io::Cursor;
 
 use sample_arrow2::{
@@ -83,7 +81,6 @@ fn round_trip_sample(
     };
 
     let encodings: Vec<_> = schema
-        .borrow()
         .fields
         .iter()
         .map(|field| transverse(field.data_type(), |_| Encoding::Plain))
@@ -109,7 +106,7 @@ fn round_trip_sample(
     let metadata = p_read::read_metadata(&mut buffer)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    let mut reader = p_read::FileReader::new(buffer, metadata.row_groups, schema, None, None, None);
+    let reader = p_read::FileReader::new(buffer, metadata.row_groups, schema, None, None, None);
 
     let result: Vec<_> = reader.collect::<Result<_>>()?;
 

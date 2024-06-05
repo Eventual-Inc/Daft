@@ -12,6 +12,7 @@ use crate::io::parquet::read::schema::SchemaInferenceOptions;
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
+#[allow(dead_code)]
 pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
     parquet_to_arrow_schema_with_options(fields, &None)
 }
@@ -434,7 +435,6 @@ mod tests {
 
     use super::*;
 
-    use crate::datatypes::{DataType, Field, TimeUnit};
     use crate::error::Result;
 
     #[test]

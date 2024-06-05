@@ -1,5 +1,4 @@
 // Bridges structs from thrift-generated code to rust enums.
-use std::convert::TryFrom;
 
 use super::thrift_format::{
     BoundaryOrder as ParquetBoundaryOrder, CompressionCodec, DataPageHeader, DataPageHeaderV2,

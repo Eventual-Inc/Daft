@@ -20,7 +20,7 @@ where
 
     let mut chunk = vec![];
     chunk.try_reserve(length as usize)?;
-    reader.take(length as u64).read_to_end(&mut chunk).await?;
+    reader.take(length).read_to_end(&mut chunk).await?;
     Result::Ok(chunk)
 }
 

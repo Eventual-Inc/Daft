@@ -10,7 +10,6 @@ use crate::{
     types::NativeType,
 };
 
-use super::super::dictionary::nested_next_dict;
 use super::super::dictionary::*;
 use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;

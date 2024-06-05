@@ -1,13 +1,8 @@
 use ethnum::I256;
-use parquet2::schema::types::PrimitiveType;
 
 use crate::array::PrimitiveArray;
-use crate::{
-    datatypes::{DataType, Field},
-    error::{Error, Result},
-};
+use crate::error::Error;
 
-use super::nested_utils::{InitNested, NestedArrayIter};
 use super::*;
 
 /// Converts an iterator of arrays to a trait object returning trait objects

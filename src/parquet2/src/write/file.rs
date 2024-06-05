@@ -250,7 +250,6 @@ mod tests {
 
     use super::*;
 
-    use crate::error::Result;
     use crate::read::read_metadata;
     use crate::tests::get_path;
 

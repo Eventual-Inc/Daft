@@ -4,7 +4,7 @@ mod file;
 mod indexes;
 pub(crate) mod page;
 mod row_group;
-pub(self) mod statistics;
+mod statistics;
 
 #[cfg(feature = "async")]
 mod stream;

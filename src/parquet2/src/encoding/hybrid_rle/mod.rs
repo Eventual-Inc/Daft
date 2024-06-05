@@ -39,7 +39,7 @@ pub struct HybridRleDecoder<'a> {
 }
 
 #[inline]
-fn read_next<'a, 'b>(decoder: &'b mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
+fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
     Ok(match decoder.next().transpose()? {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
