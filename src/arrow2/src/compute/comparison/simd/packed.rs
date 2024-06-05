@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+
 use std::simd::{SimdPartialEq, SimdPartialOrd, ToBitMask};
 
 use crate::types::simd::*;

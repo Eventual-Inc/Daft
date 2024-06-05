@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use avro_schema::file::Block;
 use avro_schema::schema::Record;
 use avro_schema::schema::{Enum, Field as AvroField, Schema as AvroSchema};

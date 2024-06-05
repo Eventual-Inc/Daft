@@ -1,4 +1,4 @@
-use std::{iter::FromIterator, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush},

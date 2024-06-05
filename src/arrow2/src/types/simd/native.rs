@@ -1,5 +1,4 @@
 use crate::types::BitChunkIter;
-use std::convert::TryInto;
 
 use super::*;
 

@@ -1,4 +1,4 @@
-use std::{iter::FromIterator, sync::Arc};
+use std::sync::Arc;
 
 use crate::array::physical_binary::extend_validity;
 use crate::array::TryExtendFromSelf;

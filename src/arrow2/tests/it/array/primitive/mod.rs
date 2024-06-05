@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use arrow2::{array::*, bitmap::Bitmap, buffer::Buffer, datatypes::*, types::months_days_ns};
 
 mod fmt;

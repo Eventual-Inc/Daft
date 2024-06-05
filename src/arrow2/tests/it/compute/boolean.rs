@@ -1,7 +1,6 @@
 use arrow2::array::*;
 use arrow2::compute::boolean::*;
 use arrow2::scalar::BooleanScalar;
-use std::iter::FromIterator;
 
 #[test]
 fn array_and() {

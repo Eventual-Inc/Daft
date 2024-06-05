@@ -1,5 +1,5 @@
+use std::collections::VecDeque;
 use std::io::{Read, Seek};
-use std::{collections::VecDeque, convert::TryInto};
 
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};

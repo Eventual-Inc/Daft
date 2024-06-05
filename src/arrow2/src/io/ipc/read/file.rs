@@ -1,5 +1,5 @@
 use ahash::AHashMap;
-use std::convert::TryInto;
+
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::array::Array;

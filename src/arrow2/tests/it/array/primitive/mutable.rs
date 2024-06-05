@@ -4,7 +4,6 @@ use arrow2::{
     datatypes::DataType,
     error::Result,
 };
-use std::iter::FromIterator;
 
 #[test]
 fn from_and_into_data() {

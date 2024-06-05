@@ -480,6 +480,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
         create_dictionary(self.array(), self.data_type(), self.parent().clone())
     }
 
+    #[allow(dead_code)]
     fn n_buffers(&self) -> usize;
 
     fn parent(&self) -> &InternalArrowArray;

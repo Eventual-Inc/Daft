@@ -1,5 +1,5 @@
 use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
+
 use std::sync::Arc;
 
 use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};

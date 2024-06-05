@@ -374,7 +374,6 @@ fn extend_bitmap() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn extend_constant1() {
-    use std::iter::FromIterator;
     for i in 0..64 {
         for j in 0..64 {
             let mut b = MutableBitmap::new();

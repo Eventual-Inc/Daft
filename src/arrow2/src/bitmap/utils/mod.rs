@@ -6,8 +6,6 @@ mod iterator;
 mod slice_iterator;
 mod zip_validity;
 
-use std::convert::TryInto;
-
 pub(crate) use chunk_iterator::merge_reversed;
 pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact};
 pub use chunks_exact_mut::BitChunksExactMut;

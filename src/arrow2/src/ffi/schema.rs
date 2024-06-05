@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::TryInto, ffi::CStr, ffi::CString, ptr};
+use std::{collections::BTreeMap, ffi::CStr, ffi::CString, ptr};
 
 use crate::{
     datatypes::{

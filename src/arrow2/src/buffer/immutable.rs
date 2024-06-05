@@ -1,4 +1,4 @@
-use std::{iter::FromIterator, ops::Deref, sync::Arc, usize};
+use std::{ops::Deref, sync::Arc, usize};
 
 use either::Either;
 

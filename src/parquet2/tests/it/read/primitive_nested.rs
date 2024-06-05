@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use super::{dictionary::PrimitivePageDict, Array};
 
 use parquet2::{

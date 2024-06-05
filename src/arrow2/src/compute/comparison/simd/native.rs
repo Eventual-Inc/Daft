@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use super::{set, Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 use crate::types::{days_ms, f16, i256, months_days_ns};
 

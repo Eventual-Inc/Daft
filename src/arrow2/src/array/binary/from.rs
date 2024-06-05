@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use crate::offset::Offset;
 
 use super::{BinaryArray, MutableBinaryArray};

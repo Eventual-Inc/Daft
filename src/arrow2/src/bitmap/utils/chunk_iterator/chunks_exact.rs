@@ -1,4 +1,4 @@
-use std::{convert::TryInto, slice::ChunksExact};
+use std::slice::ChunksExact;
 
 use crate::trusted_len::TrustedLen;
 

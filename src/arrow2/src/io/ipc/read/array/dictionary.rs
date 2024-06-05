@@ -1,5 +1,5 @@
 use std::collections::{HashSet, VecDeque};
-use std::convert::TryInto;
+
 use std::io::{Read, Seek};
 
 use crate::array::{DictionaryArray, DictionaryKey};
