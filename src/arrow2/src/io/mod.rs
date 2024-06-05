@@ -2,7 +2,6 @@
 //! Contains modules to interface with other formats such as [`csv`],
 //! [`parquet`], [`json`], [`ipc`], [`mod@print`] and [`avro`].
 
-
 #[cfg(feature = "io_orc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_orc")))]
 pub mod orc;

@@ -307,4 +307,3 @@ impl<T: Copy> IntoIterator for Buffer<T> {
         IntoIter::new(self)
     }
 }
-

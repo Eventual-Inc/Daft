@@ -3,7 +3,6 @@
 
 mod array;
 
-
 mod bitmap;
 mod buffer;
 mod ffi;

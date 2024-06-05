@@ -51,7 +51,6 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
     ))
 }
 
-
 pub async fn get_owned_page_stream_from_column_start<R: AsyncRead + Unpin + Send>(
     column_metadata: &ColumnChunkMetaData,
     reader: R,

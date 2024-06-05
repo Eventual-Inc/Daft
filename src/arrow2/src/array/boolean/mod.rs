@@ -11,7 +11,6 @@ use either::Either;
 
 use super::Array;
 
-
 mod ffi;
 pub(super) mod fmt;
 mod from;

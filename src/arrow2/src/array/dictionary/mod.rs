@@ -13,7 +13,6 @@ use crate::{
     types::NativeType,
 };
 
-
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

@@ -182,4 +182,3 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
         Self::try_new(data_type, array.array().len())
     }
 }
-

@@ -17,7 +17,6 @@ use super::{
     Array, GenericBinaryArray,
 };
 
-
 mod ffi;
 pub(super) mod fmt;
 mod from;

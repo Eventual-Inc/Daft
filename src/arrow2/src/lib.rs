@@ -1,5 +1,7 @@
 // So that we have more control over what is `unsafe` inside an `unsafe` block
 #![allow(unused_unsafe)]
+// don't want to deal with this right now
+#![allow(deprecated)]
 //
 #![allow(clippy::len_without_is_empty)]
 // this landed on 1.60. Let's not force everyone to bump just yet
@@ -35,9 +37,6 @@ pub mod datatypes;
 
 pub mod ffi;
 pub mod util;
-
-
-
 
 // re-exported because we return `Either` in our public API
 pub use either::Either;

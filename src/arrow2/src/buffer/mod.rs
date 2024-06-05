@@ -8,7 +8,6 @@ use std::ops::Deref;
 
 pub(crate) enum BytesAllocator {
     InternalArrowArray(InternalArrowArray),
-
 }
 pub(crate) type BytesInner<T> = foreign_vec::ForeignVec<BytesAllocator, T>;
 
@@ -61,7 +60,6 @@ impl<T> From<BytesInner<T>> for Bytes<T> {
         Self(value)
     }
 }
-
 
 pub(super) use iterator::IntoIter;
 

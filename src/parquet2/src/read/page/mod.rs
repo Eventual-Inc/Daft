@@ -14,4 +14,6 @@ pub trait PageIterator: Iterator<Item = Result<CompressedPage, Error>> {
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use stream::{get_page_stream, get_page_stream_from_column_start, get_owned_page_stream_from_column_start};
+pub use stream::{
+    get_owned_page_stream_from_column_start, get_page_stream, get_page_stream_from_column_start,
+};

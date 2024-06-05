@@ -49,10 +49,8 @@ pub trait Simd: NativeType {
     type Simd: NativeSimd<Native = Self>;
 }
 
-
 mod native;
 pub use native::*;
-
 
 macro_rules! native_simd {
     ($name:tt, $type:ty, $lanes:expr, $mask:ty) => {

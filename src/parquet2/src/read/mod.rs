@@ -15,7 +15,9 @@ pub use compression::{decompress, BasicDecompressor, Decompressor};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use page::{get_page_stream, get_page_stream_from_column_start, get_owned_page_stream_from_column_start};
+pub use page::{
+    get_owned_page_stream_from_column_start, get_page_stream, get_page_stream_from_column_start,
+};
 pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageReader};
 
 #[cfg(feature = "async")]

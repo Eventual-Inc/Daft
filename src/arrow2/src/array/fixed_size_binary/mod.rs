@@ -2,7 +2,6 @@ use crate::{bitmap::Bitmap, buffer::Buffer, datatypes::DataType, error::Error};
 
 use super::Array;
 
-
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

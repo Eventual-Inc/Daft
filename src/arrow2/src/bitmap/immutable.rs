@@ -445,7 +445,6 @@ impl Bitmap {
     ) -> std::result::Result<Self, E> {
         Ok(MutableBitmap::try_from_trusted_len_iter_unchecked(iterator)?.into())
     }
-
 }
 
 impl<'a> IntoIterator for &'a Bitmap {

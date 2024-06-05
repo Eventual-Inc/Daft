@@ -206,8 +206,6 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
-
-
 /// Interval units defined in Arrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
@@ -220,7 +218,6 @@ pub enum IntervalUnit {
     /// The number of elapsed months (i32), days (i32) and nanoseconds (i64).
     MonthDayNano,
 }
-
 
 impl DataType {
     /// the [`PhysicalType`] of this [`DataType`].

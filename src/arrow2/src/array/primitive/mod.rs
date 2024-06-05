@@ -13,7 +13,6 @@ use crate::{
 use super::Array;
 use either::Either;
 
-
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
