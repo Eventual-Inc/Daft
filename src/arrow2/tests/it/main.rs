@@ -2,8 +2,7 @@
 #![allow(clippy::unnecessary_lazy_evaluations)]
 
 mod array;
-#[cfg(feature = "arrow")]
-mod arrow;
+
 
 mod bitmap;
 mod buffer;

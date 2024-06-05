@@ -446,21 +446,6 @@ impl Bitmap {
         Ok(MutableBitmap::try_from_trusted_len_iter_unchecked(iterator)?.into())
     }
 
-    /// Create a new [`Bitmap`] from an arrow [`NullBuffer`]
-    ///
-    /// [`NullBuffer`]: arrow_buffer::buffer::NullBuffer
-    #[cfg(feature = "arrow")]
-    pub fn from_null_buffer(value: arrow_buffer::buffer::NullBuffer) -> Self {
-        let offset = value.offset();
-        let length = value.len();
-        let unset_bits = value.null_count();
-        Self {
-            offset,
-            length,
-            unset_bits,
-            bytes: Arc::new(crate::buffer::to_bytes(value.buffer().clone())),
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a Bitmap {
@@ -478,16 +463,5 @@ impl IntoIterator for Bitmap {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter::new(self)
-    }
-}
-
-#[cfg(feature = "arrow")]
-impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
-    fn from(value: Bitmap) -> Self {
-        let null_count = value.unset_bits;
-        let buffer = crate::buffer::to_buffer(value.bytes);
-        let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // Safety: null count is accurate
-        unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
     }
 }

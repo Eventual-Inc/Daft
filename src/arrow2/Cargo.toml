@@ -143,10 +143,6 @@ sample-std = "0.1"
 sample-test = "0.1"
 
 
-[package.metadata.docs.rs]
-features = ["full"]
-rustdoc-args = ["--cfg", "docsrs"]
-
 [features]
 default = []
 full = [
@@ -155,18 +151,11 @@ full = [
     "io_csv_async",
     "io_json",
     "io_ipc",
-    "io_flight",
     "io_ipc_write_async",
     "io_ipc_read_async",
     "io_ipc_compression",
-    "io_json_integration",
-    "io_print",
     "io_parquet_async",
     "io_parquet_compression",
-    "io_avro",
-    "io_orc",
-    "io_avro_compression",
-    "io_avro_async",
     "regex",
     "regex-syntax",
     "compute",
@@ -190,7 +179,6 @@ io_ipc = ["arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
 io_ipc_compression = ["lz4", "zstd"]
-io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
 io_parquet = [
@@ -200,6 +188,7 @@ io_parquet = [
     "streaming-iterator",
     "fallible-streaming-iterator",
 ]
+
 io_parquet_async = ["futures", "io_parquet", "parquet2/async"]
 
 io_parquet_compression = [
