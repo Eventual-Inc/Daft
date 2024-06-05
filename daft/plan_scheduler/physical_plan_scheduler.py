@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-from daft.daft import AdaptivePhysicalPlanScheduler as _AdaptivePhysicalPlanScheduler
+from daft.daft import (
+    AdaptivePhysicalPlanScheduler as _AdaptivePhysicalPlanScheduler,
+)
 from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
+from daft.daft import (
+    PyDaftExecutionConfig,
+)
 from daft.execution import physical_plan
-from daft.runners.partitioning import PartitionCacheEntry, PartitionT
+from daft.logical.builder import LogicalPlanBuilder
+from daft.runners.partitioning import (
+    PartitionCacheEntry,
+    PartitionT,
+)
 
 
 class PhysicalPlanScheduler:
@@ -13,6 +22,13 @@ class PhysicalPlanScheduler:
 
     def __init__(self, scheduler: _PhysicalPlanScheduler):
         self._scheduler = scheduler
+
+    @classmethod
+    def from_logical_plan_builder(
+        cls, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig
+    ) -> PhysicalPlanScheduler:
+        scheduler = _PhysicalPlanScheduler.from_logical_plan_builder(builder._builder, daft_execution_config)
+        return cls(scheduler)
 
     def num_partitions(self) -> int:
         return self._scheduler.num_partitions()
@@ -36,6 +52,13 @@ class PhysicalPlanScheduler:
 class AdaptivePhysicalPlanScheduler:
     def __init__(self, scheduler: _AdaptivePhysicalPlanScheduler) -> None:
         self._scheduler = scheduler
+
+    @classmethod
+    def from_logical_plan_builder(
+        cls, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig
+    ) -> AdaptivePhysicalPlanScheduler:
+        scheduler = _AdaptivePhysicalPlanScheduler.from_logical_plan_builder(builder._builder, daft_execution_config)
+        return cls(scheduler)
 
     def next(self) -> tuple[int | None, PhysicalPlanScheduler]:
         sid, pps = self._scheduler.next()

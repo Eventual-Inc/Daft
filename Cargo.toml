@@ -11,6 +11,7 @@ daft-micropartition = {path = "src/daft-micropartition", default-features = fals
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
+daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 lazy_static = {workspace = true}
@@ -24,16 +25,17 @@ python = [
   "dep:pyo3",
   "dep:pyo3-log",
   "daft-core/python",
-  "daft-table/python",
+  "daft-csv/python",
   "daft-dsl/python",
   "daft-io/python",
-  "daft-plan/python",
-  "daft-parquet/python",
-  "daft-csv/python",
   "daft-json/python",
   "daft-micropartition/python",
+  "daft-parquet/python",
+  "daft-plan/python",
   "daft-scan/python",
+  "daft-scheduler/python",
   "daft-stats/python",
+  "daft-table/python",
   "common-daft-config/python",
   "common-system-info/python"
 ]
@@ -95,6 +97,7 @@ members = [
   "src/daft-plan",
   "src/daft-micropartition",
   "src/daft-scan",
+  "src/daft-scheduler",
   "src/daft-sketch"
 ]
 
