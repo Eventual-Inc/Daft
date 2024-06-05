@@ -180,7 +180,7 @@ fn materialize_scan_task(
                         cfg.delimiter,
                         cfg.double_quote,
                         cfg.quote,
-                        cfg.flexible,
+                        cfg.allow_variable_columns,
                         cfg.escape_char,
                         cfg.comment,
                     )

@@ -183,7 +183,7 @@ pub struct CsvSourceConfig {
     pub quote: Option<char>,
     pub escape_char: Option<char>,
     pub comment: Option<char>,
-    pub flexible: bool,
+    pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -205,7 +205,10 @@ impl CsvSourceConfig {
         if let Some(comment) = self.comment {
             res.push(format!("Comment = {}", comment));
         }
-        res.push(format!("Flexible = {}", self.flexible));
+        res.push(format!(
+            "Allow_variable_columns = {}",
+            self.allow_variable_columns
+        ));
         if let Some(buffer_size) = self.buffer_size {
             res.push(format!("Buffer size = {}", buffer_size));
         }
@@ -232,7 +235,7 @@ impl CsvSourceConfig {
     fn new(
         has_headers: bool,
         double_quote: bool,
-        flexible: bool,
+        allow_variable_columns: bool,
         delimiter: Option<char>,
         quote: Option<char>,
         escape_char: Option<char>,
@@ -247,7 +250,7 @@ impl CsvSourceConfig {
             quote,
             escape_char,
             comment,
-            flexible,
+            allow_variable_columns,
             buffer_size,
             chunk_size,
         })

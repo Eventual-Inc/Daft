@@ -186,7 +186,7 @@ impl GlobScanOperator {
                         quote,
                         escape_char,
                         comment,
-                        flexible,
+                        allow_variable_columns,
                         ..
                     }) => {
                         let (schema, _) = daft_csv::metadata::read_csv_schema(
@@ -196,7 +196,7 @@ impl GlobScanOperator {
                                 *delimiter,
                                 *double_quote,
                                 *quote,
-                                *flexible,
+                                *allow_variable_columns,
                                 *escape_char,
                                 *comment,
                             )?),

@@ -52,7 +52,7 @@ def from_csv(
                     delimiter=csv_options.delimiter,
                     double_quote=csv_options.double_quote,
                     quote=csv_options.quote,
-                    flexible=csv_options.flexible,
+                    allow_variable_columns=csv_options.allow_variable_columns,
                     escape_char=csv_options.escape_char,
                     comment=csv_options.comment,
                 ),

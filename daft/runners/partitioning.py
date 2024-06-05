@@ -43,13 +43,14 @@ class TableParseCSVOptions:
         double_quote: Whether to support escaping quotes by doubling them, defaults to True
         buffer_size: Size of the buffer (in bytes) used by the streaming reader.
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
+        allow_variable_columns: Whether to allow for variable number of columns in the CSV, defaults to False.
     """
 
     delimiter: str | None = None
     header_index: int | None = 0
     double_quote: bool = True
     quote: str | None = None
-    flexible: bool = False
+    allow_variable_columns: bool = False
     escape_char: str | None = None
     comment: str | None = None
     buffer_size: int | None = None

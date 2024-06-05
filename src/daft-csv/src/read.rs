@@ -380,7 +380,7 @@ async fn read_csv_single_into_stream(
         .escape(parse_options.escape_char)
         .comment(parse_options.comment)
         .buffer_capacity(buffer_size)
-        .flexible(parse_options.flexible)
+        .flexible(parse_options.allow_variable_columns)
         .create_reader(reader.compat());
     let read_stream = read_into_byterecord_chunk_stream(
         reader,
@@ -1543,7 +1543,7 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_read_local_invalid_cols_header_mismatch_flexible() -> DaftResult<()> {
+    fn test_csv_read_local_invalid_cols_header_mismatch_allow_variable_columns() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_invalid_header_cols_mismatch.csv", // 5 cols in header with 4 cols in data
             env!("CARGO_MANIFEST_DIR"),
@@ -1557,7 +1557,7 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
-            Some(CsvParseOptions::default().with_flexible(true)),
+            Some(CsvParseOptions::default().with_variable_columns(true)),
             None,
             io_client,
             None,
@@ -1627,7 +1627,7 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_read_local_invalid_no_header_variable_num_cols_flexible() -> DaftResult<()> {
+    fn test_csv_read_local_invalid_no_header_allow_variable_cols() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv", // first and third row have 4 cols, second row has 5 cols
             env!("CARGO_MANIFEST_DIR"),
@@ -1644,7 +1644,7 @@ mod tests {
             Some(
                 CsvParseOptions::default()
                     .with_has_header(false)
-                    .with_flexible(true),
+                    .with_variable_columns(true),
             ),
             None,
             io_client,
@@ -1670,8 +1670,7 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_read_local_invalid_no_header_variable_num_cols_flexible_with_schema(
-    ) -> DaftResult<()> {
+    fn test_csv_read_local_invalid_no_header_allow_variable_cols_with_schema() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv", // first and third row have 4 cols, second row has 5 cols
             env!("CARGO_MANIFEST_DIR"),
@@ -1696,7 +1695,7 @@ mod tests {
             Some(
                 CsvParseOptions::default()
                     .with_has_header(false)
-                    .with_flexible(true),
+                    .with_variable_columns(true),
             ),
             None,
             io_client,

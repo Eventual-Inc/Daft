@@ -161,7 +161,7 @@ pub struct CsvParseOptions {
     pub quote: u8,
     pub escape_char: Option<u8>,
     pub comment: Option<u8>,
-    pub flexible: bool,
+    pub allow_variable_columns: bool,
 }
 
 impl CsvParseOptions {
@@ -170,7 +170,7 @@ impl CsvParseOptions {
         delimiter: u8,
         double_quote: bool,
         quote: u8,
-        flexible: bool,
+        allow_variable_columns: bool,
         escape_char: Option<u8>,
         comment: Option<u8>,
     ) -> Self {
@@ -179,7 +179,7 @@ impl CsvParseOptions {
             delimiter,
             double_quote,
             quote,
-            flexible,
+            allow_variable_columns,
             escape_char,
             comment,
         }
@@ -190,7 +190,7 @@ impl CsvParseOptions {
         delimiter: Option<char>,
         double_quote: bool,
         quote: Option<char>,
-        flexible: bool,
+        allow_variable_columns: bool,
         escape_char: Option<char>,
         comment: Option<char>,
     ) -> super::Result<Self> {
@@ -199,7 +199,7 @@ impl CsvParseOptions {
             char_to_byte(delimiter)?.unwrap_or(b','),
             double_quote,
             char_to_byte(quote)?.unwrap_or(b'"'),
-            flexible,
+            allow_variable_columns,
             char_to_byte(escape_char)?,
             char_to_byte(comment)?,
         ))
@@ -235,8 +235,11 @@ impl CsvParseOptions {
         Self { comment, ..self }
     }
 
-    pub fn with_flexible(self, flexible: bool) -> Self {
-        Self { flexible, ..self }
+    pub fn with_variable_columns(self, allow_variable_columns: bool) -> Self {
+        Self {
+            allow_variable_columns,
+            ..self
+        }
     }
 }
 
@@ -261,13 +264,13 @@ impl CsvParseOptions {
     /// * `comment` - The character at the start of a line that indicates that the rest of the line is a comment,
     ///   which should be ignored while parsing.
     #[new]
-    #[pyo3(signature = (has_header=true, delimiter=None, double_quote=false, quote=None, flexible=false, escape_char=None, comment=None))]
+    #[pyo3(signature = (has_header=true, delimiter=None, double_quote=false, quote=None, allow_variable_columns=false, escape_char=None, comment=None))]
     pub fn new(
         has_header: bool,
         delimiter: Option<char>,
         double_quote: bool,
         quote: Option<char>,
-        flexible: bool,
+        allow_variable_columns: bool,
         escape_char: Option<char>,
         comment: Option<char>,
     ) -> PyResult<Self> {
@@ -276,7 +279,7 @@ impl CsvParseOptions {
             delimiter,
             double_quote,
             quote,
-            flexible,
+            allow_variable_columns,
             escape_char,
             comment,
         )?)

@@ -361,7 +361,7 @@ def test_csv_read_data_custom_comment(use_native_downloader):
             assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_csv_read_data_flexible_with_missing_columns():
+def test_csv_read_data_variable_missing_columns():
     with _csv_write_helper(
         header=["id", "data"],
         data=[
@@ -387,12 +387,12 @@ def test_csv_read_data_flexible_with_missing_columns():
             f,
             schema,
             storage_config=storage_config,
-            csv_options=TableParseCSVOptions(flexible=True),
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_csv_read_data_flexible_with_extra_columns():
+def test_csv_read_data_variable_extra_columns():
     with _csv_write_helper(
         header=["id", "data"],
         data=[
@@ -418,12 +418,12 @@ def test_csv_read_data_flexible_with_extra_columns():
             f,
             schema,
             storage_config=storage_config,
-            csv_options=TableParseCSVOptions(flexible=True),
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_csv_read_data_flexible_with_non_matching_types():
+def test_csv_read_data_variable_columns_with_non_matching_types():
     with _csv_write_helper(
         header=["id", "data"],
         data=[
@@ -449,6 +449,6 @@ def test_csv_read_data_flexible_with_non_matching_types():
             f,
             schema,
             storage_config=storage_config,
-            csv_options=TableParseCSVOptions(flexible=True),
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
