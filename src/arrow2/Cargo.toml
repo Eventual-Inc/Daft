@@ -136,9 +136,6 @@ sample-arrow2 = "0.1"
 sample-std = "0.1"
 sample-test = "0.1"
 
-# ugly hack needed to match this library in sample_arrow2
-[patch.crates-io]
-arrow2 = { path = "." }
 
 [package.metadata.docs.rs]
 features = ["full"]
