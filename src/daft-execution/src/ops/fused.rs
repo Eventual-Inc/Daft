@@ -149,7 +149,7 @@ impl<T: std::fmt::Debug> PartitionTaskOp for FusedPartitionTaskOp<T> {
     }
     fn with_previous_output_metadata(&self, output_meta: &[PartitionMetadata]) {
         // TODO(Clark): This can't be applied to every task op in the chain, since we would need to keep track of
-        // output metadata for intermediate ops in the chain. For now, we limit stateful configuration maintenance for
+        // output metadata for intermediate ops in the chain. For now, we limit stateful configuration maintenance to
         // task ops at the end of a fused chain, and should prevent fusion for such task ops otherwise.
         self.fused_ops.last().map_or_else(
             || self.source_op.with_previous_output_metadata(output_meta),
