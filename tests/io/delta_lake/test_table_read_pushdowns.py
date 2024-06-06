@@ -33,7 +33,8 @@ def test_read_predicate_pushdown_on_data(deltalake_table):
     expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
-        df.to_arrow().sort_by("part_idx"), pa.concat_tables([table.filter(pc.field("a") == 2) for table in tables])
+        df.to_arrow().sort_by("part_idx"),
+        pa.concat_tables([table.filter(pc.field("a") == 2) for table in tables]).sort_by("part_idx"),
     )
 
 
