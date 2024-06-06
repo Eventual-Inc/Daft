@@ -47,12 +47,11 @@ impl PartialEq for PartitionSpec {
                     return false;
                 }
             } else {
-                let both_null = self_column
-                    .is_null()
-                    .unwrap()
-                    .and(&other_column.is_null().unwrap())
-                    .unwrap();
-                if !both_null.get(0).unwrap() {
+                // For partition spec, we treat null as equal to null, in order to allow for
+                // partitioning on columns that may have nulls.
+                let self_null = self_column.is_null().unwrap();
+                let other_null = other_column.is_null().unwrap();
+                if self_null.xor(&other_null).unwrap().get(0).unwrap() {
                     return false;
                 }
             }
