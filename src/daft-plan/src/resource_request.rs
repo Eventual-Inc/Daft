@@ -91,6 +91,11 @@ impl ResourceRequest {
         requests
     }
 
+    /// Checks whether other is pipeline-compatible with self, i.e the resource requests are homogeneous enough that
+    /// we don't want to pipeline tasks that have these resource requests with each other.
+    ///
+    /// Currently, this returns true unless one resource request has a non-zero CPU request and the other task has a
+    /// non-zero GPU request.
     pub fn is_pipeline_compatible_with(&self, other: &ResourceRequest) -> bool {
         let self_num_cpus = self.num_cpus;
         let self_num_gpus = self.num_gpus;

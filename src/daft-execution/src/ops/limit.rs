@@ -8,6 +8,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Limit task op.
 #[derive(Debug)]
 pub struct LimitOp {
     limit: usize,

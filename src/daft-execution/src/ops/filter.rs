@@ -9,6 +9,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Filter task op, applying a predicate to its input.
 #[derive(Debug)]
 pub struct FilterOp {
     predicate: Vec<ExprRef>,

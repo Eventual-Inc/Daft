@@ -10,6 +10,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Scan task op, executing provided scan tasks in order to produce eagerly or lazily materialized MicroPartitions.
 #[derive(Debug)]
 pub struct ScanOp {
     resource_request: ResourceRequest,

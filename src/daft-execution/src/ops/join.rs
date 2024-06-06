@@ -10,6 +10,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Hash join task op.
 #[derive(Debug)]
 pub struct HashJoinOp {
     left_on: Vec<ExprRef>,

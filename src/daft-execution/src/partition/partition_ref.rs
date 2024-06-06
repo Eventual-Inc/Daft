@@ -2,14 +2,24 @@ use std::sync::Arc;
 
 use daft_micropartition::MicroPartition;
 
+/// A reference to a partition of the table.
+///
+/// If using the local executor, this partition lives in local memory.
+/// If using the Ray executor, this partition lives in the memory of some worker in the cluster.
 pub trait PartitionRef: std::fmt::Debug + Clone + Send + 'static {
+    /// Get the metadata for this partition.
     fn metadata(&self) -> PartitionMetadata;
+
+    /// Materialize the partition that underlies the reference.
     fn partition(&self) -> Arc<MicroPartition>;
 }
 
+/// Metadata for a partition.
 #[derive(Debug, Clone)]
 pub struct PartitionMetadata {
+    // Number of rows in partition.
     pub num_rows: Option<usize>,
+    // Size of partition in bytes.
     pub size_bytes: Option<usize>,
     // pub part_col_stats: PartitionColumnStats,
     // pub execution_stats: ExecutionStats,

@@ -9,6 +9,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Project task op, applying a projection to its input.
 #[derive(Debug)]
 pub struct ProjectOp {
     projection: Vec<ExprRef>,

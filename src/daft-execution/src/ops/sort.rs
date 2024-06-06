@@ -10,6 +10,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Boundary sampling task op.
 #[derive(Debug)]
 pub struct BoundarySamplingOp {
     size: usize,
@@ -58,6 +59,7 @@ impl PartitionTaskOp for BoundarySamplingOp {
     }
 }
 
+/// Samples to quantiles task op.
 #[derive(Debug)]
 pub struct SamplesToQuantilesOp {
     num_quantiles: usize,
@@ -120,6 +122,7 @@ impl PartitionTaskOp for SamplesToQuantilesOp {
     }
 }
 
+/// Fanout range task op.
 #[derive(Debug)]
 pub struct FanoutRangeOp {
     num_outputs: usize,
@@ -196,6 +199,7 @@ impl PartitionTaskOp for FanoutRangeOp {
     }
 }
 
+/// Sorted merge task op.
 #[derive(Debug)]
 pub struct SortedMergeOp {
     num_inputs: usize,

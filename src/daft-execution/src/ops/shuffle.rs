@@ -13,6 +13,7 @@ fn get_random_u64() -> u64 {
     rand::random()
 }
 
+/// Fanout hash task op.
 #[derive(Debug)]
 pub struct FanoutHashOp {
     num_outputs: usize,
@@ -60,6 +61,7 @@ impl PartitionTaskOp for FanoutHashOp {
     }
 }
 
+/// Fanout random task op.
 #[derive(Debug)]
 pub struct FanoutRandomOp {
     num_outputs: usize,
@@ -103,6 +105,7 @@ impl PartitionTaskOp for FanoutRandomOp {
     }
 }
 
+/// Reduce merge task op.
 #[derive(Debug)]
 pub struct ReduceMergeOp {
     num_inputs: usize,

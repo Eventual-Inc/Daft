@@ -11,6 +11,7 @@ use crate::partition::partition_ref::PartitionMetadata;
 
 use super::PartitionTaskOp;
 
+/// Monotonically increasing ID task op.
 #[derive(Debug)]
 pub struct MonotonicallyIncreasingIdOp {
     column_name: String,
