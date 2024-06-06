@@ -1,7 +1,7 @@
 import builtins
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import pyarrow
 
@@ -1427,6 +1427,7 @@ class PhysicalPlanScheduler:
     def num_partitions(self) -> int: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.InProgressPhysicalPlan: ...
+    def run(self, psets: dict[str, list[PartitionT]]) -> Iterator[PyMicroPartition]: ...
 
 class AdaptivePhysicalPlanScheduler:
     """
@@ -1567,6 +1568,7 @@ class PyDaftExecutionConfig:
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
+        enable_new_executor: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1596,6 +1598,8 @@ class PyDaftExecutionConfig:
     def read_sql_partition_size_bytes(self) -> int: ...
     @property
     def enable_aqe(self) -> bool: ...
+    @property
+    def enable_new_executor(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(
