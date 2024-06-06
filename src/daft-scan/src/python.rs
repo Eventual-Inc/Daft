@@ -329,8 +329,8 @@ pub mod pylib {
                 assert_eq!(boolean.len(), 1);
                 let value = boolean.get(0);
                 match value {
-                    Some(false) => return Ok(None),
-                    None | Some(true) => {}
+                    None | Some(false) => return Ok(None),
+                    Some(true) => {}
                 }
             }
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
