@@ -60,7 +60,7 @@ rand = {version = "0.8", optional = true}
 regex = {version = "1.9", optional = true}
 regex-syntax = {version = "0.7", optional = true}
 # Arrow integration tests support
-serde = {version = "^1.0", features = ["rc"], optional = true}
+serde = {version = "^1.0", features = ["rc", "derive"]}
 serde_derive = {version = "^1.0", optional = true}
 serde_json = {version = "^1.0", features = [
   "preserve_order"
@@ -186,7 +186,7 @@ io_ipc_write_async = ["io_ipc", "futures"]
 io_json = ["io_json_read", "io_json_write"]
 # serde+serde_json: its dependencies + error handling
 # serde_derive: there is some derive around
-io_json_integration = ["hex", "serde", "serde_derive", "serde_json", "io_ipc"]
+io_json_integration = ["hex", "serde_derive", "serde_json", "io_ipc"]
 io_json_read = ["json-deserializer", "indexmap", "lexical-core"]
 io_json_write = [
   "streaming-iterator",
@@ -222,7 +222,7 @@ io_parquet_snappy = ["parquet2/snappy"]
 # compression backends
 io_parquet_zstd = ["parquet2/zstd"]
 io_print = ["comfy-table"]
-serde_types = ["serde", "serde_derive"]
+serde_types = ["serde_derive"]
 simd = []
 
 [lib]

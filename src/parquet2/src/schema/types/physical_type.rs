@@ -1,12 +1,11 @@
 use parquet_format_safe::Type;
 
 use crate::error::Error;
-#[cfg(feature = "serde_types")]
+
 use serde::{Deserialize, Serialize};
 
 /// The set of all physical types representable in Parquet
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum PhysicalType {
     Boolean,
     Int32,

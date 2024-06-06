@@ -1,10 +1,9 @@
 use crate::error::Error;
 use parquet_format_safe::ConvertedType;
-#[cfg(feature = "serde_types")]
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum PrimitiveConvertedType {
     Utf8,
     /// an enum is converted into a binary field
@@ -91,8 +90,7 @@ pub enum PrimitiveConvertedType {
     Interval,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum GroupConvertedType {
     /// a map is converted as an optional field containing a repeated key/value pair
     Map,

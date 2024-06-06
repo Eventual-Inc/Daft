@@ -7,39 +7,23 @@ use crate::compression::Compression;
 use crate::error::{Error, Result};
 use crate::schema::types::PhysicalType;
 use crate::statistics::{deserialize_statistics, Statistics};
-
-#[cfg(feature = "serde_types")]
-mod serde_types {
-    pub use parquet_format_safe::thrift::protocol::{
-        TCompactInputProtocol, TCompactOutputProtocol,
-    };
-    pub use serde::de::Error as DeserializeError;
-    pub use serde::ser::Error as SerializeError;
-    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    pub use std::io::Cursor;
-}
-#[cfg(feature = "serde_types")]
-use serde_types::*;
+pub use parquet_format_safe::thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
+pub use serde::de::Error as DeserializeError;
+pub use serde::ser::Error as SerializeError;
+pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+pub use std::io::Cursor;
 
 /// Metadata for a column chunk.
 // This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
 // access to the descriptor (e.g. physical, converted, logical).
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ColumnChunkMetaData {
-    #[cfg_attr(
-        feature = "serde_types",
-        serde(serialize_with = "serialize_column_chunk")
-    )]
-    #[cfg_attr(
-        feature = "serde_types",
-        serde(deserialize_with = "deserialize_column_chunk")
-    )]
+    #[serde(serialize_with = "serialize_column_chunk")]
+    #[serde(deserialize_with = "deserialize_column_chunk")]
     column_chunk: ColumnChunk,
     column_descr: ColumnDescriptor,
 }
 
-#[cfg(feature = "serde_types")]
 fn serialize_column_chunk<S>(
     column_chunk: &ColumnChunk,
     serializer: S,
@@ -56,7 +40,6 @@ where
     serializer.serialize_bytes(&buf)
 }
 
-#[cfg(feature = "serde_types")]
 fn deserialize_column_chunk<'de, D>(deserializer: D) -> std::result::Result<ColumnChunk, D::Error>
 where
     D: Deserializer<'de>,

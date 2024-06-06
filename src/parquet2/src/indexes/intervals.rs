@@ -2,12 +2,10 @@ use parquet_format_safe::PageLocation;
 
 use crate::error::Error;
 
-#[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
 /// An interval
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Interval {
     /// Its start
     pub start: usize,
@@ -84,8 +82,7 @@ pub fn compute_rows(
 }
 
 /// An enum describing a page that was either selected in a filter pushdown or skipped
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FilteredPage {
     /// Location of the page in the file
     pub start: u64,

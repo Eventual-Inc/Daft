@@ -2,7 +2,6 @@ use crate::schema::types::{
     IntegerType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
 };
 
-#[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
 /// Sort order for page and column statistics.
@@ -13,8 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// See reference in
 /// <https://github.com/apache/parquet-cpp/blob/master/src/parquet/types.h>
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum SortOrder {
     /// Signed (either value or legacy byte-wise) comparison.
     Signed,

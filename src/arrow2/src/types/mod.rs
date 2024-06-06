@@ -30,12 +30,10 @@ pub use native::*;
 mod offset;
 pub use offset::*;
 
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// The set of all implementations of the sealed trait [`NativeType`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PrimitiveType {
     /// A signed 8-bit integer.
     Int8,
