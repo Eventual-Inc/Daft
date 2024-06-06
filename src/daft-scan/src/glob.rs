@@ -127,8 +127,8 @@ impl GlobScanOperator {
         glob_paths: &[&str],
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
-        schema_hint: Option<SchemaRef>,
-        schema_override: Option<SchemaRef>,
+        infer_schema: bool,
+        schema: Option<SchemaRef>,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -159,8 +159,8 @@ impl GlobScanOperator {
             .into()),
         }?;
 
-        let schema = match schema_override {
-            None => {
+        let schema = match infer_schema {
+            true => {
                 let inferred_schema = match file_format_config.as_ref() {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
@@ -226,12 +226,12 @@ impl GlobScanOperator {
                         ))
                     }
                 };
-                match schema_hint {
+                match schema {
                     Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
                     None => Arc::new(inferred_schema),
                 }
             }
-            Some(schema_override) => schema_override,
+            false => schema.expect("Schema must be provided if infer_schema is false"),
         };
 
         Ok(Self {

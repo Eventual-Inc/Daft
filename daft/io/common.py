@@ -20,8 +20,8 @@ def _get_schema_from_dict(fields: dict[str, DataType]) -> Schema:
 
 def get_tabular_files_scan(
     path: str | list[str],
-    schema_hint: dict[str, DataType] | None,
-    schema_override: dict[str, DataType] | None,
+    infer_schema: bool,
+    schema: dict[str, DataType] | None,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
 ) -> LogicalPlanBuilder:
@@ -39,8 +39,8 @@ def get_tabular_files_scan(
         paths,
         file_format_config,
         storage_config,
-        schema_hint=_get_schema_from_dict(schema_hint)._schema if schema_hint is not None else None,
-        schema_override=_get_schema_from_dict(schema_override)._schema if schema_override is not None else None,
+        infer_schema=infer_schema,
+        schema=_get_schema_from_dict(schema)._schema if schema is not None else None,
     )
 
     builder = LogicalPlanBuilder.from_tabular_scan(
