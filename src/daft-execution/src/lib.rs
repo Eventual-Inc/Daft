@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 #![allow(unused)]
 
-mod compute;
+mod ops;
 mod partition;
 
 use common_error::DaftError;
