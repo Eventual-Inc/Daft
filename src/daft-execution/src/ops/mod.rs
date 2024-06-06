@@ -1,14 +1,14 @@
 pub mod filter;
+mod fused;
 pub mod join;
 pub mod limit;
 pub mod monotonically_increasing_id;
-mod op_builder;
 pub mod project;
 pub mod scan;
 pub mod shuffle;
 pub mod sort;
 
-pub use op_builder::FusedOpBuilder;
+pub use fused::FusedOpBuilder;
 
 use std::sync::Arc;
 
