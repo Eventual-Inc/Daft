@@ -48,7 +48,7 @@ def test_deltalake_read_full(deltalake_table):
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
     expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
     assert df.schema() == expected_schema
-    assert_pyarrow_tables_equal(df.to_arrow().sort_by("part_idx"), pa.concat_tables(parts))
+    assert_pyarrow_tables_equal(df.to_arrow().sort_by("part_idx"), pa.concat_tables(parts).sort_by("part_idx"))
 
 
 def test_deltalake_read_show(deltalake_table):
