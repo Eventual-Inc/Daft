@@ -1,13 +1,11 @@
 pub use crate::types::PrimitiveType;
 
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// The set of physical types: unique in-memory representations of an Arrow array.
 /// A physical type has a one-to-many relationship with a [`crate::datatypes::DataType`] and
 /// a one-to-one mapping to each struct in this crate that implements [`crate::array::Array`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PhysicalType {
     /// A Null with no allocation.
     Null,
@@ -54,8 +52,7 @@ impl PhysicalType {
 
 /// the set of valid indices types of a dictionary-encoded Array.
 /// Each type corresponds to a variant of [`crate::array::DictionaryArray`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IntegerType {
     /// A signed 8-bit integer.
     Int8,

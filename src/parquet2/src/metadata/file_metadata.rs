@@ -2,13 +2,76 @@ use crate::{error::Error, metadata::get_sort_order};
 
 use super::{column_order::ColumnOrder, schema_descriptor::SchemaDescriptor, RowGroupMetaData};
 use parquet_format_safe::ColumnOrder as TColumnOrder;
+use serde::{Deserialize, Serialize};
 
 pub use crate::thrift_format::KeyValue;
+mod key_value_metadata_serde {
+    use super::*;
 
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct SerializableKeyValue {
+        pub key: String,
+        pub value: Option<String>,
+    }
+    impl From<KeyValue> for SerializableKeyValue {
+        fn from(kv: KeyValue) -> Self {
+            Self {
+                key: kv.key,
+                value: kv.value,
+            }
+        }
+    }
+
+    impl From<SerializableKeyValue> for KeyValue {
+        fn from(kv: SerializableKeyValue) -> Self {
+            Self {
+                key: kv.key,
+                value: kv.value,
+            }
+        }
+    }
+
+    pub fn serialize<S>(
+        key_value_metadata: &Option<Vec<KeyValue>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match key_value_metadata {
+            Some(key_value_metadata) => {
+                let serializable_key_value_metadata: Vec<SerializableKeyValue> = key_value_metadata
+                    .clone()
+                    .into_iter()
+                    .map(SerializableKeyValue::from)
+                    .collect();
+                serializer.serialize_some(&serializable_key_value_metadata)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<KeyValue>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let serializable_key_value_metadata: Option<Vec<SerializableKeyValue>> =
+            Option::deserialize(deserializer)?;
+        match serializable_key_value_metadata {
+            Some(serializable_key_value_metadata) => {
+                let key_value_metadata: Vec<KeyValue> = serializable_key_value_metadata
+                    .into_iter()
+                    .map(KeyValue::from)
+                    .collect();
+                Ok(Some(key_value_metadata))
+            }
+            None => Ok(None),
+        }
+    }
+}
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileMetaData {
     /// version of this file.
     pub version: i32,
@@ -26,6 +89,7 @@ pub struct FileMetaData {
     /// The row groups of this file
     pub row_groups: Vec<RowGroupMetaData>,
     /// key_value_metadata of this file.
+    #[serde(with = "key_value_metadata_serde")]
     pub key_value_metadata: Option<Vec<KeyValue>>,
     /// schema descriptor.
     pub schema_descr: SchemaDescriptor,

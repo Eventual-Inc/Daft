@@ -8,12 +8,11 @@ use super::thrift_format::{
 };
 
 use crate::error::Error;
-#[cfg(feature = "serde_types")]
+
 use serde::{Deserialize, Serialize};
 
 /// The repetition of a parquet field
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Deserialize, Serialize)]
 pub enum Repetition {
     /// When the field has no null values
     Required,
@@ -46,8 +45,7 @@ impl From<Repetition> for FieldRepetitionType {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Deserialize, Serialize)]
 pub enum Compression {
     Uncompressed,
     Snappy,
@@ -435,8 +433,7 @@ impl DataPageHeaderExt for DataPageHeaderV2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum TimeUnit {
     Milliseconds,
     Microseconds,
@@ -464,8 +461,7 @@ impl From<TimeUnit> for ParquetTimeUnit {
 }
 
 /// Enum of all valid logical integer types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum IntegerType {
     Int8,
     Int16,
@@ -477,8 +473,7 @@ pub enum IntegerType {
     UInt64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum PrimitiveLogicalType {
     String,
     Enum,
@@ -499,8 +494,7 @@ pub enum PrimitiveLogicalType {
     Uuid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum GroupLogicalType {
     Map,
     List,

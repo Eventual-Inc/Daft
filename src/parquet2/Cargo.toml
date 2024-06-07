@@ -7,7 +7,7 @@ lz4 = {version = "1.24", optional = true}
 lz4_flex = {version = "^0.9", optional = true}
 parquet-format-safe = "0.2"
 seq-macro = {version = "0.3", default-features = false}
-serde = {version = "^1.0", optional = true, features = ["derive"]}
+serde = {version = "^1.0", features = ["derive"]}
 snap = {version = "^1.1", optional = true}
 streaming-decompression = "0.1"
 xxhash-rust = {version = "0.8", optional = true, features = ["xxh64"]}
@@ -25,7 +25,6 @@ default = ["snappy", "gzip", "lz4", "zstd", "brotli", "bloom_filter"]
 full = ["snappy", "gzip", "lz4", "zstd", "brotli", "bloom_filter", "async"]
 gzip = ["flate2/rust_backend"]
 gzip_zlib_ng = ["flate2/zlib-ng"]
-serde_types = ["serde"]
 snappy = ["snap"]
 
 [lib]

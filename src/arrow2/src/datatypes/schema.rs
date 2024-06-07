@@ -1,15 +1,13 @@
 use super::{Field, Metadata};
 
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// An ordered sequence of [`Field`]s with associated [`Metadata`].
 ///
 /// [`Schema`] is an abstraction used to read from, and write to, Arrow IPC format,
 /// Apache Parquet, and Apache Avro. All these formats have a concept of a schema
 /// with fields and metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Schema {
     /// The fields composing this schema.
     pub fields: Vec<Field>,

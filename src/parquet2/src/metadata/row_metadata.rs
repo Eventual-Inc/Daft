@@ -5,12 +5,10 @@ use crate::{
     error::{Error, Result},
     write::ColumnOffsetsMetadata,
 };
-#[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
 /// Metadata for a row group.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RowGroupMetaData {
     columns: Vec<ColumnChunkMetaData>,
     num_rows: usize,

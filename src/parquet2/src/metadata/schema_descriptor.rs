@@ -8,13 +8,11 @@ use crate::{error::Result, schema::types::FieldInfo};
 
 use super::column_descriptor::{ColumnDescriptor, Descriptor};
 
-#[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
 /// A schema descriptor. This encapsulates the top-level schemas for all the columns,
 /// as well as all descriptors for all the primitive columns.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SchemaDescriptor {
     name: String,
     // The top-level schema (the "message" type).
