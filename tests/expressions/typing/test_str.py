@@ -24,6 +24,7 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
         pytest.param(lambda data, pat: data.str.replace(pat, pat), id="replace"),
         pytest.param(lambda data, pat: data.str.like(pat), id="like"),
         pytest.param(lambda data, pat: data.str.ilike(pat), id="ilike"),
+        pytest.param(lambda data, pat: data.str.to_date(pat), id="to_date"),
     ],
 )
 def test_str_compares(binary_data_fixture, op, request):

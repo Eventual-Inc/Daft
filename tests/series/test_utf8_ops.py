@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 import pyarrow as pa
 import pytest
 
@@ -1270,3 +1272,20 @@ def test_series_utf8_substr_bad_dtype() -> None:
     start = Series.from_arrow(pa.array([1, 2, 3]))
     with pytest.raises(ValueError):
         s.str.substr(start)
+
+
+@pytest.mark.parametrize(
+    ["data", "format", "expected"],
+    [
+        (
+            ["2021-01-01", "2021-01-02", "2021-01-03"],
+            ["%Y-%m-%d"],
+            [datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), datetime.date(2021, 1, 3)],
+        ),
+    ],
+)
+def test_series_utf8_to_date(data, format, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    formats = Series.from_arrow(pa.array(format, type=pa.string()))
+    result = s.str.to_date(formats)
+    assert result.to_pylist() == expected
