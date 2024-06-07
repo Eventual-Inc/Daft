@@ -39,6 +39,12 @@ local_tables_names = [
 ]
 
 
+cloud_tables_names = [
+    "azure.test",
+    # TODO(Kevin): Add more tables from more cloud providers
+]
+
+
 @tenacity.retry(
     stop=tenacity.stop_after_delay(60),
     retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
@@ -73,3 +79,19 @@ def local_iceberg_tables(request, local_iceberg_catalog) -> Table:
     NAMESPACE = "default"
     table_name = request.param
     return local_iceberg_catalog.load_table(f"{NAMESPACE}.{table_name}")
+
+
+@pytest.fixture(scope="session")
+def cloud_iceberg_catalog() -> Catalog:
+    return load_catalog(
+        "default",
+        **{
+            "uri": "sqlite:///tests/assets/pyiceberg_catalog.db",
+            "adlfs.account-name": "dafttestdata",
+        },
+    )
+
+
+@pytest.fixture(scope="session", params=cloud_tables_names)
+def cloud_iceberg_table(request, cloud_iceberg_catalog) -> Table:
+    return cloud_iceberg_catalog.load_table(request.param)

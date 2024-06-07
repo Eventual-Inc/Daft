@@ -359,3 +359,96 @@ def test_csv_read_data_custom_comment(use_native_downloader):
                 csv_options=TableParseCSVOptions(comment="#"),
             )
             assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_variable_missing_columns():
+    with _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["1"],
+            ["2", "2"],
+        ],
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(True)
+
+        schema = Schema._from_field_name_and_types(
+            [
+                ("id", DataType.int64()),
+                ("data", DataType.int64()),
+            ]
+        )
+        expected = MicroPartition.from_pydict(
+            {
+                "id": [1, 2],
+                "data": [None, 2],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_variable_extra_columns():
+    with _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["1", "1"],
+            ["2", "2", "2"],
+        ],
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(True)
+
+        schema = Schema._from_field_name_and_types(
+            [
+                ("id", DataType.int64()),
+                ("data", DataType.int64()),
+            ]
+        )
+        expected = MicroPartition.from_pydict(
+            {
+                "id": [1, 2],
+                "data": [1, 2],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_csv_read_data_variable_columns_with_non_matching_types():
+    with _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["a", "b"],
+            ["2", "2"],
+        ],
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(True)
+
+        schema = Schema._from_field_name_and_types(
+            [
+                ("id", DataType.int64()),
+                ("data", DataType.int64()),
+            ]
+        )
+        expected = MicroPartition.from_pydict(
+            {
+                "id": [None, 2],
+                "data": [None, 2],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(allow_variable_columns=True),
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

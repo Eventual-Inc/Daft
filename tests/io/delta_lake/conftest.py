@@ -38,6 +38,7 @@ def num_partitions(request) -> int:
         pytest.param((lambda i: datetime.datetime(2024, 2, i + 1), "f"), id="timestamp_partitioned"),
         pytest.param((lambda i: datetime.date(2024, 2, i + 1), "g"), id="date_partitioned"),
         pytest.param((lambda i: decimal.Decimal(str(1000 + i) + ".567"), "h"), id="decimal_partitioned"),
+        pytest.param((lambda i: i if i % 2 == 0 else None, "a"), id="partitioned_with_nulls"),
     ]
 )
 def partition_generator(request) -> tuple[callable, str]:
@@ -424,14 +425,14 @@ def cloud_paths(request) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable
 def deltalake_table(
     cloud_paths, base_table: pa.Table, num_partitions: int, partition_generator: callable
 ) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
-    partition_generator, _ = partition_generator
+    partition_generator, col = partition_generator
     path, io_config, catalog_table = cloud_paths
     storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     parts = []
     for i in range(num_partitions):
         # Generate partition value and add partition column.
         part_value = partition_generator(i)
-        part = base_table.append_column("part_idx", pa.array([part_value if part_value is not None else i] * 3))
+        part = base_table.append_column("part_idx", pa.array([part_value] * 3, type=base_table.column(col).type))
         parts.append(part)
     table = pa.concat_tables(parts)
     deltalake = pytest.importorskip("deltalake")

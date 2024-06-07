@@ -205,6 +205,7 @@ class CsvSourceConfig:
     quote: str | None
     escape_char: str | None
     comment: str | None
+    allow_variable_columns: bool
     buffer_size: int | None
     chunk_size: int | None
 
@@ -212,6 +213,7 @@ class CsvSourceConfig:
         self,
         has_headers: bool,
         double_quote: bool,
+        allow_variable_columns: bool,
         delimiter: str | None,
         quote: str | None,
         escape_char: str | None,
@@ -317,6 +319,7 @@ class CsvParseOptions:
     delimiter: str | None
     double_quote: bool
     quote: str | None
+    allow_variable_columns: bool
     escape_char: str | None
     comment: str | None
 
@@ -326,6 +329,7 @@ class CsvParseOptions:
         delimiter: str | None = None,
         double_quote: bool = True,
         quote: str | None = None,
+        allow_variable_columns: bool = False,
         escape_char: str | None = None,
         comment: str | None = None,
     ): ...
@@ -519,7 +523,7 @@ class AzureConfig:
     tenant_id: str | None
     client_id: str | None
     client_secret: str | None
-    anonymous: str | None
+    anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
 
@@ -531,7 +535,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
-        anonymous: str | None = None,
+        anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
     ): ...
@@ -543,7 +547,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
-        anonymous: str | None = None,
+        anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
     ) -> AzureConfig:
@@ -726,7 +730,8 @@ class ScanOperatorHandle:
         glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
-        schema_hint: PySchema | None = None,
+        infer_schema: bool,
+        schema: PySchema | None = None,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...

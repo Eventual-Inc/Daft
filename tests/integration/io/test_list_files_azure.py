@@ -49,7 +49,7 @@ def compare_az_result(daft_ls_result: list, fsspec_result: list):
 @pytest.mark.parametrize("fanout_limit", [None, 1])
 def test_az_flat_directory_listing(path, recursive, fanout_limit):
     fs = adlfs.AzureBlobFileSystem(account_name=STORAGE_ACCOUNT)
-    glob_path = path.rstrip("/") + "/**/*.{txt,parquet}" if recursive else path
+    glob_path = path.rstrip("/") + "/**/*.*" if recursive else path
     daft_ls_result = io_glob(glob_path, io_config=IOConfig(azure=DEFAULT_AZURE_CONFIG), fanout_limit=fanout_limit)
     fsspec_result = adlfs_recursive_list(fs, path) if recursive else fs.ls(path.replace("az://", ""), detail=True)
     compare_az_result(daft_ls_result, fsspec_result)

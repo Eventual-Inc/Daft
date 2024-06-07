@@ -271,7 +271,20 @@ def _infer_filesystem(
     ###
     elif protocol in {"az", "abfs", "abfss"}:
         fsspec_fs_cls = get_filesystem_class(protocol)
-        fsspec_fs = fsspec_fs_cls()
+
+        if io_config is not None:
+            # TODO: look into support for other AzureConfig parameters
+            fsspec_fs = fsspec_fs_cls(
+                account_name=io_config.azure.storage_account,
+                account_key=io_config.azure.access_key,
+                sas_token=io_config.azure.sas_token,
+                tenant_id=io_config.azure.tenant_id,
+                client_id=io_config.azure.client_id,
+                client_secret=io_config.azure.client_secret,
+                anon=io_config.azure.anonymous,
+            )
+        else:
+            fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
         return resolved_path, resolved_filesystem

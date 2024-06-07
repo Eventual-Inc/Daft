@@ -70,5 +70,11 @@ def read_parquet(
     else:
         storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
 
-    builder = get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
+    builder = get_tabular_files_scan(
+        path=path,
+        infer_schema=True,
+        schema=schema_hints,
+        file_format_config=file_format_config,
+        storage_config=storage_config,
+    )
     return DataFrame(builder)

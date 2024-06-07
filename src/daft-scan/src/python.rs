@@ -119,14 +119,16 @@ pub mod pylib {
             glob_path: Vec<&str>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
-            schema_hint: Option<PySchema>,
+            infer_schema: bool,
+            schema: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
                     glob_path.as_slice(),
                     file_format_config.into(),
                     storage_config.into(),
-                    schema_hint.map(|s| s.schema),
+                    infer_schema,
+                    schema.map(|s| s.schema),
                 )?);
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),
@@ -329,8 +331,8 @@ pub mod pylib {
                 assert_eq!(boolean.len(), 1);
                 let value = boolean.get(0);
                 match value {
-                    Some(false) => return Ok(None),
-                    None | Some(true) => {}
+                    None | Some(false) => return Ok(None),
+                    Some(true) => {}
                 }
             }
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
