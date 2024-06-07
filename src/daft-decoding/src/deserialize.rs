@@ -230,6 +230,7 @@ pub fn deserialize_datetime<T: chrono::TimeZone>(
 
 /// Deserializes `column` of `rows` into an [`Array`] of [`DataType`] `datatype`.
 #[inline]
+
 pub fn deserialize_column<B: ByteRecordGeneric>(
     rows: &[B],
     column: usize,
@@ -283,6 +284,8 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                 .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
                 .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE)
         }),
+        // chrono changed their function signature AGAIN
+        #[allow(deprecated)]
         Date64 => deserialize_primitive(rows, column, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
@@ -312,6 +315,8 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                         as i64
                 })
         }),
+        // chrono changed their function signature AGAIN
+        #[allow(deprecated)]
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
             deserialize_primitive(rows, column, datatype, |bytes| {
@@ -325,6 +330,8 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                     })
             })
         }
+        // chrono changed their function signature AGAIN
+        #[allow(deprecated)]
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = temporal_conversions::parse_offset(tz)?;
             let mut last_fmt_idx = 0;

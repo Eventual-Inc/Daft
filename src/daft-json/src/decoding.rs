@@ -286,7 +286,8 @@ fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
     });
     target.extend_trusted_len(iter);
 }
-
+// chrono changed their function signature AGAIN
+#[allow(deprecated)]
 fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],

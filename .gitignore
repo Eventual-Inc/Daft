@@ -28,7 +28,7 @@ log/
 
 # Added by cargo
 /target
-
+**/target/
 # pytest benchmarks
 .benchmarks
 

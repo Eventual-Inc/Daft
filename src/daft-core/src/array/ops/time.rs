@@ -56,6 +56,8 @@ fn process_interval(interval: &str, timeunit: TimeUnit) -> DaftResult<i64> {
 
 macro_rules! datetime_to_timestamp {
     ($dt:expr, $tu:expr) => {{
+        // chrono changed their function signature AGAIN
+        #[allow(deprecated)]
         match $tu {
             TimeUnit::Seconds => Ok($dt.timestamp()),
             TimeUnit::Milliseconds => Ok($dt.timestamp_millis()),
