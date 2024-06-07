@@ -197,6 +197,7 @@ where
         .escape(parse_options.escape_char)
         .comment(parse_options.comment)
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
+        .flexible(parse_options.allow_variable_columns)
         .create_reader(reader.compat());
     let (fields, read_stats) =
         infer_schema(&mut reader, None, max_bytes, parse_options.has_header).await?;
