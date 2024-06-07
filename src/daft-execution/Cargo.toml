@@ -1,0 +1,30 @@
+[dependencies]
+async-trait = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-plan = {path = "../daft-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
+futures = {workspace = true}
+itertools = {workspace = true}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+rand = {workspace = true}
+rayon = {workspace = true}
+snafu = {workspace = true}
+sysinfo = {workspace = true}
+tokio = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]
+
+[package]
+edition = {workspace = true}
+name = "daft-execution"
+version = {workspace = true}

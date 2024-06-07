@@ -31,6 +31,52 @@ impl ResourceRequest {
         }
     }
 
+    pub fn default_cpu() -> Self {
+        Self::new_internal(Some(1.0), None, None)
+    }
+
+    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
+        Self {
+            num_cpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> Self {
+        Self {
+            num_cpus: self.num_cpus.or(num_cpus),
+            ..self.clone()
+        }
+    }
+
+    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
+        Self {
+            num_gpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> Self {
+        Self {
+            num_gpus: self.num_gpus.or(num_gpus),
+            ..self.clone()
+        }
+    }
+
+    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
+        Self {
+            memory_bytes,
+            ..self.clone()
+        }
+    }
+
+    pub fn or_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
+        Self {
+            memory_bytes: self.memory_bytes.or(memory_bytes),
+            ..self.clone()
+        }
+    }
+
     pub fn has_any(&self) -> bool {
         self.num_cpus.is_some() || self.num_gpus.is_some() || self.memory_bytes.is_some()
     }
@@ -49,13 +95,37 @@ impl ResourceRequest {
         requests
     }
 
-    pub fn max(resource_requests: &[&Self]) -> Self {
-        resource_requests.iter().fold(Default::default(), |acc, e| {
-            let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);
-            let max_num_gpus = lift(float_max, acc.num_gpus, e.num_gpus);
-            let max_memory_bytes = lift(std::cmp::max, acc.memory_bytes, e.memory_bytes);
-            Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
-        })
+    /// Checks whether other is pipeline-compatible with self, i.e the resource requests are homogeneous enough that
+    /// we don't want to pipeline tasks that have these resource requests with each other.
+    ///
+    /// Currently, this returns true unless one resource request has a non-zero CPU request and the other task has a
+    /// non-zero GPU request.
+    pub fn is_pipeline_compatible_with(&self, other: &ResourceRequest) -> bool {
+        let self_num_cpus = self.num_cpus;
+        let self_num_gpus = self.num_gpus;
+        let other_num_cpus = other.num_cpus;
+        let other_num_gpus = other.num_gpus;
+        match (self_num_cpus, self_num_gpus, other_num_cpus, other_num_gpus) {
+            (_, Some(n_gpus), Some(n_cpus), _) | (Some(n_cpus), _, _, Some(n_gpus))
+                if n_gpus > 0.0 && n_cpus > 0.0 =>
+            {
+                false
+            }
+            (_, _, _, _) => true,
+        }
+    }
+
+    pub fn max(&self, other: &ResourceRequest) -> Self {
+        let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
+        let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
+        let max_memory_bytes = lift(std::cmp::max, self.memory_bytes, other.memory_bytes);
+        Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
+    }
+
+    pub fn max_all(resource_requests: &[&Self]) -> Self {
+        resource_requests
+            .iter()
+            .fold(Default::default(), |acc, e| acc.max(e))
     }
 }
 
@@ -110,7 +180,7 @@ impl ResourceRequest {
     /// Take a field-wise max of the list of resource requests.
     #[staticmethod]
     pub fn max_resources(resource_requests: Vec<Self>) -> Self {
-        Self::max(&resource_requests.iter().collect::<Vec<_>>())
+        Self::max_all(&resource_requests.iter().collect::<Vec<_>>())
     }
 
     #[getter]

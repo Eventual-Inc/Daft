@@ -30,6 +30,7 @@ use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_stats::TableStatistics;
 use daft_stats::{PartitionSpec, TableMetadata};
 
+#[derive(Debug)]
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
@@ -59,7 +60,9 @@ impl Display for TableState {
         }
     }
 }
-pub(crate) struct MicroPartition {
+
+#[derive(Debug)]
+pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///
     /// This is technically redundant with the schema in `state`:
@@ -617,8 +620,16 @@ impl MicroPartition {
         self.schema.names()
     }
 
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
     pub fn len(&self) -> usize {
         self.metadata.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
@@ -658,7 +669,7 @@ impl MicroPartition {
         }
     }
 
-    pub(crate) fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
+    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {
             return Ok(tables);
@@ -679,7 +690,7 @@ impl MicroPartition {
         }
     }
 
-    pub(crate) fn add_monotonically_increasing_id(
+    pub fn add_monotonically_increasing_id(
         &self,
         partition_num: u64,
         column_name: &str,

@@ -1535,6 +1535,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
+ "daft-execution",
  "daft-io",
  "daft-json",
  "daft-micropartition",
@@ -1546,9 +1547,11 @@ dependencies = [
  "daft-table",
  "lazy_static",
  "libc",
+ "log",
  "lzma-sys",
  "pyo3",
  "pyo3-log",
+ "sysinfo",
  "tikv-jemallocator",
 ]
 
@@ -1668,6 +1671,30 @@ dependencies = [
  "pyo3-log",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "daft-execution"
+version = "0.2.0-dev0"
+dependencies = [
+ "async-trait",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "daft-micropartition",
+ "daft-plan",
+ "daft-scan",
+ "futures",
+ "itertools 0.11.0",
+ "log",
+ "pyo3",
+ "rand 0.8.5",
+ "rayon",
+ "rstest",
+ "snafu",
+ "sysinfo",
+ "tokio",
 ]
 
 [[package]]
@@ -4695,9 +4722,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.30.7"
+version = "0.30.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c385888ef380a852a16209afc8cfad22795dd8873d69c9a14d2e2088f118d18"
+checksum = "732ffa00f53e6b2af46208fba5718d9662a421049204e156328b66791ffa15ae"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",
