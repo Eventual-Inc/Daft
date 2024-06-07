@@ -27,7 +27,7 @@ pub trait PartitionTaskOp: std::fmt::Debug + Send + Sync {
     type Input;
 
     /// Execute the underlying op on the provided inputs, producing output micropartitions.
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>>;
+    fn execute(&self, inputs: &[Arc<Self::Input>]) -> DaftResult<Vec<Arc<MicroPartition>>>;
 
     /// Number of outputs produced by this op. Defaults to 1.
     fn num_outputs(&self) -> usize {

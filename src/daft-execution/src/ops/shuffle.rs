@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicI64, Ordering},
+    Arc,
+};
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
@@ -26,7 +29,7 @@ impl FanoutHashOp {
         Self {
             num_outputs,
             partition_by,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -34,11 +37,11 @@ impl FanoutHashOp {
 impl PartitionTaskOp for FanoutHashOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert!(inputs.len() == 1);
-        let inputs = inputs.into_iter().next().unwrap();
+        let inputs = inputs.iter().next().unwrap();
         if self.num_outputs == 1 {
-            return Ok(vec![inputs]);
+            return Ok(vec![inputs.clone()]);
         }
         let partitioned = inputs.partition_by_hash(&self.partition_by, self.num_outputs)?;
         Ok(partitioned.into_iter().map(Arc::new).collect::<Vec<_>>())
@@ -65,6 +68,7 @@ impl PartitionTaskOp for FanoutHashOp {
 #[derive(Debug)]
 pub struct FanoutRandomOp {
     num_outputs: usize,
+    partition_idx: AtomicI64,
     resource_request: ResourceRequest,
 }
 
@@ -72,7 +76,8 @@ impl FanoutRandomOp {
     pub fn new(num_outputs: usize) -> Self {
         Self {
             num_outputs,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            partition_idx: AtomicI64::new(-1),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -80,11 +85,12 @@ impl FanoutRandomOp {
 impl PartitionTaskOp for FanoutRandomOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert!(inputs.len() == 1);
-        let inputs = inputs.into_iter().next().unwrap();
-        let seed = get_random_u64();
-        let partitioned = inputs.partition_by_random(self.num_outputs, seed)?;
+        let inputs = inputs.iter().next().unwrap();
+        // Use partition index as seed.
+        let seed = self.partition_idx.load(Ordering::SeqCst);
+        let partitioned = inputs.partition_by_random(self.num_outputs, seed as u64)?;
         Ok(partitioned.into_iter().map(Arc::new).collect::<Vec<_>>())
     }
 
@@ -98,6 +104,10 @@ impl PartitionTaskOp for FanoutRandomOp {
 
     fn partial_metadata_from_input_metadata(&self, _: &[PartitionMetadata]) -> PartitionMetadata {
         todo!()
+    }
+
+    fn with_input_metadata(&self, _: &[PartitionMetadata]) {
+        self.partition_idx.fetch_add(1, Ordering::SeqCst);
     }
 
     fn name(&self) -> &str {
@@ -116,7 +126,7 @@ impl ReduceMergeOp {
     pub fn new(num_inputs: usize) -> Self {
         Self {
             num_inputs,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -124,7 +134,7 @@ impl ReduceMergeOp {
 impl PartitionTaskOp for ReduceMergeOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let inputs = inputs
             .iter()
             .map(|input| input.as_ref())

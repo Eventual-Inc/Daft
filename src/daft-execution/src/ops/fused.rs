@@ -103,11 +103,11 @@ impl<T> FusedPartitionTaskOp<T> {
 impl<T: std::fmt::Debug> PartitionTaskOp for FusedPartitionTaskOp<T> {
     type Input = T;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<T>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         // Execute task ops in a chain.
         let mut inputs = self.source_op.execute(inputs)?;
         for op in self.fused_ops.iter() {
-            inputs = op.execute(inputs)?;
+            inputs = op.execute(&inputs)?;
         }
         Ok(inputs)
     }
@@ -201,9 +201,9 @@ mod tests {
     impl PartitionTaskOp for MockExecOp {
         type Input = MicroPartition;
 
-        fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
             self.exec_log.lock().unwrap().push(self.name.clone());
-            Ok(inputs)
+            Ok(inputs.to_vec())
         }
 
         fn resource_request(&self) -> &ResourceRequest {
@@ -237,7 +237,8 @@ mod tests {
         builder.add_op(op3.clone());
         let fused = builder.build();
         // Upon execution, fused ops should be called in the order in which they were added to the builder.
-        fused.execute(vec![]);
+        let inputs = vec![];
+        fused.execute(&inputs);
         assert_eq!(exec_log.lock().unwrap().clone(), vec!["op1", "op2", "op3"]);
         assert_eq!(fused.name(), "op1-op2-op3");
 
@@ -267,8 +268,8 @@ mod tests {
     impl PartitionTaskOp for MockResourceOp {
         type Input = MicroPartition;
 
-        fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-            Ok(inputs)
+        fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
+            Ok(inputs.to_vec())
         }
 
         fn resource_request(&self) -> &ResourceRequest {
@@ -488,8 +489,8 @@ mod tests {
     impl PartitionTaskOp for MockInputOutputOp {
         type Input = MicroPartition;
 
-        fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-            Ok(inputs)
+        fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
+            Ok(inputs.to_vec())
         }
 
         fn num_inputs(&self) -> usize {
@@ -578,8 +579,8 @@ mod tests {
     impl PartitionTaskOp for MockMutableOp {
         type Input = MicroPartition;
 
-        fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-            Ok(inputs)
+        fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
+            Ok(inputs.to_vec())
         }
 
         fn resource_request(&self) -> &ResourceRequest {

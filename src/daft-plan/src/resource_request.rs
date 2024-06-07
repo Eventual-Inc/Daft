@@ -31,6 +31,10 @@ impl ResourceRequest {
         }
     }
 
+    pub fn default_cpu() -> Self {
+        Self::new_internal(Some(1.0), None, None)
+    }
+
     pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
         Self {
             num_cpus,

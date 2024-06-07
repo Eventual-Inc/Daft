@@ -19,7 +19,7 @@ pub struct ScanOp {
 impl ScanOp {
     pub fn new() -> Self {
         Self {
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -27,14 +27,14 @@ impl ScanOp {
 impl PartitionTaskOp for ScanOp {
     type Input = ScanTask;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<ScanTask>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert!(inputs.len() == 1);
-        let scan_task = inputs.into_iter().next().unwrap();
+        let scan_task = inputs.iter().next().unwrap();
         let io_stats = IOStatsContext::new(format!(
             "MicroPartition::from_scan_task for {:?}",
             scan_task.sources
         ));
-        let out = MicroPartition::from_scan_task(scan_task, io_stats)?;
+        let out = MicroPartition::from_scan_task(scan_task.clone(), io_stats)?;
         Ok(vec![Arc::new(out)])
     }
 

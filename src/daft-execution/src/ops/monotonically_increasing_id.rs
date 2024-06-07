@@ -24,7 +24,7 @@ impl MonotonicallyIncreasingIdOp {
         Self {
             column_name,
             num_partitions: AtomicI64::new(-1),
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -32,9 +32,9 @@ impl MonotonicallyIncreasingIdOp {
 impl PartitionTaskOp for MonotonicallyIncreasingIdOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert_eq!(inputs.len(), 1);
-        let input = inputs.into_iter().next().unwrap();
+        let input = inputs.iter().next().unwrap();
         let out = input.add_monotonically_increasing_id(
             self.num_partitions.load(Ordering::SeqCst) as u64,
             &self.column_name,

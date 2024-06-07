@@ -28,9 +28,9 @@ impl ProjectOp {
 impl PartitionTaskOp for ProjectOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert_eq!(inputs.len(), 1);
-        let input = inputs.into_iter().next().unwrap();
+        let input = inputs.iter().next().unwrap();
         let out = input.eval_expression_list(self.projection.as_slice())?;
         Ok(vec![Arc::new(out)])
     }

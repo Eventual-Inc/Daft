@@ -23,7 +23,7 @@ impl BoundarySamplingOp {
         Self {
             size,
             sort_by,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -31,9 +31,9 @@ impl BoundarySamplingOp {
 impl PartitionTaskOp for BoundarySamplingOp {
     type Input = MicroPartition;
 
-    fn execute(&self, mut inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, mut inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert_eq!(inputs.len(), 1);
-        let input = inputs.remove(0);
+        let input = inputs.iter().next().unwrap();
         let predicate = self
             .sort_by
             .iter()
@@ -81,7 +81,7 @@ impl SamplesToQuantilesOp {
             sort_by,
             descending,
             num_inputs,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -89,7 +89,7 @@ impl SamplesToQuantilesOp {
 impl PartitionTaskOp for SamplesToQuantilesOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let inputs = inputs
             .iter()
             .map(|input| input.as_ref())
@@ -137,7 +137,7 @@ impl FanoutRangeOp {
             num_outputs,
             sort_by,
             descending,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -145,13 +145,13 @@ impl FanoutRangeOp {
 impl PartitionTaskOp for FanoutRangeOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert!(inputs.len() == 2);
-        let mut input_iter = inputs.into_iter();
+        let mut input_iter = inputs.iter();
         let boundaries = input_iter.next().unwrap();
         let inputs = input_iter.next().unwrap();
         if self.num_outputs == 1 {
-            return Ok(vec![inputs]);
+            return Ok(vec![inputs.clone()]);
         }
         let io_stats = IOStatsContext::new("MicroPartition::to_table");
         let boundaries = boundaries.concat_or_get(io_stats)?;
@@ -214,7 +214,7 @@ impl SortedMergeOp {
             num_inputs,
             sort_by,
             descending,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -222,7 +222,7 @@ impl SortedMergeOp {
 impl PartitionTaskOp for SortedMergeOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let inputs = inputs
             .iter()
             .map(|input| input.as_ref())

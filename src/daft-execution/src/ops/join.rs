@@ -25,7 +25,7 @@ impl HashJoinOp {
             left_on,
             right_on,
             join_type,
-            resource_request: ResourceRequest::new_internal(Some(1.0), None, None),
+            resource_request: ResourceRequest::default_cpu(),
         }
     }
 }
@@ -33,9 +33,9 @@ impl HashJoinOp {
 impl PartitionTaskOp for HashJoinOp {
     type Input = MicroPartition;
 
-    fn execute(&self, inputs: Vec<Arc<Self::Input>>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
         assert_eq!(inputs.len(), 2);
-        let mut input_iter = inputs.into_iter();
+        let mut input_iter = inputs.iter();
         let left = input_iter.next().unwrap();
         let right = input_iter.next().unwrap();
         let out = left.hash_join(
