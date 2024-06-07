@@ -54,24 +54,6 @@ fn process_interval(interval: &str, timeunit: TimeUnit) -> DaftResult<i64> {
     }
 }
 
-macro_rules! datetime_to_timestamp {
-    ($dt:expr, $tu:expr) => {{
-        // chrono changed their function signature AGAIN
-        #[allow(deprecated)]
-        match $tu {
-            TimeUnit::Seconds => Ok($dt.timestamp()),
-            TimeUnit::Milliseconds => Ok($dt.timestamp_millis()),
-            TimeUnit::Microseconds => Ok($dt.timestamp_micros()),
-            TimeUnit::Nanoseconds => {
-                $dt.timestamp_nanos_opt()
-                    .ok_or(DaftError::ValueError(format!(
-                        "Error converting datetime to nanoseconds timestamp: {{dt}}"
-                    )))
-            }
-        }
-    }};
-}
-
 impl DateArray {
     pub fn day(&self) -> DaftResult<UInt32Array> {
         let input_array = self
@@ -263,14 +245,44 @@ impl TimestampArray {
                     let tu_arrow = tu.to_arrow();
                     let original_dt =
                         arrow2::temporal_conversions::timestamp_to_datetime(ts, tu_arrow, &tz);
-                    let naive_ts = datetime_to_timestamp!(original_dt.naive_local(), tu)?;
+                    let naive_ts = match tu {
+                        TimeUnit::Seconds => original_dt.naive_local().and_utc().timestamp(),
+                        TimeUnit::Milliseconds => {
+                            original_dt.naive_local().and_utc().timestamp_millis()
+                        }
+                        TimeUnit::Microseconds => {
+                            original_dt.naive_local().and_utc().timestamp_micros()
+                        }
+                        TimeUnit::Nanoseconds => original_dt
+                            .naive_local()
+                            .and_utc()
+                            .timestamp_nanos_opt()
+                            .ok_or(DaftError::ValueError(format!(
+                                "Error truncating timestamp {ts} in nanosecond units"
+                            )))?,
+                    };
 
                     let mut truncate_by_amount = match relative_to {
                         Some(rt) => {
                             let rt_dt = arrow2::temporal_conversions::timestamp_to_datetime(
                                 *rt, tu_arrow, &tz,
                             );
-                            let naive_rt_ts = datetime_to_timestamp!(rt_dt.naive_local(), tu)?;
+                            let naive_rt_ts = match tu {
+                                TimeUnit::Seconds => rt_dt.naive_local().and_utc().timestamp(),
+                                TimeUnit::Milliseconds => {
+                                    rt_dt.naive_local().and_utc().timestamp_millis()
+                                }
+                                TimeUnit::Microseconds => {
+                                    rt_dt.naive_local().and_utc().timestamp_micros()
+                                }
+                                TimeUnit::Nanoseconds => {
+                                    rt_dt.naive_local().and_utc().timestamp_nanos_opt().ok_or(
+                                        DaftError::ValueError(format!(
+                                            "Error truncating timestamp {ts} in nanosecond units"
+                                        )),
+                                    )?
+                                }
+                            };
                             (naive_ts - naive_rt_ts) % duration
                         }
                         None => naive_ts % duration,
@@ -286,7 +298,18 @@ impl TimestampArray {
                     };
 
                     let truncated_dt = original_dt - truncate_by_duration;
-                    datetime_to_timestamp!(truncated_dt, tu)
+                    match tu {
+                        TimeUnit::Seconds => Ok(truncated_dt.timestamp()),
+                        TimeUnit::Milliseconds => Ok(truncated_dt.timestamp_millis()),
+                        TimeUnit::Microseconds => Ok(truncated_dt.timestamp_micros()),
+                        TimeUnit::Nanoseconds => {
+                            truncated_dt
+                                .timestamp_nanos_opt()
+                                .ok_or(DaftError::ValueError(format!(
+                                    "Error truncating timestamp {ts} in nanosecond units"
+                                )))
+                        }
+                    }
                 }
                 None => {
                     let mut truncate_by_amount = match relative_to {

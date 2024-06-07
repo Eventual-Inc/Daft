@@ -284,13 +284,11 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                 .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
                 .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE)
         }),
-        // chrono changed their function signature AGAIN
-        #[allow(deprecated)]
         Date64 => deserialize_primitive(rows, column, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_datetime(x, &mut last_fmt_idx))
-                .map(|x| x.timestamp_millis())
+                .map(|x| x.and_utc().timestamp_millis())
         }),
         Time32(time_unit) => deserialize_primitive(rows, column, datatype, |bytes| {
             let factor = get_factor_from_timeunit(time_unit);
@@ -315,23 +313,19 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                         as i64
                 })
         }),
-        // chrono changed their function signature AGAIN
-        #[allow(deprecated)]
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
             deserialize_primitive(rows, column, datatype, |bytes| {
                 to_utf8(bytes)
                     .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
-                        TimeUnit::Second => Some(dt.timestamp()),
-                        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
-                        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
-                        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+                        TimeUnit::Second => Some(dt.and_utc().timestamp()),
+                        TimeUnit::Millisecond => Some(dt.and_utc().timestamp_millis()),
+                        TimeUnit::Microsecond => Some(dt.and_utc().timestamp_micros()),
+                        TimeUnit::Nanosecond => dt.and_utc().timestamp_nanos_opt(),
                     })
             })
         }
-        // chrono changed their function signature AGAIN
-        #[allow(deprecated)]
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = temporal_conversions::parse_offset(tz)?;
             let mut last_fmt_idx = 0;

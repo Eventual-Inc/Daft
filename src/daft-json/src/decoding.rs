@@ -286,8 +286,6 @@ fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
     });
     target.extend_trusted_len(iter);
 }
-// chrono changed their function signature AGAIN
-#[allow(deprecated)]
 fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
@@ -312,15 +310,14 @@ fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
                         as i64
                 })
             }
-            DataType::Date64 => {
-                deserialize_naive_datetime(v, &mut last_fmt_idx).map(|x| x.timestamp_millis())
-            }
+            DataType::Date64 => deserialize_naive_datetime(v, &mut last_fmt_idx)
+                .map(|x| x.and_utc().timestamp_millis()),
             DataType::Timestamp(tu, None) => deserialize_naive_datetime(v, &mut last_fmt_idx)
                 .and_then(|dt| match tu {
-                    TimeUnit::Second => Some(dt.timestamp()),
-                    TimeUnit::Millisecond => Some(dt.timestamp_millis()),
-                    TimeUnit::Microsecond => Some(dt.timestamp_micros()),
-                    TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+                    TimeUnit::Second => Some(dt.and_utc().timestamp()),
+                    TimeUnit::Millisecond => Some(dt.and_utc().timestamp_millis()),
+                    TimeUnit::Microsecond => Some(dt.and_utc().timestamp_micros()),
+                    TimeUnit::Nanosecond => dt.and_utc().timestamp_nanos_opt(),
                 }),
             DataType::Timestamp(tu, Some(ref tz)) => {
                 let tz = if tz == "Z" { "UTC" } else { tz };
