@@ -67,7 +67,7 @@ enum Error {
 
 /// Parse an Azure URI into its components.
 /// Returns (protocol, container if exists, key).
-fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<String>, String)> {
+fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>)> {
     let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
     // "Container" is Azure's name for Bucket.
@@ -81,20 +81,17 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<String>, String)>
     // but it is not documented
     // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
     let username = uri.username();
-    let (container, key) = if username.is_empty() {
+    let container_and_key = if username.is_empty() {
         match uri.host_str() {
-            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => {
-                let mut path_segments = uri.path_segments().unwrap();
-                let container = path_segments.next().map(|s| s.to_string());
-                let key = path_segments.collect::<Vec<_>>().join("/");
-
-                (container, key)
-            }
-            Some(host) => (Some(host.into()), uri.path().into()),
-            None => (None, "".to_string()),
+            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => uri
+                .path()
+                .split_once('/')
+                .map(|(c, k)| (c.into(), k.into())),
+            Some(host) => Some((host.into(), uri.path().into())),
+            None => None,
         }
     } else {
-        (Some(username.into()), uri.path().into())
+        Some((username.into(), uri.path().into()))
     };
 
     // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
@@ -103,7 +100,7 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<String>, String)>
     // here, we will treat them both the same, but persist whichever protocol string was used.
     let protocol = uri.scheme();
 
-    Ok((protocol.into(), container, key))
+    Ok((protocol.into(), container_and_key))
 }
 
 impl From<Error> for super::Error {
@@ -485,8 +482,8 @@ impl ObjectSource for AzureBlobSource {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let (_, container, key) = parse_azure_uri(uri)?;
-        let container = container.ok_or_else(|| Error::InvalidUrl {
+        let (_, container_and_key) = parse_azure_uri(uri)?;
+        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
             path: uri.into(),
             source: url::ParseError::EmptyHost,
         })?;
@@ -527,8 +524,8 @@ impl ObjectSource for AzureBlobSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let (_, container, key) = parse_azure_uri(uri)?;
-        let container = container.ok_or_else(|| Error::InvalidUrl {
+        let (_, container_and_key) = parse_azure_uri(uri)?;
+        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
             path: uri.into(),
             source: url::ParseError::EmptyHost,
         })?;
@@ -581,19 +578,19 @@ impl ObjectSource for AzureBlobSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let (protocol, container, prefix) = parse_azure_uri(uri)?;
+        let (protocol, container_and_key) = parse_azure_uri(uri)?;
 
-        match container {
+        match container_and_key {
             // List containers.
             None => Ok(self
                 .list_containers_stream(protocol.as_str(), io_stats)
                 .await),
             // List a path within a container.
-            Some(container_name) => Ok(self
+            Some((container_name, key)) => Ok(self
                 .list_directory_stream(
                     protocol.as_str(),
                     container_name.as_str(),
-                    prefix.as_str(),
+                    key.as_str(),
                     posix,
                     io_stats,
                 )
