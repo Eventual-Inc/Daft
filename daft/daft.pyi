@@ -519,7 +519,7 @@ class AzureConfig:
     tenant_id: str | None
     client_id: str | None
     client_secret: str | None
-    anonymous: str | None
+    anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
 
@@ -531,7 +531,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
-        anonymous: str | None = None,
+        anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
     ): ...
@@ -543,7 +543,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
-        anonymous: str | None = None,
+        anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
     ) -> AzureConfig:

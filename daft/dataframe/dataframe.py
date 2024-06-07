@@ -485,8 +485,10 @@ class DataFrame:
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
 
-        if parse(pa.__version__) < parse("8.0.0"):
-            raise ValueError(f"Write Iceberg is only supported on pyarrow>=8.0.0, found {pa.__version__}")
+        if parse(pa.__version__) < parse("12.0.1"):
+            raise ValueError(
+                f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
+            )
 
         from pyiceberg.table import _MergingSnapshotProducer
         from pyiceberg.table.snapshots import Operation

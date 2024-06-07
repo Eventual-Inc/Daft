@@ -22,6 +22,7 @@ use common_io_config::AzureConfig;
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com";
+const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -62,6 +63,44 @@ enum Error {
 
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+}
+
+/// Parse an Azure URI into its components.
+/// Returns (protocol, container if exists, key).
+fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>)> {
+    let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+
+    // "Container" is Azure's name for Bucket.
+    //
+    // fsspec supports two URI formats; for compatibility, we will support both as well.
+    // PROTOCOL://container/path-part/file
+    // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
+    // See https://github.com/fsspec/adlfs/ for more details
+    //
+    // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
+    // but it is not documented
+    // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
+    let username = uri.username();
+    let container_and_key = if username.is_empty() {
+        match uri.host_str() {
+            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => uri
+                .path()
+                .split_once('/')
+                .map(|(c, k)| (c.into(), k.into())),
+            Some(host) => Some((host.into(), uri.path().into())),
+            None => None,
+        }
+    } else {
+        Some((username.into(), uri.path().into()))
+    };
+
+    // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
+    // NB: It's unclear if there is a semantic difference between the protocols
+    // or if there is a standard for the behaviour either;
+    // here, we will treat them both the same, but persist whichever protocol string was used.
+    let protocol = uri.scheme();
+
+    Ok((protocol.into(), container_and_key))
 }
 
 impl From<Error> for super::Error {
@@ -443,15 +482,11 @@ impl ObjectSource for AzureBlobSource {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-        let container = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: url::ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
+        let (_, container_and_key) = parse_azure_uri(uri)?;
+        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
+            path: uri.into(),
+            source: url::ParseError::EmptyHost,
+        })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -489,15 +524,11 @@ impl ObjectSource for AzureBlobSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-        let container = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: url::ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
+        let (_, container_and_key) = parse_azure_uri(uri)?;
+        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
+            path: uri.into(),
+            source: url::ParseError::EmptyHost,
+        })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -547,39 +578,23 @@ impl ObjectSource for AzureBlobSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let (protocol, container_and_key) = parse_azure_uri(uri)?;
 
-        // path can be root (buckets) or path prefix within a bucket.
-        let container = {
-            // "Container" is Azure's name for Bucket.
-            //
-            // fsspec supports two URI formats; for compatibility, we will support both as well.
-            // PROTOCOL://container/path-part/file
-            // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
-            // See https://github.com/fsspec/adlfs/ for more details
-            let username = uri.username();
-            match username {
-                "" => uri.host_str(),
-                _ => Some(username),
-            }
-        };
-
-        // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
-        // NB: It's unclear if there is a semantic difference between the protocols
-        // or if there is a standard for the behaviour either;
-        // here, we will treat them both the same, but persist whichever protocol string was used.
-        let protocol = uri.scheme();
-
-        match container {
+        match container_and_key {
             // List containers.
-            None => Ok(self.list_containers_stream(protocol, io_stats).await),
+            None => Ok(self
+                .list_containers_stream(protocol.as_str(), io_stats)
+                .await),
             // List a path within a container.
-            Some(container_name) => {
-                let prefix = uri.path();
-                Ok(self
-                    .list_directory_stream(protocol, container_name, prefix, posix, io_stats)
-                    .await)
-            }
+            Some((container_name, key)) => Ok(self
+                .list_directory_stream(
+                    protocol.as_str(),
+                    container_name.as_str(),
+                    key.as_str(),
+                    posix,
+                    io_stats,
+                )
+                .await),
         }
     }
 
