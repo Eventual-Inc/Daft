@@ -70,36 +70,31 @@ enum Error {
 fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<String>, String)> {
     let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
-    // path can be root (buckets) or path prefix within a bucket.
-    let (container, key) = {
-        // "Container" is Azure's name for Bucket.
-        //
-        // fsspec supports two URI formats; for compatibility, we will support both as well.
-        // PROTOCOL://container/path-part/file
-        // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
-        // See https://github.com/fsspec/adlfs/ for more details
-        //
-        // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
-        // but it is not documented
-        // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
-        let username = uri.username();
-        match username {
-            "" => match uri.host_str() {
-                Some(host) => {
-                    if host.ends_with(AZURE_STORE_SUFFIX) {
-                        let mut path_segments = uri.path_segments().unwrap();
-                        let container = path_segments.next().map(|s| s.to_string());
-                        let key = path_segments.collect::<Vec<_>>().join("/");
+    // "Container" is Azure's name for Bucket.
+    //
+    // fsspec supports two URI formats; for compatibility, we will support both as well.
+    // PROTOCOL://container/path-part/file
+    // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
+    // See https://github.com/fsspec/adlfs/ for more details
+    //
+    // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
+    // but it is not documented
+    // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
+    let username = uri.username();
+    let (container, key) = if username.is_empty() {
+        match uri.host_str() {
+            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => {
+                let mut path_segments = uri.path_segments().unwrap();
+                let container = path_segments.next().map(|s| s.to_string());
+                let key = path_segments.collect::<Vec<_>>().join("/");
 
-                        (container, key)
-                    } else {
-                        (Some(host.into()), uri.path().into())
-                    }
-                }
-                None => (None, "".to_string()),
-            },
-            _ => (Some(username.into()), uri.path().into()),
+                (container, key)
+            }
+            Some(host) => (Some(host.into()), uri.path().into()),
+            None => (None, "".to_string()),
         }
+    } else {
+        (Some(username.into()), uri.path().into())
     };
 
     // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.

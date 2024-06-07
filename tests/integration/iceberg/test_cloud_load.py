@@ -6,7 +6,7 @@ import daft
 from tests.conftest import assert_df_equals
 
 
-@pytest.mark.integration()
+@pytest.mark.integration
 def test_daft_iceberg_cloud_table_load(cloud_iceberg_table):
     df = daft.read_iceberg(cloud_iceberg_table)
     daft_pandas = df.to_pandas()
