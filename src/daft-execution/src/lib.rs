@@ -1,5 +1,6 @@
 #![feature(impl_trait_in_assoc_type)]
 #![feature(let_chains)]
+#![feature(assert_matches)]
 // TODO(Clark): Remove this once stage planner, partial metadata, etc. are implemented.
 #![allow(dead_code)]
 #![allow(unused)]
