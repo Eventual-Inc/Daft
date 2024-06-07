@@ -525,11 +525,10 @@ mod tests {
             .map(|f| (f.name.clone(), f.clone()))
             .collect::<IndexMap<_, _>>();
         let (schema, is_projection) = match &projection {
-            #[allow(deprecated)]
             Some(projection) => (
                 projection
                     .iter()
-                    .map(|c| field_map.remove(c.as_str()).unwrap())
+                    .map(|c| field_map.swap_remove(c.as_str()).unwrap())
                     .collect::<Vec<_>>()
                     .into(),
                 true,
