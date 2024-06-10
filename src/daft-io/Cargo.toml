@@ -49,7 +49,7 @@ version = "0.15.0"
 [dependencies.reqwest]
 default-features = false
 features = ["stream", "native-tls"]
-version = "0.11.18"
+version = "0.12.4"
 
 [dev-dependencies]
 md5 = "0.7.0"
