@@ -25,7 +25,7 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.7)
+1. Ensure that your system has a suitable Python version installed (>=3.7, <=3.11)
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
 4. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
