@@ -24,7 +24,6 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
         pytest.param(lambda data, pat: data.str.replace(pat, pat), id="replace"),
         pytest.param(lambda data, pat: data.str.like(pat), id="like"),
         pytest.param(lambda data, pat: data.str.ilike(pat), id="ilike"),
-        pytest.param(lambda data, pat: data.str.to_date(pat), id="to_date"),
     ],
 )
 def test_str_compares(binary_data_fixture, op, request):
@@ -162,5 +161,16 @@ def test_str_lpad():
         data=[s, zeroes, emptystrings],
         expr=col("col").str.lpad(col("zeroes"), col("emptystrings")),
         run_kernel=lambda: s.str.lpad(zeroes, emptystrings),
+        resolvable=True,
+    )
+
+
+def test_str_to_date():
+    s = Series.from_arrow(pa.array(["2021-01-01", None, "2021-01-02", "2021-01-03", "2021-01-04"]), name="col")
+    format = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d", None]), name="format")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s, format],
+        expr=col("col").str.to_date(col("format")),
+        run_kernel=lambda: s.str.to_date(format),
         resolvable=True,
     )
