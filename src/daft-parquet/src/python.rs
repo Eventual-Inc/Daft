@@ -50,6 +50,7 @@ pub mod pylib {
                 Some(io_stats.clone()),
                 runtime_handle,
                 schema_infer_options,
+                None,
             )?
             .into();
             Ok(result)
@@ -163,6 +164,7 @@ pub mod pylib {
                 runtime_handle,
                 &schema_infer_options,
                 None,
+                None,
             )?
             .into_iter()
             .map(|v| v.into())
@@ -223,6 +225,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
+        println!("read_parquet_schema: for uri {}", uri);
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
 
@@ -233,13 +236,16 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(crate::read::read_parquet_schema(
-                uri,
-                io_client,
-                Some(io_stats),
-                schema_infer_options,
-                None, // TODO: allow passing in of field_id_mapping through Python API?
-            )?)
+            Ok(Arc::new(
+                crate::read::read_parquet_schema(
+                    uri,
+                    io_client,
+                    Some(io_stats),
+                    schema_infer_options,
+                    None, // TODO: allow passing in of field_id_mapping through Python API?
+                )?
+                .0,
+            )
             .into())
         })
     }

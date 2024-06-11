@@ -310,7 +310,6 @@ impl AdaptivePlanner {
             source_id: None,
         };
         let output = self.logical_plan.clone().rewrite(&mut rewriter)?;
-
         let physical_plan = rewriter
             .physical_children
             .pop()

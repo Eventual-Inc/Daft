@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
+use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 
 use daft_core::{
@@ -15,6 +16,7 @@ use futures::{
     StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
+use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 
@@ -67,6 +69,7 @@ async fn read_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let original_columns = columns;
@@ -98,6 +101,7 @@ async fn read_parquet_single(
             row_groups.clone(),
             predicate.clone(),
             schema_infer_options,
+            metadata,
         )
         .await
     } else {
@@ -137,7 +141,7 @@ async fn read_parquet_single(
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
-            metadata,
+            Arc::new(metadata),
             parquet_reader.read_from_ranges_into_table(ranges).await?,
         ))
     }?;
@@ -229,6 +233,7 @@ async fn read_parquet_single_into_arrow(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
@@ -242,6 +247,7 @@ async fn read_parquet_single_into_arrow(
                 row_groups.clone(),
                 None,
                 schema_infer_options,
+                metadata,
             )
             .await?;
         (metadata, Arc::new(schema), all_arrays)
@@ -280,7 +286,7 @@ async fn read_parquet_single_into_arrow(
         let all_arrays = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
             .await?;
-        (metadata, schema, all_arrays)
+        (Arc::new(metadata), schema, all_arrays)
     };
 
     let rows_per_row_groups = metadata
@@ -374,6 +380,7 @@ pub fn read_parquet(
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<Table> {
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
@@ -388,6 +395,7 @@ pub fn read_parquet(
             io_stats,
             schema_infer_options,
             None,
+            metadata,
         )
         .await
     })
@@ -419,6 +427,7 @@ pub fn read_parquet_into_pyarrow(
             io_stats,
             schema_infer_options,
             None,
+            None,
         );
         if let Some(timeout) = file_timeout_ms {
             match tokio::time::timeout(Duration::from_millis(timeout as u64), fut).await {
@@ -449,6 +458,7 @@ pub fn read_parquet_bulk(
     runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Vec<Arc<FileMetaData>>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -468,6 +478,7 @@ pub fn read_parquet_bulk(
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
                 let owned_predicate = predicate.clone();
+                let metadata = metadata.as_ref().map(|mds| mds[i].clone());
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
@@ -490,6 +501,7 @@ pub fn read_parquet_bulk(
                             io_stats,
                             schema_infer_options,
                             owned_field_id_mapping,
+                            metadata,
                         )
                         .await?,
                     ))
@@ -558,6 +570,7 @@ pub fn read_parquet_into_pyarrow_bulk(
                             io_stats,
                             schema_infer_options,
                             None,
+                            None,
                         )
                         .await?,
                     ))
@@ -579,7 +592,7 @@ pub fn read_parquet_schema(
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-) -> DaftResult<Schema> {
+) -> DaftResult<(Schema, FileMetaData)> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle.block_on(async {
@@ -587,7 +600,10 @@ pub fn read_parquet_schema(
     })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
-    Schema::try_from(builder.build()?.arrow_schema().as_ref())
+    let metadata = builder.metadata;
+    let arrow_schema = infer_schema_with_options(&metadata, &None)?;
+    let schema = Schema::try_from(&arrow_schema)?;
+    Ok((schema, metadata))
 }
 
 pub async fn read_parquet_metadata(
@@ -742,6 +758,7 @@ mod tests {
             None,
             runtime_handle,
             Default::default(),
+            None,
         )?;
         assert_eq!(table.len(), 100);
 

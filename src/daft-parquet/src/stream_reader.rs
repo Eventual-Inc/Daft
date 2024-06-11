@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs::File};
+use std::{collections::HashSet, fs::File, sync::Arc};
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
@@ -47,6 +47,7 @@ fn prune_fields_from_schema(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn local_parquet_read_into_arrow(
     uri: &str,
     columns: Option<&[String]>,
@@ -55,8 +56,9 @@ pub(crate) fn local_parquet_read_into_arrow(
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
 ) -> super::Result<(
-    parquet2::metadata::FileMetaData,
+    Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
 )> {
@@ -80,12 +82,15 @@ pub(crate) fn local_parquet_read_into_arrow(
             file_size: size as usize,
         });
     }
-
-    let metadata = read::read_metadata(&mut reader).with_context(|_| {
-        super::UnableToParseMetadataFromLocalFileSnafu {
-            path: uri.to_string(),
-        }
-    })?;
+    let metadata = if let Some(metadata) = metadata {
+        metadata
+    } else {
+        read::read_metadata(&mut reader)
+            .with_context(|_| super::UnableToParseMetadataFromLocalFileSnafu {
+                path: uri.to_string(),
+            })
+            .map(Arc::new)?
+    };
 
     // and infer a [`Schema`] from the `metadata`.
     let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
@@ -176,6 +181,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     Ok((metadata, schema, all_columns))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn local_parquet_read_async(
     uri: &str,
     columns: Option<Vec<String>>,
@@ -184,7 +190,8 @@ pub(crate) async fn local_parquet_read_async(
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-) -> DaftResult<(parquet2::metadata::FileMetaData, Table)> {
+    metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
@@ -197,6 +204,7 @@ pub(crate) async fn local_parquet_read_async(
                 row_groups.as_deref(),
                 predicate,
                 schema_infer_options,
+                metadata,
             );
             let (metadata, schema, arrays) = v?;
 
@@ -226,6 +234,7 @@ pub(crate) async fn local_parquet_read_async(
     recv.await.context(super::OneShotRecvSnafu {})?
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn local_parquet_read_into_arrow_async(
     uri: &str,
     columns: Option<Vec<String>>,
@@ -234,8 +243,9 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
 ) -> super::Result<(
-    parquet2::metadata::FileMetaData,
+    Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
 )> {
@@ -250,6 +260,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
             row_groups.as_deref(),
             predicate,
             schema_infer_options,
+            metadata,
         );
         let _ = send.send(v);
     });

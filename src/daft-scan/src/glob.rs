@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
-use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_parquet::{metadata::FileMetaData, read::ParquetSchemaInferenceOptions};
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
@@ -19,6 +19,7 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
+    parquet_metadata: Option<Arc<FileMetaData>>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -159,6 +160,8 @@ impl GlobScanOperator {
             .into()),
         }?;
 
+        let mut parquet_metadata = None;
+
         let schema = match infer_schema {
             true => {
                 let inferred_schema = match file_format_config.as_ref() {
@@ -169,7 +172,8 @@ impl GlobScanOperator {
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
-                        daft_parquet::read::read_parquet_schema(
+
+                        let (schema, metadata) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
                             io_client.clone(),
                             Some(io_stats),
@@ -177,7 +181,10 @@ impl GlobScanOperator {
                                 coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                             },
                             field_id_mapping.clone(),
-                        )?
+                        )?;
+                        parquet_metadata = Some(Arc::new(metadata));
+
+                        schema
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -233,12 +240,12 @@ impl GlobScanOperator {
             }
             false => schema.expect("Schema must be provided if infer_schema is false"),
         };
-
         Ok(Self {
             glob_paths: glob_paths.iter().map(|s| s.to_string()).collect(),
             file_format_config,
             schema,
             storage_config,
+            parquet_metadata,
         })
     }
 }
@@ -293,6 +300,7 @@ impl ScanOperator for GlobScanOperator {
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
+        let parquet_metadata = self.parquet_metadata.clone();
 
         // Create one ScanTask per file
         Ok(Box::new(files.map(move |f| {
@@ -309,6 +317,7 @@ impl ScanOperator for GlobScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
+                    parquet_metadata: parquet_metadata.clone(),
                 }],
                 file_format_config.clone(),
                 schema.clone(),
