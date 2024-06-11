@@ -225,7 +225,6 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
-        println!("read_parquet_schema: for uri {}", uri);
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
 
