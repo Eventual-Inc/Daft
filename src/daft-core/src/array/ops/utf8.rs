@@ -962,7 +962,7 @@ impl Utf8Array {
                         ))
                     })?;
                     Ok(Some(
-                        datetime.timestamp_micros()
+                        datetime.and_utc().timestamp_micros()
                     ))
                 }
                 _ => Ok(None),
