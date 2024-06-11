@@ -929,19 +929,91 @@ class DataFrame:
     def select(self, *columns: ColumnInputType) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
 
-        Example:
+        Examples:
 
-            >>> # names of columns as strings
-            >>> df = df.select('x', 'y')
-            >>>
-            >>> # names of columns as expressions
-            >>> df = df.select(col('x'), col('y'))
-            >>>
-            >>> # call expressions
-            >>> df = df.select(col('x') * col('y'))
-            >>>
-            >>> # any mix of the above
-            >>> df = df.select('x', col('y'), col('z') + 1)
+        Names of columns as strings
+            .. testcode::
+
+                df.select('x','y')
+                df.show()
+
+            .. testoutput::
+
+                ╭───────┬───────╮
+                │ x     ┆ y     │
+                │ ---   ┆ ---   │
+                │ Int64 ┆ Int64 │
+                ╞═══════╪═══════╡
+                │ 1     ┆ 1     │
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+                │ 2     ┆ 2     │
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+                │ 3     ┆ 3     │
+                ╰───────┴───────╯
+                (Showing first 3 of 3 rows)
+
+        Names of columns as expressions
+            .. testcode::
+
+                df = df.select(col('x'), col('y'))
+
+            .. testoutput::
+
+                ╭───────┬───────╮
+                │ x     ┆ y     │
+                │ ---   ┆ ---   │
+                │ Int64 ┆ Int64 │
+                ╞═══════╪═══════╡
+                │ 1     ┆ 1     │
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+                │ 2     ┆ 2     │
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+                │ 3     ┆ 3     │
+                ╰───────┴───────╯
+                (Showing first 3 of 3 rows)
+
+        Call expressions
+            .. testcode::
+
+                df = df.select(col('x') * col('y'))
+
+            .. testoutput::
+
+                ╭───────╮
+                │ x     │
+                │ ---   │
+                │ Int64 │
+                ╞═══════╡
+                │ 1     │
+                ├╌╌╌╌╌╌╌┤
+                │ 4     │
+                ├╌╌╌╌╌╌╌┤
+                │ 9     │
+                ╰───────╯
+                (Showing first 3 of 3 rows)
+
+        Any mix of the above
+            .. testcode::
+
+                df = from_pydict({'x': [1, 2, 3], 'y': [1, 2, 3], 'z':[1,2,3]})
+                df = df.select('x', col('y'), col('z') + 1)
+
+            .. testoutput::
+
+                ╭───────┬───────┬──────╮
+                │ x     ┆ y     │   z  |
+                │ ---   ┆ ---   │  --- |
+                │ Int64 ┆ Int64 │ Int64|
+                ╞═══════╪═══════╡══════|
+                │ 1     ┆ 1     │  2   |
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤------|
+                │ 2     ┆ 2     │  3   |
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤------|
+                │ 3     ┆ 3     │  4   |
+                ╰───────┴───────╯──────╯
+                (Showing first 3 of 3 rows)
+
+
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
@@ -1000,7 +1072,27 @@ class DataFrame:
         This is equivalent of performing a select with all the columns but the ones excluded.
 
         Example:
-            >>> df_without_x = df.exclude('x')
+
+            .. testcode::
+
+                df_without_x = df.exclude('x')
+                df_without_x.show()
+
+            .. testoutput::
+
+                ╭───────╮
+                │ y     │
+                │ ---   │
+                │ Int64 │
+                ╞═══════╡
+                |   1   |
+                |╌╌╌╌╌╌╌|
+                │   2   │
+                ├╌╌╌╌╌╌╌|
+                │   3   │
+                ╰───────╯
+
+                (Showing first 3 of 3 rows)
 
         Args:
             *names (str): names to exclude
@@ -1016,7 +1108,27 @@ class DataFrame:
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
-            >>> filtered_df = df.where((col('x') < 10) & (col('y') == 10))
+
+            .. testcode::
+
+                df = from_pydict({'x': [1, 2, 3], 'y': [1, 2, 3]})
+
+                df.where((col('x') > 1) & (col('y') > 1))
+
+            .. testoutput::
+
+                ╭───────┬───────╮
+                │ x     ┆ y     │
+                │ ---   ┆ ---   │
+                │ Int64 ┆ Int64 │
+                ╞═══════╪═══════╡
+                │ 2     ┆ 2     │
+                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+                │ 3     ┆ 3     │
+                ╰───────┴───────╯
+
+                (Showing first 2 of 2 rows)
+
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
