@@ -1032,10 +1032,18 @@ pub(crate) fn read_parquet_into_micropartition(
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
     let meta_field_id_mapping = field_id_mapping.clone();
-    let metadata = if let Some(parquet_metadata) = parquet_metadata {
-        parquet_metadata
+    let (metadata, schemas) = if let Some(metadata) = parquet_metadata {
+        let schemas = metadata
+            .iter()
+            .map(|m| {
+                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                DaftResult::Ok(Arc::new(daft_schema))
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        (metadata, schemas)
     } else {
-        runtime_handle
+        let metadata = runtime_handle
             .block_on(async move {
                 read_parquet_metadata_bulk(
                     uris,
@@ -1047,20 +1055,17 @@ pub(crate) fn read_parquet_into_micropartition(
             })?
             .into_iter()
             .map(Arc::new)
-            .collect()
-    };
+            .collect::<Vec<_>>();
 
-    let schemas = if let Some(schema) = catalog_provided_schema.clone() {
-        vec![schema; uris.len()]
-    } else {
-        metadata
+        let schemas = metadata
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
-            .collect::<DaftResult<Vec<_>>>()?
+            .collect::<DaftResult<Vec<_>>>()?;
+        (metadata, schemas)
     };
 
     let any_stats_avail = metadata

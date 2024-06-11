@@ -82,14 +82,13 @@ pub(crate) fn local_parquet_read_into_arrow(
             file_size: size as usize,
         });
     }
-    let metadata = if let Some(metadata) = metadata {
-        metadata
-    } else {
-        read::read_metadata(&mut reader)
+    let metadata = match metadata {
+        Some(m) => m,
+        None => read::read_metadata(&mut reader)
             .with_context(|_| super::UnableToParseMetadataFromLocalFileSnafu {
                 path: uri.to_string(),
             })
-            .map(Arc::new)?
+            .map(Arc::new)?,
     };
 
     // and infer a [`Schema`] from the `metadata`.

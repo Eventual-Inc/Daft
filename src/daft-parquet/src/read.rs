@@ -601,7 +601,8 @@ pub fn read_parquet_schema(
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     let metadata = builder.metadata;
-    let arrow_schema = infer_schema_with_options(&metadata, &None)?;
+    let arrow_schema =
+        infer_schema_with_options(&metadata, &Some(schema_inference_options.into()))?;
     let schema = Schema::try_from(&arrow_schema)?;
     Ok((schema, metadata))
 }

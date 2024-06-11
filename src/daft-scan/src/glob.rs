@@ -3,8 +3,8 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
-use daft_parquet::{metadata::FileMetaData, read::ParquetSchemaInferenceOptions};
+use daft_io::{get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
@@ -19,7 +19,6 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
-    parquet_metadata: Option<Arc<FileMetaData>>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -160,8 +159,6 @@ impl GlobScanOperator {
             .into()),
         }?;
 
-        let mut parquet_metadata = None;
-
         let schema = match infer_schema {
             true => {
                 let inferred_schema = match file_format_config.as_ref() {
@@ -173,7 +170,7 @@ impl GlobScanOperator {
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
 
-                        let (schema, metadata) = daft_parquet::read::read_parquet_schema(
+                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
                             io_client.clone(),
                             Some(io_stats),
@@ -182,7 +179,6 @@ impl GlobScanOperator {
                             },
                             field_id_mapping.clone(),
                         )?;
-                        parquet_metadata = Some(Arc::new(metadata));
 
                         schema
                     }
@@ -245,7 +241,6 @@ impl GlobScanOperator {
             file_format_config,
             schema,
             storage_config,
-            parquet_metadata,
         })
     }
 }
@@ -300,7 +295,6 @@ impl ScanOperator for GlobScanOperator {
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
-        let parquet_metadata = self.parquet_metadata.clone();
 
         // Create one ScanTask per file
         Ok(Box::new(files.map(move |f| {
@@ -309,6 +303,34 @@ impl ScanOperator for GlobScanOperator {
                 size: size_bytes,
                 ..
             } = f?;
+
+            let path_clone = path.clone();
+            let io_client_clone = io_client.clone();
+            let field_id_mapping = match file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    field_id_mapping, ..
+                }) => Some(field_id_mapping.clone()),
+                _ => None,
+            };
+
+            // let (tx, rx) = oneshot::channel();
+
+            let parquet_metadata = if let Some(field_id_mapping) = field_id_mapping {
+                get_runtime(true).unwrap().block_on(async {
+                    daft_parquet::read::read_parquet_metadata(
+                        &path_clone,
+                        io_client_clone,
+                        Some(io_stats.clone()),
+                        field_id_mapping.clone(),
+                    )
+                    .await
+                    .ok()
+                    .map(Arc::new)
+                })
+            } else {
+                None
+            };
+
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
                     path: path.to_string(),
@@ -317,7 +339,7 @@ impl ScanOperator for GlobScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
-                    parquet_metadata: parquet_metadata.clone(),
+                    parquet_metadata,
                 }],
                 file_format_config.clone(),
                 schema.clone(),
