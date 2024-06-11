@@ -245,4 +245,10 @@ impl Series {
             format.with_utf8_array(|format_arr| Ok(arr.to_date(format_arr)?.into_series()))
         })
     }
+
+    pub fn utf8_to_datetime(&self, format: &Series) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            format.with_utf8_array(|format_arr| Ok(arr.to_datetime(format_arr)?.into_series()))
+        })
+    }
 }

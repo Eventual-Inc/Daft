@@ -656,6 +656,11 @@ impl PyExpr {
         Ok(to_date(self.into(), format.into()).into())
     }
 
+    pub fn to_datetime(&self, format: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::to_datetime;
+        Ok(to_datetime(self.into(), format.into()).into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(self.into(), raise_error_on_failure).into())

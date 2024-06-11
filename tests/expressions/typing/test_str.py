@@ -174,3 +174,20 @@ def test_str_to_date():
         run_kernel=lambda: s.str.to_date(format),
         resolvable=True,
     )
+
+
+def test_str_to_datetime():
+    s = Series.from_arrow(
+        pa.array(["2021-01-01 00:00:00", None, "2021-01-02 00:00:00", "2021-01-03 00:00:00", "2021-01-04 00:00:00"]),
+        name="col",
+    )
+    format = Series.from_arrow(
+        pa.array(["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", None]),
+        name="format",
+    )
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s, format],
+        expr=col("col").str.to_datetime(col("format")),
+        run_kernel=lambda: s.str.to_datetime(format),
+        resolvable=True,
+    )

@@ -22,6 +22,7 @@ mod split;
 mod startswith;
 mod substr;
 mod to_date;
+mod to_datetime;
 mod upper;
 
 use capitalize::CapitalizeEvaluator;
@@ -48,6 +49,7 @@ use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
 use substr::SubstrEvaluator;
 use to_date::ToDateEvaluator;
+use to_datetime::ToDatetimeEvaluator;
 use upper::UpperEvaluator;
 
 use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
@@ -81,6 +83,7 @@ pub enum Utf8Expr {
     Ilike,
     Substr,
     ToDate,
+    ToDatetime,
 }
 
 impl Utf8Expr {
@@ -113,6 +116,7 @@ impl Utf8Expr {
             Ilike => &IlikeEvaluator {},
             Substr => &SubstrEvaluator {},
             ToDate => &ToDateEvaluator {},
+            ToDatetime => &ToDatetimeEvaluator {},
         }
     }
 }
@@ -312,6 +316,14 @@ pub fn substr(data: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
 pub fn to_date(data: ExprRef, format: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::ToDate),
+        inputs: vec![data, format],
+    }
+    .into()
+}
+
+pub fn to_datetime(data: ExprRef, format: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::ToDatetime),
         inputs: vec![data, format],
     }
     .into()

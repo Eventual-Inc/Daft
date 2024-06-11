@@ -1342,8 +1342,15 @@ def test_series_utf8_to_date_mismatch_len() -> None:
 
 
 def test_series_utf8_to_date_bad_format() -> None:
-    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02", "2021-01-03"]))
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
     formats = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%"]))
+    with pytest.raises(ValueError):
+        s.str.to_date(formats)
+
+
+def test_series_utf8_to_date_bad_format_type() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    formats = Series.from_arrow(pa.array([1, 2]))
     with pytest.raises(ValueError):
         s.str.to_date(formats)
 
@@ -1353,3 +1360,55 @@ def test_series_utf8_to_date_bad_dtype() -> None:
     formats = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d"]))
     with pytest.raises(ValueError):
         s.str.to_date(formats)
+
+
+def test_series_utf8_bad_date() -> None:
+    s = Series.from_arrow(pa.array(["2021-100-20"]))
+    formats = Series.from_arrow(pa.array(["%Y-%m-%d"]))
+    with pytest.raises(ValueError):
+        s.str.to_date(formats)
+
+
+@pytest.mark.parametrize(
+    ["data", "format", "expected"],
+)
+def test_series_utf8_to_datetime(data, format, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    formats = Series.from_arrow(pa.array(format, type=pa.string()))
+    result = s.str.to_datetime(formats)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_to_datetime_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02", "2021-01-03"]))
+    formats = Series.from_arrow(pa.array(["%Y-%m-%d", None]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(formats)
+
+
+def test_series_utf8_to_datetime_bad_format() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    formats = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(formats)
+
+
+def test_series_utf8_to_datetime_bad_format_type() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    formats = Series.from_arrow(pa.array([1, 2]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(formats)
+
+
+def test_series_utf8_to_datetime_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    formats = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(formats)
+
+
+def test_series_utf8_to_bad_datetime() -> None:
+    s = Series.from_arrow(pa.array(["2021-100-20"]))
+    formats = Series.from_arrow(pa.array(["%Y-%m-%d"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(formats)

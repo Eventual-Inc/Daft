@@ -6,8 +6,9 @@ use std::{
 use crate::{
     array::{DataArray, ListArray},
     datatypes::{
-        logical::DateArray, BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType,
-        Field, Int32Array, Int64Array, UInt64Array, Utf8Array,
+        logical::{DateArray, TimestampArray},
+        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int32Array,
+        Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     DataType, Series,
 };
@@ -927,6 +928,55 @@ impl Utf8Array {
 
         let result = Int32Array::from((self.name(), Box::new(arrow_result)));
         let result = DateArray::new(Field::new(self.name(), DataType::Date), result);
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
+    pub fn to_datetime(&self, format: &Utf8Array) -> DaftResult<TimestampArray> {
+        let (is_full_null, expected_size) = parse_inputs(self, &[format])
+            .map_err(|e| DaftError::ValueError(format!("Error in to_datetime: {e}")))?;
+        if is_full_null {
+            return Ok(TimestampArray::full_null(
+                self.name(),
+                &DataType::Timestamp(TimeUnit::Microseconds, None),
+                expected_size,
+            ));
+        }
+        if expected_size == 0 {
+            return Ok(TimestampArray::empty(
+                self.name(),
+                &DataType::Timestamp(TimeUnit::Microseconds, None),
+            ));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let format_iter = create_broadcasted_str_iter(format, expected_size);
+
+        let arrow_result = self_iter
+            .zip(format_iter)
+            .map(|(val, fmt)| match (val, fmt) {
+                (Some(val), Some(fmt)) => {
+                    let datetime = chrono::NaiveDateTime::parse_from_str(val, fmt).map_err(|e| {
+                        DaftError::ComputeError(format!(
+                            "Error in to_datetime: failed to parse datetime {val} with format {fmt} : {e}"
+                        ))
+                    })?;
+                    Ok(Some(
+                        datetime.timestamp_micros()
+                    ))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<arrow2::array::Int64Array>>()?;
+
+        let result = Int64Array::from((self.name(), Box::new(arrow_result)));
+        let result = TimestampArray::new(
+            Field::new(
+                self.name(),
+                DataType::Timestamp(TimeUnit::Microseconds, None),
+            ),
+            result,
+        );
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }

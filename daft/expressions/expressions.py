@@ -1448,6 +1448,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
         format_expr = Expression._to_expression(format)
         return Expression._from_pyexpr(self._expr.utf8_to_date(format_expr._expr))
 
+    def to_datetime(self, format: str | Expression) -> Expression:
+        """Converts a string to a datetime using the specified format
+
+        Example:
+            >>> col("x").str.to_datetime("%Y-%m-%d %H:%M:%S")
+
+        Returns:
+            Expression: a DateTime expression which is parsed by given format
+        """
+        format_expr = Expression._to_expression(format)
+        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

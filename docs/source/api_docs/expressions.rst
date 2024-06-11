@@ -146,6 +146,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.ilike
    Expression.str.substr
    Expression.str.to_date
+   Expression.str.to_datetime
 
 .. _api-expressions-temporal:
 
