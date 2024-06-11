@@ -1853,7 +1853,6 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-dsl",
- "daft-micropartition",
  "daft-scan",
  "daft-table",
  "indexmap 2.2.6",

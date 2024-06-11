@@ -1568,7 +1568,7 @@ class PyDaftExecutionConfig:
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
-        enable_new_executor: bool | None = None,
+        enable_native_executor: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1599,7 +1599,7 @@ class PyDaftExecutionConfig:
     @property
     def enable_aqe(self) -> bool: ...
     @property
-    def enable_new_executor(self) -> bool: ...
+    def enable_native_executor(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(

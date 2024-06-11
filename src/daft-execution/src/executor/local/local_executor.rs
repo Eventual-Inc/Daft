@@ -154,14 +154,3 @@ impl Executor<LocalPartitionRef> for SerialExecutor {
         Default::default()
     }
 }
-
-// fn execute_locally<V: VirtualPartition>(
-//     inputs: Vec<V>,
-//     task_op: Arc<dyn PartitionTaskOp<V::TaskOpInput>>,
-// ) -> DaftResult<Vec<LocalPartitionRef>> {
-//     let inputs = inputs
-//         .into_iter()
-//         .map(|input| input.partition())
-//         .collect::<Vec<_>>();
-//     task_op.execute(inputs)
-// }
