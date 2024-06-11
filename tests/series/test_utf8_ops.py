@@ -1371,6 +1371,68 @@ def test_series_utf8_bad_date() -> None:
 
 @pytest.mark.parametrize(
     ["data", "format", "expected"],
+    [
+        (
+            # broadcast format
+            ["2021-01-01 00:00:00", "2021-01-02 01:07:35", "2021-01-03 12:30:00"],
+            ["%Y-%m-%d %H:%M:%S"],
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, 0),
+                datetime.datetime(2021, 1, 2, 1, 7, 35),
+                datetime.datetime(2021, 1, 3, 12, 30, 0),
+            ],
+        ),
+        (
+            # broadcast data
+            ["2021-01-01 00:00:00"],
+            ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"],
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, 0),
+                datetime.datetime(2021, 1, 1, 0, 0, 0),
+                datetime.datetime(2021, 1, 1, 0, 0, 0),
+            ],
+        ),
+        (
+            # broadcast null data
+            [None],
+            ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"],
+            [None, None, None],
+        ),
+        (
+            # broadcast null format
+            ["2021-01-01 00:00:00"],
+            [None],
+            [None],
+        ),
+        (
+            # mixed-in nulls
+            ["2021-01-01 00:00:00", None, "2021-01-03 12:30:00"],
+            ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"],
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, 0),
+                None,
+                datetime.datetime(2021, 1, 3, 12, 30, 0),
+            ],
+        ),
+        (
+            # all null data
+            [None] * 4,
+            ["%Y-%m-%d %H:%M:%S"] * 4,
+            [None] * 4,
+        ),
+        (
+            # all null format
+            ["2021-01-01 00:00:00"] * 4,
+            [None] * 4,
+            [None] * 4,
+        ),
+        (
+            # all empty
+            [],
+            [],
+            [],
+        ),
+    ],
 )
 def test_series_utf8_to_datetime(data, format, expected) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))

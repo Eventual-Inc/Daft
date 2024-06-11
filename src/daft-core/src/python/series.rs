@@ -461,7 +461,7 @@ impl PySeries {
         Ok(self.series.utf8_to_date(&format.series)?.into())
     }
 
-    pub fn to_datetime(&self, format: &Self) -> PyResult<Self> {
+    pub fn utf8_to_datetime(&self, format: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_to_datetime(&format.series)?.into())
     }
 
