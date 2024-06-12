@@ -14,6 +14,10 @@ impl DataType {
             #[cfg(feature = "python")]
             (Python, _) | (_, Python) => Ok(()),
             (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(()),
+            (Int32, Int32) | (Int32, Null) | (Null, Int32) => Ok(()),
+            (Int64, Int64) | (Int64, Null) | (Null, Int64) => Ok(()),
+            (UInt32, UInt32) | (UInt32, Null) | (Null, UInt32) => Ok(()),
+            (UInt64, UInt64) | (UInt64, Null) | (Null, UInt64) => Ok(()),
             _ => Err(()),
         }
         .map(|()| Boolean)

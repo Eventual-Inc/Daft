@@ -265,7 +265,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr % self._expr)
 
     def __and__(self, other: Expression) -> Expression:
-        """Takes the logical AND of two boolean expressions (``e1 & e2``)"""
+        """Takes the logical AND of two boolean or numeric value expressions (``e1 & e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
@@ -275,7 +275,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr & self._expr)
 
     def __or__(self, other: Expression) -> Expression:
-        """Takes the logical OR of two boolean expressions (``e1 | e2``)"""
+        """Takes the logical OR of two boolean or numeric value expressions (``e1 | e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
