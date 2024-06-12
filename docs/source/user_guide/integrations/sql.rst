@@ -55,7 +55,7 @@ After writing this local example table, we can easily read it into a Daft DataFr
 
     df = daft.read_sql(
         "SELECT * FROM books",
-        "sqlite:///example.db",
+        "sqlite://example.db",
     )
 
 Daft uses `ConnectorX <https://sfu-db.github.io/connector-x/databases.html>`_ under the hood to read SQL data. ConnectorX is a fast, Rust based SQL connector that reads directly into Arrow Tables, enabling zero-copy transfer into Daft dataframes.
