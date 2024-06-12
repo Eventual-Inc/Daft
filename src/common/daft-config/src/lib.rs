@@ -73,7 +73,7 @@ impl DaftExecutionConfig {
         {
             cfg.enable_aqe = true;
         }
-        let exec_env_var_name = "DAFT_ENABLE_NEW_EXECUTOR";
+        let exec_env_var_name = "DAFT_ENABLE_NATIVE_EXECUTOR";
         if let Ok(val) = std::env::var(exec_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {

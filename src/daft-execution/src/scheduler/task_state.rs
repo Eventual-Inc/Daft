@@ -10,6 +10,7 @@ use crate::tree::OpStateNode;
 pub fn all_unordered_submittable_tasks<T: PartitionRef>(
     state: Rc<OpStateNode<T>>,
 ) -> impl Iterator<Item = SubmittableTask<T>> {
+    // TODO(Clark): Implement once we want to support out-of-order execution.
     std::iter::empty()
 }
 pub fn next_in_order_submittable_task<T: PartitionRef>(
@@ -117,7 +118,11 @@ impl<T: PartitionRef> SubmittableTask<T> {
                 let inputs = (0..num_inputs)
                     .map(|_| leaf.inputs.borrow_mut().pop_front().unwrap().item)
                     .collect();
-                Task::ScanTask(PartitionTask::new(inputs, leaf.task_op.clone()))
+                Task::ScanTask(PartitionTask::new(
+                    inputs,
+                    leaf.task_op.clone(),
+                    self.resource_request,
+                ))
             }
             OpStateNode::LeafMemory(leaf) => {
                 let inputs = self
@@ -133,7 +138,11 @@ impl<T: PartitionRef> SubmittableTask<T> {
                         inputs.into_iter().next().unwrap()
                     })
                     .collect::<Vec<_>>();
-                Task::PartitionTask(PartitionTask::new(inputs, leaf.task_op.clone().unwrap()))
+                Task::PartitionTask(PartitionTask::new(
+                    inputs,
+                    leaf.task_op.clone().unwrap(),
+                    self.resource_request,
+                ))
             }
             OpStateNode::Inner(inner) => {
                 let inputs = self
@@ -149,7 +158,11 @@ impl<T: PartitionRef> SubmittableTask<T> {
                         inputs.into_iter().next().unwrap()
                     })
                     .collect::<Vec<_>>();
-                Task::PartitionTask(PartitionTask::new(inputs, inner.task_op.clone()))
+                Task::PartitionTask(PartitionTask::new(
+                    inputs,
+                    inner.task_op.clone(),
+                    self.resource_request,
+                ))
             }
         };
         let task_id = task.task_id();

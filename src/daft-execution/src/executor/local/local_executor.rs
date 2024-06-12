@@ -47,29 +47,9 @@ impl Executor<LocalPartitionRef> for LocalExecutor {
         let result = tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
-                // TODO(Clark): Consolidate shared logic between executing scan tasks and executing partition tasks.
-                let result = match task {
-                    Task::ScanTask(pt) => {
-                        let (inputs, task_op, resource_request) = pt.into_executable();
-                        let inputs = inputs
-                            .into_iter()
-                            .map(|input| input.partition())
-                            .collect::<Vec<_>>();
-                        let out = task_op.execute(&inputs);
-                        resource_manager.lock().unwrap().release(&resource_request);
-                        out
-                    }
-                    Task::PartitionTask(pt) => {
-                        let (inputs, task_op, resource_request) = pt.into_executable();
-                        let inputs = inputs
-                            .into_iter()
-                            .map(|input| PartitionRef::partition(&input))
-                            .collect::<Vec<_>>();
-                        let out = task_op.execute(&inputs);
-                        resource_manager.lock().unwrap().release(&resource_request);
-                        out
-                    }
-                };
+                let resource_request = task.resource_request().clone();
+                let result = task.execute();
+                resource_manager.lock().unwrap().release(&resource_request);
                 let result = result.and_then(|r| {
                     r.into_iter()
                         .map(LocalPartitionRef::try_new)
@@ -119,24 +99,7 @@ impl Executor<LocalPartitionRef> for SerialExecutor {
         task: Task<LocalPartitionRef>,
     ) -> DaftResult<(usize, Vec<LocalPartitionRef>)> {
         let task_id = task.task_id();
-        let result = match task {
-            Task::ScanTask(pt) => {
-                let (inputs, task_op, _) = pt.into_executable();
-                let inputs = inputs
-                    .into_iter()
-                    .map(|input| input.partition())
-                    .collect::<Vec<_>>();
-                task_op.execute(&inputs)?
-            }
-            Task::PartitionTask(pt) => {
-                let (inputs, task_op, _) = pt.into_executable();
-                let inputs = inputs
-                    .into_iter()
-                    .map(|input| PartitionRef::partition(&input))
-                    .collect::<Vec<_>>();
-                task_op.execute(&inputs)?
-            }
-        };
+        let result = task.execute()?;
         Ok((
             task_id,
             result

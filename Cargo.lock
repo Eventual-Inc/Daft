@@ -1677,6 +1677,7 @@ dependencies = [
 name = "daft-execution"
 version = "0.2.0-dev0"
 dependencies = [
+ "arrow2",
  "async-trait",
  "common-error",
  "daft-core",
@@ -1685,6 +1686,7 @@ dependencies = [
  "daft-micropartition",
  "daft-plan",
  "daft-scan",
+ "daft-table",
  "futures",
  "itertools 0.11.0",
  "log",
