@@ -87,7 +87,8 @@ In order to partition the data, you can specify a partition column, which will a
     # Read with a partition column
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
 
-To learn more, consult the API documentation on :func:`daft.read_sql`.
+To learn more, consult the :doc:`SQL User Guide <../integrations/sql>` or the API documentation on :func:`daft.read_sql`.
+
 
 Writing Data
 ------------
