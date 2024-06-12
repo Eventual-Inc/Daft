@@ -82,10 +82,10 @@ In order to partition the data, you can specify a partition column, which will a
 
     # Read from a PostgreSQL database
     uri = "postgresql://user:password@host:port/database"
-    df = daft.read_sql(uri, "SELECT * FROM my_table")
+    df = daft.read_sql("SELECT * FROM my_table", uri)
 
     # Read with a partition column
-    df = daft.read_sql(uri, "SELECT * FROM my_table", partition_col="date")
+    df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
 
 To learn more, consult the API documentation on :func:`daft.read_sql`.
 
