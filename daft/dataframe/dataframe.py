@@ -768,9 +768,7 @@ class DataFrame:
             assert result is not None
             return result
         elif isinstance(item, str):
-            schema = self._builder.schema()
-            field = schema[item]
-            return col(field.name)
+            return col(item)
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 

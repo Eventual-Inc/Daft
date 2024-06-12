@@ -202,7 +202,7 @@ impl AggExpr {
             Sum(_) => Sum(children[0].clone()),
             Mean(_) => Mean(children[0].clone()),
             Min(_) => Min(children[0].clone()),
-            Max(_) => Mean(children[0].clone()),
+            Max(_) => Max(children[0].clone()),
             AnyValue(_, ignore_nulls) => AnyValue(children[0].clone(), *ignore_nulls),
             List(_) => List(children[0].clone()),
             Concat(_) => Concat(children[0].clone()),
