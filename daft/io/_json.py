@@ -62,5 +62,6 @@ def read_json(
         schema=schema_hints,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        is_ray_runner=context.get_context().is_ray_runner,
     )
     return DataFrame(builder)

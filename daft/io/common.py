@@ -24,6 +24,7 @@ def get_tabular_files_scan(
     schema: dict[str, DataType] | None,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
+    is_ray_runner: bool,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
@@ -41,6 +42,7 @@ def get_tabular_files_scan(
         storage_config,
         infer_schema=infer_schema,
         schema=_get_schema_from_dict(schema)._schema if schema is not None else None,
+        is_ray_runner=is_ray_runner,
     )
 
     builder = LogicalPlanBuilder.from_tabular_scan(
