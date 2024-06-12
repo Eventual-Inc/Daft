@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
     logical_ops,
@@ -13,9 +16,12 @@ use crate::{
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
+use common_treenode::{Transformed, TransformedResult, TreeNode};
 use daft_core::{
+    datatypes::Field,
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
+    DataType,
 };
 use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
@@ -142,7 +148,120 @@ fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
     }
 }
 
+/// Converts a column with syntactic sugar into struct and/or map gets. Map gets only used on Utf8 keys.
+/// Attempts to resolve column names from the rightmost to leftmost period.
+///
+/// Example 1:
+/// - name: "a.b.c"
+/// - schema: <a: Struct<b: Map<key: Utf8, value: Int64>>
+/// - output: col("a").struct.get("b").map.get("c")
+///
+/// Example 2:
+/// - name: "a.b.c"
+/// - schema: <a: Struct<b: Struct<c: Int64>>, a.b: Struct<c: Int64>>
+/// - output: col("a.b").struct.get("c")
+///
+/// Example 3:
+/// - name: "a.b.c"
+/// - schema: <a: Struct<b: Struct<c: Int64>>, a.b: Struct<c: Int64>, a.b.c: Int63>
+/// - output: col("a.b.c")
+fn col_name_to_get_expr(name: &str, schema: &SchemaRef) -> ExprRef {
+    use daft_dsl::{
+        functions::{map::get as map_get, struct_::get as struct_get},
+        lit,
+    };
+
+    enum GetType {
+        Struct,
+        Map,
+    }
+
+    type KeyIter<'a> = Box<dyn Iterator<Item = &'a str> + 'a>;
+    type TypeIter = Box<dyn Iterator<Item = GetType>>;
+
+    fn helper<'a>(name: &'a str, fields: HashMap<&str, &Field>) -> Option<(KeyIter<'a>, TypeIter)> {
+        if fields.contains_key(name) {
+            return Some((Box::new([name].into_iter()), Box::new(std::iter::empty())));
+        }
+
+        let mut prev_dot_idx = name.len();
+
+        while let Some(dot_idx) = name[..prev_dot_idx].rfind('.') {
+            let prefix = &name[..dot_idx];
+            let suffix = &name[dot_idx + 1..];
+
+            if let Some(f) = fields.get(prefix) {
+                match &f.dtype {
+                    DataType::Struct(child_fields) => {
+                        let child_fields = child_fields
+                            .iter()
+                            .map(|f| (f.name.as_str(), f))
+                            .collect::<HashMap<_, _>>();
+
+                        if let Some((key_iter, type_iter)) = helper(suffix, child_fields) {
+                            return Some((
+                                Box::new([prefix].into_iter().chain(key_iter)),
+                                Box::new([GetType::Struct].into_iter().chain(type_iter)),
+                            ));
+                        }
+                    }
+                    DataType::Map(key_dtype, _) if **key_dtype == DataType::Utf8 => {
+                        return Some((
+                            Box::new([prefix, suffix].into_iter()),
+                            Box::new([GetType::Map].into_iter()),
+                        ))
+                    }
+                    _ => {}
+                }
+            }
+
+            prev_dot_idx = dot_idx;
+        }
+
+        None
+    }
+
+    let fields = schema
+        .fields
+        .iter()
+        .map(|(k, v)| (k.as_str(), v))
+        .collect::<HashMap<_, _>>();
+
+    if let Some((mut key_iter, type_iter)) = helper(name, fields) {
+        let mut get_expr = col(key_iter.next().unwrap());
+
+        for (key, get_type) in key_iter.zip(type_iter) {
+            get_expr = match get_type {
+                GetType::Struct => struct_get(get_expr, key),
+                GetType::Map => map_get(get_expr, lit(key)),
+            };
+        }
+
+        get_expr
+    } else {
+        // the column doesn't exist if we reach here, but we'll defer it to a later stage which will catch that
+        col(name)
+    }
+}
+
 impl LogicalPlanBuilder {
+    /// Substitute out struct and map getter syntactic sugar
+    fn substitute_getter_sugar(&self, expr: ExprRef) -> ExprRef {
+        expr.transform(|e| match e.as_ref() {
+            Expr::Column(name) => Ok(Transformed::yes(col_name_to_get_expr(name, &self.schema()))),
+            _ => Ok(Transformed::no(e)),
+        })
+        .data()
+        .unwrap()
+    }
+
+    fn substitute_getter_sugars_vec(&self, exprs: Vec<ExprRef>) -> Vec<ExprRef> {
+        exprs
+            .into_iter()
+            .map(|e| self.substitute_getter_sugar(e))
+            .collect()
+    }
+
     #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
@@ -203,6 +322,8 @@ impl LogicalPlanBuilder {
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         err_if_agg("project", &to_select)?;
 
+        let to_select = self.substitute_getter_sugars_vec(to_select);
+
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
         Ok(logical_plan.into())
@@ -214,6 +335,8 @@ impl LogicalPlanBuilder {
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
         err_if_agg("with_columns", &columns)?;
+
+        let columns = self.substitute_getter_sugars_vec(columns);
 
         let new_col_names = columns.iter().map(|e| e.name()).collect::<HashSet<&str>>();
 
@@ -261,6 +384,8 @@ impl LogicalPlanBuilder {
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
         err_if_agg("filter", &vec![predicate.to_owned()])?;
 
+        let predicate = self.substitute_getter_sugar(predicate);
+
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
@@ -275,6 +400,8 @@ impl LogicalPlanBuilder {
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         err_if_agg("explode", &to_explode)?;
 
+        let to_explode = self.substitute_getter_sugars_vec(to_explode);
+
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
@@ -287,6 +414,12 @@ impl LogicalPlanBuilder {
         variable_name: &str,
         value_name: &str,
     ) -> DaftResult<Self> {
+        err_if_agg("unpivot", &ids)?;
+        err_if_agg("unpivot", &values)?;
+
+        let ids = self.substitute_getter_sugars_vec(ids);
+        let values = self.substitute_getter_sugars_vec(values);
+
         let values = if values.is_empty() {
             let ids_set = HashSet::<_>::from_iter(ids.iter());
 
@@ -332,6 +465,8 @@ impl LogicalPlanBuilder {
         partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
         err_if_agg("hash_repartition", &partition_by)?;
+
+        let partition_by = self.substitute_getter_sugars_vec(partition_by);
 
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
@@ -380,6 +515,11 @@ impl LogicalPlanBuilder {
         agg_exprs: Vec<ExprRef>,
         groupby_exprs: Vec<ExprRef>,
     ) -> DaftResult<Self> {
+        err_if_agg("groupby", &groupby_exprs)?;
+
+        let agg_exprs = self.substitute_getter_sugars_vec(agg_exprs);
+        let groupby_exprs = self.substitute_getter_sugars_vec(groupby_exprs);
+
         let agg_exprs = agg_exprs
             .iter()
             .map(|v| v.as_ref())
@@ -399,6 +539,17 @@ impl LogicalPlanBuilder {
         agg_expr: ExprRef,
         names: Vec<String>,
     ) -> DaftResult<Self> {
+        err_if_agg("pivot", &group_by)?;
+        err_if_agg(
+            "pivot",
+            &vec![pivot_column.to_owned(), value_column.to_owned()],
+        )?;
+
+        let group_by = self.substitute_getter_sugars_vec(group_by);
+        let pivot_column = self.substitute_getter_sugar(pivot_column);
+        let value_column = self.substitute_getter_sugar(value_column);
+        let agg_expr = self.substitute_getter_sugar(agg_expr);
+
         let agg_expr = extract_and_check_agg_expr(agg_expr.as_ref())?;
         let pivot_logical_plan: LogicalPlan = logical_ops::Pivot::try_new(
             self.plan.clone(),
@@ -422,6 +573,9 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         err_if_agg("join", &left_on)?;
         err_if_agg("join", &right_on)?;
+
+        let left_on = self.substitute_getter_sugars_vec(left_on);
+        let right_on = right.substitute_getter_sugars_vec(right_on);
 
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -458,6 +612,8 @@ impl LogicalPlanBuilder {
         if let Some(partition_cols) = &partition_cols {
             err_if_agg("table_write", partition_cols)?;
         }
+
+        let partition_cols = partition_cols.map(|cols| self.substitute_getter_sugars_vec(cols));
 
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
@@ -862,5 +1018,141 @@ impl PyLogicalPlanBuilder {
 impl From<LogicalPlanBuilder> for PyLogicalPlanBuilder {
     fn from(plan: LogicalPlanBuilder) -> Self {
         Self::new(plan)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_col_name_to_get_expr() -> DaftResult<()> {
+        use daft_dsl::{
+            functions::{map::get as map_get, struct_::get as struct_get},
+            lit,
+        };
+
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
+
+        assert_eq!(col_name_to_get_expr("a", &schema), col("a"));
+        assert_eq!(col_name_to_get_expr("a.b", &schema), col("a.b"));
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new("b", DataType::Int64)]),
+        )])?);
+
+        assert_eq!(col_name_to_get_expr("a", &schema), col("a"));
+        assert_eq!(
+            col_name_to_get_expr("a.b", &schema),
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(col_name_to_get_expr("a.c", &schema), col("a.c"));
+        assert_eq!(col_name_to_get_expr("a.b.c", &schema), col("a.b.c"));
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new(
+                "b",
+                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+            )]),
+        )])?);
+
+        assert_eq!(
+            col_name_to_get_expr("a.b", &schema),
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new(
+                    "b",
+                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+                )]),
+            ),
+            Field::new("a.b", DataType::Int64),
+        ])?);
+
+        assert_eq!(col_name_to_get_expr("a.b", &schema), col("a.b"));
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+        )])?);
+
+        assert_eq!(col_name_to_get_expr("a", &schema), col("a"));
+        assert_eq!(
+            col_name_to_get_expr("a.b", &schema),
+            map_get(col("a"), lit("b"))
+        );
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            map_get(col("a"), lit("b.c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+            ),
+            Field::new("a.b", DataType::Int64),
+        ])?);
+
+        assert_eq!(col_name_to_get_expr("a.b", &schema), col("a.b"));
+
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            map_get(col("a"), lit("b.c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new(
+                    "b",
+                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+                )]),
+            ),
+            Field::new(
+                "a.b",
+                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+            ),
+        ])?);
+
+        assert_eq!(col_name_to_get_expr("a.b", &schema), col("a.b"));
+
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            map_get(col("a.b"), lit("c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new(
+                "b",
+                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+            )]),
+        )])?);
+
+        assert_eq!(
+            col_name_to_get_expr("a.b", &schema),
+            struct_get(col("a"), "b")
+        );
+
+        assert_eq!(
+            col_name_to_get_expr("a.b.c", &schema),
+            map_get(struct_get(col("a"), "b"), lit("c"))
+        );
+
+        Ok(())
     }
 }

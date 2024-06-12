@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use arrow2::datatypes::DataType as ArrowType;
+use arrow2::datatypes::{DataType as ArrowType, Field as ArrowField};
 
 use crate::datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
@@ -77,7 +77,7 @@ pub enum DataType {
     /// A nested [`DataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
-    Map(Box<DataType>),
+    Map(Box<DataType>, Box<DataType>),
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
@@ -158,10 +158,13 @@ impl DataType {
             DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
-            DataType::Map(field) => Ok(ArrowType::Map(
-                Box::new(arrow2::datatypes::Field::new(
-                    "item",
-                    field.to_arrow()?,
+            DataType::Map(key_type, value_type) => Ok(ArrowType::Map(
+                Box::new(ArrowField::new(
+                    "entries",
+                    ArrowType::Struct(vec![
+                        ArrowField::new("key", key_type.to_arrow()?, true),
+                        ArrowField::new("value", value_type.to_arrow()?, true),
+                    ]),
                     true,
                 )),
                 false,
@@ -211,7 +214,10 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
-            Map(child_dtype) => List(Box::new(child_dtype.to_physical())),
+            Map(key_dtype, value_dtype) => List(Box::new(Struct(vec![
+                Field::new("key", key_dtype.to_physical()),
+                Field::new("value", value_dtype.to_physical()),
+            ]))),
             Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
@@ -469,7 +475,21 @@ impl From<&ArrowType> for DataType {
             ArrowType::FixedSizeList(field, size) => {
                 DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
-            ArrowType::Map(field, ..) => DataType::Map(Box::new(field.as_ref().data_type().into())),
+            ArrowType::Map(field, ..) => {
+                if let ArrowType::Struct(child_fields) = &field.data_type {
+                    assert!(
+                        child_fields.len() == 2,
+                        "Arrow map field must have 2 children"
+                    );
+
+                    DataType::Map(
+                        Box::new(child_fields[0].data_type().into()),
+                        Box::new(child_fields[1].data_type().into()),
+                    )
+                } else {
+                    panic!("Arrow map field is not a struct: {field:?}")
+                }
+            }
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)

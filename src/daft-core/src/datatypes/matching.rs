@@ -30,7 +30,7 @@ macro_rules! with_match_daft_types {(
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
         List(_) => __with_ty__! { ListType },
         Struct(_) => __with_ty__! { StructType },
-        Map(_) => __with_ty__! { MapType },
+        Map(..) => __with_ty__! { MapType },
         Extension(_, _, _) => __with_ty__! { ExtensionType },
         #[cfg(feature = "python")]
         Python => __with_ty__! { PythonType },
