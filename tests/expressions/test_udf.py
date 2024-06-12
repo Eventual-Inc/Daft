@@ -110,8 +110,10 @@ def test_udf_error():
 
     expr = throw_value_err(col("a"))
 
-    with pytest.raises(ValueError, match="AN ERROR OCCURRED!"):
+    with pytest.raises(RuntimeError) as exc_info:
         table.eval_expression_list([expr])
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
 
 
 def test_no_args_udf_call():
