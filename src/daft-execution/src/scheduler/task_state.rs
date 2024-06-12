@@ -111,60 +111,9 @@ impl<T: PartitionRef> SubmittableTask<T> {
     }
 
     pub fn finalize_for_submission(self) -> (Task<T>, RunningTask<T>) {
-        let task = match self.node.as_ref() {
-            OpStateNode::LeafScan(leaf) => {
-                assert_eq!(self.input_slices.len(), 1);
-                let num_inputs = self.input_slices[0].get();
-                let inputs = (0..num_inputs)
-                    .map(|_| leaf.inputs.borrow_mut().pop_front().unwrap().item)
-                    .collect();
-                Task::ScanTask(PartitionTask::new(
-                    inputs,
-                    leaf.task_op.clone(),
-                    self.resource_request,
-                ))
-            }
-            OpStateNode::LeafMemory(leaf) => {
-                let inputs = self
-                    .input_slices
-                    .into_iter()
-                    .zip(leaf.inputs.iter())
-                    .map(|(num_inputs, input)| {
-                        let inputs = (0..num_inputs.get())
-                            .map(|_| input.borrow_mut().pop_front().unwrap().item)
-                            .collect::<Vec<_>>();
-                        // TODO(Clark): Support Vec<Vec<T>> inputs for bundling ops.
-                        assert_eq!(inputs.len(), 1);
-                        inputs.into_iter().next().unwrap()
-                    })
-                    .collect::<Vec<_>>();
-                Task::PartitionTask(PartitionTask::new(
-                    inputs,
-                    leaf.task_op.clone().unwrap(),
-                    self.resource_request,
-                ))
-            }
-            OpStateNode::Inner(inner) => {
-                let inputs = self
-                    .input_slices
-                    .into_iter()
-                    .zip(inner.inputs.iter())
-                    .map(|(num_inputs, input)| {
-                        let inputs = (0..num_inputs.get())
-                            .map(|_| input.borrow_mut().pop_front().unwrap().item)
-                            .collect::<Vec<_>>();
-                        // TODO(Clark): Support Vec<Vec<T>> inputs for bundling ops.
-                        assert_eq!(inputs.len(), 1);
-                        inputs.into_iter().next().unwrap()
-                    })
-                    .collect::<Vec<_>>();
-                Task::PartitionTask(PartitionTask::new(
-                    inputs,
-                    inner.task_op.clone(),
-                    self.resource_request,
-                ))
-            }
-        };
+        let task = self
+            .node
+            .create_task(self.input_slices, self.resource_request);
         let task_id = task.task_id();
         (task, RunningTask::new(self.node, task_id))
     }

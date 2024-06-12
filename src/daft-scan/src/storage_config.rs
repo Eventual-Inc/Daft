@@ -102,6 +102,12 @@ impl NativeStorageConfig {
     }
 }
 
+impl Default for NativeStorageConfig {
+    fn default() -> Self {
+        Self::new_internal(true, None)
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl NativeStorageConfig {

@@ -3,7 +3,7 @@ use std::collections::{BinaryHeap, VecDeque};
 #[derive(Debug, Clone)]
 pub struct OrderedDequeItem<T: Clone> {
     pub item: T,
-    pub seqno: usize,
+    pub seqno: i64,
 }
 
 impl<T: Clone> PartialEq for OrderedDequeItem<T> {
@@ -29,7 +29,10 @@ impl<T: Clone> Ord for OrderedDequeItem<T> {
 impl<T: Clone> From<(usize, T)> for OrderedDequeItem<T> {
     fn from(value: (usize, T)) -> Self {
         let (seqno, item) = value;
-        Self { item, seqno }
+        Self {
+            item,
+            seqno: -(seqno as i64),
+        }
     }
 }
 
@@ -53,9 +56,9 @@ impl<T: Clone> OrderedDeque<T> {
         let item: OrderedDequeItem<T> = item.into();
         self.buffer.push(item);
         while let Some(item) = self.buffer.peek()
-            && item.seqno == (self.last_seqno + 1) as usize
+            && -item.seqno == self.last_seqno + 1
         {
-            self.last_seqno = i64::try_from(item.seqno).unwrap();
+            self.last_seqno = -item.seqno;
             self.queue.push_back(self.buffer.pop().unwrap());
         }
     }

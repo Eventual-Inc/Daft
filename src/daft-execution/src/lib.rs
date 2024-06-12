@@ -11,6 +11,8 @@ mod partition;
 mod scheduler;
 mod stage;
 mod task;
+#[cfg(test)]
+mod test;
 mod tree;
 
 use common_error::DaftError;
