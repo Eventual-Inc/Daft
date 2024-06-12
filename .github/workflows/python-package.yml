@@ -699,6 +699,7 @@ jobs:
     - name: Run doctests
       run: |
         source activate
+        maturin develop
         pytest --doctest-modules --continue-on-collection-errors daft/
 
 
