@@ -15,6 +15,7 @@ use crate::partition::{
     virtual_partition::VirtualPartition,
 };
 
+// TODO(Clark): Scope this to per stage/execution?
 static TASK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]

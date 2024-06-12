@@ -188,13 +188,10 @@ impl<T: PartitionRef, E: Executor<T>, O: OutputChannel<T>>
                     break;
                 }
             }
-            // TODO(Clark): Tweak this timeout.
-            let timeout = tokio::time::sleep(Duration::from_millis(10));
-            tokio::pin!(timeout);
             // Wait loop.
             while !running_task_futures.is_empty() {
                 tokio::select! {
-                    // Bias polling order to be ctrl-c -> new task output -> timeout.
+                    // Bias polling order to be ctrl-c -> new task output.
                     biased;
                     // Break out of wait loop on SIGINT/SIGTERM.
                     // TODO(Clark): Lift this to stage runner.
@@ -236,11 +233,6 @@ impl<T: PartitionRef, E: Executor<T>, O: OutputChannel<T>>
                                 return;
                             }
                         }
-                    }
-                    // Only wait for a new future to finish for a total of 10ms, across all loops of this wait loop.
-                    _ = &mut timeout => {
-                        log::debug!("10ms future waiting window exhausted, running dispatch loop again.");
-                        break;
                     }
                 }
             }
