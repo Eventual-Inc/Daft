@@ -18,6 +18,7 @@ impl DataType {
             (Int64, Int64) | (Int64, Null) | (Null, Int64) => Ok(()),
             (UInt32, UInt32) | (UInt32, Null) | (Null, UInt32) => Ok(()),
             (UInt64, UInt64) | (UInt64, Null) | (Null, UInt64) => Ok(()),
+            // Floats are not typically used with bitwise operations
             _ => Err(()),
         }
         .map(|()| Boolean)
