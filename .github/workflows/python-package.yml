@@ -696,10 +696,10 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r requirements-dev.txt
-    - name: Set PYTHONPATH
-      run: echo "PYTHONPATH=$PYTHONPATH:$GITHUB_WORKSPACE" >> $GITHUB_ENV
     - name: Run doctests
-      run: pytest --doctest-modules --continue-on-collection-errors daft/
+      run: |
+        source activate
+        pytest --doctest-modules --continue-on-collection-errors daft/
 
 
   publish-coverage-reports:
