@@ -6,6 +6,12 @@ pub struct OrderedDequeItem<T: Clone> {
     pub seqno: i64,
 }
 
+impl<T: Clone> OrderedDequeItem<T> {
+    pub fn new(item: T, seqno: i64) -> Self {
+        Self { item, seqno }
+    }
+}
+
 impl<T: Clone> PartialEq for OrderedDequeItem<T> {
     fn eq(&self, other: &Self) -> bool {
         self.seqno == other.seqno
@@ -29,10 +35,7 @@ impl<T: Clone> Ord for OrderedDequeItem<T> {
 impl<T: Clone> From<(usize, T)> for OrderedDequeItem<T> {
     fn from(value: (usize, T)) -> Self {
         let (seqno, item) = value;
-        Self {
-            item,
-            seqno: -(seqno as i64),
-        }
+        Self::new(item, -(seqno as i64))
     }
 }
 
@@ -95,5 +98,95 @@ impl<T: Clone, I: Iterator<Item = OrderedDequeItem<T>>> From<I> for OrderedDeque
             deque.push_back(item);
         }
         deque
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::assert_matches::assert_matches;
+
+    use common_error::DaftResult;
+
+    use super::{OrderedDeque, OrderedDequeItem};
+
+    /// Test ordering semantics.
+    #[test]
+    fn ordering() -> DaftResult<()> {
+        let mut queue = OrderedDeque::<&str>::new();
+
+        // Add 4th item from front.
+        queue.push_back((3, "a"));
+        assert_eq!(queue.len(), 1);
+        assert!(!queue.is_empty());
+        // Should be buffered since we're missing the first three sequence numbers.
+        assert_eq!(queue.num_buffered(), 1);
+        assert_eq!(queue.num_ready(), 0);
+        assert_matches!(queue.front(), None);
+        assert_matches!(queue.pop_front(), None);
+
+        // Add 5th item from front.
+        queue.push_back((4, "b"));
+        assert_eq!(queue.len(), 2);
+        assert!(!queue.is_empty());
+        // Should be buffered since we're missing the first three sequence numbers.
+        assert_eq!(queue.num_buffered(), 2);
+        assert_eq!(queue.num_ready(), 0);
+        assert_matches!(queue.front(), None);
+        assert_matches!(queue.pop_front(), None);
+
+        // Add first item in sequence.
+        let item = (0, "c");
+        queue.push_back(item.clone());
+        assert_eq!(queue.len(), 3);
+        assert!(!queue.is_empty());
+        // 3rd and 4th items in sequence should still be buffered since we're missing the second item in sequence.
+        assert_eq!(queue.num_buffered(), 2);
+        // First item in sequence is ready.
+        assert_eq!(queue.num_ready(), 1);
+        let front_item: OrderedDequeItem<&str> = item.into();
+        // First item in sequence is at front of ready queue.
+        assert_matches!(queue.front(), Some(front_item));
+        // Pop first item in sequence from front of ready queue.
+        assert_matches!(queue.pop_front(), Some(front_item));
+        assert_eq!(queue.len(), 2);
+        // After popping, num_ready should be set back to 0.
+        assert_eq!(queue.num_ready(), 0);
+
+        // Add second item in sequence.
+        let item = (1, "d");
+        queue.push_back(item.clone());
+        assert_eq!(queue.len(), 3);
+        assert!(!queue.is_empty());
+        assert_eq!(queue.num_buffered(), 2);
+        // Ordered queue should remember that the first item in the sequence was observed, even though we've popped it
+        // out of the queue. So, the second item should be in the ready set.
+        assert_eq!(queue.num_ready(), 1);
+        // Second item should be new front item.
+        let front_item = OrderedDequeItem::from((1, "d"));
+        assert_matches!(queue.front(), Some(front_item));
+
+        // Add third item in sequence.
+        let item = (2, "e");
+        queue.push_back(item.clone());
+        assert_eq!(queue.len(), 4);
+        assert!(!queue.is_empty());
+        // We should have items 1, 2, 3, 4 in the queue and remember that we've already observed (and popped) items 0,
+        // so after adding item 2, all 4 items should be considered ready with no items buffered.
+        assert_eq!(queue.num_buffered(), 0);
+        assert_eq!(queue.num_ready(), 4);
+        // Item 2 should still be front item.
+        assert_matches!(queue.front(), Some(front_item));
+
+        // Consume items from queue in order.
+        // First one should be (1, "d"), defined above.
+        assert_matches!(queue.pop_front(), Some(front_item));
+        let front_item = OrderedDequeItem::from((2, "e"));
+        assert_matches!(queue.pop_front(), Some(front_item));
+        let front_item = OrderedDequeItem::from((3, "a"));
+        assert_matches!(queue.pop_front(), Some(front_item));
+        let front_item = OrderedDequeItem::from((4, "b"));
+        assert_matches!(queue.pop_front(), Some(front_item));
+        assert_matches!(queue.pop_front(), None);
+        Ok(())
     }
 }
