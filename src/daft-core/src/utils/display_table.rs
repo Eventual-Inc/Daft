@@ -99,8 +99,8 @@ pub fn make_schema_vertical_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table:
     }
 
     let header = vec![
-        comfy_table::Cell::new("Column Name").add_attribute(comfy_table::Attribute::Bold),
-        comfy_table::Cell::new("Type").add_attribute(comfy_table::Attribute::Bold),
+        comfy_table::Cell::new("Column Name"),
+        comfy_table::Cell::new("Type"),
     ];
     table.set_header(header);
 
@@ -158,21 +158,18 @@ pub fn make_comfy_table<F: AsRef<Field>>(
             comfy_table::Cell::new(
                 format!("{}\n---\n{}", field.as_ref().name, field.as_ref().dtype).as_str(),
             )
-            .add_attribute(comfy_table::Attribute::Bold)
         })
         .collect::<Vec<_>>();
     if tail_cols > 0 {
         let unseen_cols = num_columns - (head_cols + tail_cols);
         header.push(
             comfy_table::Cell::new(format!("{DOTS}\n\n({unseen_cols} hidden)"))
-                .add_attribute(comfy_table::Attribute::Bold)
                 .set_alignment(comfy_table::CellAlignment::Center),
         );
         header.extend(fields.iter().skip(num_columns - tail_cols).map(|field| {
             comfy_table::Cell::new(
                 format!("{}\n---\n{}", field.as_ref().name, field.as_ref().dtype).as_str(),
             )
-            .add_attribute(comfy_table::Attribute::Bold)
         }))
     }
 

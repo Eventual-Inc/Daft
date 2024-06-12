@@ -96,7 +96,24 @@ def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name
 
     Example:
-        >>> col("x")
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df = df.select(daft.col("x"))
+        >>> df.show()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ├╌╌╌╌╌╌╌┤
+        │ 3     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
 
     Args:
         name: Name of column

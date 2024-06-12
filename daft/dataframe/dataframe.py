@@ -1203,8 +1203,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
-        """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
+        """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
+
         Example:
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
             >>> df.drop_na()  # drops rows where any column contains NaN values
@@ -1240,13 +1241,15 @@ class DataFrame:
 
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
-        """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+        """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
+
         Example:
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
             >>> df.drop_null()  # drops rows where any column contains Null/NaN values
             >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
             >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
+
         Args:
             *cols (str): column names by which rows containing nans should be filtered
 
