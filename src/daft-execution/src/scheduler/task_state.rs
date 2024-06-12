@@ -13,6 +13,8 @@ pub fn all_unordered_submittable_tasks<T: PartitionRef>(
     // TODO(Clark): Implement once we want to support out-of-order execution.
     std::iter::empty()
 }
+
+/// Get next submittable task for an operator, respecting order of input partitions.
 pub fn next_in_order_submittable_task<T: PartitionRef>(
     state: Rc<OpStateNode<T>>,
 ) -> Option<SubmittableTask<T>> {

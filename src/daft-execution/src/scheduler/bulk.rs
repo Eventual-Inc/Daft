@@ -11,6 +11,11 @@ use crate::{
 
 use super::{channel::OutputChannel, streaming::StreamingPartitionTaskScheduler};
 
+/// A scheduler for a tree of pipelinable partition tasks that materializes the final outputs in bulk.
+///
+/// This task scheduler houses scheduling priorities for operators based on tree topology, input/output queue size,
+/// a task or operator's utilization of a particular resource, etc. Execution of individual partition tasks is
+/// performed by the executor, along with resource accounting and admission control.
 #[derive(Debug)]
 pub struct BulkPartitionTaskScheduler<T: PartitionRef, E: Executor<T>> {
     task_tree_root: OpNode,
@@ -34,6 +39,7 @@ impl<T: PartitionRef, E: Executor<T>> BulkPartitionTaskScheduler<T, E> {
         }
     }
 
+    /// Execute operator task tree to completion.
     pub async fn execute(self) -> DaftResult<Vec<Vec<T>>> {
         // Delegate to streaming scheduler, materializing all results in the output channel into a bulk vec.
         // TODO(Clark): When the need arises, create a dedicated bulk scheduler that optimizes for bulk materialization.
@@ -53,6 +59,7 @@ impl<T: PartitionRef, E: Executor<T>> BulkPartitionTaskScheduler<T, E> {
     }
 }
 
+/// Output channel that materializes all received output partition references to a vec.
 #[derive(Debug)]
 pub struct SendToVec<'a, T: PartitionRef> {
     out: &'a mut DaftResult<Vec<Vec<T>>>,
