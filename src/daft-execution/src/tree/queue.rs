@@ -39,6 +39,7 @@ impl<T: Clone> From<(usize, T)> for OrderedDequeItem<T> {
     }
 }
 
+/// An ordered queue that maintains ordering based on provided sequence numbers, rather than FIFO insertion order.
 #[derive(Debug)]
 pub struct OrderedDeque<T: Clone> {
     queue: VecDeque<OrderedDequeItem<T>>,

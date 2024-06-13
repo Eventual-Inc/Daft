@@ -5,10 +5,18 @@ use daft_scan::ScanTask;
 
 use super::{partition_ref::PartitionMetadata, PartitionRef};
 
+/// A virtual partition interface that can provide:
+/// 1. metadata for the partition,
+/// 2. the concrete materialized partition, which can be given as the input to a corresponding PartitionTaskOp.
+///
+/// This encompasses both PartitionRef implementations and ScanTasks.
 pub trait VirtualPartition: Clone {
     type TaskOpInput;
 
+    /// Metadata for partition.
     fn metadata(&self) -> PartitionMetadata;
+
+    /// Concrete materialized partition, which can be given as the input to a corresponding PartitionTaskOp.
     fn partition(&self) -> Arc<Self::TaskOpInput>;
 }
 
@@ -36,6 +44,7 @@ impl VirtualPartition for Arc<ScanTask> {
     }
 }
 
+/// A set of partitions represented as either PartitionRefs or ScanTasks.
 #[derive(Debug, Clone)]
 pub enum VirtualPartitionSet<T: PartitionRef> {
     PartitionRef(Vec<T>),

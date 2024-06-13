@@ -8,6 +8,7 @@ use crate::{
     stage::{ExchangeStage, SinkStage},
 };
 
+/// A runner for exchange stages.
 pub struct ExchangeStageRunner<T: PartitionRef> {
     stage: ExchangeStage<T>,
 }
@@ -34,6 +35,7 @@ impl<T: PartitionRef> ExchangeStageRunner<T> {
     }
 }
 
+/// A runner for sink stages.
 pub struct SinkStageRunner<T: PartitionRef, E: Executor<T> + 'static> {
     stage: SinkStage<T, E>,
 }

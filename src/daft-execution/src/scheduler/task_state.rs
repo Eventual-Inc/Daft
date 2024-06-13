@@ -76,10 +76,15 @@ pub fn next_in_order_submittable_task<T: PartitionRef>(
     }
 }
 
+/// A lightweight submittable task spec, containing the operator and input queue slice spec for the task, along with
+/// a finalized resource request.
 #[derive(Debug)]
 pub struct SubmittableTask<T: PartitionRef> {
+    // Operator for the task.
     node: Rc<OpStateNode<T>>,
+    // Slice specification for the operator's input queues.
     input_slices: Vec<NonZeroUsize>,
+    // Resource request for task.
     resource_request: ResourceRequest,
 }
 
@@ -112,6 +117,8 @@ impl<T: PartitionRef> SubmittableTask<T> {
         self.node.num_queued_outputs()
     }
 
+    /// Finalize the submittable task into a pair of a task that can be run by an executor + a scheduler-side running
+    /// task state.
     pub fn finalize_for_submission(self) -> (Task<T>, RunningTask<T>) {
         let task = self
             .node
@@ -121,10 +128,15 @@ impl<T: PartitionRef> SubmittableTask<T> {
     }
 }
 
+/// A scheduler-side running task state.
 #[derive(Debug)]
 pub struct RunningTask<T: PartitionRef> {
+    // Operator state node for the task.
     pub node: Rc<OpStateNode<T>>,
+    // ID of the task.
     pub task_id: usize,
+    // The sequence number for the output, which the scheduler/operator state node can use to maintain partition
+    // ordering.
     pub output_seq_no: usize,
 }
 

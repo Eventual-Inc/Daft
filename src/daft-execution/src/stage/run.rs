@@ -22,6 +22,7 @@ use super::{
     runner::{ExchangeStageRunner, SinkStageRunner},
 };
 
+/// Run a stage locally and synchronously, with all tasks executed serially.
 pub fn run_local_sync(
     query_stage: &QueryStageOutput,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -31,6 +32,7 @@ pub fn run_local_sync(
     run_local(query_stage, psets, executor)
 }
 
+/// Run a stage locally and asynchronously, with tasks executed on a local threadpool.
 pub fn run_local_async(
     query_stage: &QueryStageOutput,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -48,6 +50,7 @@ pub fn run_local_async(
     run_local(query_stage, psets, executor)
 }
 
+/// Shared utility for running a stage locally on some local executor.
 fn run_local<E: Executor<LocalPartitionRef> + 'static>(
     query_stage: &QueryStageOutput,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -79,7 +82,6 @@ fn run_local<E: Executor<LocalPartitionRef> + 'static>(
             Ok(Box::new(out.into_iter().map(|part| Ok(part.partition()))))
         }
         Stage::Sink(sink_stage) => {
-            // TODO(Clark): Change to a tokio bounded mpsc queue once we decide on a streaming consumer backpressure policy.
             let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<Vec<LocalPartitionRef>>>(
                 sink_stage.buffer_size(),
             );

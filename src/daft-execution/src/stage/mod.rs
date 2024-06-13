@@ -16,6 +16,9 @@ use sink::SinkSpec;
 
 static STAGE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// A stage involving an exchange op, such as a sort or shuffle.
+///
+/// Exchange ops fully materialize their outputs.
 pub struct ExchangeStage<T: PartitionRef> {
     pub op: Box<dyn Exchange<T>>,
     pub inputs: Vec<VirtualPartitionSet<T>>,
@@ -33,6 +36,9 @@ impl<T: PartitionRef> ExchangeStage<T> {
     }
 }
 
+/// A stage involving a sink op, such as a streaming collect or limit.
+///
+/// Sink ops stream their outputs.
 pub struct SinkStage<T: PartitionRef, E: Executor<T> + 'static> {
     pub op: Box<dyn SinkSpec<T, E> + Send>,
     pub inputs: Vec<VirtualPartitionSet<T>>,
@@ -54,6 +60,7 @@ impl<T: PartitionRef, E: Executor<T> + 'static> SinkStage<T, E> {
     }
 }
 
+/// An execution stage.
 pub enum Stage<T: PartitionRef, E: Executor<T> + 'static> {
     Exchange(ExchangeStage<T>),
     Sink(SinkStage<T, E>),

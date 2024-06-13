@@ -18,6 +18,7 @@ use crate::partition::{
 // TODO(Clark): Scope this to per stage/execution?
 static TASK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Executable task, with variants for ScanTask and PartitionRef inputs.
 #[derive(Debug)]
 pub enum Task<T: PartitionRef> {
     ScanTask(PartitionTask<Arc<ScanTask>>),
@@ -54,12 +55,17 @@ impl<T: PartitionRef> Task<T> {
     }
 }
 
+/// Executable partition task.
 #[derive(Debug)]
 pub struct PartitionTask<V: VirtualPartition> {
+    // Inputs for task, either ScanTasks or PartitionRefs.
     inputs: Vec<V>,
+    // Task op that can execute on either ScanTasks or MicroPartitions as inputs.
     task_op: Arc<dyn PartitionTaskOp<Input = V::TaskOpInput>>,
+    // Resource request for task.
     resource_request: ResourceRequest,
     // partial_metadata: PartitionMetadata,
+    // ID for task.
     task_id: usize,
 }
 
@@ -82,6 +88,7 @@ impl<V: VirtualPartition> PartitionTask<V> {
         }
     }
 
+    /// Repack components into a PartitionTask.
     pub fn repack(
         inputs: Vec<V>,
         task_op: Arc<dyn PartitionTaskOp<Input = V::TaskOpInput>>,
@@ -109,6 +116,7 @@ impl<V: VirtualPartition> PartitionTask<V> {
         self.task_id
     }
 
+    /// Execute task.
     pub fn execute(self) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let inputs = self
             .inputs
@@ -118,6 +126,7 @@ impl<V: VirtualPartition> PartitionTask<V> {
         self.task_op.execute(&inputs)
     }
 
+    /// Unpack components for serialization.
     pub fn unpack(
         self,
     ) -> (

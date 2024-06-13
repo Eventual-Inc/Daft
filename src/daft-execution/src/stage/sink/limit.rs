@@ -54,12 +54,14 @@ impl<T: PartitionRef, E: Executor<T> + 'static> Sink<T> for LimitSink<T, E> {
         output_channel: tokio::sync::mpsc::Sender<DaftResult<Vec<T>>>,
     ) {
         let limit = self.spec.limit;
+        /// Set the channel buffer size to be 1 to prevent piling up of outputs in the channel.
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let wrapper = SenderWrapper(tx);
         let task_scheduler = StreamingPartitionTaskScheduler::new(
             self.spec.task_graph,
             inputs,
             wrapper,
+            // Set the max output queue size for each operator to be 1 to enforce strict streaming execution.
             Some(1),
             self.executor.clone(),
         );
@@ -76,6 +78,7 @@ impl<T: PartitionRef, E: Executor<T> + 'static> Sink<T> for LimitSink<T, E> {
                         running_num_rows += p[0].metadata().num_rows.unwrap_or(0);
                     }
                     output_channel.send(part).await.unwrap();
+                    // If we've met the limit, early-terminate execution.
                     if running_num_rows >= limit {
                         break;
                     }
