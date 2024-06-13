@@ -1,5 +1,7 @@
+mod is_inf;
 mod is_nan;
 
+use is_inf::IsInfEvaluator;
 use is_nan::IsNanEvaluator;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +12,7 @@ use super::FunctionEvaluator;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FloatExpr {
     IsNan,
+    IsInf,
 }
 
 impl FloatExpr {
@@ -18,6 +21,7 @@ impl FloatExpr {
         use FloatExpr::*;
         match self {
             IsNan => &IsNanEvaluator {},
+            IsInf => &IsInfEvaluator {},
         }
     }
 }
@@ -25,6 +29,14 @@ impl FloatExpr {
 pub fn is_nan(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Float(FloatExpr::IsNan),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn is_inf(data: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Float(FloatExpr::IsInf),
         inputs: vec![data],
     }
     .into()

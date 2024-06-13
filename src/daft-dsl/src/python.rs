@@ -475,6 +475,11 @@ impl PyExpr {
         Ok(is_nan(self.into()).into())
     }
 
+    pub fn is_inf(&self) -> PyResult<Self> {
+        use functions::float::is_inf;
+        Ok(is_inf(self.into()).into())
+    }
+
     pub fn dt_date(&self) -> PyResult<Self> {
         use functions::temporal::date;
         Ok(date(self.into()).into())

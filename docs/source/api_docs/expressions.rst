@@ -146,6 +146,20 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.ilike
    Expression.str.substr
 
+.. _api-float-expression-operations:
+
+Floats
+#######
+
+The following methods are available under the ``expr.float`` attribute.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.float.is_inf
+
 .. _api-expressions-temporal:
 
 Temporal
