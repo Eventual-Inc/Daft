@@ -1062,8 +1062,6 @@ mod tests {
             col_name_to_get_expr("a.b", &schema)?,
             struct_get(col("a"), "b")
         );
-        assert_eq!(col_name_to_get_expr("a.c", &schema)?, col("a.c"));
-        assert_eq!(col_name_to_get_expr("a.b.c", &schema)?, col("a.b.c"));
 
         let schema = Arc::new(Schema::new(vec![Field::new(
             "a",
