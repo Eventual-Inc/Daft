@@ -27,11 +27,9 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
-
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
-property = property
-if os.getenv("DAFT_SPHINX_BUILD") == "1":
+elif os.getenv("DAFT_SPHINX_BUILD") == "1":
     from typing import Any
 
     # when building docs (with Sphinx) we need access to the functions
