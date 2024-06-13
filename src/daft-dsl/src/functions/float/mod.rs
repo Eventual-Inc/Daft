@@ -1,10 +1,10 @@
-mod is_inf;
 mod fill_nan;
+mod is_inf;
 mod is_nan;
 mod not_nan;
 
-use is_inf::IsInfEvaluator;
 use fill_nan::FillNanEvaluator;
+use is_inf::IsInfEvaluator;
 use is_nan::IsNanEvaluator;
 use not_nan::NotNanEvaluator;
 use serde::{Deserialize, Serialize};
