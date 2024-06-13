@@ -228,8 +228,8 @@ impl<T: PartitionRef, E: Executor<T>, O: OutputChannel<T>>
                     break;
                 }
             }
-            // Wait loop.
-            while !running_task_futures.is_empty() {
+            // Wait for task to finish.
+            if !running_task_futures.is_empty() {
                 tokio::select! {
                     // Bias polling order to be ctrl-c -> new task output.
                     biased;
@@ -238,7 +238,6 @@ impl<T: PartitionRef, E: Executor<T>, O: OutputChannel<T>>
                     _ = tokio::signal::ctrl_c() => {
                         log::info!("Received ctrl-c signal, exiting scheduler.");
                         shutdown = true;
-                        break;
                     }
                     // Wait for tasks to finish.
                     Some(result) = running_task_futures.next() => {
@@ -246,8 +245,19 @@ impl<T: PartitionRef, E: Executor<T>, O: OutputChannel<T>>
                             Ok((task_id, result)) => (task_id, result),
                             Err(e) => {
                                 // Send error to output channel.
-                                self.output_channel.send_output(Err(e)).await.unwrap();
-                                continue;
+                                if let Err(e) = self.output_channel.send_output(Err(e)).await {
+                                    // Handle early termination due to the consumer being done.
+                                    log::info!(
+                                        "Early-terminating scheduling due to consumer being done, unable to propagate error: {:?}",
+                                        e
+                                    );
+                                }
+                                log::info!(
+                                    "Scheduling loop ran {} times, running {} tasks",
+                                    num_scheduling_loop_runs,
+                                    num_tasks_run
+                                );
+                                return;
                             }
                         };
                         // Remove from in-flight tasks.
@@ -326,10 +336,14 @@ pub struct SenderWrapper<T: PartitionRef>(pub tokio::sync::mpsc::Sender<DaftResu
 #[async_trait(?Send)]
 impl<T: PartitionRef> OutputChannel<T> for SenderWrapper<T> {
     async fn send_output(&mut self, output: DaftResult<Vec<T>>) -> DaftResult<()> {
-        self.0.send(output).await.map_err(|_| {
-            // NOTE: We don't use a Snafu contextual error here since we don't want to have to make T send + sync everywhere,
-            // and we currently don't need the unsent value anyway.
-            DaftError::InternalError("Receiver dropped before done sending".to_string())
+        self.0.send(output).await.map_err(|out| match out.0 {
+            Ok(_) => {
+                DaftError::InternalError("Receiver dropped before done sending result".to_string())
+            }
+            Err(e) => DaftError::InternalError(format!(
+                "Receiver dropped before done sending error: {:?}",
+                e
+            )),
         })
     }
 }
