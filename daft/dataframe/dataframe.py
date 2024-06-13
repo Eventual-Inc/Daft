@@ -768,7 +768,8 @@ class DataFrame:
             assert result is not None
             return result
         elif isinstance(item, str):
-            return col(item)
+            column = col(item)
+            return self._builder.substitute_getter_sugar(column)
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 

@@ -115,6 +115,9 @@ class LogicalPlanBuilder:
         builder = _LogicalPlanBuilder.table_scan(scan_operator)
         return cls(builder)
 
+    def substitute_getter_sugar(self, expr: Expression) -> Expression:
+        return Expression._from_pyexpr(self._builder.substitute_getter_sugar(expr._expr))
+
     def select(
         self,
         to_select: list[Expression],
