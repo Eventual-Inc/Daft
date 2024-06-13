@@ -635,6 +635,9 @@ class SeriesFloatNamespace(SeriesNamespace):
     def is_nan(self) -> Series:
         return Series._from_pyseries(self._series.is_nan())
 
+    def is_inf(self) -> Series:
+        return Series._from_pyseries(self._series.is_inf())
+
 
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:

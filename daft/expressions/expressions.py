@@ -803,6 +803,21 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.is_nan())
 
+    def is_inf(self) -> Expression:
+        """Checks if values in the Expression are Infinity.
+
+        .. NOTE::
+            Nulls will be propagated! I.e. this operation will return a null for null values.
+
+        Example:
+            >>> # [-float("inf"), 0., float("inf"), None] -> [True, False, True, None]
+            >>> col("x").float.is_inf()
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are Infinity.
+        """
+        return Expression._from_pyexpr(self._expr.is_inf())
+
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     def date(self) -> Expression:
