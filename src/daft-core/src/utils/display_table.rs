@@ -115,7 +115,7 @@ pub fn make_schema_vertical_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table:
         table.set_width(default_width_if_no_tty as u16);
     }
 
-    let header = vec![create_table_cell("Column_Name"), create_table_cell("Type")];
+    let header = vec![create_table_cell("Column Name"), create_table_cell("Type")];
     table.set_header(header);
 
     for f in fields.iter() {
