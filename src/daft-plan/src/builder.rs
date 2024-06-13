@@ -205,7 +205,10 @@ fn col_name_to_get_expr(name: &str, schema: &SchemaRef) -> DaftResult<ExprRef> {
                             ));
                         }
                     }
-                    DataType::Map(key_dtype, _) if **key_dtype == DataType::Utf8 => {
+                    DataType::Map(field)
+                        if let DataType::Struct(child_fields) = field.as_ref()
+                            && child_fields[0].dtype == DataType::Utf8 =>
+                    {
                         return Some((
                             Box::new([prefix, suffix].into_iter()),
                             Box::new([GetType::Map].into_iter()),
@@ -1099,7 +1102,10 @@ mod tests {
 
         let schema = Arc::new(Schema::new(vec![Field::new(
             "a",
-            DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+            DataType::Map(Box::new(DataType::Struct(vec![
+                Field::new("key", DataType::Utf8),
+                Field::new("value", DataType::Int64),
+            ]))),
         )])?);
 
         assert_eq!(col_name_to_get_expr("a", &schema)?, col("a"));
@@ -1115,7 +1121,10 @@ mod tests {
         let schema = Arc::new(Schema::new(vec![
             Field::new(
                 "a",
-                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
             ),
             Field::new("a.b", DataType::Int64),
         ])?);
@@ -1137,7 +1146,10 @@ mod tests {
             ),
             Field::new(
                 "a.b",
-                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
             ),
         ])?);
 
@@ -1152,7 +1164,10 @@ mod tests {
             "a",
             DataType::Struct(vec![Field::new(
                 "b",
-                DataType::Map(Box::new(DataType::Utf8), Box::new(DataType::Int64)),
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
             )]),
         )])?);
 

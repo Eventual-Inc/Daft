@@ -24,14 +24,23 @@ fn single_map_get(structs: &Series, key_to_get: &Series) -> DaftResult<Series> {
 
 impl MapArray {
     pub fn map_get(&self, key_to_get: &Series) -> DaftResult<Series> {
-        let value_type = match self.data_type() {
-            DataType::Map(_, value_type) => value_type,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Expected input to be a map type, got {:?}",
-                    self.data_type()
-                )))
+        let value_type = if let DataType::Map(inner_dtype) = self.data_type() {
+            match *inner_dtype.clone() {
+                DataType::Struct(fields) if fields.len() == 2 => {
+                    fields[1].dtype.clone()
+                }
+                _ => {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected inner type to be a struct type with two fields: key and value, got {:?}",
+                        inner_dtype
+                    )))
+                }
             }
+        } else {
+            return Err(DaftError::TypeError(format!(
+                "Expected input to be a map type, got {:?}",
+                self.data_type()
+            )));
         };
 
         match key_to_get.len() {
@@ -40,7 +49,7 @@ impl MapArray {
                 for series in self.physical.into_iter() {
                     match series {
                         Some(s) if !s.is_empty() => result.push(single_map_get(&s, key_to_get)?),
-                        _ => result.push(Series::full_null("value", value_type, 1)),
+                        _ => result.push(Series::full_null("value", &value_type, 1)),
                     }
                 }
                 Series::concat(&result.iter().collect::<Vec<_>>())
@@ -50,7 +59,7 @@ impl MapArray {
                 for (i, series) in self.physical.into_iter().enumerate() {
                     match (series, key_to_get.slice(i, i + 1)?) {
                         (Some(s), k) if !s.is_empty() => result.push(single_map_get(&s, &k)?),
-                        _ => result.push(Series::full_null("value", value_type, 1)),
+                        _ => result.push(Series::full_null("value", &value_type, 1)),
                     }
                 }
                 Series::concat(&result.iter().collect::<Vec<_>>())

@@ -21,29 +21,16 @@ impl FunctionEvaluator for GetEvaluator {
         match inputs {
             [input, key] => match (input.to_field(schema), key.to_field(schema)) {
                 (Ok(input_field), Ok(_)) => match input_field.dtype {
-                    DataType::Map(_, value_dtype) => {
-                        // TODO: Turn this on for v0.3
-                        // let field_name = match key.as_ref() {
-                        //     Expr::Literal(value)
-                        //         if matches!(
-                        //             value,
-                        //             LiteralValue::Null
-                        //                 | LiteralValue::Boolean(..)
-                        //                 | LiteralValue::Int32(..)
-                        //                 | LiteralValue::UInt32(..)
-                        //                 | LiteralValue::Int64(..)
-                        //                 | LiteralValue::UInt64(..)
-                        //         ) =>
-                        //     {
-                        //         format!("{}", value)
-                        //     }
-                        //     _ => "value".to_string(),
-                        // };
-
-                        let field_name = "value";
-
-                        Ok(Field::new(field_name, *value_dtype))
-                    }
+                    DataType::Map(inner) => match inner.as_ref() {
+                        DataType::Struct(fields) if fields.len() == 2 => {
+                            let value_dtype = &fields[1].dtype;
+                            Ok(Field::new("value", value_dtype.clone()))
+                        }
+                        _ => Err(DaftError::TypeError(format!(
+                            "Expected input map to have struct values with 2 fields, got {}",
+                            inner
+                        ))),
+                    },
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to be a map, got {}",
                         input_field.dtype
