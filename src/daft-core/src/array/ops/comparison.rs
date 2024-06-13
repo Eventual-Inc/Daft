@@ -18,6 +18,11 @@ use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 use super::as_arrow::AsArrow;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
+use arrow2::array::{
+    Int16Array, Int32Array, Int64Array, Int8Array, UInt16Array, UInt32Array, UInt64Array,
+    UInt8Array,
+};
+
 impl<T> PartialEq for DataArray<T>
 where
     T: DaftArrowBackedType + 'static,
@@ -751,23 +756,14 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-
-                let result_bitmap =
-                    arrow2::bitmap::xor(self.as_arrow().values(), rhs.as_arrow().values());
-                Ok(BooleanArray::from((
-                    self.name(),
-                    arrow2::array::BooleanArray::new(
-                        arrow2::datatypes::DataType::Boolean,
-                        result_bitmap,
-                        validity,
-                    ),
-                )))
+                let result = xor(self.as_arrow(), rhs.as_arrow()).with_validity(validity);
+                Ok(DataArray::from((self.name(), result)))
             }
             (l_size, 1) => {
                 if let Some(value) = rhs.get(0) {
                     self.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(
+                    Ok(DataArray::full_null(
                         self.name(),
                         &DataType::Boolean,
                         l_size,
@@ -778,7 +774,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = self.get(0) {
                     rhs.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(
+                    Ok(DataArray::full_null(
                         self.name(),
                         &DataType::Boolean,
                         r_size,
@@ -786,13 +782,64 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
-                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                "trying to compare different length arrays: {}:{} vs {}: {}",
                 self.name(),
-                rhs.name()
+                l,
+                rhs.name(),
+                r
             ))),
         }
     }
 }
+
+// Implementaing Daft Logic for Numeric values
+macro_rules! impl_daft_logical_for_integers {
+    ($type:ty) => {
+        impl DaftLogical for $type {
+            type Output = DaftResult<$type>;
+
+            fn and(&self, rhs: &Self) -> Self::Output {
+                let result_bitmap = self
+                    .values()
+                    .iter()
+                    .zip(rhs.values().iter())
+                    .map(|(a, b)| a & b)
+                    .collect::<Vec<_>>();
+                Ok(<$type>::from((self.name(), result_bitmap)))
+            }
+
+            fn or(&self, rhs: &Self) -> Self::Output {
+                let result_bitmap = self
+                    .values()
+                    .iter()
+                    .zip(rhs.values().iter())
+                    .map(|(a, b)| a | b)
+                    .collect::<Vec<_>>();
+                Ok(<$type>::from((self.name(), result_bitmap)))
+            }
+
+            fn xor(&self, rhs: &Self) -> Self::Output {
+                let result_bitmap = self
+                    .values()
+                    .iter()
+                    .zip(rhs.values().iter())
+                    .map(|(a, b)| a ^ b)
+                    .collect::<Vec<_>>();
+                Ok(<$type>::from((self.name(), result_bitmap)))
+            }
+        }
+    };
+}
+
+// Implement DaftLogical for various integer array types
+impl_daft_logical_for_integers!(Int8Array);
+impl_daft_logical_for_integers!(Int16Array);
+impl_daft_logical_for_integers!(Int32Array);
+impl_daft_logical_for_integers!(Int64Array);
+impl_daft_logical_for_integers!(UInt8Array);
+impl_daft_logical_for_integers!(UInt16Array);
+impl_daft_logical_for_integers!(UInt32Array);
+impl_daft_logical_for_integers!(UInt64Array);
 
 macro_rules! null_array_comparison_method {
     ($func_name:ident) => {

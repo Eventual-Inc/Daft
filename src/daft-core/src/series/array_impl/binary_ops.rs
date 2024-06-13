@@ -101,16 +101,47 @@ macro_rules! physical_logic_op {
         let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
-        if let Boolean = output_type {
-            match (&lhs.data_type(), &$rhs.data_type()) {
+        match output_type {
+            Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop)
                     .downcast::<BooleanArray>()
                     .cloned(),
                 _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanArray, $op),
-            }
-        } else {
-            unreachable!()
+            },
+            Int8 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (Int8, Int8) => cast_downcast_op!(lhs, $rhs, &Int8, Int8Array, $op),
+                _ => unreachable!(),
+            },
+            Int16 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (Int16, Int16) => cast_downcast_op!(lhs, $rhs, &Int16, Int16Array, $op),
+                _ => unreachable!(),
+            },
+            Int32 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (Int32, Int32) => cast_downcast_op!(lhs, $rhs, &Int32, Int32Array, $op),
+                _ => unreachable!(),
+            },
+            Int64 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (Int64, Int64) => cast_downcast_op!(lhs, $rhs, &Int64, Int64Array, $op),
+                _ => unreachable!(),
+            },
+            UInt8 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (UInt8, UInt8) => cast_downcast_op!(lhs, $rhs, &UInt8, UInt8Array, $op),
+                _ => unreachable!(),
+            },
+            UInt16 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (UInt16, UInt16) => cast_downcast_op!(lhs, $rhs, &UInt16, UInt16Array, $op),
+                _ => unreachable!(),
+            },
+            UInt32 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (UInt32, UInt32) => cast_downcast_op!(lhs, $rhs, &UInt32, UInt32Array, $op),
+                _ => unreachable!(),
+            },
+            UInt64 => match (&lhs.data_type(), &$rhs.data_type()) {
+                (UInt64, UInt64) => cast_downcast_op!(lhs, $rhs, &UInt64, UInt64Array, $op),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
         }
     }};
 }
