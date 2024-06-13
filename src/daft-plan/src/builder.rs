@@ -1046,7 +1046,11 @@ mod tests {
         let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
 
         assert_eq!(col_name_to_get_expr("a", &schema)?, col("a"));
-        assert_eq!(col_name_to_get_expr("a.b", &schema)?, col("a.b"));
+        assert!(col_name_to_get_expr("a.b", &schema).is_err());
+        assert!(matches!(
+            col_name_to_get_expr("a.b", &schema).unwrap_err(),
+            DaftError::ValueError(..)
+        ));
 
         let schema = Arc::new(Schema::new(vec![Field::new(
             "a",

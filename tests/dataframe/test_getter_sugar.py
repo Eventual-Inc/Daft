@@ -6,7 +6,7 @@ import daft
 from daft import col
 
 
-def test_get_sugar_struct():
+def test_getter_sugar_struct():
     df = daft.from_pydict({"a": [{"x": 1, "y": "one"}, {"x": 2, "y": "two"}]})
 
     df = df.select("a.x", "a.y")
@@ -14,19 +14,17 @@ def test_get_sugar_struct():
     assert df.to_pydict() == {"x": [1, 2], "y": ["one", "two"]}
 
 
-def test_get_sugar_map():
-    arrow_schema = pa.schema({"a": pa.map_(pa.string(), pa.int64())})
+def test_getter_sugar_map():
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
 
-    table = pa.table({"a": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]}, schema=arrow_schema)
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
 
-    df = daft.from_arrow(table)
+    df = df.select(col("map_col.a").alias("a"), col("map_col.b").alias("b"))
 
-    df = df.select(col("a.x").alias("x"), col("a.y").alias("y"))
-
-    assert df.to_pydict() == {"x": [1, 3], "y": [2, 4]}
+    assert df.to_pydict() == {"a": [1, None, None], "b": [None, None, 2]}
 
 
-def test_get_sugar_nested_struct():
+def test_getter_sugar_nested_struct():
     df = daft.from_pydict({"a": [{"b": {"c": 1}}, {"b": {"c": 2}}]})
 
     df = df.select("a.b", "a.b.c")
