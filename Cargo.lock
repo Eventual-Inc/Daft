@@ -1574,6 +1574,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 7.1.1",
+ "common-daft-config",
  "common-error",
  "daft-sketch",
  "dyn-clone",
