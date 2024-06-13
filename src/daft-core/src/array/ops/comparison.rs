@@ -756,14 +756,23 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                let result = xor(self.as_arrow(), rhs.as_arrow()).with_validity(validity);
-                Ok(DataArray::from((self.name(), result)))
+
+                let result_bitmap =
+                    arrow2::bitmap::xor(self.as_arrow().values(), rhs.as_arrow().values());
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_bitmap,
+                        validity,
+                    ),
+                )))
             }
             (l_size, 1) => {
                 if let Some(value) = rhs.get(0) {
                     self.xor(value)
                 } else {
-                    Ok(DataArray::full_null(
+                    Ok(BooleanArray::full_null(
                         self.name(),
                         &DataType::Boolean,
                         l_size,
@@ -774,7 +783,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = self.get(0) {
                     rhs.xor(value)
                 } else {
-                    Ok(DataArray::full_null(
+                    Ok(BooleanArray::full_null(
                         self.name(),
                         &DataType::Boolean,
                         r_size,
@@ -782,15 +791,14 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
-                "trying to compare different length arrays: {}:{} vs {}: {}",
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
                 self.name(),
-                l,
-                rhs.name(),
-                r
+                rhs.name()
             ))),
         }
     }
 }
+
 
 // Implementaing Daft Logic for Numeric values
 macro_rules! impl_daft_logical_for_integers {
