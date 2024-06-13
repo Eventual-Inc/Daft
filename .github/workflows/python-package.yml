@@ -675,6 +675,43 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
 
+  doctests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      python-version: '3.10'
+      DAFT_BOLD_TABLE_HEADERS: '0'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-build
+        cache-all-crates: 'true'
+    - name: Set up Python ${{ env.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: Run doctests
+      run: |
+        source activate
+        maturin develop
+        pytest --doctest-modules --continue-on-collection-errors daft/ || true
+
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
