@@ -68,6 +68,17 @@ Filters on non-partition columns will still benefit from automatic file pruning 
     df3 = df.where(df["num"] < 2)
     df3.show()
 
+Write to Delta Lake
+*******************
+
+You can use `write_deltalake` to write a Daft DataFrame to a Delta table:
+
+.. code:: python
+    df.write_deltalake("tmp/daft-table", mode="overwrite")
+
+
+Daft supports multiple write modes. See the API docs for :func:`daft.DataFrame.write_deltalake` for more details.
+
 Type System
 ***********
 
