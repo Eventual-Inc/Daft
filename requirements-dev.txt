@@ -52,6 +52,7 @@ deltalake==0.15.3; platform_system != "Windows" and python_version >= '3.8'
 
 # Databricks
 databricks-sdk==0.12.0
+unitycatalog==0.1.1
 
 #SQL
 sqlalchemy==2.0.25; python_version >= '3.8'

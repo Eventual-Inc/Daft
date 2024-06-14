@@ -22,7 +22,7 @@ readme = "README.rst"
 requires-python = ">=3.8"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql]"]
+all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
 deltalake = ["deltalake"]
@@ -40,6 +40,7 @@ ray = [
   "packaging"
 ]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
+unity = ["unitycatalog"]
 viz = []
 
 [project.urls]
