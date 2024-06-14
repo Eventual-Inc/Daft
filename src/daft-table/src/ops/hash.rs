@@ -103,4 +103,47 @@ impl Table {
         }
         Ok(probe_table)
     }
+
+    pub fn to_probe_hash_map_without_idx(
+        &self,
+    ) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+        let hashes = self.hash_rows()?;
+
+        const DEFAULT_SIZE: usize = 20;
+        let comparator = build_multi_array_is_equal(
+            self.columns.as_slice(),
+            self.columns.as_slice(),
+            true,
+            true,
+        )?;
+
+        let mut probe_table =
+            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+                DEFAULT_SIZE,
+                Default::default(),
+            );
+        // TODO(Sammy): Drop nulls using validity array if requested
+        for (i, h) in hashes.as_arrow().values_iter().enumerate() {
+            let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
+                (*h == other.hash) && {
+                    let j = other.idx;
+                    comparator(i, j as usize)
+                }
+            });
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(
+                        *h,
+                        IndexHash {
+                            idx: i as u64,
+                            hash: *h,
+                        },
+                        (),
+                    );
+                }
+                RawEntryMut::Occupied(mut entry) => {}
+            }
+        }
+        Ok(probe_table)
+    }
 }

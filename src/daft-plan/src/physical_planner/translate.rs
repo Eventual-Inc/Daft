@@ -558,6 +558,7 @@ pub(super) fn translate_single_logical_node(
                                 "Broadcast join does not support outer joins.".to_string(),
                             ));
                         }
+                        (JoinType::Anti | JoinType::Semi, _) => false, // TODO: IDK IF THIS IS RIGHT
                     };
 
                     if is_swapped {

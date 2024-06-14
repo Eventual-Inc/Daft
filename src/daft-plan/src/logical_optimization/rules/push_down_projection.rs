@@ -2,14 +2,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
-use daft_core::schema::Schema;
+use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
 use indexmap::IndexSet;
 
 use crate::{
-    logical_ops::{Aggregate, Pivot, Project, Source},
+    logical_ops::{Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
-    LogicalPlan, ResourceRequest,
+    LogicalPlan, LogicalPlanRef, ResourceRequest,
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
@@ -478,6 +478,52 @@ impl PushDownProjection {
         }
     }
 
+    fn try_optimize_join(
+        &self,
+        join: &Join,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // If this join prunes columns from its upstream,
+        // then explicitly create a projection to do so.
+        // this is the case for semi and anti joins.
+
+        if matches!(join.join_type, JoinType::Anti | JoinType::Semi) {
+            let required_cols = plan.required_columns();
+            let right_required_cols = required_cols
+                .get(1)
+                .expect("we expect 2 set of required columns for join");
+            let right_schema = join.right.schema();
+
+            if right_required_cols.len() < right_schema.fields.len() {
+                let new_subprojection: LogicalPlan = {
+                    let pushdown_column_exprs = right_required_cols
+                        .iter()
+                        .map(|s| col(s.as_str()))
+                        .collect::<Vec<_>>();
+
+                    Project::try_new(
+                        join.right.clone(),
+                        pushdown_column_exprs,
+                        Default::default(),
+                    )?
+                    .into()
+                };
+
+                let new_join = plan
+                    .with_new_children(&[(&join.left).clone(), new_subprojection.into()])
+                    .arced();
+
+                Ok(self
+                    .try_optimize(new_join.clone())?
+                    .or(Transformed::Yes(new_join)))
+            } else {
+                Ok(Transformed::No(plan))
+            }
+        } else {
+            Ok(Transformed::No(plan))
+        }
+    }
+
     fn try_optimize_pivot(
         &self,
         pivot: &Pivot,
@@ -524,6 +570,8 @@ impl OptimizerRule for PushDownProjection {
             LogicalPlan::Aggregate(aggregation) => {
                 self.try_optimize_aggregation(aggregation, plan.clone())
             }
+            // Joins also do column projection
+            LogicalPlan::Join(join) => self.try_optimize_join(join, plan.clone()),
             // Pivots also do column projection
             LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
             _ => Ok(Transformed::No(plan)),
