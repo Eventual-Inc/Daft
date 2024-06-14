@@ -12,7 +12,7 @@ from daft.logical.builder import LogicalPlanBuilder
 
 _UNITY_CATALOG_AVAILABLE = True
 try:
-    from daft.io.unity_catalog import UnityCatalogTable
+    from daft.unity_catalog import UnityCatalogTable
 except ImportError:
     _UNITY_CATALOG_AVAILABLE = False
 
@@ -31,7 +31,7 @@ def read_delta_lake(
 
 @PublicAPI
 def read_deltalake(
-    table: Union[str, DataCatalogTable, UnityCatalogTable],
+    table: Union[str, DataCatalogTable, "UnityCatalogTable"],
     io_config: Optional["IOConfig"] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:

@@ -74,6 +74,7 @@ Write to Delta Lake
 You can use `write_deltalake` to write a Daft DataFrame to a Delta table:
 
 .. code:: python
+
     df.write_deltalake("tmp/daft-table", mode="overwrite")
 
 
