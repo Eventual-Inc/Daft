@@ -67,22 +67,6 @@ Numeric
     Expression.ln
     Expression.exp
 
-.. _api-floating-expression-operations:
-
-Floats
-#######
-
-The following methods are available under the ``expr.float`` attribute.
-
-.. autosummary::
-   :nosignatures:
-   :toctree: doc_gen/expression_methods
-   :template: autosummary/accessor_method.rst
-
-    Expression.float.is_nan
-    Expression.float.not_nan
-    Expression.float.fill_nan
-
 .. _api-comparison-expression:
 
 Logical
@@ -177,6 +161,8 @@ The following methods are available under the ``expr.float`` attribute.
 
    Expression.float.is_inf
    Expression.float.is_nan
+   Expression.float.not_nan
+   Expression.float.fill_nan
 
 .. _api-expressions-temporal:
 
