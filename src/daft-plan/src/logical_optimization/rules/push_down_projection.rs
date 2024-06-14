@@ -9,7 +9,7 @@ use indexmap::IndexSet;
 use crate::{
     logical_ops::{Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
-    LogicalPlan, LogicalPlanRef, ResourceRequest,
+    LogicalPlan, ResourceRequest,
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
@@ -510,7 +510,7 @@ impl PushDownProjection {
                 };
 
                 let new_join = plan
-                    .with_new_children(&[(&join.left).clone(), new_subprojection.into()])
+                    .with_new_children(&[(join.left).clone(), new_subprojection.into()])
                     .arced();
 
                 Ok(self

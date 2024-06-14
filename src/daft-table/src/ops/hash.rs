@@ -141,7 +141,7 @@ impl Table {
                         (),
                     );
                 }
-                RawEntryMut::Occupied(mut entry) => {}
+                RawEntryMut::Occupied(_) => {}
             }
         }
         Ok(probe_table)

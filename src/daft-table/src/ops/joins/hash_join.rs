@@ -259,12 +259,16 @@ pub(super) fn hash_semi_anti_join(
         let mut left_idx = Vec::with_capacity(rows);
 
         for (l_idx, h) in l_hashes.as_arrow().values_iter().enumerate() {
-            if let Some(_) = probe_table.raw_entry().from_hash(*h, |other| {
-                *h == other.hash && {
-                    let r_idx = other.idx as usize;
-                    is_equal(l_idx as usize, r_idx)
-                }
-            }) {
+            if probe_table
+                .raw_entry()
+                .from_hash(*h, |other| {
+                    *h == other.hash && {
+                        let r_idx = other.idx as usize;
+                        is_equal(l_idx, r_idx)
+                    }
+                })
+                .is_some()
+            {
                 left_idx.push(l_idx as u64);
             }
         }
