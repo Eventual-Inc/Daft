@@ -892,30 +892,16 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn to_date(&self, format: &Utf8Array) -> DaftResult<DateArray> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[format])
-            .map_err(|e| DaftError::ValueError(format!("Error in to_date: {e}")))?;
-        if is_full_null {
-            return Ok(DateArray::full_null(
-                self.name(),
-                &DataType::Date,
-                expected_size,
-            ));
-        }
-        if expected_size == 0 {
-            return Ok(DateArray::empty(self.name(), &DataType::Date));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let format_iter = create_broadcasted_str_iter(format, expected_size);
+    pub fn to_date(&self, format: &str) -> DaftResult<DateArray> {
+        let len = self.len();
+        let self_iter = self.as_arrow().iter();
 
         let arrow_result = self_iter
-            .zip(format_iter)
-            .map(|(val, fmt)| match (val, fmt) {
-                (Some(val), Some(fmt)) => {
-                    let date = chrono::NaiveDate::parse_from_str(val, fmt).map_err(|e| {
+            .map(|val| match val {
+                Some(val) => {
+                    let date = chrono::NaiveDate::parse_from_str(val, format).map_err(|e| {
                         DaftError::ComputeError(format!(
-                            "Error in to_date: failed to parse date {val} with format {fmt} : {e}"
+                            "Error in to_date: failed to parse date {val} with format {format} : {e}"
                         ))
                     })?;
                     Ok(Some(
@@ -928,7 +914,7 @@ impl Utf8Array {
 
         let result = Int32Array::from((self.name(), Box::new(arrow_result)));
         let result = DateArray::new(Field::new(self.name(), DataType::Date), result);
-        assert_eq!(result.len(), expected_size);
+        assert_eq!(result.len(), len);
         Ok(result)
     }
 

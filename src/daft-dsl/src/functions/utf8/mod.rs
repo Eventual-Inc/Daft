@@ -82,7 +82,7 @@ pub enum Utf8Expr {
     Like,
     Ilike,
     Substr,
-    ToDate,
+    ToDate(String),
     ToDatetime,
 }
 
@@ -115,7 +115,7 @@ impl Utf8Expr {
             Like => &LikeEvaluator {},
             Ilike => &IlikeEvaluator {},
             Substr => &SubstrEvaluator {},
-            ToDate => &ToDateEvaluator {},
+            ToDate(_) => &ToDateEvaluator {},
             ToDatetime => &ToDatetimeEvaluator {},
         }
     }
@@ -313,10 +313,10 @@ pub fn substr(data: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
     .into()
 }
 
-pub fn to_date(data: ExprRef, format: ExprRef) -> ExprRef {
+pub fn to_date(data: ExprRef, format: &str) -> ExprRef {
     Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::ToDate),
-        inputs: vec![data, format],
+        func: super::FunctionExpr::Utf8(Utf8Expr::ToDate(format.to_string())),
+        inputs: vec![data],
     }
     .into()
 }

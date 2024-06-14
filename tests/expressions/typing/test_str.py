@@ -167,10 +167,10 @@ def test_str_lpad():
 
 def test_str_to_date():
     s = Series.from_arrow(pa.array(["2021-01-01", None, "2021-01-02", "2021-01-03", "2021-01-04"]), name="col")
-    format = Series.from_arrow(pa.array(["%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d", "%Y-%m-%d", None]), name="format")
+    format = "%Y-%m-%d"
     assert_typing_resolve_vs_runtime_behavior(
-        data=[s, format],
-        expr=col("col").str.to_date(col("format")),
+        data=[s],
+        expr=col("col").str.to_date(format),
         run_kernel=lambda: s.str.to_date(format),
         resolvable=True,
     )

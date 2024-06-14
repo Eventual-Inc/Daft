@@ -457,8 +457,8 @@ impl PySeries {
             .into())
     }
 
-    pub fn utf8_to_date(&self, format: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_to_date(&format.series)?.into())
+    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
+        Ok(self.series.utf8_to_date(format)?.into())
     }
 
     pub fn utf8_to_datetime(&self, format: &Self) -> PyResult<Self> {

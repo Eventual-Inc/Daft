@@ -651,9 +651,9 @@ impl PyExpr {
         Ok(substr(self.into(), start.into(), length.into()).into())
     }
 
-    pub fn utf8_to_date(&self, format: &Self) -> PyResult<Self> {
+    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
         use crate::functions::utf8::to_date;
-        Ok(to_date(self.into(), format.into()).into())
+        Ok(to_date(self.into(), format).into())
     }
 
     pub fn utf8_to_datetime(&self, format: &Self) -> PyResult<Self> {

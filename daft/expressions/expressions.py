@@ -1436,8 +1436,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         length_expr = Expression._to_expression(length)
         return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
 
-    def to_date(self, format: str | Expression) -> Expression:
+    def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format
+
+        .. NOTE::
+            The format must be a valid date format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
         Example:
             >>> col("x").str.to_date("%Y-%m-%d")
@@ -1445,8 +1449,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Date expression which is parsed by given format
         """
-        format_expr = Expression._to_expression(format)
-        return Expression._from_pyexpr(self._expr.utf8_to_date(format_expr._expr))
+        return Expression._from_pyexpr(self._expr.utf8_to_date(format))
 
     def to_datetime(self, format: str | Expression) -> Expression:
         """Converts a string to a datetime using the specified format
