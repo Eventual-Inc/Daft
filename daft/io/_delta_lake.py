@@ -8,6 +8,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.io.catalog import DataCatalogTable
+from daft.io.unity_catalog import UnityCatalogTable
 from daft.logical.builder import LogicalPlanBuilder
 
 
@@ -25,7 +26,7 @@ def read_delta_lake(
 
 @PublicAPI
 def read_deltalake(
-    table: Union[str, DataCatalogTable],
+    table: Union[str, DataCatalogTable, UnityCatalogTable],
     io_config: Optional["IOConfig"] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
@@ -56,20 +57,27 @@ def read_deltalake(
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 
-    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
     multithreaded_io = not context.get_context().is_ray_runner if _multithreaded_io is None else _multithreaded_io
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
 
     if isinstance(table, str):
         table_uri = table
     elif isinstance(table, DataCatalogTable):
         table_uri = table.table_uri(io_config)
+    elif isinstance(table, UnityCatalogTable):
+        table_uri = table.table_uri
+
+        # Override the storage_config with the one provided by Unity catalog
+        table_io_config = table.io_config
+        if table_io_config is not None:
+            storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, table_io_config))
     else:
         raise ValueError(
-            f"table argument must be a table URI string or a DataCatalogTable instance, but got: {type(table)}, {table}"
+            f"table argument must be a table URI string, DataCatalogTable or UnityCatalogTable instance, but got: {type(table)}, {table}"
         )
     delta_lake_operator = DeltaLakeScanOperator(table_uri, storage_config=storage_config)
 
