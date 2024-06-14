@@ -211,13 +211,13 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
     fn rem(&self, rhs: &Series) -> DaftResult<Series> {
         py_numeric_binary_op!(self, rhs, rem, "mod")
     }
-    fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn and(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, and, "and_")
     }
-    fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn or(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, or, "or_")
     }
-    fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn xor(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, xor, "xor")
     }
     fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {

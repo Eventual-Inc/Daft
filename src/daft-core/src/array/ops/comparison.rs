@@ -803,10 +803,10 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
 // Implementaing Daft Logic for Numeric values
 macro_rules! impl_daft_logical_for_integers {
     ($type:ty) => {
-        impl DaftLogical for $type {
+        impl DaftLogical<$type> for $type {
             type Output = DaftResult<$type>;
 
-            fn and(&self, rhs: &Self) -> Self::Output {
+            fn and(&self, rhs: Self) -> Self::Output {
                 let result_bitmap = self
                     .values()
                     .iter()
@@ -816,7 +816,7 @@ macro_rules! impl_daft_logical_for_integers {
                 Ok(<$type>::from((self.name(), result_bitmap)))
             }
 
-            fn or(&self, rhs: &Self) -> Self::Output {
+            fn or(&self, rhs:Self) -> Self::Output {
                 let result_bitmap = self
                     .values()
                     .iter()
@@ -826,7 +826,7 @@ macro_rules! impl_daft_logical_for_integers {
                 Ok(<$type>::from((self.name(), result_bitmap)))
             }
 
-            fn xor(&self, rhs: &Self) -> Self::Output {
+            fn xor(&self, rhs:Self) -> Self::Output {
                 let result_bitmap = self
                     .values()
                     .iter()
