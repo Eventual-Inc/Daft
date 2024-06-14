@@ -311,8 +311,8 @@ pub mod pylib {
             file: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            num_rows: i64,
             storage_config: PyStorageConfig,
+            num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
             partition_values: Option<PyTable>,
@@ -345,15 +345,26 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
-            let data_source = DataFileSource::CatalogDataFile {
-                path: file,
-                chunk_spec: None,
-                size_bytes,
-                metadata: TableMetadata {
-                    length: num_rows as usize,
+
+            let table_metadata = num_rows.map(|n| TableMetadata { length: n as usize });
+
+            let data_source = match table_metadata {
+                None => DataFileSource::AnonymousDataFile {
+                    path: file,
+                    chunk_spec: None,
+                    size_bytes,
+                    metadata: None,
+                    partition_spec: Some(pspec),
+                    statistics,
                 },
-                partition_spec: pspec,
-                statistics,
+                Some(tm) => DataFileSource::CatalogDataFile {
+                    path: file,
+                    chunk_spec: None,
+                    size_bytes,
+                    metadata: tm,
+                    partition_spec: pspec,
+                    statistics,
+                },
             };
 
             let scan_task = ScanTask::new(
