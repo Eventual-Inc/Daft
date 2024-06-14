@@ -29,6 +29,7 @@ Generic
    Expression.if_else
    Expression.is_null
    Expression.not_null
+   Expression.fill_null
    Expression.apply
 
 .. _api-numeric-expression-operations:
@@ -160,6 +161,8 @@ The following methods are available under the ``expr.float`` attribute.
 
    Expression.float.is_inf
    Expression.float.is_nan
+   Expression.float.not_nan
+   Expression.float.fill_nan
 
 .. _api-expressions-temporal:
 

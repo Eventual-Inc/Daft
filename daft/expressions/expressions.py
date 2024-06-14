@@ -835,6 +835,48 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.is_inf())
 
+    def not_nan(self) -> Expression:
+        """Checks if values are not NaN (a special float value indicating not-a-number)
+
+        .. NOTE::
+            Nulls will be propagated! I.e. this operation will return a null for null values.
+
+        Example:
+            >>> # [1., None, NaN] -> [True, None, False]
+            >>> col("x").not_nan()
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are not invalid.
+        """
+        return Expression._from_pyexpr(self._expr.not_nan())
+
+    def fill_nan(self, fill_value: Expression) -> Expression:
+        """Fills NaN values in the Expression with the provided fill_value
+
+        Example:
+            >>> df = daft.from_pydict({"data": [1.1, float("nan"), 3.3]})
+            >>> df = df.with_column("filled", df["data"].float.fill_nan(2.2))
+            >>> df.show()
+            ╭─────────┬─────────╮
+            │ data    ┆ filled  │
+            │ ---     ┆ ---     │
+            │ Float64 ┆ Float64 │
+            ╞═════════╪═════════╡
+            │ 1.1     ┆ 1.1     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ NaN     ┆ 2.2     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 3.3     ┆ 3.3     │
+            ╰─────────┴─────────╯
+
+        Returns:
+            Expression: Expression with Nan values filled with the provided fill_value
+        """
+
+        fill_value = Expression._to_expression(fill_value)
+        expr = self._expr.fill_nan(fill_value._expr)
+        return Expression._from_pyexpr(expr)
+
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     def date(self) -> Expression:

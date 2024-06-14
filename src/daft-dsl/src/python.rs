@@ -480,6 +480,16 @@ impl PyExpr {
         Ok(is_inf(self.into()).into())
     }
 
+    pub fn not_nan(&self) -> PyResult<Self> {
+        use functions::float::not_nan;
+        Ok(not_nan(self.into()).into())
+    }
+
+    pub fn fill_nan(&self, fill_value: &Self) -> PyResult<Self> {
+        use functions::float::fill_nan;
+        Ok(fill_nan(self.into(), fill_value.expr.clone()).into())
+    }
+
     pub fn dt_date(&self) -> PyResult<Self> {
         use functions::temporal::date;
         Ok(date(self.into()).into())

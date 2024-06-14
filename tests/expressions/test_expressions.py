@@ -271,6 +271,13 @@ def test_float_is_inf() -> None:
     assert output == "is_inf(col(a))"
 
 
+def test_float_not_nan() -> None:
+    a = col("a")
+    c = a.float.not_nan()
+    output = repr(c)
+    assert output == "not_nan(col(a))"
+
+
 def test_date_lit_post_epoch() -> None:
     d = lit(date(2022, 1, 1))
     output = repr(d)
