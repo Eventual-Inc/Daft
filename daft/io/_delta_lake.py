@@ -8,8 +8,13 @@ from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.io.catalog import DataCatalogTable
-from daft.io.unity_catalog import UnityCatalogTable
 from daft.logical.builder import LogicalPlanBuilder
+
+_UNITY_CATALOG_AVAILABLE = True
+try:
+    from daft.io.unity_catalog import UnityCatalogTable
+except ImportError:
+    _UNITY_CATALOG_AVAILABLE = False
 
 
 def read_delta_lake(
@@ -68,7 +73,7 @@ def read_deltalake(
         table_uri = table
     elif isinstance(table, DataCatalogTable):
         table_uri = table.table_uri(io_config)
-    elif isinstance(table, UnityCatalogTable):
+    elif _UNITY_CATALOG_AVAILABLE and isinstance(table, UnityCatalogTable):
         table_uri = table.table_uri
 
         # Override the storage_config with the one provided by Unity catalog
