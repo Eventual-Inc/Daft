@@ -813,7 +813,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> # [1., None, NaN] -> [False, None, True]
-            >>> col("x").is_nan()
+            >>> col("x").float.is_nan()
 
         Returns:
             Expression: Boolean Expression indicating whether values are invalid.

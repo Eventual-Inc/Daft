@@ -159,6 +159,7 @@ The following methods are available under the ``expr.float`` attribute.
    :template: autosummary/accessor_method.rst
 
    Expression.float.is_inf
+   Expression.float.is_nan
 
 .. _api-expressions-temporal:
 
