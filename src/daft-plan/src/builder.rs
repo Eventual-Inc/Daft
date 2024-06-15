@@ -228,14 +228,15 @@ impl LogicalPlanBuilder {
             .map(|e| (e.name(), e.clone()))
             .collect::<HashMap<_, _>>();
 
-        let mut exprs = vec![];
-        for (name, _) in fields.iter() {
-            if let Some(expr) = new_col_name_and_exprs.get(name.as_str()) {
-                exprs.push(expr.clone());
-            } else {
-                exprs.push(col(name.clone()));
-            }
-        }
+        let mut exprs = fields
+            .iter()
+            .map(|(name, _)| {
+                new_col_name_and_exprs
+                    .get(name.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| col(name.clone()))
+            })
+            .collect::<Vec<_>>();
 
         exprs.extend(
             columns
