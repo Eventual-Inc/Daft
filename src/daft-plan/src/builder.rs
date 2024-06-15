@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
     logical_ops,
@@ -215,22 +218,31 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         err_if_agg("with_columns", &columns)?;
 
-        let new_col_names = columns.iter().map(|e| e.name()).collect::<HashSet<&str>>();
-
-        let mut exprs = self
-            .schema()
-            .fields
+        let fields = &self.schema().fields;
+        let current_col_names = fields
             .iter()
-            .filter_map(|(name, _)| {
-                if new_col_names.contains(name.as_str()) {
-                    None
-                } else {
-                    Some(col(name.clone()))
-                }
-            })
-            .collect::<Vec<_>>();
+            .map(|(name, _)| name.as_str())
+            .collect::<HashSet<_>>();
+        let new_col_name_and_exprs = columns
+            .iter()
+            .map(|e| (e.name(), e.clone()))
+            .collect::<HashMap<_, _>>();
 
-        exprs.extend(columns);
+        let mut exprs = vec![];
+        for (name, _) in fields.iter() {
+            if let Some(expr) = new_col_name_and_exprs.get(name.as_str()) {
+                exprs.push(expr.clone());
+            } else {
+                exprs.push(col(name.clone()));
+            }
+        }
+
+        exprs.extend(
+            columns
+                .iter()
+                .filter(|e| !current_col_names.contains(e.name()))
+                .cloned(),
+        );
 
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
