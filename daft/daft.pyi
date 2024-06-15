@@ -89,6 +89,8 @@ class JoinType(Enum):
     Left: int
     Right: int
     Outer: int
+    Semi: int
+    Anti: int
 
     @staticmethod
     def from_join_type_str(join_type: str) -> JoinType:

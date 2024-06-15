@@ -231,8 +231,6 @@ pub(super) fn hash_semi_anti_join(
     right_on: &[ExprRef],
     is_anti: bool,
 ) -> DaftResult<Table> {
-    assert!(!is_anti);
-
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -241,7 +239,12 @@ pub(super) fn hash_semi_anti_join(
     let lidx = if lkeys.columns.iter().any(|s| s.data_type().is_null())
         || rkeys.columns.iter().any(|s| s.data_type().is_null())
     {
-        UInt64Array::empty("left_indices", &DataType::UInt64).into_series()
+        if is_anti {
+            // if we have a null column match, then all of the rows match for an anti join!
+            return Ok(left.clone());
+        } else {
+            UInt64Array::empty("left_indices", &DataType::UInt64).into_series()
+        }
     } else {
         let probe_table = rkeys.to_probe_hash_map_without_idx()?;
 
@@ -253,13 +256,15 @@ pub(super) fn hash_semi_anti_join(
             false,
             false,
         )?;
-
         let rows = rkeys.len();
 
-        let mut left_idx = Vec::with_capacity(rows);
+        drop(lkeys);
+        drop(rkeys);
 
+        let mut left_idx = Vec::with_capacity(rows);
+        let is_semi = !is_anti;
         for (l_idx, h) in l_hashes.as_arrow().values_iter().enumerate() {
-            if probe_table
+            let is_match = probe_table
                 .raw_entry()
                 .from_hash(*h, |other| {
                     *h == other.hash && {
@@ -267,16 +272,15 @@ pub(super) fn hash_semi_anti_join(
                         is_equal(l_idx, r_idx)
                     }
                 })
-                .is_some()
-            {
+                .is_some();
+            dbg!(l_idx);
+            if is_match == is_semi {
                 left_idx.push(l_idx as u64);
             }
         }
 
         UInt64Array::from(("left_indices", left_idx)).into_series()
     };
-    drop(lkeys);
-    drop(rkeys);
 
     left.take(&lidx)
 }
