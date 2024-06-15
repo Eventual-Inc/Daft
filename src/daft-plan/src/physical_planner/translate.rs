@@ -524,6 +524,7 @@ pub(super) fn translate_single_logical_node(
                     && let Some(smaller_size_bytes) = smaller_size_bytes
                     && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
                     && (*join_type == JoinType::Inner
+                        || (*join_type == JoinType::Semi)
                         || (*join_type == JoinType::Left && left_is_larger)
                         || (*join_type == JoinType::Right && !left_is_larger))
                 {
@@ -558,7 +559,12 @@ pub(super) fn translate_single_logical_node(
                                 "Broadcast join does not support outer joins.".to_string(),
                             ));
                         }
-                        (JoinType::Anti | JoinType::Semi, _) => false, // TODO: IDK IF THIS IS RIGHT
+                        (JoinType::Anti, _) => {
+                            return Err(common_error::DaftError::ValueError(
+                                "Broadcast join does not support anti joins.".to_string(),
+                            ));
+                        }
+                        (JoinType::Semi, _) => false, // TODO: IDK IF THIS IS RIGHT
                     };
 
                     if is_swapped {
