@@ -183,6 +183,10 @@ impl PySeries {
             .into())
     }
 
+    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.atan2(&other.series)?.into())
+    }
+
     pub fn degrees(&self) -> PyResult<Self> {
         Ok(self
             .series
