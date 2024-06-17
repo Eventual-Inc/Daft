@@ -4,7 +4,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
@@ -29,16 +29,15 @@ impl Aggregate {
         aggregations: Vec<AggExpr>,
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let output_schema = {
-            let upstream_schema = input.schema();
-            let fields = groupby
-                .iter()
-                .map(|e| e.to_field(&upstream_schema))
-                .chain(aggregations.iter().map(|ae| ae.to_field(&upstream_schema)))
-                .collect::<common_error::DaftResult<Vec<_>>>()
-                .context(CreationSnafu)?;
-            Schema::new(fields).context(CreationSnafu)?.into()
-        };
+        let upstream_schema = input.schema();
+        let (groupby, groupby_fields) =
+            resolve_exprs(groupby, &upstream_schema).context(CreationSnafu)?;
+        let (aggregations, aggregation_fields) =
+            resolve_aggexprs(aggregations, &upstream_schema).context(CreationSnafu)?;
+
+        let fields = [groupby_fields, aggregation_fields].concat();
+
+        let output_schema = Schema::new(fields).context(CreationSnafu)?.into();
 
         Ok(Self {
             aggregations,

@@ -1029,6 +1029,164 @@ impl Operator {
     }
 }
 
+/// Converts an expression with syntactic sugar into struct and/or map gets. Map gets only used on Utf8 keys.
+/// Attempts to resolve column names from the rightmost to leftmost period.
+///
+/// Example 1:
+/// - expr: col("a.b.c")
+/// - schema: <a: Struct<b: Map<key: Utf8, value: Int64>>
+/// - output: col("a").struct.get("b").map.get("c")
+///
+/// Example 2:
+/// - expr: col("a.b").alias("c")
+/// - schema: <a: Struct<b: Int64>>
+/// - output: col("a").struct.get("b").alias("c")
+///
+/// Example 3:
+/// - expr: col("a.b.c")
+/// - schema: <a: Struct<b: Struct<c: Int64>>, a.b: Struct<c: Int64>>
+/// - output: col("a.b").struct.get("c")
+///
+/// Example 4:
+/// - expr: col("a.b.c")
+/// - schema: <a: Struct<b: Struct<c: Int64>>, a.b: Struct<c: Int64>, a.b.c: Int63>
+/// - output: col("a.b.c")
+fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    use common_treenode::{Transformed, TransformedResult, TreeNode};
+    use std::collections::HashMap;
+
+    use crate::functions::{map::get as map_get, struct_::get as struct_get};
+
+    fn col_name_to_get_expr(name: &str, schema: &Schema) -> DaftResult<ExprRef> {
+        enum GetType {
+            Struct,
+            Map,
+        }
+
+        type KeyIter<'a> = Box<dyn Iterator<Item = &'a str> + 'a>;
+        type TypeIter = Box<dyn Iterator<Item = GetType>>;
+
+        fn helper<'a>(
+            name: &'a str,
+            fields: HashMap<&str, &Field>,
+        ) -> Option<(KeyIter<'a>, TypeIter)> {
+            if fields.contains_key(name) {
+                return Some((Box::new([name].into_iter()), Box::new(std::iter::empty())));
+            }
+
+            let mut prev_dot_idx = name.len();
+
+            while let Some(dot_idx) = name[..prev_dot_idx].rfind('.') {
+                let prefix = &name[..dot_idx];
+                let suffix = &name[dot_idx + 1..];
+
+                if let Some(f) = fields.get(prefix) {
+                    match &f.dtype {
+                        DataType::Struct(child_fields) => {
+                            let child_fields = child_fields
+                                .iter()
+                                .map(|f| (f.name.as_str(), f))
+                                .collect::<HashMap<_, _>>();
+
+                            if let Some((key_iter, type_iter)) = helper(suffix, child_fields) {
+                                return Some((
+                                    Box::new([prefix].into_iter().chain(key_iter)),
+                                    Box::new([GetType::Struct].into_iter().chain(type_iter)),
+                                ));
+                            }
+                        }
+                        DataType::Map(field)
+                            if let DataType::Struct(child_fields) = field.as_ref()
+                                && child_fields[0].dtype == DataType::Utf8 =>
+                        {
+                            return Some((
+                                Box::new([prefix, suffix].into_iter()),
+                                Box::new([GetType::Map].into_iter()),
+                            ))
+                        }
+                        _ => {}
+                    }
+                }
+
+                prev_dot_idx = dot_idx;
+            }
+
+            None
+        }
+
+        let fields = schema
+            .fields
+            .iter()
+            .map(|(k, v)| (k.as_str(), v))
+            .collect::<HashMap<_, _>>();
+
+        if let Some((mut key_iter, type_iter)) = helper(name, fields) {
+            let mut get_expr = col(key_iter.next().unwrap());
+
+            for (key, get_type) in key_iter.zip(type_iter) {
+                get_expr = match get_type {
+                    GetType::Struct => struct_get(get_expr, key),
+                    GetType::Map => map_get(get_expr, lit(key)),
+                };
+            }
+
+            Ok(get_expr)
+        } else {
+            Err(DaftError::ValueError(format!(
+                "Pattern {} not found in schema: {:?}",
+                name,
+                schema.fields.keys()
+            )))
+        }
+    }
+
+    expr.transform(|e| match e.as_ref() {
+        Expr::Column(name) => Ok(Transformed::yes(col_name_to_get_expr(name, schema)?)),
+        _ => Ok(Transformed::no(e)),
+    })
+    .data()
+}
+
+/// Resolves the expression with a schema, converting syntactic sugar and returning the new expression and its field.
+pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+    let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
+    let resolved_field = resolved_expr.to_field(schema)?;
+    Ok((resolved_expr, resolved_field))
+}
+
+pub fn resolve_exprs(
+    exprs: Vec<ExprRef>,
+    schema: &Schema,
+) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
+    use itertools::process_results;
+
+    let resolved_iter = exprs.into_iter().map(|e| resolve_expr(e, schema));
+
+    process_results(resolved_iter, |res| res.unzip())
+}
+
+pub fn resolve_aggexpr(agg_expr: AggExpr, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
+    let resolved_children = agg_expr
+        .children()
+        .into_iter()
+        .map(|e| substitute_expr_getter_sugar(e, schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let resolved_agg = agg_expr.with_new_children(resolved_children);
+    let resolved_field = resolved_agg.to_field(schema)?;
+    Ok((resolved_agg, resolved_field))
+}
+
+pub fn resolve_aggexprs(
+    agg_exprs: Vec<AggExpr>,
+    schema: &Schema,
+) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
+    use itertools::process_results;
+
+    let resolved_iter = agg_exprs.into_iter().map(|ae| resolve_aggexpr(ae, schema));
+
+    process_results(resolved_iter, |res| res.unzip())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1111,6 +1269,161 @@ mod tests {
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_substitute_expr_getter_sugar() -> DaftResult<()> {
+        use crate::functions::{map::get as map_get, struct_::get as struct_get};
+
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
+
+        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
+        assert!(substitute_expr_getter_sugar(col("a.b"), &schema).is_err());
+        assert!(matches!(
+            substitute_expr_getter_sugar(col("a.b"), &schema).unwrap_err(),
+            DaftError::ValueError(..)
+        ));
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new("b", DataType::Int64)]),
+        )])?);
+
+        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b").alias("c"), &schema)?,
+            struct_get(col("a"), "b").alias("c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new(
+                "b",
+                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+            )]),
+        )])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new(
+                    "b",
+                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+                )]),
+            ),
+            Field::new("a.b", DataType::Int64),
+        ])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            col("a.b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Map(Box::new(DataType::Struct(vec![
+                Field::new("key", DataType::Utf8),
+                Field::new("value", DataType::Int64),
+            ]))),
+        )])?);
+
+        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            map_get(col("a"), lit("b"))
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            map_get(col("a"), lit("b.c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
+            ),
+            Field::new("a.b", DataType::Int64),
+        ])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            col("a.b")
+        );
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            map_get(col("a"), lit("b.c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new(
+                    "b",
+                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+                )]),
+            ),
+            Field::new(
+                "a.b",
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
+            ),
+        ])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            col("a.b")
+        );
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            map_get(col("a.b"), lit("c"))
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new(
+                "b",
+                DataType::Map(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Int64),
+                ]))),
+            )]),
+        )])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            struct_get(col("a"), "b")
+        );
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            map_get(struct_get(col("a"), "b"), lit("c"))
+        );
 
         Ok(())
     }

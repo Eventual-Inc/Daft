@@ -31,13 +31,7 @@ from urllib.parse import urlparse
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import (
-    FileFormat,
-    IOConfig,
-    JoinStrategy,
-    JoinType,
-    ResourceRequest,
-)
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest, resolve_expr
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -768,8 +762,9 @@ class DataFrame:
             assert result is not None
             return result
         elif isinstance(item, str):
-            column = col(item)
-            return self._builder.substitute_getter_sugar(column)
+            schema = self._builder.schema()
+            expr, _ = resolve_expr(col(item)._expr, schema._schema)
+            return Expression._from_pyexpr(expr)
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 

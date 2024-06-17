@@ -1,12 +1,12 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftError;
 use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{hash_index_map, Schema, SchemaRef},
     DataType,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::{resolve_exprs, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -54,12 +54,12 @@ impl Join {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
-        for (on_exprs, schema) in [(&left_on, left.schema()), (&right_on, right.schema())] {
-            let on_fields = on_exprs
-                .iter()
-                .map(|e| e.to_field(schema.as_ref()))
-                .collect::<DaftResult<Vec<_>>>()
-                .context(CreationSnafu)?;
+        let (left_on, left_fields) =
+            resolve_exprs(left_on, &left.schema()).context(CreationSnafu)?;
+        let (right_on, right_fields) =
+            resolve_exprs(right_on, &right.schema()).context(CreationSnafu)?;
+
+        for (on_exprs, on_fields) in [(&left_on, left_fields), (&right_on, right_fields)] {
             let on_schema = Schema::new(on_fields).context(CreationSnafu)?;
             for (field, expr) in on_schema.fields.values().zip(on_exprs.iter()) {
                 if matches!(field.dtype, DataType::Null) {
