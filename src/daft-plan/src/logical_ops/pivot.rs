@@ -27,7 +27,7 @@ impl Pivot {
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
-        aggregation: AggExpr,
+        aggregation: ExprRef,
         names: Vec<String>,
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();

@@ -26,7 +26,7 @@ pub struct Aggregate {
 impl Aggregate {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        aggregations: Vec<AggExpr>,
+        aggregations: Vec<ExprRef>,
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();

@@ -345,6 +345,12 @@ impl AggExpr {
     }
 }
 
+impl From<&AggExpr> for ExprRef {
+    fn from(agg_expr: &AggExpr) -> Self {
+        Arc::new(Expr::Agg(agg_expr.clone()))
+    }
+}
+
 impl AsRef<Expr> for Expr {
     fn as_ref(&self) -> &Expr {
         self
@@ -1147,8 +1153,84 @@ fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<Ex
     .data()
 }
 
-/// Resolves the expression with a schema, converting syntactic sugar and returning the new expression and its field.
+fn expr_has_agg(expr: &ExprRef) -> bool {
+    use Expr::*;
+
+    match expr.as_ref() {
+        Agg(_) => true,
+        Column(_) | Literal(_) => false,
+        Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => expr_has_agg(e),
+        BinaryOp { left, right, .. } => expr_has_agg(left) || expr_has_agg(right),
+        Function { inputs, .. } => inputs.iter().any(expr_has_agg),
+        IsIn(l, r) | FillNull(l, r) => expr_has_agg(l) || expr_has_agg(r),
+        Between(v, l, u) => expr_has_agg(v) || expr_has_agg(l) || expr_has_agg(u),
+        IfElse {
+            if_true,
+            if_false,
+            predicate,
+        } => expr_has_agg(if_true) || expr_has_agg(if_false) || expr_has_agg(predicate),
+    }
+}
+
+fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
+    use Expr::*;
+
+    match expr {
+        Agg(agg_expr) => Ok(agg_expr.clone()),
+        Function { func, inputs } => Ok(AggExpr::MapGroups {
+            func: func.clone(),
+            inputs: inputs.clone(),
+        }),
+        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
+            use AggExpr::*;
+
+            // reorder expressions so that alias goes before agg
+            match agg_expr {
+                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
+                Sum(e) => Sum(Alias(e, name.clone()).into()),
+                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
+                ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => ApproxPercentile(ApproxPercentileParams {
+                    child: Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
+                Mean(e) => Mean(Alias(e, name.clone()).into()),
+                Min(e) => Min(Alias(e, name.clone()).into()),
+                Max(e) => Max(Alias(e, name.clone()).into()),
+                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
+                List(e) => List(Alias(e, name.clone()).into()),
+                Concat(e) => Concat(Alias(e, name.clone()).into()),
+                MapGroups { func, inputs } => MapGroups {
+                    func,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+            }
+        }),
+        // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions
+        // as long as the final value always has a cardinality of 1.
+        _ => Err(DaftError::ValueError(format!(
+            "Expected aggregation expression, but got: {expr}"
+        ))),
+    }
+}
+
+/// Resolves and validates the expression with a schema, returning the new expression and its field.
 pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+    // TODO(Kevin): Support aggregation expressions everywhere
+    if expr_has_agg(&expr) {
+        return Err(DaftError::ValueError(format!(
+            "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+        )));
+    }
+
     let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
     let resolved_field = resolved_expr.to_field(schema)?;
     Ok((resolved_expr, resolved_field))
@@ -1165,7 +1247,18 @@ pub fn resolve_exprs(
     process_results(resolved_iter, |res| res.unzip())
 }
 
-pub fn resolve_aggexpr(agg_expr: AggExpr, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
+/// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
+pub fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
+    let agg_expr = extract_agg_expr(&expr)?;
+
+    let has_nested_agg = agg_expr.children().iter().any(expr_has_agg);
+
+    if has_nested_agg {
+        return Err(DaftError::ValueError(format!(
+            "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+        )));
+    }
+
     let resolved_children = agg_expr
         .children()
         .into_iter()
@@ -1177,12 +1270,12 @@ pub fn resolve_aggexpr(agg_expr: AggExpr, schema: &Schema) -> DaftResult<(AggExp
 }
 
 pub fn resolve_aggexprs(
-    agg_exprs: Vec<AggExpr>,
+    exprs: Vec<ExprRef>,
     schema: &Schema,
 ) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
     use itertools::process_results;
 
-    let resolved_iter = agg_exprs.into_iter().map(|ae| resolve_aggexpr(ae, schema));
+    let resolved_iter = exprs.into_iter().map(|e| resolve_aggexpr(e, schema));
 
     process_results(resolved_iter, |res| res.unzip())
 }

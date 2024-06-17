@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_dsl::resolve_exprs;
 
-use crate::{partitioning::RepartitionSpec, LogicalPlan};
+use crate::{
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
@@ -16,6 +20,17 @@ impl Repartition {
         input: Arc<LogicalPlan>,
         repartition_spec: RepartitionSpec,
     ) -> DaftResult<Self> {
+        let repartition_spec = match repartition_spec {
+            RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => {
+                let (resolved_by, _) = resolve_exprs(by, &input.schema())?;
+                RepartitionSpec::Hash(HashRepartitionConfig {
+                    num_partitions,
+                    by: resolved_by,
+                })
+            }
+            _ => repartition_spec,
+        };
+
         Ok(Self {
             input,
             repartition_spec,
