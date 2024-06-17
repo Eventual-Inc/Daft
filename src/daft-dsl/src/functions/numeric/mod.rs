@@ -185,10 +185,10 @@ pub fn arctan(input: ExprRef) -> ExprRef {
     .into()
 }
 
-pub fn arctan2(input: ExprRef) -> ExprRef {
+pub fn arctan2(input: ExprRef, other: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcTan2),
-        inputs: vec![input],
+        inputs: vec![input, other],
     }
     .into()
 }

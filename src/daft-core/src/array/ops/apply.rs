@@ -28,6 +28,7 @@ where
     // applies a native binary function to two DataArrays, maintaining validity.
     // If the two arrays have the same length, applies row-by-row.
     // If one of the arrays has length 1, treats it as if the value were repeated.
+    // Note: the name of the output array takes the name of the left hand side.
     pub fn binary_apply<F>(&self, rhs: &Self, func: F) -> DaftResult<Self>
     where
         F: Fn(T::Native, T::Native) -> T::Native + Copy,
@@ -60,10 +61,11 @@ where
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.apply(|v| func(value, v))
+                        .map(|arr| arr.rename(self.name()))
                 } else {
                     Ok(DataArray::<T>::full_null(
-                        rhs.name(),
-                        rhs.data_type(),
+                        self.name(),
+                        self.data_type(),
                         r_size,
                     ))
                 }
