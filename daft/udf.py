@@ -142,7 +142,7 @@ class PartialUDF:
 
 @dataclasses.dataclass
 class UDF:
-    func: UserProvidedPythonFunction
+    func: UserProvidedPythonFunction | type
     return_dtype: DataType
 
     def __post_init__(self):
@@ -195,7 +195,7 @@ class UDF:
 def udf(
     *,
     return_dtype: DataType,
-) -> Callable[[UserProvidedPythonFunction], UDF]:
+) -> Callable[[UserProvidedPythonFunction | type], UDF]:
     """Decorator to convert a Python function into a UDF
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
@@ -229,7 +229,7 @@ def udf(
         Callable[[UserProvidedPythonFunction], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
     """
 
-    def _udf(f: UserProvidedPythonFunction) -> UDF:
+    def _udf(f: UserProvidedPythonFunction | type) -> UDF:
         return UDF(
             func=f,
             return_dtype=return_dtype,
