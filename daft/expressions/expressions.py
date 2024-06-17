@@ -1454,6 +1454,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone
 
+        .. NOTE::
+            The format must be a valid datetime format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
         Example:
             >>> col("x").str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")
 

@@ -951,7 +951,7 @@ impl Utf8Array {
         let result = TimestampArray::new(
             Field::new(
                 self.name(),
-                DataType::Timestamp(TimeUnit::Microseconds, timezone.map(|tz| tz.to_string())),
+                DataType::Timestamp(timeunit, timezone.map(|tz| tz.to_string())),
             ),
             result,
         );
