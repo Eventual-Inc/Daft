@@ -105,6 +105,11 @@ pub trait DaftBetween<Lower, Upper> {
     fn between(&self, lower: Lower, upper: Upper) -> Self::Output;
 }
 
+pub trait DaftAtan2<Rhs> {
+    type Output;
+    fn atan2(&self, rhs: Rhs) -> Self::Output;
+}
+
 pub trait DaftIsNull {
     type Output;
     fn is_null(&self) -> Self::Output;
