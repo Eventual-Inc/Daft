@@ -260,6 +260,11 @@ impl PyExpr {
         Ok(arctan(self.into()).into())
     }
 
+    pub fn arctan2(&self) -> PyResult<Self> {
+        use functions::numeric::arctan2;
+        Ok(arctan2(self.into()).into())
+    }
+
     pub fn radians(&self) -> PyResult<Self> {
         use functions::numeric::radians;
         Ok(radians(self.into()).into())
