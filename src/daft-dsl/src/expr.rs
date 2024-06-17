@@ -1240,11 +1240,8 @@ pub fn resolve_exprs(
     exprs: Vec<ExprRef>,
     schema: &Schema,
 ) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
-    use itertools::process_results;
-
     let resolved_iter = exprs.into_iter().map(|e| resolve_expr(e, schema));
-
-    process_results(resolved_iter, |res| res.unzip())
+    itertools::process_results(resolved_iter, |res| res.unzip())
 }
 
 /// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
@@ -1273,11 +1270,8 @@ pub fn resolve_aggexprs(
     exprs: Vec<ExprRef>,
     schema: &Schema,
 ) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
-    use itertools::process_results;
-
     let resolved_iter = exprs.into_iter().map(|e| resolve_aggexpr(e, schema));
-
-    process_results(resolved_iter, |res| res.unzip())
+    itertools::process_results(resolved_iter, |res| res.unzip())
 }
 
 #[cfg(test)]
