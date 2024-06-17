@@ -918,38 +918,30 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn to_datetime(&self, format: &Utf8Array) -> DaftResult<TimestampArray> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[format])
-            .map_err(|e| DaftError::ValueError(format!("Error in to_datetime: {e}")))?;
-        if is_full_null {
-            return Ok(TimestampArray::full_null(
-                self.name(),
-                &DataType::Timestamp(TimeUnit::Microseconds, None),
-                expected_size,
-            ));
-        }
-        if expected_size == 0 {
-            return Ok(TimestampArray::empty(
-                self.name(),
-                &DataType::Timestamp(TimeUnit::Microseconds, None),
-            ));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let format_iter = create_broadcasted_str_iter(format, expected_size);
+    pub fn to_datetime(
+        &self,
+        format: &str,
+        timezone: Option<&str>,
+        timeunit: TimeUnit,
+    ) -> DaftResult<TimestampArray> {
+        let len = self.len();
+        let self_iter = self.as_arrow().iter();
 
         let arrow_result = self_iter
-            .zip(format_iter)
-            .map(|(val, fmt)| match (val, fmt) {
-                (Some(val), Some(fmt)) => {
-                    let datetime = chrono::NaiveDateTime::parse_from_str(val, fmt).map_err(|e| {
+            .map(|val| match val {
+                Some(val) => {
+                    let datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
                         DaftError::ComputeError(format!(
-                            "Error in to_datetime: failed to parse datetime {val} with format {fmt} : {e}"
+                            "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                         ))
                     })?;
-                    Ok(Some(
-                        datetime.and_utc().timestamp_micros()
-                    ))
+                    let timestamp = match timeunit {
+                        TimeUnit::Seconds => datetime.and_utc().timestamp(),
+                        TimeUnit::Milliseconds => datetime.and_utc().timestamp_millis(),
+                        TimeUnit::Microseconds => datetime.and_utc().timestamp_micros(),
+                        TimeUnit::Nanoseconds => datetime.and_utc().timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                    };
+                    Ok(Some(timestamp))
                 }
                 _ => Ok(None),
             })
@@ -959,11 +951,11 @@ impl Utf8Array {
         let result = TimestampArray::new(
             Field::new(
                 self.name(),
-                DataType::Timestamp(TimeUnit::Microseconds, None),
+                DataType::Timestamp(TimeUnit::Microseconds, timezone.map(|tz| tz.to_string())),
             ),
             result,
         );
-        assert_eq!(result.len(), expected_size);
+        assert_eq!(result.len(), len);
         Ok(result)
     }
 

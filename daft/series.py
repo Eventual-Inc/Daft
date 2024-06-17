@@ -774,14 +774,18 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
 
     def to_date(self, format: str) -> Series:
+        if not isinstance(format, str):
+            raise ValueError(f"expected str for format but got {type(format)}")
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_to_date(format))
 
-    def to_datetime(self, format: Series) -> Series:
-        if not isinstance(format, Series):
-            raise ValueError(f"expected another Series but got {type(format)}")
-        assert self._series is not None and format._series is not None
-        return Series._from_pyseries(self._series.utf8_to_datetime(format._series))
+    def to_datetime(self, format: str, timezone: str | None = None) -> Series:
+        if not isinstance(format, str):
+            raise ValueError(f"expected str for format but got {type(format)}")
+        if timezone is not None and not isinstance(timezone, str):
+            raise ValueError(f"expected str for timezone but got {type(timezone)}")
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_to_datetime(format, timezone))
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
         if not isinstance(start, Series):

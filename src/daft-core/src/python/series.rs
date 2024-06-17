@@ -461,8 +461,8 @@ impl PySeries {
         Ok(self.series.utf8_to_date(format)?.into())
     }
 
-    pub fn utf8_to_datetime(&self, format: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_to_datetime(&format.series)?.into())
+    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
+        Ok(self.series.utf8_to_datetime(format, timezone)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {

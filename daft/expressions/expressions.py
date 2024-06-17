@@ -1451,17 +1451,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_to_date(format))
 
-    def to_datetime(self, format: str | Expression) -> Expression:
-        """Converts a string to a datetime using the specified format
+    def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
+        """Converts a string to a datetime using the specified format and timezone
 
         Example:
-            >>> col("x").str.to_datetime("%Y-%m-%d %H:%M:%S")
+            >>> col("x").str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")
 
         Returns:
-            Expression: a DateTime expression which is parsed by given format
+            Expression: a DateTime expression which is parsed by given format and timezone
         """
-        format_expr = Expression._to_expression(format)
-        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format_expr._expr))
+        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
