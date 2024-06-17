@@ -51,7 +51,7 @@ impl PartialEq for PartitionSpec {
                 // partitioning on columns that may have nulls.
                 let self_null = self_column.is_null().unwrap();
                 let other_null = other_column.is_null().unwrap();
-                if self_null.xor(&other_null).unwrap().get(0).unwrap() {
+                if self_null.xor(&other_null).unwrap().bool().get(0).unwrap() {
                     return false;
                 }
             }
