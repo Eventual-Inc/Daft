@@ -8,7 +8,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import DataType, col
+from daft import DataType, col, lit
 from daft.table import MicroPartition
 from tests.table import daft_numeric_types
 
@@ -44,7 +44,12 @@ def test_table_eval_expressions_conflict() -> None:
     "input,expr,expected",
     [
         pytest.param([True, False, None], ~col("input"), [False, True, None], id="BooleanColumn"),
-        pytest.param(["apple", None, "banana"], ~(col("input") != "banana"), [False, None, True], id="BooleanExpr"),
+        pytest.param(
+            ["apple", None, "banana"],
+            ~(col("input") != "banana"),
+            [False, None, True],
+            id="BooleanExpr",
+        ),
         pytest.param([], ~(col("input").cast(DataType.bool())), [], id="EmptyColumn"),
     ],
 )
@@ -104,7 +109,19 @@ def test_table_expr_not_null(input, expected) -> None:
     assert pydict["input"] == expected
 
 
-OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, ops.ne, ops.ge, ops.gt]
+OPS = [
+    ops.add,
+    ops.sub,
+    ops.mul,
+    ops.truediv,
+    ops.mod,
+    ops.lt,
+    ops.le,
+    ops.eq,
+    ops.ne,
+    ops.ge,
+    ops.gt,
+]
 
 
 @pytest.mark.parametrize("data_dtype, op", itertools.product(daft_numeric_types, OPS))
@@ -163,7 +180,10 @@ def test_table_abs_bad_input() -> None:
 
 def test_table_numeric_ceil() -> None:
     table = MicroPartition.from_pydict(
-        {"a": [None, -1.0, -0.5, 0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+        {
+            "a": [None, -1.0, -0.5, 0, 0.5, 2, None],
+            "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
+        }
     )
 
     ceil_table = table.eval_expression_list([col("a").ceil(), col("b").ceil()])
@@ -185,7 +205,10 @@ def test_table_ceil_bad_input() -> None:
 
 def test_table_numeric_floor() -> None:
     table = MicroPartition.from_pydict(
-        {"a": [None, -1.0, -0.5, 0.0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+        {
+            "a": [None, -1.0, -0.5, 0.0, 0.5, 2, None],
+            "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
+        }
     )
 
     floor_table = table.eval_expression_list([col("a").floor(), col("b").floor()])
@@ -207,7 +230,10 @@ def test_table_floor_bad_input() -> None:
 
 def test_table_numeric_sign() -> None:
     table = MicroPartition.from_pydict(
-        {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+        {
+            "a": [None, -1, -5, 0, 5, 2, None],
+            "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
+        }
     )
     my_schema = pa.schema([pa.field("uint8", pa.uint8())])
     table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
@@ -291,11 +317,64 @@ def test_table_numeric_cot() -> None:
     )
 
 
+def test_table_numeric_atan2() -> None:
+    # cartesian product of y and x tables
+    table = MicroPartition.from_pydict(
+        {
+            "y": [0.0, 1.0, 0.5, -0.5, -0.0, math.nan, 0.0, math.nan],
+            "x": [0.0, 0.0, 0.5, 0.5, -10.0, math.nan, math.nan, 1.0],
+        }
+    )
+    pds = table.to_pandas()
+    np_result = np.arctan2(pds["y"], pds["x"])
+
+    atan2_table = table.eval_expression_list([col("y").arctan2(col("x"))])
+    assert (
+        all(
+            a == b or (a is None and b is None) or (math.isnan(a) and math.isnan(b))
+            for a, b in zip(atan2_table.get_column("y").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_atan2_literals() -> None:
+    table = MicroPartition.from_pydict({"y": [0.0, 1.0, -1.0, math.nan]})
+    pds = table.to_pandas()
+    literals = [0.0, 1.0, -1.0, math.nan]
+    # lhs has value, rhs has literal
+    for litv in literals:
+        np_result = np.arctan2(pds["y"], np.repeat(litv, len(pds)))
+        atan2_table = table.eval_expression_list([col("y").arctan2(lit(litv))])
+        assert (
+            all(
+                a == b or (a is None and b is None) or (math.isnan(a) and math.isnan(b))
+                for a, b in zip(atan2_table.get_column("y").to_pylist(), np_result.to_list())
+            )
+            is True
+        )
+
+    # lhs has literal, rhs has value
+    for litv in literals:
+        np_result = np.arctan2(np.repeat(litv, len(pds)), pds["y"])
+        atan2_table = table.eval_expression_list([lit(litv).arctan2(col("y"))])
+        assert (
+            all(
+                a == b or (a is None and b is None) or (math.isnan(a) and math.isnan(b))
+                for a, b in zip(atan2_table.get_column("literal").to_pylist(), np_result.to_list())
+            )
+            is True
+        )
+
+
 def test_table_numeric_round() -> None:
     from decimal import ROUND_HALF_UP, Decimal
 
     table = MicroPartition.from_pydict(
-        {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.765, -1.565, -1.321, 0.399, 0.781, None, None]}
+        {
+            "a": [None, -1, -5, 0, 5, 2, None],
+            "b": [-1.765, -1.565, -1.321, 0.399, 0.781, None, None],
+        }
     )
     round_table = table.eval_expression_list([col("a").round(0), col("b").round(2)])
     assert [
@@ -303,7 +382,7 @@ def test_table_numeric_round() -> None:
         for v in table.get_column("a").to_pylist()
     ] == round_table.get_column("a").to_pylist()
     assert [
-        float(Decimal(str(v)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)) if v is not None else v
+        (float(Decimal(str(v)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)) if v is not None else v)
         for v in table.get_column("b").to_pylist()
     ] == round_table.get_column("b").to_pylist()
 
