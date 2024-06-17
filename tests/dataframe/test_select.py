@@ -22,3 +22,12 @@ def test_multiple_select_same_col(make_df, valid_data: list[dict[str, float]]):
     pdf = df.to_pandas()
     assert len(pdf.columns) == 2
     assert pdf.columns.to_list() == ["sepal_length", "sepal_length_2"]
+
+
+def test_select_ordering(make_df, valid_data: list[dict[str, float]]):
+    df = make_df(valid_data)
+    df = df.select(
+        df["variety"], df["petal_length"].alias("foo"), df["sepal_length"], df["sepal_width"], df["petal_width"]
+    )
+    df = df.collect()
+    assert df.column_names == ["variety", "foo", "sepal_length", "sepal_width", "petal_width"]
