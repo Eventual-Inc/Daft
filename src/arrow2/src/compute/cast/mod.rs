@@ -156,12 +156,13 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         }
 
         (Binary, to_type) => {
-            is_numeric(to_type) || matches!(to_type, LargeBinary | Utf8 | LargeUtf8)
+            is_numeric(to_type)
+                || matches!(to_type, LargeBinary | FixedSizeBinary(_) | Utf8 | LargeUtf8)
         }
         (LargeBinary, to_type) => {
             is_numeric(to_type)
                 || match to_type {
-                    Binary | LargeUtf8 => true,
+                    Binary | FixedSizeBinary(_) | LargeUtf8 => true,
                     LargeList(field) => matches!(field.data_type, UInt8),
                     _ => false,
                 }
@@ -772,6 +773,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             Int64 => binary_to_primitive_dyn::<i32, i64>(array, to_type, options),
             Float32 => binary_to_primitive_dyn::<i32, f32>(array, to_type, options),
             Float64 => binary_to_primitive_dyn::<i32, f64>(array, to_type, options),
+            FixedSizeBinary(size) => binary_to_fixed_size_binary::<i32>(array.as_any().downcast_ref().unwrap(), *size),
             LargeBinary => Ok(Box::new(binary_to_large_binary(
                 array.as_any().downcast_ref().unwrap(),
                 to_type.clone(),
@@ -800,6 +802,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
                     binary_large_to_binary(array.as_any().downcast_ref().unwrap(), to_type.clone())
                         .map(|x| x.boxed())
                 }
+                FixedSizeBinary(size) => binary_to_fixed_size_binary::<i64>(array.as_any().downcast_ref().unwrap(), *size),
                 LargeUtf8 => {
                     binary_to_utf8::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                         .map(|x| x.boxed())

@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::offset::{Offset, Offsets};
 use crate::{array::*, datatypes::DataType, types::NativeType};
 
@@ -153,6 +153,34 @@ pub fn fixed_size_binary_binary<O: Offset>(
         values,
         from.validity().cloned(),
     )
+}
+
+pub fn binary_to_fixed_size_binary<O: Offset>(
+    from: &BinaryArray<O>,
+    size: usize,
+) -> Result<Box<dyn Array>> {
+    let offsets = from.offsets().buffer().iter();
+    let expected = (0..from.len()).map(|ix| O::from_as_usize(ix * size));
+
+    match offsets
+        .zip(expected)
+        .find(|(actual, expected)| *actual != expected)
+    {
+        Some(_) => Err(Error::InvalidArgumentError(
+            "incompatible offsets in source list (lengths may be different)".to_string(),
+        )),
+        None => {
+            let sliced_values = from.values().clone().sliced(
+                from.offsets().first().to_usize(),
+                from.offsets().range().to_usize(),
+            );
+            Ok(Box::new(FixedSizeBinaryArray::new(
+                DataType::FixedSizeBinary(size),
+                sliced_values,
+                from.validity().cloned(),
+            )))
+        }
+    }
 }
 
 /// Conversion of binary
