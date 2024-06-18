@@ -93,7 +93,8 @@ pub struct AzureConfig {
     pub config: crate::AzureConfig,
 }
 
-/// Create configurations to be used when accessing Google Cloud Storage
+/// Create configurations to be used when accessing Google Cloud Storage.
+/// Credentials may be provided directly with the `credentials` parameter, or set with the `GOOGLE_APPLICATION_CREDENTIALS_JSON` or `GOOGLE_APPLICATION_CREDENTIALS` environment variables.
 ///
 /// Args:
 ///     project_id (str, optional): Google Project ID, defaults to value in credentials file or Google Cloud metadata service
