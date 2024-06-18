@@ -5,8 +5,8 @@ import datetime
 import pyarrow as pa
 import pytest
 
-from daft import Series
-from daft import DataType
+from daft import DataType, Series
+
 
 @pytest.mark.parametrize(
     ["funcname", "data"],
@@ -1356,8 +1356,12 @@ def test_series_utf8_bad_date() -> None:
             "Asia/Kolkata",
             [
                 datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))),
-                datetime.datetime(2021, 1, 2, 1, 7, 35, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))),
-                datetime.datetime(2021, 1, 3, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))),
+                datetime.datetime(
+                    2021, 1, 2, 1, 7, 35, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                ),
+                datetime.datetime(
+                    2021, 1, 3, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                ),
             ],
             id="IST timezone",
         ),
@@ -1427,9 +1431,9 @@ def test_series_utf8_to_datetime_different_timezones(data, format, timezone, exp
             "ms",
             id="Milliseconds",
         ),
-    ]
+    ],
 )
-def test_series_utf8_to_datetime_different_timeunit(data,format,expected,timeunit) -> None:
+def test_series_utf8_to_datetime_different_timeunit(data, format, expected, timeunit) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     result = s.str.to_datetime(format)
     assert result.to_pylist() == expected
