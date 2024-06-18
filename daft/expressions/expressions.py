@@ -5,7 +5,16 @@ import math
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    Iterator,
+    Literal,
+    TypeVar,
+    overload,
+)
 
 import pyarrow as pa
 
@@ -409,6 +418,16 @@ class Expression:
         """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
         expr = self._expr.arctan()
         return Expression._from_pyexpr(expr)
+
+    def arctan2(self, other: Expression) -> Expression:
+        """Calculates the four quadrant arctangent of coordinates (y, x), in radians (``expr_y.arctan2(expr_x)``)
+
+        * ``x = 0``, ``y = 0``: ``0``
+        * ``x >= 0``: ``[-pi/2, pi/2]``
+        * ``y >= 0``: ``(pi/2, pi]``
+        * ``y < 0``: ``(-pi, -pi/2)``"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr.arctan2(expr._expr))
 
     def radians(self) -> Expression:
         """The elementwise radians of a numeric expression (``expr.radians()``)"""
@@ -1253,7 +1272,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
-    def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
+    def replace(
+        self,
+        pattern: str | Expression,
+        replacement: str | Expression,
+        regex: bool = False,
+    ) -> Expression:
         """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
         Example:
@@ -1508,6 +1532,81 @@ class ExpressionStringNamespace(ExpressionNamespace):
         length_expr = Expression._to_expression(length)
         return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
 
+    def to_date(self, format: str) -> Expression:
+        """Converts a string to a date using the specified format
+
+        .. NOTE::
+            The format must be a valid date format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
+            >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
+            >>> df.show()
+            ╭────────────┬────────────╮
+            │ x          ┆ date       │
+            │ ---        ┆ ---        │
+            │ Utf8       ┆ Date       │
+            ╞════════════╪════════════╡
+            │ 2021-01-01 ┆ 2021-01-01 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 ┆ 2021-01-02 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None       │
+            ╰────────────┴────────────╯
+
+
+        Returns:
+            Expression: a Date expression which is parsed by given format
+        """
+        return Expression._from_pyexpr(self._expr.utf8_to_date(format))
+
+    def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
+        """Converts a string to a datetime using the specified format and timezone
+
+        .. NOTE::
+            The format must be a valid datetime format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f"))
+            >>> df.show()
+            ╭─────────────────────────┬───────────────────────────────╮
+            │ x                       ┆ datetime                      │
+            │ ---                     ┆ ---                           │
+            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
+            ╞═════════════════════════╪═══════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 ┆ 2021-01-02 12:30:00.456       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                    ┆ None                          │
+            ╰─────────────────────────┴───────────────────────────────╯
+
+            If a timezone is provided, the datetime will be parsed in that timezone
+
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+            >>> df.show()
+            ╭───────────────────────────────┬────────────────────────────────────────────────╮
+            │ x                             ┆ datetime                                       │
+            │ ---                           ┆ ---                                            │
+            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
+            ╞═══════════════════════════════╪════════════════════════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-02 12:30:00.456 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                          ┆ None                                           │
+            ╰───────────────────────────────┴────────────────────────────────────────────────╯
+
+
+        Returns:
+            Expression: a DateTime expression which is parsed by given format and timezone
+        """
+        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
@@ -1682,7 +1781,10 @@ class ExpressionsProjection(Iterable[Expression]):
 
         return len(self._output_name_to_exprs) == len(other._output_name_to_exprs) and all(
             (s.name() == o.name()) and expr_structurally_equal(s, o)
-            for s, o in zip(self._output_name_to_exprs.values(), other._output_name_to_exprs.values())
+            for s, o in zip(
+                self._output_name_to_exprs.values(),
+                other._output_name_to_exprs.values(),
+            )
         )
 
     def union(self, other: ExpressionsProjection, rename_dup: str | None = None) -> ExpressionsProjection:

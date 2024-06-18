@@ -59,6 +59,7 @@ Numeric
     Expression.arcsin
     Expression.arccos
     Expression.arctan
+    Expression.arctan2
     Expression.radians
     Expression.degrees
     Expression.log2
@@ -146,6 +147,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.like
    Expression.str.ilike
    Expression.str.substr
+   Expression.str.to_date
+   Expression.str.to_datetime
 
 .. _api-float-expression-operations:
 

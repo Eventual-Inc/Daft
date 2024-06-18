@@ -68,7 +68,8 @@ class Series:
                 storage_series = Series.from_arrow(array.storage, name=name)
                 series = storage_series.cast(
                     DataType.fixed_size_list(
-                        DataType.from_arrow_type(array.type.scalar_type), int(np.prod(array.type.shape))
+                        DataType.from_arrow_type(array.type.scalar_type),
+                        int(np.prod(array.type.shape)),
                     )
                 )
                 return series.cast(DataType.from_arrow_type(array.type))
@@ -256,7 +257,10 @@ class Series:
                 storage = arrow_series.storage
                 list_size = storage.type.list_size
                 storage = pa.ListArray.from_arrays(
-                    pa.array(list(range(0, (len(arrow_series) + 1) * list_size, list_size)), pa.int32()),
+                    pa.array(
+                        list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
+                        pa.int32(),
+                    ),
                     storage.values,
                 )
                 return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
@@ -391,6 +395,12 @@ class Series:
     def arctan(self) -> Series:
         """The elementwise arc tangent of a numeric series"""
         return Series._from_pyseries(self._series.arctan())
+
+    def arctan2(self, other: Series) -> Series:
+        """Calculates the four quadrant arctangent of coordinates (y, x)"""
+        if not isinstance(other, Series):
+            raise TypeError(f"expected another Series but got {type(other)}")
+        return Series._from_pyseries(self._series.arctan2(other._series))
 
     def radians(self) -> Series:
         """The elementwise radians of a numeric series"""
@@ -784,6 +794,20 @@ class SeriesStringNamespace(SeriesNamespace):
             raise ValueError(f"expected another Series but got {type(pattern)}")
         assert self._series is not None and pattern._series is not None
         return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
+
+    def to_date(self, format: str) -> Series:
+        if not isinstance(format, str):
+            raise ValueError(f"expected str for format but got {type(format)}")
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_to_date(format))
+
+    def to_datetime(self, format: str, timezone: str | None = None) -> Series:
+        if not isinstance(format, str):
+            raise ValueError(f"expected str for format but got {type(format)}")
+        if timezone is not None and not isinstance(timezone, str):
+            raise ValueError(f"expected str for timezone but got {type(timezone)}")
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_to_datetime(format, timezone))
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
         if not isinstance(start, Series):

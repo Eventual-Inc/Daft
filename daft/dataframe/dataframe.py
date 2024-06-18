@@ -1164,8 +1164,10 @@ class DataFrame:
 
         if join_strategy == JoinStrategy.SortMerge and join_type != JoinType.Inner:
             raise ValueError("Sort merge join only supports inner joins")
-        if join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
+        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
+        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Anti:
+            raise ValueError("Broadcast join does not support Anti joins")
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))

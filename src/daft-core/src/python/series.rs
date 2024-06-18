@@ -183,6 +183,10 @@ impl PySeries {
             .into())
     }
 
+    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.atan2(&other.series)?.into())
+    }
+
     pub fn degrees(&self) -> PyResult<Self> {
         Ok(self
             .series
@@ -455,6 +459,14 @@ impl PySeries {
             .series
             .utf8_substr(&start.series, &length.series)?
             .into())
+    }
+
+    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
+        Ok(self.series.utf8_to_date(format)?.into())
+    }
+
+    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
+        Ok(self.series.utf8_to_datetime(format, timezone)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {

@@ -82,8 +82,9 @@ impl Join {
                 .map(|(_, field)| field)
                 .cloned()
                 .chain(right.schema().fields.iter().filter_map(|(rname, rfield)| {
-                    if left_join_keys.contains(rname.as_str())
-                        && right_join_keys.contains(rname.as_str())
+                    if (left_join_keys.contains(rname.as_str())
+                        && right_join_keys.contains(rname.as_str()))
+                        || matches!(join_type, JoinType::Anti | JoinType::Semi)
                     {
                         right_input_mapping.insert(rname.clone(), rname.clone());
                         None

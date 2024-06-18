@@ -260,6 +260,11 @@ impl PyExpr {
         Ok(arctan(self.into()).into())
     }
 
+    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
+        use functions::numeric::arctan2;
+        Ok(arctan2(self.into(), other.expr.clone()).into())
+    }
+
     pub fn radians(&self) -> PyResult<Self> {
         use functions::numeric::radians;
         Ok(radians(self.into()).into())
@@ -664,6 +669,16 @@ impl PyExpr {
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
         use crate::functions::utf8::substr;
         Ok(substr(self.into(), start.into(), length.into()).into())
+    }
+
+    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
+        use crate::functions::utf8::to_date;
+        Ok(to_date(self.into(), format).into())
+    }
+
+    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
+        use crate::functions::utf8::to_datetime;
+        Ok(to_datetime(self.into(), format, timezone).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

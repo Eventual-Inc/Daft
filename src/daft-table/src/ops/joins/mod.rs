@@ -1,12 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use daft_core::{
-    array::growable::make_growable, schema::Schema, utils::supertype::try_get_supertype, JoinType,
-    Series,
+    array::growable::make_growable,
+    schema::{Schema, SchemaRef},
+    utils::supertype::try_get_supertype,
+    JoinType, Series,
 };
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
+use hash_join::hash_semi_anti_join;
 
 use crate::Table;
 
@@ -36,17 +42,21 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
 }
 
 pub fn infer_join_schema(
-    left: &Schema,
-    right: &Schema,
+    left: &SchemaRef,
+    right: &SchemaRef,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
-) -> DaftResult<Schema> {
+    how: JoinType,
+) -> DaftResult<SchemaRef> {
     if left_on.len() != right_on.len() {
         return Err(DaftError::ValueError(format!(
             "Length of left_on does not match length of right_on for Join {} vs {}",
             left_on.len(),
             right_on.len()
         )));
+    }
+    if matches!(how, JoinType::Anti | JoinType::Semi) {
+        return Ok(left.clone());
     }
 
     let lfields = left_on
@@ -104,8 +114,8 @@ pub fn infer_join_schema(
         join_fields.push(field.rename(curr_name.clone()));
         names_so_far.insert(curr_name.clone());
     }
-
-    Schema::new(join_fields)
+    let schema = Schema::new(join_fields)?;
+    Ok(Arc::new(schema))
 }
 
 fn add_non_join_key_columns(
@@ -199,6 +209,8 @@ impl Table {
             JoinType::Left => hash_left_right_join(self, right, left_on, right_on, true),
             JoinType::Right => hash_left_right_join(self, right, left_on, right_on, false),
             JoinType::Outer => hash_outer_join(self, right, left_on, right_on),
+            JoinType::Semi => hash_semi_anti_join(self, right, left_on, right_on, false),
+            JoinType::Anti => hash_semi_anti_join(self, right, left_on, right_on, true),
         }
     }
 
@@ -239,7 +251,13 @@ impl Table {
             return left.sort_merge_join(&right, left_on, right_on, true);
         }
 
-        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
+        let join_schema = infer_join_schema(
+            &self.schema,
+            &right.schema,
+            left_on,
+            right_on,
+            JoinType::Inner,
+        )?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 

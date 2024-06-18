@@ -239,4 +239,12 @@ impl Series {
             }
         })
     }
+
+    pub fn utf8_to_date(&self, format: &str) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.to_date(format)?.into_series()))
+    }
+
+    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone)?.into_series()))
+    }
 }
