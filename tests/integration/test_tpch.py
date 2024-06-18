@@ -102,3 +102,75 @@ def test_tpch_q10(tmp_path, check_answer, get_df):
     daft_df = answers.q10(get_df)
     daft_pd_df = daft_df.to_pandas()
     check_answer(daft_pd_df, 10, tmp_path)
+
+
+def test_tpch_q11(tmp_path, check_answer, get_df):
+    daft_df = answers.q11(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 11, tmp_path)
+
+
+def test_tpch_q12(tmp_path, check_answer, get_df):
+    daft_df = answers.q12(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 12, tmp_path)
+
+
+def test_tpch_q13(tmp_path, check_answer, get_df):
+    daft_df = answers.q13(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 13, tmp_path)
+
+
+def test_tpch_q14(tmp_path, check_answer, get_df):
+    daft_df = answers.q14(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 14, tmp_path)
+
+
+def test_tpch_q15(tmp_path, check_answer, get_df):
+    daft_df = answers.q15(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 15, tmp_path)
+
+
+def test_tpch_q16(tmp_path, check_answer, get_df):
+    daft_df = answers.q16(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 16, tmp_path)
+
+
+def test_tpch_q17(tmp_path, check_answer, get_df):
+    daft_df = answers.q17(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 17, tmp_path)
+
+
+def test_tpch_q18(tmp_path, check_answer, get_df):
+    daft_df = answers.q18(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 18, tmp_path)
+
+
+def test_tpch_q19(tmp_path, check_answer, get_df):
+    daft_df = answers.q19(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 19, tmp_path)
+
+
+def test_tpch_q20(tmp_path, check_answer, get_df):
+    daft_df = answers.q20(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 20, tmp_path)
+
+
+def test_tpch_q21(tmp_path, check_answer, get_df):
+    daft_df = answers.q21(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 21, tmp_path)
+
+
+def test_tpch_q22(tmp_path, check_answer, get_df):
+    daft_df = answers.q22(get_df)
+    daft_pd_df = daft_df.to_pandas()
+    check_answer(daft_pd_df, 22, tmp_path)
