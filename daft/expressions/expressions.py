@@ -420,7 +420,12 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def arctan2(self, other: Expression) -> Expression:
-        """Calculates the four quadrant arctangent of coordinates (y, x) (``expr_y.arctan2(expr_x)``)"""
+        """Calculates the four quadrant arctangent of coordinates (y, x), in radians (``expr_y.arctan2(expr_x)``)
+
+        * ``x = 0``, ``y = 0``: ``0``
+        * ``x >= 0``: ``[-pi/2, pi/2]``
+        * ``y >= 0``: ``(pi/2, pi]``
+        * ``y < 0``: ``(-pi, -pi/2)``"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr.arctan2(expr._expr))
 
