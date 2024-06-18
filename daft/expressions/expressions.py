@@ -1444,7 +1444,21 @@ class ExpressionStringNamespace(ExpressionNamespace):
             See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
         Example:
-            >>> col("x").str.to_date("%Y-%m-%d")
+            >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
+            >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
+            >>> df.show()
+            ╭────────────┬────────────╮
+            │ x          ┆ date       │
+            │ ---        ┆ ---        │
+            │ Utf8       ┆ Date       │
+            ╞════════════╪════════════╡
+            │ 2021-01-01 ┆ 2021-01-01 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 ┆ 2021-01-02 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None       │
+            ╰────────────┴────────────╯
+
 
         Returns:
             Expression: a Date expression which is parsed by given format
@@ -1459,7 +1473,38 @@ class ExpressionStringNamespace(ExpressionNamespace):
             See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
         Example:
-            >>> col("x").str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f"))
+            >>> df.show()
+            ╭─────────────────────────┬───────────────────────────────╮
+            │ x                       ┆ datetime                      │
+            │ ---                     ┆ ---                           │
+            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
+            ╞═════════════════════════╪═══════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 ┆ 2021-01-02 12:30:00.456       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                    ┆ None                          │
+            ╰─────────────────────────┴───────────────────────────────╯
+
+            If a timezone is provided, the datetime will be parsed in that timezone
+
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+            >>> df.show()
+            ╭───────────────────────────────┬────────────────────────────────────────────────╮
+            │ x                             ┆ datetime                                       │
+            │ ---                           ┆ ---                                            │
+            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
+            ╞═══════════════════════════════╪════════════════════════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-02 12:30:00.456 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                          ┆ None                                           │
+            ╰───────────────────────────────┴────────────────────────────────────────────────╯
+
 
         Returns:
             Expression: a DateTime expression which is parsed by given format and timezone
