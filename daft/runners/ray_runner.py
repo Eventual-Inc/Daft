@@ -4,7 +4,6 @@ import logging
 import threading
 import time
 import uuid
-import warnings
 from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
@@ -739,18 +738,20 @@ class RayRunner(Runner[ray.ObjectRef]):
         max_task_backlog: int | None,
     ) -> None:
         super().__init__()
-
-        # Reuse the existing Ray context if already initialized
         if ray.is_initialized():
             if address is not None:
-                warnings.warn(
-                    f"Ray has already been initialized. Daft will default to using the existing Ray connection and ignore the supplied address: {address}"
+                logger.warning(
+                    "Ray has already been initialized, Daft will reuse the existing Ray context and ignore the "
+                    "supplied address: %s",
+                    address,
                 )
-            self.ray_context = ray.init(ignore_reinit_error=True)
         else:
-            self.ray_context = ray.init(address=address)
+            ray.init(address=address)
 
-        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+        # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
+        self.ray_client_mode = ray.util.client.ray.get_context().is_connected()
+
+        if self.ray_client_mode:
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.options(  # type: ignore
                 name=SCHEDULER_ACTOR_NAME,
@@ -767,7 +768,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             )
 
     def active_plans(self) -> list[str]:
-        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+        if self.ray_client_mode:
             return ray.get(self.scheduler_actor.active_plans.remote())
         else:
             return self.scheduler.active_plans()
@@ -780,7 +781,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> str:
         psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
         result_uuid = str(uuid.uuid4())
-        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+        if self.ray_client_mode:
             ray.get(
                 self.scheduler_actor.start_plan.remote(
                     daft_execution_config=daft_execution_config,
@@ -803,7 +804,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     def _stream_plan(self, result_uuid: str) -> Iterator[RayMaterializedResult]:
         try:
             while True:
-                if isinstance(self.ray_context, ray.client_builder.ClientContext):
+                if self.ray_client_mode:
                     result = ray.get(self.scheduler_actor.next.remote(result_uuid))
                 else:
                     result = self.scheduler.next(result_uuid)
@@ -816,7 +817,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield result
         finally:
             # Generator is out of scope, ensure that state has been cleaned up
-            if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            if self.ray_client_mode:
                 ray.get(self.scheduler_actor.stop_plan.remote(result_uuid))
             else:
                 self.scheduler.stop_plan(result_uuid)
