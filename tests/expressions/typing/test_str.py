@@ -182,11 +182,10 @@ def test_str_to_datetime():
         name="col",
     )
     format = "%Y-%m-%d %H:%M:%S"
-    timezone = "UTC"
 
     assert_typing_resolve_vs_runtime_behavior(
         data=[s],
-        expr=col("col").str.to_datetime(format, timezone),
-        run_kernel=lambda: s.str.to_datetime(format, timezone),
+        expr=col("col").str.to_datetime(format),
+        run_kernel=lambda: s.str.to_datetime(format),
         resolvable=True,
     )

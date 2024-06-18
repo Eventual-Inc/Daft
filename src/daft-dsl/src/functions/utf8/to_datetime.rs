@@ -1,12 +1,11 @@
+use crate::functions::FunctionExpr;
 use crate::ExprRef;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{DataType, Field, TimeUnit},
+    datatypes::{infer_timeunit_from_format_string, DataType, Field},
     schema::Schema,
     series::Series,
 };
-
-use crate::functions::FunctionExpr;
-use common_error::{DaftError, DaftResult};
 
 use super::{super::FunctionEvaluator, Utf8Expr};
 
@@ -14,7 +13,7 @@ pub(super) struct ToDatetimeEvaluator {}
 
 impl FunctionEvaluator for ToDatetimeEvaluator {
     fn fn_name(&self) -> &'static str {
-        "todatetime"
+        "to_datetime"
     }
 
     fn to_field(
@@ -33,20 +32,14 @@ impl FunctionEvaluator for ToDatetimeEvaluator {
                             }
                             _ => panic!("Expected Utf8 ToDatetime Expr, got {expr}"),
                         };
-                        let timeunit = if format.contains("%9f") || format.contains("%.9f") {
-                            TimeUnit::Nanoseconds
-                        } else if format.contains("%3f") || format.contains("%.3f") {
-                            TimeUnit::Milliseconds
-                        } else {
-                            TimeUnit::Microseconds
-                        };
+                        let timeunit = infer_timeunit_from_format_string(format);
                         Ok(Field::new(
                             data_field.name,
                             DataType::Timestamp(timeunit, timezone.clone()),
                         ))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects inputs to todate to be utf8, but received {data_field}",
+                        "Expects inputs to to_datetime to be utf8, but received {data_field}",
                     ))),
                 },
                 Err(e) => Err(e),

@@ -14,7 +14,7 @@ pub(super) struct ToDateEvaluator {}
 
 impl FunctionEvaluator for ToDateEvaluator {
     fn fn_name(&self) -> &'static str {
-        "todate"
+        "to_date"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
@@ -23,7 +23,7 @@ impl FunctionEvaluator for ToDateEvaluator {
                 Ok(data_field) => match &data_field.dtype {
                     DataType::Utf8 => Ok(Field::new(data_field.name, DataType::Date)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects inputs to todate to be utf8, but received {data_field}",
+                        "Expects inputs to to_date to be utf8, but received {data_field}",
                     ))),
                 },
                 Err(e) => Err(e),

@@ -245,13 +245,6 @@ impl Series {
     }
 
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Series> {
-        let timeunit = if format.contains("%9f") || format.contains("%.9f") {
-            TimeUnit::Nanoseconds
-        } else if format.contains("%3f") || format.contains("%.3f") {
-            TimeUnit::Milliseconds
-        } else {
-            TimeUnit::Microseconds
-        };
-        self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone, timeunit)?.into_series()))
+        self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone)?.into_series()))
     }
 }
