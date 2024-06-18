@@ -71,7 +71,9 @@ impl<T: PartitionRef, E: Executor<T> + 'static> Sink<T> for LimitSink<T, E> {
         // TODO(Clark): Send remaining rows limit to each new partition task.
         loop {
             tokio::select! {
+                // Task scheduler has completed execution, break the loop.
                 _ = &mut exec_fut => break,
+                // Task scheduler has produced a new output, send partitions received to the output channel.
                 Some(part) = rx.recv() => {
                     if let Ok(ref p) = part {
                         assert!(p.len() == 1);
@@ -84,6 +86,21 @@ impl<T: PartitionRef, E: Executor<T> + 'static> Sink<T> for LimitSink<T, E> {
                     }
                 },
             };
+        }
+
+        // If the limit has not been met, check to see if there are remaining outputs from the task scheduler and send them to the output channel.
+        if running_num_rows < limit {
+            while let Some(part) = rx.recv().await {
+                if let Ok(ref p) = part {
+                    assert!(p.len() == 1);
+                    running_num_rows += p[0].metadata().num_rows.unwrap_or(0);
+                }
+                output_channel.send(part).await.unwrap();
+                // If we've met the limit, early-terminate execution.
+                if running_num_rows >= limit {
+                    break;
+                }
+            }
         }
     }
 }
