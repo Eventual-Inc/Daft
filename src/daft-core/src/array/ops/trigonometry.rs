@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use common_error::DaftResult;
 
 use crate::array::DataArray;
-use crate::datatypes::DaftFloatType;
+use crate::datatypes::{DaftFloatType, Float32Array, Float64Array};
+
+use super::DaftAtan2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TrigonometricFunction {
@@ -56,3 +58,26 @@ where
         }
     }
 }
+
+macro_rules! impl_atan2_floating_array {
+    ($arr:ident, $T:ident) => {
+        impl DaftAtan2<$T> for $arr {
+            type Output = DaftResult<Self>;
+
+            fn atan2(&self, rhs: $T) -> Self::Output {
+                self.apply(|v| v.atan2(rhs))
+            }
+        }
+
+        impl DaftAtan2<&$arr> for $arr {
+            type Output = DaftResult<Self>;
+
+            fn atan2(&self, rhs: &$arr) -> Self::Output {
+                self.binary_apply(rhs, |a, b| a.atan2(b))
+            }
+        }
+    };
+}
+
+impl_atan2_floating_array!(Float32Array, f32);
+impl_atan2_floating_array!(Float64Array, f64);

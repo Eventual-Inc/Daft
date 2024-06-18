@@ -185,6 +185,16 @@ def test_repr_functions_trigonometry(fun: str) -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_atan2() -> None:
+    a = col("a")
+    b = col("b")
+    y = a.arctan2(b)
+    repr_out = repr(y)
+    assert repr_out == "atan2(col(a), col(b))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()
