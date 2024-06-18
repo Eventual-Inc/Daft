@@ -19,6 +19,8 @@ common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
 globset = "0.4"
+google-cloud-storage = {version = "0.15.0", default_features = false, features = ["default-tls", "auth"]}
+google-cloud-token = {version = "0.1.2"}
 home = "0.5.9"
 hyper = "0.14.27"
 hyper-tls = "0.5.0"
@@ -36,15 +38,6 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 url = {workspace = true}
-
-[dependencies.google-cloud-storage]
-default-features = false
-features = ["default-tls", "auth"]
-# branch = "main"
-git = "https://github.com/yoshidan/google-cloud-rust"
-package = "google-cloud-storage"
-rev = "65251957f6aed2eb8adb62b9a9a1b9996150d265"
-version = "0.15.0"
 
 [dependencies.reqwest]
 default-features = false

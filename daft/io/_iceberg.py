@@ -46,11 +46,9 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
     gcs_config = None
     azure_config = None
     if parse(pyiceberg.__version__) >= parse("0.5.0"):
-        from pyiceberg.io import GCS_PROJECT_ID
+        from pyiceberg.io import GCS_PROJECT_ID, GCS_TOKEN
 
-        gcs_mapping = {
-            GCS_PROJECT_ID: "project_id",
-        }
+        gcs_mapping = {GCS_PROJECT_ID: "project_id", GCS_TOKEN: "token"}
         gcs_args = dict()  # type: ignore
         for pyiceberg_key, daft_key in gcs_mapping.items():
             value = props.get(pyiceberg_key, None)
