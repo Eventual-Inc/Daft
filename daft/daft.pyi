@@ -560,10 +560,24 @@ class GCSConfig:
     """
 
     project_id: str | None
+    credentials: str | None
+    token: str | None
     anonymous: bool
 
-    def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
-    def replace(self, project_id: str | None = None, anonymous: bool | None = None) -> GCSConfig:
+    def __init__(
+        self,
+        project_id: str | None = None,
+        credentials: str | None = None,
+        token: str | None = None,
+        anonymous: bool | None = None,
+    ): ...
+    def replace(
+        self,
+        project_id: str | None = None,
+        credentials: str | None = None,
+        token: str | None = None,
+        anonymous: bool | None = None,
+    ) -> GCSConfig:
         """Replaces values if provided, returning a new GCSConfig"""
         ...
 

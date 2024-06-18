@@ -96,8 +96,10 @@ pub struct AzureConfig {
 /// Create configurations to be used when accessing Google Cloud Storage
 ///
 /// Args:
-///     project_id: Google Project ID, defaults to reading credentials file or Google Cloud metadata service
-///     anonymous: Whether or not to use "anonymous mode", which will access Google Storage without any credentials
+///     project_id (str, optional): Google Project ID, defaults to value in credentials file or Google Cloud metadata service
+///     credentials (str, optional): Path to credentials file or JSON string with credentials
+///     token (str, optional): OAuth2 token to use for authentication. You likely want to use `credentials` instead, since it can be used to refresh the token. This value is used when vended by a data catalog.
+///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Google Storage without any credentials. Defaults to false
 ///
 /// Example:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
@@ -738,20 +740,35 @@ impl AzureConfig {
 impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    pub fn new(project_id: Option<String>, anonymous: Option<bool>) -> Self {
+    pub fn new(
+        project_id: Option<String>,
+        credentials: Option<String>,
+        token: Option<String>,
+        anonymous: Option<bool>,
+    ) -> Self {
         let def = crate::GCSConfig::default();
         GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
+                credentials: credentials.or(def.credentials),
+                token: token.or(def.token),
                 anonymous: anonymous.unwrap_or(def.anonymous),
             },
         }
     }
 
-    pub fn replace(&self, project_id: Option<String>, anonymous: Option<bool>) -> Self {
+    pub fn replace(
+        &self,
+        project_id: Option<String>,
+        credentials: Option<String>,
+        token: Option<String>,
+        anonymous: Option<bool>,
+    ) -> Self {
         GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or_else(|| self.config.project_id.clone()),
+                credentials: credentials.or_else(|| self.config.credentials.clone()),
+                token: token.or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
             },
         }
@@ -765,6 +782,18 @@ impl GCSConfig {
     #[getter]
     pub fn project_id(&self) -> PyResult<Option<String>> {
         Ok(self.config.project_id.clone())
+    }
+
+    /// Credentials file path or string to use when accessing Google Cloud Storage
+    #[getter]
+    pub fn credentials(&self) -> PyResult<Option<String>> {
+        Ok(self.config.credentials.clone())
+    }
+
+    /// OAuth2 token to use when accessing Google Cloud Storage
+    #[getter]
+    pub fn token(&self) -> PyResult<Option<String>> {
+        Ok(self.config.token.clone())
     }
 
     /// Whether to use anonymous mode

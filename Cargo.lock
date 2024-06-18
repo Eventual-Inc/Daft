@@ -1723,6 +1723,7 @@ dependencies = [
  "futures",
  "globset",
  "google-cloud-storage",
+ "google-cloud-token",
  "home",
  "hyper",
  "hyper-tls",
@@ -2374,8 +2375,9 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-auth"
-version = "0.13.0"
-source = "git+https://github.com/yoshidan/google-cloud-rust?rev=65251957f6aed2eb8adb62b9a9a1b9996150d265#65251957f6aed2eb8adb62b9a9a1b9996150d265"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bf7cb7864f08a92e77c26bb230d021ea57691788fb5dd51793f96965d19e7f9"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -2396,7 +2398,8 @@ dependencies = [
 [[package]]
 name = "google-cloud-metadata"
 version = "0.4.0"
-source = "git+https://github.com/yoshidan/google-cloud-rust?rev=65251957f6aed2eb8adb62b9a9a1b9996150d265#65251957f6aed2eb8adb62b9a9a1b9996150d265"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc279bfb50487d7bcd900e8688406475fc750fe474a835b2ab9ade9eb1fc90e2"
 dependencies = [
  "reqwest",
  "thiserror",
@@ -2406,7 +2409,8 @@ dependencies = [
 [[package]]
 name = "google-cloud-storage"
 version = "0.15.0"
-source = "git+https://github.com/yoshidan/google-cloud-rust?rev=65251957f6aed2eb8adb62b9a9a1b9996150d265#65251957f6aed2eb8adb62b9a9a1b9996150d265"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac04b29849ebdeb9fb008988cc1c4d1f0c9d121b4c7f1ddeb8061df124580e93"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2436,7 +2440,8 @@ dependencies = [
 [[package]]
 name = "google-cloud-token"
 version = "0.1.2"
-source = "git+https://github.com/yoshidan/google-cloud-rust?rev=65251957f6aed2eb8adb62b9a9a1b9996150d265#65251957f6aed2eb8adb62b9a9a1b9996150d265"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f49c12ba8b21d128a2ce8585955246977fbce4415f680ebf9199b6f9d6d725f"
 dependencies = [
  "async-trait",
 ]
@@ -2889,13 +2894,14 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "8.3.0"
+version = "9.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6971da4d9c3aa03c3d8f3ff0f4155b534aad021292003895a469716b2a230378"
+checksum = "b9ae10193d25051e74945f1ea2d0b42e03cc3b890f7e4cc5faa44997d808193f"
 dependencies = [
  "base64 0.21.7",
+ "js-sys",
  "pem",
- "ring 0.16.20",
+ "ring 0.17.6",
  "serde",
  "serde_json",
  "simple_asn1",
@@ -3558,11 +3564,12 @@ checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 
 [[package]]
 name = "pem"
-version = "1.1.1"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8835c273a76a90455d7344889b0964598e3316e2a79ede8e36f16bdcf2228b8"
+checksum = "8e459365e590736a54c3fa561947c84837534b8e9af6fc5bf781307e82658fae"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.22.0",
+ "serde",
 ]
 
 [[package]]

@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use futures::stream::BoxStream;
 use futures::TryStreamExt;
+use google_cloud_storage::client::google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_storage::client::ClientConfig;
+use google_cloud_token::{TokenSource, TokenSourceProvider};
 
 use async_trait::async_trait;
 use google_cloud_storage::client::Client;
@@ -334,9 +336,49 @@ pub(crate) struct GCSSource {
     client: GCSClientWrapper,
 }
 
+#[derive(Debug, Clone)]
+struct FixedTokenSource {
+    token: String,
+}
+
+impl TokenSourceProvider for FixedTokenSource {
+    fn token_source(&self) -> Arc<dyn TokenSource> {
+        Arc::new(self.clone())
+    }
+}
+
+#[async_trait]
+impl TokenSource for FixedTokenSource {
+    async fn token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(format!("Bearer {0}", self.token))
+    }
+}
+
 impl GCSSource {
     pub async fn get_client(config: &GCSConfig) -> super::Result<Arc<Self>> {
-        let config = if !config.anonymous {
+        let mut client_config = if config.anonymous {
+            ClientConfig::default().anonymous()
+        } else if let Some(creds) = &config.credentials {
+            let creds_file = CredentialsFile::new_from_file(creds.clone()).await;
+            let creds_str = CredentialsFile::new_from_str(creds).await;
+
+            let creds = match (creds_file, creds_str) {
+                (Ok(creds), _) => creds,
+                (_, res) => res.context(UnableToLoadCredentialsSnafu {})?,
+            };
+
+            ClientConfig::default()
+                .with_credentials(creds)
+                .await
+                .context(UnableToLoadCredentialsSnafu {})?
+        } else if let Some(token) = &config.token {
+            ClientConfig {
+                token_source_provider: Some(Box::new(FixedTokenSource {
+                    token: token.clone(),
+                })),
+                ..Default::default()
+            }
+        } else {
             let attempted = ClientConfig::default()
                 .with_auth()
                 .await
@@ -349,11 +391,13 @@ impl GCSSource {
                     ClientConfig::default().anonymous()
                 }
             }
-        } else {
-            ClientConfig::default().anonymous()
         };
 
-        let client = Client::new(config);
+        if config.project_id.is_some() {
+            client_config.project_id.clone_from(&config.project_id);
+        }
+
+        let client = Client::new(client_config);
         Ok(GCSSource {
             client: GCSClientWrapper(client),
         }
