@@ -930,16 +930,38 @@ impl Utf8Array {
         let arrow_result = self_iter
             .map(|val| match val {
                 Some(val) => {
-                    let datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
-                        DaftError::ComputeError(format!(
-                            "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                        ))
-                    })?;
-                    let timestamp = match timeunit {
-                        TimeUnit::Seconds => datetime.and_utc().timestamp(),
-                        TimeUnit::Milliseconds => datetime.and_utc().timestamp_millis(),
-                        TimeUnit::Microseconds => datetime.and_utc().timestamp_micros(),
-                        TimeUnit::Nanoseconds => datetime.and_utc().timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                    let timestamp = match timezone {
+                        Some(tz) => {
+                            let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+                                ))
+                            })?;
+                            let datetime_with_timezone = datetime.with_timezone(&tz.parse::<chrono_tz::Tz>().map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse timezone {tz} : {e}"
+                                ))
+                            })?);
+                            match timeunit {
+                                TimeUnit::Seconds => datetime_with_timezone.timestamp(),
+                                TimeUnit::Milliseconds => datetime_with_timezone.timestamp_millis(),
+                                TimeUnit::Microseconds => datetime_with_timezone.timestamp_micros(),
+                                TimeUnit::Nanoseconds => datetime_with_timezone.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                            }
+                        }
+                        None => {
+                            let naive_datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+                                ))
+                            })?;
+                            match timeunit {
+                                TimeUnit::Seconds => naive_datetime.and_utc().timestamp(),
+                                TimeUnit::Milliseconds => naive_datetime.and_utc().timestamp_millis(),
+                                TimeUnit::Microseconds => naive_datetime.and_utc().timestamp_micros(),
+                                TimeUnit::Nanoseconds => naive_datetime.and_utc().timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                            }
+                        }
                     };
                     Ok(Some(timestamp))
                 }
