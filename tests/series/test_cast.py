@@ -188,6 +188,28 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     np.testing.assert_equal([np.asarray(arr, dtype=dtype.to_pandas_dtype()) for arr in data[:-1]], pydata[:-1])
 
 
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
+def test_series_cast_list_to_embedding(dtype) -> None:
+    data = [[1, 2, 3], [3, 2, 1], [4.1, 5.2, 6.3], None]
+    s = Series.from_pylist(data, pyobj="disallow")
+
+    target_dtype = DataType.embedding(DataType.from_arrow_type(dtype), 3)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    assert t.list.lengths().to_pylist() == [3, 3, 3, None]
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(
+        [np.asarray(arr, dtype=dtype.to_pandas_dtype()) for arr in data[:-1]],
+        pydata[:-1],
+    )
+
+
 def test_series_cast_numpy_to_image() -> None:
     data = [
         np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
