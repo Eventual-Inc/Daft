@@ -21,6 +21,8 @@ pub enum JoinType {
     Left,
     Right,
     Outer,
+    Anti,
+    Semi,
 }
 
 #[cfg(feature = "python")]
@@ -46,7 +48,7 @@ impl JoinType {
     pub fn iterator() -> std::slice::Iter<'static, JoinType> {
         use JoinType::*;
 
-        static JOIN_TYPES: [JoinType; 4] = [Inner, Left, Right, Outer];
+        static JOIN_TYPES: [JoinType; 6] = [Inner, Left, Right, Outer, Anti, Semi];
         JOIN_TYPES.iter()
     }
 }
@@ -62,6 +64,8 @@ impl FromStr for JoinType {
             "left" => Ok(Left),
             "right" => Ok(Right),
             "outer" => Ok(Outer),
+            "anti" => Ok(Anti),
+            "semi" => Ok(Semi),
             _ => Err(DaftError::TypeError(format!(
                 "Join type {} is not supported; only the following types are supported: {:?}",
                 join_type,

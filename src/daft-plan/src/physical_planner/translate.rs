@@ -558,6 +558,16 @@ pub(super) fn translate_single_logical_node(
                                 "Broadcast join does not support outer joins.".to_string(),
                             ));
                         }
+                        (JoinType::Anti, _) => {
+                            return Err(common_error::DaftError::ValueError(
+                                "Broadcast join does not support anti joins.".to_string(),
+                            ));
+                        }
+                        (JoinType::Semi, _) => {
+                            return Err(common_error::DaftError::ValueError(
+                                "Broadcast join does not support semi joins.".to_string(),
+                            ));
+                        }
                     };
 
                     if is_swapped {

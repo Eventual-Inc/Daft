@@ -23,15 +23,14 @@ impl MicroPartition {
     where
         F: FnOnce(&Table, &Table, &[ExprRef], &[ExprRef], JoinType) -> DaftResult<Table>,
     {
-        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
-
+        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on, how)?;
         match (how, self.len(), right.len()) {
             (JoinType::Inner, 0, _)
             | (JoinType::Inner, _, 0)
             | (JoinType::Left, 0, _)
             | (JoinType::Right, _, 0)
             | (JoinType::Outer, 0, 0) => {
-                return Ok(Self::empty(Some(join_schema.into())));
+                return Ok(Self::empty(Some(join_schema)));
             }
             _ => {}
         }
@@ -58,7 +57,7 @@ impl MicroPartition {
                 }
             };
             if let TruthValue::False = tv {
-                return Ok(Self::empty(Some(join_schema.into())));
+                return Ok(Self::empty(Some(join_schema)));
             }
         }
 
@@ -67,11 +66,11 @@ impl MicroPartition {
         let rt = right.concat_or_get(io_stats)?;
 
         match (lt.as_slice(), rt.as_slice()) {
-            ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),
+            ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
             ([lt], [rt]) => {
                 let joined_table = table_join(lt, rt, left_on, right_on, how)?;
                 Ok(MicroPartition::new_loaded(
-                    join_schema.into(),
+                    join_schema,
                     vec![joined_table].into(),
                     None,
                 ))

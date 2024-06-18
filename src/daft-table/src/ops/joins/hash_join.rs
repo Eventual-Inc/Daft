@@ -4,7 +4,7 @@ use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, full::FullNull},
     datatypes::{BooleanArray, UInt64Array},
-    DataType, IntoSeries,
+    DataType, IntoSeries, JoinType,
 };
 use daft_dsl::ExprRef;
 
@@ -21,7 +21,13 @@ pub(super) fn hash_inner_join(
     left_on: &[ExprRef],
     right_on: &[ExprRef],
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(&left.schema, &right.schema, left_on, right_on)?;
+    let join_schema = infer_join_schema(
+        &left.schema,
+        &right.schema,
+        left_on,
+        right_on,
+        JoinType::Inner,
+    )?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -103,7 +109,13 @@ pub(super) fn hash_left_right_join(
     right_on: &[ExprRef],
     left_side: bool,
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(&left.schema, &right.schema, left_on, right_on)?;
+    let join_schema = infer_join_schema(
+        &left.schema,
+        &right.schema,
+        left_on,
+        right_on,
+        JoinType::Right,
+    )?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -212,13 +224,80 @@ pub(super) fn hash_left_right_join(
     Table::new(join_schema, join_series)
 }
 
+pub(super) fn hash_semi_anti_join(
+    left: &Table,
+    right: &Table,
+    left_on: &[ExprRef],
+    right_on: &[ExprRef],
+    is_anti: bool,
+) -> DaftResult<Table> {
+    let lkeys = left.eval_expression_list(left_on)?;
+    let rkeys = right.eval_expression_list(right_on)?;
+
+    let (lkeys, rkeys) = match_types_for_tables(&lkeys, &rkeys)?;
+
+    let lidx = if lkeys.columns.iter().any(|s| s.data_type().is_null())
+        || rkeys.columns.iter().any(|s| s.data_type().is_null())
+    {
+        if is_anti {
+            // if we have a null column match, then all of the rows match for an anti join!
+            return Ok(left.clone());
+        } else {
+            UInt64Array::empty("left_indices", &DataType::UInt64).into_series()
+        }
+    } else {
+        let probe_table = rkeys.to_probe_hash_map_without_idx()?;
+
+        let l_hashes = lkeys.hash_rows()?;
+
+        let is_equal = build_multi_array_is_equal(
+            lkeys.columns.as_slice(),
+            rkeys.columns.as_slice(),
+            false,
+            false,
+        )?;
+        let rows = rkeys.len();
+
+        drop(lkeys);
+        drop(rkeys);
+
+        let mut left_idx = Vec::with_capacity(rows);
+        let is_semi = !is_anti;
+        for (l_idx, h) in l_hashes.as_arrow().values_iter().enumerate() {
+            let is_match = probe_table
+                .raw_entry()
+                .from_hash(*h, |other| {
+                    *h == other.hash && {
+                        let r_idx = other.idx as usize;
+                        is_equal(l_idx, r_idx)
+                    }
+                })
+                .is_some();
+            dbg!(l_idx);
+            if is_match == is_semi {
+                left_idx.push(l_idx as u64);
+            }
+        }
+
+        UInt64Array::from(("left_indices", left_idx)).into_series()
+    };
+
+    left.take(&lidx)
+}
+
 pub(super) fn hash_outer_join(
     left: &Table,
     right: &Table,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(&left.schema, &right.schema, left_on, right_on)?;
+    let join_schema = infer_join_schema(
+        &left.schema,
+        &right.schema,
+        left_on,
+        right_on,
+        JoinType::Outer,
+    )?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
