@@ -40,3 +40,13 @@ impl From<&ArrowTimeUnit> for TimeUnit {
         }
     }
 }
+
+pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
+    if format.contains("%9f") || format.contains("%.9f") {
+        TimeUnit::Nanoseconds
+    } else if format.contains("%3f") || format.contains("%.3f") {
+        TimeUnit::Milliseconds
+    } else {
+        TimeUnit::Microseconds
+    }
+}

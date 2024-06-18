@@ -1532,6 +1532,81 @@ class ExpressionStringNamespace(ExpressionNamespace):
         length_expr = Expression._to_expression(length)
         return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
 
+    def to_date(self, format: str) -> Expression:
+        """Converts a string to a date using the specified format
+
+        .. NOTE::
+            The format must be a valid date format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
+            >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
+            >>> df.show()
+            ╭────────────┬────────────╮
+            │ x          ┆ date       │
+            │ ---        ┆ ---        │
+            │ Utf8       ┆ Date       │
+            ╞════════════╪════════════╡
+            │ 2021-01-01 ┆ 2021-01-01 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 ┆ 2021-01-02 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None       │
+            ╰────────────┴────────────╯
+
+
+        Returns:
+            Expression: a Date expression which is parsed by given format
+        """
+        return Expression._from_pyexpr(self._expr.utf8_to_date(format))
+
+    def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
+        """Converts a string to a datetime using the specified format and timezone
+
+        .. NOTE::
+            The format must be a valid datetime format string.
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f"))
+            >>> df.show()
+            ╭─────────────────────────┬───────────────────────────────╮
+            │ x                       ┆ datetime                      │
+            │ ---                     ┆ ---                           │
+            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
+            ╞═════════════════════════╪═══════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 ┆ 2021-01-02 12:30:00.456       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                    ┆ None                          │
+            ╰─────────────────────────┴───────────────────────────────╯
+
+            If a timezone is provided, the datetime will be parsed in that timezone
+
+            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
+            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+            >>> df.show()
+            ╭───────────────────────────────┬────────────────────────────────────────────────╮
+            │ x                             ┆ datetime                                       │
+            │ ---                           ┆ ---                                            │
+            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
+            ╞═══════════════════════════════╪════════════════════════════════════════════════╡
+            │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-02 12:30:00.456 CST                    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None                          ┆ None                                           │
+            ╰───────────────────────────────┴────────────────────────────────────────────────╯
+
+
+        Returns:
+            Expression: a DateTime expression which is parsed by given format and timezone
+        """
+        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

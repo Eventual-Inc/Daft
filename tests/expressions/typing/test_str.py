@@ -163,3 +163,29 @@ def test_str_lpad():
         run_kernel=lambda: s.str.lpad(zeroes, emptystrings),
         resolvable=True,
     )
+
+
+def test_str_to_date():
+    s = Series.from_arrow(pa.array(["2021-01-01", None, "2021-01-02", "2021-01-03", "2021-01-04"]), name="col")
+    format = "%Y-%m-%d"
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col("col").str.to_date(format),
+        run_kernel=lambda: s.str.to_date(format),
+        resolvable=True,
+    )
+
+
+def test_str_to_datetime():
+    s = Series.from_arrow(
+        pa.array(["2021-01-01 00:00:00", None, "2021-01-02 00:00:00", "2021-01-03 00:00:00", "2021-01-04 00:00:00"]),
+        name="col",
+    )
+    format = "%Y-%m-%d %H:%M:%S"
+
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col("col").str.to_datetime(format),
+        run_kernel=lambda: s.str.to_datetime(format),
+        resolvable=True,
+    )
