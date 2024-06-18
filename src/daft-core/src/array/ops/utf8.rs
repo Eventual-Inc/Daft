@@ -6,12 +6,15 @@ use std::{
 use crate::{
     array::{DataArray, ListArray},
     datatypes::{
-        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int64Array,
-        UInt64Array, Utf8Array,
+        infer_timeunit_from_format_string,
+        logical::{DateArray, TimestampArray},
+        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int32Array,
+        Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     DataType, Series,
 };
-use arrow2::array::Array;
+use arrow2::{array::Array, temporal_conversions};
+use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
 use num_traits::NumCast;
@@ -887,6 +890,91 @@ impl Utf8Array {
             }
         };
         assert_eq!(result.len(), expected_size);
+        Ok(result)
+    }
+
+    pub fn to_date(&self, format: &str) -> DaftResult<DateArray> {
+        let len = self.len();
+        let self_iter = self.as_arrow().iter();
+
+        let arrow_result = self_iter
+            .map(|val| match val {
+                Some(val) => {
+                    let date = chrono::NaiveDate::parse_from_str(val, format).map_err(|e| {
+                        DaftError::ComputeError(format!(
+                            "Error in to_date: failed to parse date {val} with format {format} : {e}"
+                        ))
+                    })?;
+                    Ok(Some(
+                        date.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE,
+                    ))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<arrow2::array::Int32Array>>()?;
+
+        let result = Int32Array::from((self.name(), Box::new(arrow_result)));
+        let result = DateArray::new(Field::new(self.name(), DataType::Date), result);
+        assert_eq!(result.len(), len);
+        Ok(result)
+    }
+
+    pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {
+        let len = self.len();
+        let self_iter = self.as_arrow().iter();
+        let timeunit = infer_timeunit_from_format_string(format);
+
+        let arrow_result = self_iter
+            .map(|val| match val {
+                Some(val) => {
+                    let timestamp = match timezone {
+                        Some(tz) => {
+                            let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+                                ))
+                            })?;
+                            let datetime_with_timezone = datetime.with_timezone(&tz.parse::<chrono_tz::Tz>().map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse timezone {tz} : {e}"
+                                ))
+                            })?);
+                            match timeunit {
+                                TimeUnit::Seconds => datetime_with_timezone.timestamp(),
+                                TimeUnit::Milliseconds => datetime_with_timezone.timestamp_millis(),
+                                TimeUnit::Microseconds => datetime_with_timezone.timestamp_micros(),
+                                TimeUnit::Nanoseconds => datetime_with_timezone.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                            }
+                        }
+                        None => {
+                            let naive_datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
+                                DaftError::ComputeError(format!(
+                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+                                ))
+                            })?;
+                            match timeunit {
+                                TimeUnit::Seconds => naive_datetime.and_utc().timestamp(),
+                                TimeUnit::Milliseconds => naive_datetime.and_utc().timestamp_millis(),
+                                TimeUnit::Microseconds => naive_datetime.and_utc().timestamp_micros(),
+                                TimeUnit::Nanoseconds => naive_datetime.and_utc().timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                            }
+                        }
+                    };
+                    Ok(Some(timestamp))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<arrow2::array::Int64Array>>()?;
+
+        let result = Int64Array::from((self.name(), Box::new(arrow_result)));
+        let result = TimestampArray::new(
+            Field::new(
+                self.name(),
+                DataType::Timestamp(timeunit, timezone.map(|tz| tz.to_string())),
+            ),
+            result,
+        );
+        assert_eq!(result.len(), len);
         Ok(result)
     }
 

@@ -105,6 +105,11 @@ pub trait DaftBetween<Lower, Upper> {
     fn between(&self, lower: Lower, upper: Upper) -> Self::Output;
 }
 
+pub trait DaftAtan2<Rhs> {
+    type Output;
+    fn atan2(&self, rhs: Rhs) -> Self::Output;
+}
+
 pub trait DaftIsNull {
     type Output;
     fn is_null(&self) -> Self::Output;
@@ -118,6 +123,16 @@ pub trait DaftNotNull {
 pub trait DaftIsNan {
     type Output;
     fn is_nan(&self) -> Self::Output;
+}
+
+pub trait DaftIsInf {
+    type Output;
+    fn is_inf(&self) -> Self::Output;
+}
+
+pub trait DaftNotNan {
+    type Output;
+    fn not_nan(&self) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;

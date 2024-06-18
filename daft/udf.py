@@ -104,7 +104,12 @@ class PartialUDF:
         # This is not ideal and we should cache initializations across calls for the same process.
         func = self.udf.get_initialized_func()
 
-        result = func(*args, **kwargs)
+        try:
+            result = func(*args, **kwargs)
+        except Exception as user_function_exception:
+            raise RuntimeError(
+                f"User-defined function `{func.__name__}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)}"
+            ) from user_function_exception
 
         # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
         # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF

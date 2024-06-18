@@ -187,6 +187,16 @@ def test_trigonometry(fun: str, unary_data_fixture):
     )
 
 
+def test_atan2(binary_data_fixture):
+    lhs, rhs = binary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=binary_data_fixture,
+        expr=col(lhs.name()).arctan2(col(rhs.name())),
+        run_kernel=lambda: lhs.arctan2(rhs),
+        resolvable=is_numeric(lhs.datatype()) and is_numeric(rhs.datatype()),
+    )
+
+
 def test_exp(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(

@@ -185,6 +185,16 @@ def test_repr_functions_trigonometry(fun: str) -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_atan2() -> None:
+    a = col("a")
+    b = col("b")
+    y = a.arctan2(b)
+    repr_out = repr(y)
+    assert repr_out == "atan2(col(a), col(b))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()
@@ -262,6 +272,20 @@ def test_float_is_nan() -> None:
     c = a.float.is_nan()
     output = repr(c)
     assert output == "is_nan(col(a))"
+
+
+def test_float_is_inf() -> None:
+    a = col("a")
+    c = a.float.is_inf()
+    output = repr(c)
+    assert output == "is_inf(col(a))"
+
+
+def test_float_not_nan() -> None:
+    a = col("a")
+    c = a.float.not_nan()
+    output = repr(c)
+    assert output == "not_nan(col(a))"
 
 
 def test_date_lit_post_epoch() -> None:

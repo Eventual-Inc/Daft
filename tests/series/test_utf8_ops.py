@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import datetime
+
 import pyarrow as pa
 import pytest
 
-from daft import Series
+from daft import DataType, Series
 
 
 @pytest.mark.parametrize(
@@ -1270,3 +1272,207 @@ def test_series_utf8_substr_bad_dtype() -> None:
     start = Series.from_arrow(pa.array([1, 2, 3]))
     with pytest.raises(ValueError):
         s.str.substr(start)
+
+
+@pytest.mark.parametrize(
+    ["data", "format", "expected"],
+    [
+        (
+            ["2021-01-01", "2021-01-02", "2021-01-03"],
+            "%Y-%m-%d",
+            [datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), datetime.date(2021, 1, 3)],
+        ),
+        (
+            # null data
+            [None],
+            "%Y-%m-%d",
+            [None],
+        ),
+        (
+            # mixed-in nulls
+            ["2021-01-01", None, "2021-01-03"],
+            "%Y-%m-%d",
+            [datetime.date(2021, 1, 1), None, datetime.date(2021, 1, 3)],
+        ),
+        (
+            # all empty
+            [],
+            "%Y-%m-%d",
+            [],
+        ),
+    ],
+)
+def test_series_utf8_to_date(data, format, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    result = s.str.to_date(format)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_to_date_bad_format() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    format = "%Y-%m-%"
+    with pytest.raises(ValueError):
+        s.str.to_date(format)
+
+
+def test_series_utf8_to_date_bad_format_type() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    format = 1
+    with pytest.raises(ValueError):
+        s.str.to_date(format)
+
+
+def test_series_utf8_to_date_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    format = "%Y-%m-%d"
+    with pytest.raises(ValueError):
+        s.str.to_date(format)
+
+
+def test_series_utf8_bad_date() -> None:
+    s = Series.from_arrow(pa.array(["2021-100-20"]))
+    format = "%Y-%m-%d"
+    with pytest.raises(ValueError):
+        s.str.to_date(format)
+
+
+@pytest.mark.parametrize(
+    ["data", "format", "timezone", "expected"],
+    [
+        pytest.param(
+            ["2021-01-01 00:00:00", "2021-01-02 01:07:35", "2021-01-03 12:30:00"],
+            "%Y-%m-%d %H:%M:%S",
+            None,
+            [
+                datetime.datetime(2021, 1, 1, 0, 0),
+                datetime.datetime(2021, 1, 2, 1, 7, 35),
+                datetime.datetime(2021, 1, 3, 12, 30),
+            ],
+            id="No timezone",
+        ),
+        pytest.param(
+            ["2021-01-01 00:00:00 +0530", "2021-01-02 01:07:35 +0530", "2021-01-03 12:30:00 +0530"],
+            "%Y-%m-%d %H:%M:%S %z",
+            "Asia/Kolkata",
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))),
+                datetime.datetime(
+                    2021, 1, 2, 1, 7, 35, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                ),
+                datetime.datetime(
+                    2021, 1, 3, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                ),
+            ],
+            id="IST timezone",
+        ),
+        pytest.param(
+            ["2021-01-01 00:00:00 +0000", "2021-01-02 01:07:35 +0100", "2021-01-03 12:30:00 +0200"],
+            "%Y-%m-%d %H:%M:%S %z",
+            "UTC",
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 2, 0, 7, 35, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 3, 10, 30, tzinfo=datetime.timezone.utc),
+            ],
+            id="Different timezones",
+        ),
+        pytest.param(
+            ["2021-01-01 00:00:00 +0000", "2021-01-02 01:07:35 +0100", "2021-01-03 12:30:00 +0200"],
+            "%Y-%m-%d %H:%M:%S %z",
+            None,
+            [
+                datetime.datetime(2021, 1, 1, 0, 0),
+                datetime.datetime(2021, 1, 2, 1, 7, 35),
+                datetime.datetime(2021, 1, 3, 12, 30),
+            ],
+            id="Unspecified timezone returns naive datetime",
+        ),
+    ],
+)
+def test_series_utf8_to_datetime_different_timezones(data, format, timezone, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    result = s.str.to_datetime(format, timezone)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    "data,format,expected,timeunit",
+    [
+        pytest.param(
+            ["2021-01-01 00:00:00", "2021-01-02 01:07:35", "2021-01-03 12:30:00"],
+            "%Y-%m-%d %H:%M:%S",
+            [
+                datetime.datetime(2021, 1, 1, 0, 0),
+                datetime.datetime(2021, 1, 2, 1, 7, 35),
+                datetime.datetime(2021, 1, 3, 12, 30),
+            ],
+            "us",
+            id="Default to Microseconds",
+        ),
+        pytest.param(
+            ["2021-01-01 00:00:45.123456", "2021-01-02 01:07:35.123456", "2021-01-03 12:30:00.123456"],
+            "%Y-%m-%d %H:%M:%S%.f",
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, 45, 123456),
+                datetime.datetime(2021, 1, 2, 1, 7, 35, 123456),
+                datetime.datetime(2021, 1, 3, 12, 30, 0, 123456),
+            ],
+            "us",
+            id="Microseconds",
+        ),
+        pytest.param(
+            ["2021-01-01 00:00:45.1234", "2021-01-02 01:07:35.12300", "2021-01-03 12:30:00.123"],
+            "%Y-%m-%d %H:%M:%S%.3f",
+            [
+                datetime.datetime(2021, 1, 1, 0, 0, 45, 123000),
+                datetime.datetime(2021, 1, 2, 1, 7, 35, 123000),
+                datetime.datetime(2021, 1, 3, 12, 30, 0, 123000),
+            ],
+            "ms",
+            id="Milliseconds",
+        ),
+    ],
+)
+def test_series_utf8_to_datetime_different_timeunit(data, format, expected, timeunit) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    result = s.str.to_datetime(format)
+    assert result.to_pylist() == expected
+    assert result.datatype() == DataType.timestamp(timeunit)
+
+
+def test_series_utf8_to_datetime_bad_format() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    format = "%Y-%m-%"
+    with pytest.raises(ValueError):
+        s.str.to_datetime(format, "UTC")
+
+
+def test_series_utf8_to_datetime_bad_format_type() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    format = 1
+    with pytest.raises(ValueError):
+        s.str.to_datetime(format, "UTC")
+
+
+def test_series_to_datetime_bad_timezone_dtype() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S", 1)
+
+
+def test_series_to_datetime_bad_timezone() -> None:
+    s = Series.from_arrow(pa.array(["2021-01-01", "2021-01-02"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S", "foo")
+
+
+def test_series_utf8_to_datetime_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")
+
+
+def test_series_utf8_to_bad_datetime() -> None:
+    s = Series.from_arrow(pa.array(["2021-100-20"]))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")

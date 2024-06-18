@@ -29,6 +29,7 @@ Generic
    Expression.if_else
    Expression.is_null
    Expression.not_null
+   Expression.fill_null
    Expression.apply
 
 .. _api-numeric-expression-operations:
@@ -58,6 +59,7 @@ Numeric
     Expression.arcsin
     Expression.arccos
     Expression.arctan
+    Expression.arctan2
     Expression.radians
     Expression.degrees
     Expression.log2
@@ -145,6 +147,25 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.like
    Expression.str.ilike
    Expression.str.substr
+   Expression.str.to_date
+   Expression.str.to_datetime
+
+.. _api-float-expression-operations:
+
+Floats
+#######
+
+The following methods are available under the ``expr.float`` attribute.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.float.is_inf
+   Expression.float.is_nan
+   Expression.float.not_nan
+   Expression.float.fill_nan
 
 .. _api-expressions-temporal:
 

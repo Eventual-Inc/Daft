@@ -89,7 +89,12 @@ class DeltaLakeScanOperator(ScanOperator):
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
             path = os.path.join(self._table.table_uri, add_actions["path"][task_idx].as_py())
-            record_count = add_actions["num_records"][task_idx].as_py()
+
+            try:
+                record_count = add_actions["num_records"][task_idx].as_py()
+            except KeyError:
+                record_count = None
+
             try:
                 size_bytes = add_actions["size_bytes"][task_idx].as_py()
             except KeyError:
@@ -113,27 +118,30 @@ class DeltaLakeScanOperator(ScanOperator):
                 partition_values = None
 
             # Populate scan task with column-wise stats.
-            dtype = add_actions.schema.field("min").type
-            min_values = add_actions["min"][task_idx]
-            max_values = add_actions["max"][task_idx]
-            # TODO(Clark): Add support for tracking null counts in column stats.
-            # null_counts = add_actions["null_count"][task_idx]
-            arrays = {}
-            for field_idx in range(dtype.num_fields):
-                field_name = dtype.field(field_idx).name
-                try:
-                    arrow_arr = pa.array(
-                        [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
-                    )
-                except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
-                    # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
-                    arrow_arr = pa.array(
-                        [min_values[field_name].as_py(), max_values[field_name].as_py()],
-                        type=dtype.field(field_idx).type,
-                    )
-                arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-            stats = daft.table.Table.from_pydict(arrays)
-
+            schema_names = add_actions.schema.names
+            if "min" in schema_names and "max" in schema_names:
+                dtype = add_actions.schema.field("min").type
+                min_values = add_actions["min"][task_idx]
+                max_values = add_actions["max"][task_idx]
+                # TODO(Clark): Add support for tracking null counts in column stats.
+                # null_counts = add_actions["null_count"][task_idx]
+                arrays = {}
+                for field_idx in range(dtype.num_fields):
+                    field_name = dtype.field(field_idx).name
+                    try:
+                        arrow_arr = pa.array(
+                            [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
+                        )
+                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                        # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
+                        arrow_arr = pa.array(
+                            [min_values[field_name].as_py(), max_values[field_name].as_py()],
+                            type=dtype.field(field_idx).type,
+                        )
+                    arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
+                stats = daft.table.Table.from_pydict(arrays)
+            else:
+                stats = None
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -143,11 +151,12 @@ class DeltaLakeScanOperator(ScanOperator):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=stats._table,
+                stats=stats._table if stats is not None else None,
             )
             if st is None:
                 continue
-            rows_left -= record_count
+            if record_count is not None:
+                rows_left -= record_count
             scan_tasks.append(st)
         return iter(scan_tasks)
 

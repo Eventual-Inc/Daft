@@ -2,8 +2,25 @@ use crate::{
     datatypes::{Field, TimeUnit},
     Series,
 };
-
+use common_daft_config::BOLD_TABLE_HEADERS_IN_DISPLAY;
 use itertools::Itertools;
+
+fn create_table_cell(value: &str) -> comfy_table::Cell {
+    let mut attributes = vec![];
+    if std::env::var(BOLD_TABLE_HEADERS_IN_DISPLAY)
+        .as_deref()
+        .unwrap_or("1")
+        == "1"
+    {
+        attributes.push(comfy_table::Attribute::Bold);
+    }
+
+    let mut cell = comfy_table::Cell::new(value);
+    if !attributes.is_empty() {
+        cell = cell.add_attributes(attributes);
+    }
+    cell
+}
 
 pub fn display_date32(val: i32) -> String {
     let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
@@ -98,10 +115,7 @@ pub fn make_schema_vertical_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table:
         table.set_width(default_width_if_no_tty as u16);
     }
 
-    let header = vec![
-        comfy_table::Cell::new("Column Name").add_attribute(comfy_table::Attribute::Bold),
-        comfy_table::Cell::new("Type").add_attribute(comfy_table::Attribute::Bold),
-    ];
+    let header = vec![create_table_cell("Column Name"), create_table_cell("Type")];
     table.set_header(header);
 
     for f in fields.iter() {
@@ -155,25 +169,30 @@ pub fn make_comfy_table<F: AsRef<Field>>(
         .iter()
         .take(head_cols)
         .map(|field| {
-            comfy_table::Cell::new(
-                format!("{}\n---\n{}", field.as_ref().name, field.as_ref().dtype).as_str(),
-            )
-            .add_attribute(comfy_table::Attribute::Bold)
+            create_table_cell(&format!(
+                "{}\n---\n{}",
+                field.as_ref().name,
+                field.as_ref().dtype
+            ))
         })
         .collect::<Vec<_>>();
     if tail_cols > 0 {
         let unseen_cols = num_columns - (head_cols + tail_cols);
         header.push(
-            comfy_table::Cell::new(format!("{DOTS}\n\n({unseen_cols} hidden)"))
-                .add_attribute(comfy_table::Attribute::Bold)
-                .set_alignment(comfy_table::CellAlignment::Center),
+            create_table_cell(&format!(
+                "{DOTS}\n\n({unseen_cols} hidden)",
+                DOTS = DOTS,
+                unseen_cols = unseen_cols
+            ))
+            .set_alignment(comfy_table::CellAlignment::Center),
         );
         header.extend(fields.iter().skip(num_columns - tail_cols).map(|field| {
-            comfy_table::Cell::new(
-                format!("{}\n---\n{}", field.as_ref().name, field.as_ref().dtype).as_str(),
-            )
-            .add_attribute(comfy_table::Attribute::Bold)
-        }))
+            create_table_cell(&format!(
+                "{}\n---\n{}",
+                field.as_ref().name,
+                field.as_ref().dtype
+            ))
+        }));
     }
 
     if let Some(columns) = columns

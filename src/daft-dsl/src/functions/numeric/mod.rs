@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
 use sqrt::SqrtEvaluator;
 use std::hash::Hash;
+use trigonometry::Atan2Evaluator;
 
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
@@ -40,6 +41,7 @@ pub enum NumericExpr {
     ArcSin,
     ArcCos,
     ArcTan,
+    ArcTan2,
     Radians,
     Degrees,
     Log2,
@@ -67,6 +69,7 @@ impl NumericExpr {
             ArcSin => &TrigonometryEvaluator(TrigonometricFunction::ArcSin),
             ArcCos => &TrigonometryEvaluator(TrigonometricFunction::ArcCos),
             ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
+            ArcTan2 => &Atan2Evaluator {},
             Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
             Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
             Log2 => &LogEvaluator(log::LogFunction::Log2),
@@ -178,6 +181,14 @@ pub fn arctan(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::ArcTan),
         inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn arctan2(input: ExprRef, other: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ArcTan2),
+        inputs: vec![input, other],
     }
     .into()
 }

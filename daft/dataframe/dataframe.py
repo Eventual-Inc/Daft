@@ -1158,8 +1158,10 @@ class DataFrame:
 
         if join_strategy == JoinStrategy.SortMerge and join_type != JoinType.Inner:
             raise ValueError("Sort merge join only supports inner joins")
-        if join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
+        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
+        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Anti:
+            raise ValueError("Broadcast join does not support Anti joins")
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
@@ -1197,8 +1199,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
-        """drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
+        """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
+
         Example:
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
             >>> df.drop_na()  # drops rows where any column contains NaN values
@@ -1234,13 +1237,15 @@ class DataFrame:
 
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
-        """drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+        """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
+
         Example:
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
             >>> df.drop_null()  # drops rows where any column contains Null/NaN values
             >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
             >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
+
         Args:
             *cols (str): column names by which rows containing nans should be filtered
 

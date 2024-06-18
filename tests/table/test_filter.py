@@ -212,6 +212,20 @@ def test_table_float_is_nan() -> None:
     assert result_table.to_pydict() == {"a": [False, True, False, None, True]}
 
 
+def test_table_float_is_inf() -> None:
+    table = MicroPartition.from_pydict({"a": [-np.inf, 0.0, None, float("inf")]})
+    result_table = table.eval_expression_list([col("a").float.is_inf()])
+    # Note that null entries are _not_ treated as float NaNs.
+    assert result_table.to_pydict() == {"a": [True, False, None, True]}
+
+
+def test_table_float_not_nan() -> None:
+    table = MicroPartition.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
+    result_table = table.eval_expression_list([col("a").float.not_nan()])
+    # Note that null entries are _not_ treated as float NaNs.
+    assert result_table.to_pydict() == {"a": [True, False, True, None, False]}
+
+
 def test_table_if_else() -> None:
     table = MicroPartition.from_arrow(
         pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]})
