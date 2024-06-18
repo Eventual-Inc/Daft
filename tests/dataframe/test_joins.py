@@ -15,6 +15,8 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         pytest.skip("Broadcast join does not support outer joins")
     elif join_strategy == "broadcast" and join_type == "anti":
         pytest.skip("Broadcast join does not support anti joins")
+    elif join_strategy == "broadcast" and join_type == "semi":
+        pytest.skip("Broadcast join does not support semi joins")
 
 
 def test_invalid_join_strategies(make_df):
@@ -743,8 +745,8 @@ def test_join_null_type_column(join_strategy, join_type, make_df):
         (
             "anti",
             {
-                "id": [1],
-                "values_left": ["a1"],
+                "id": [1, None],
+                "values_left": ["a1", "d1"],
             },
         ),
     ],
@@ -754,15 +756,15 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
 
     daft_df1 = make_df(
         {
-            "id": [1, 2, 3],
-            "values_left": ["a1", "b1", "c1"],
+            "id": [1, 2, 3, None],
+            "values_left": ["a1", "b1", "c1", "d1"],
         },
         repartition=repartition_nparts,
     )
     daft_df2 = make_df(
         {
-            "id": [2, 3, 4],
-            "values_right": ["a2", "b2", "c2"],
+            "id": [2, 2, 3, 4],
+            "values_right": ["a2", "b2", "c2", "d2"],
         },
         repartition=repartition_nparts,
     )
