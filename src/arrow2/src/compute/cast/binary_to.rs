@@ -159,27 +159,56 @@ pub fn binary_to_fixed_size_binary<O: Offset>(
     from: &BinaryArray<O>,
     size: usize,
 ) -> Result<Box<dyn Array>> {
-    let offsets = from.offsets().buffer().iter();
-    let expected = (0..from.len()).map(|ix| O::from_as_usize(ix * size));
-
-    match offsets
-        .zip(expected)
-        .find(|(actual, expected)| *actual != expected)
-    {
-        Some(_) => Err(Error::InvalidArgumentError(
-            "incompatible offsets in source list (lengths may be different)".to_string(),
-        )),
-        None => {
-            let sliced_values = from.values().clone().sliced(
-                from.offsets().first().to_usize(),
-                from.offsets().range().to_usize(),
-            );
-            Ok(Box::new(FixedSizeBinaryArray::new(
-                DataType::FixedSizeBinary(size),
-                sliced_values,
-                from.validity().cloned(),
-            )))
+    if let Some(validity) = from.validity() {
+        // Ensure all valid elements have the right size
+        for (value, valid) in from.values_iter().zip(validity) {
+            if valid && value.len() != size {
+                return Err(Error::InvalidArgumentError(
+                    format!(
+                        "element has invalid length ({}, expected {})",
+                        value.len(),
+                        size
+                    )
+                    .to_string(),
+                ));
+            }
         }
+
+        // Copy values to new buffer, accounting for validity
+        let mut values: Vec<u8> = Vec::new();
+        let offsets = from.offsets().buffer().iter();
+        for (off, valid) in offsets.zip(validity) {
+            if valid {
+                values.extend(from.values().clone().sliced(off.to_usize(), size).iter());
+            } else {
+                values.extend(std::iter::repeat(0u8).take(size));
+            }
+        }
+        Ok(Box::new(FixedSizeBinaryArray::try_new(
+            DataType::FixedSizeBinary(size),
+            values.into(),
+            from.validity().cloned(),
+        )?))
+    } else {
+        // Ensure all elements have the right size
+        for value in from.values_iter() {
+            if value.len() != size {
+                return Err(Error::InvalidArgumentError(
+                    format!(
+                        "element has invalid length ({}, expected {})",
+                        value.len(),
+                        size
+                    )
+                    .to_string(),
+                ));
+            }
+        }
+
+        Ok(Box::new(FixedSizeBinaryArray::try_new(
+            DataType::FixedSizeBinary(size),
+            from.values().clone(),
+            from.validity().cloned(),
+        )?))
     }
 }
 
