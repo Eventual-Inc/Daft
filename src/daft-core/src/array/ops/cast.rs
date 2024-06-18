@@ -1759,6 +1759,14 @@ impl ListArray {
                 self.clone(),
             )
             .into_series()),
+            DataType::Embedding(..) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let embedding_array = EmbeddingArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.fixed_size_list()?.clone(),
+                );
+                Ok(embedding_array.into_series())
+            }
             _ => unimplemented!("List casting not implemented for dtype: {}", dtype),
         }
     }
