@@ -256,6 +256,7 @@ def set_execution_config(
     shuffle_aggregation_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
+    enable_native_executor: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -287,6 +288,7 @@ def set_execution_config(
         shuffle_aggregation_default_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
+        enable_native_executor: Enables new local executor. Defaults to False
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -309,6 +311,7 @@ def set_execution_config(
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
+            enable_native_executor=enable_native_executor,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

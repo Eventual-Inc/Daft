@@ -5,11 +5,19 @@
 #![allow(dead_code)]
 #![allow(unused)]
 
+mod executor;
 mod ops;
 mod partition;
+mod scheduler;
+mod stage;
+mod task;
+#[cfg(test)]
+mod test;
+mod tree;
 
 use common_error::DaftError;
 use snafu::Snafu;
+pub use stage::run::{run_local_async, run_local_sync};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

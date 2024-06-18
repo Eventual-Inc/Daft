@@ -18,6 +18,8 @@ sysinfo = {workspace = true}
 tokio = {workspace = true}
 
 [dev-dependencies]
+arrow2 = {workspace = true}
+daft-table = {path = "../daft-table", default-features = false}
 rstest = {workspace = true}
 
 [features]

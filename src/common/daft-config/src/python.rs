@@ -100,6 +100,7 @@ impl PyDaftExecutionConfig {
         shuffle_aggregation_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
+        enable_native_executor: Option<bool>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -152,6 +153,9 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_aqe) = enable_aqe {
             config.enable_aqe = enable_aqe;
+        }
+        if let Some(enable_native_executor) = enable_native_executor {
+            config.enable_native_executor = enable_native_executor;
         }
 
         Ok(PyDaftExecutionConfig {
@@ -226,6 +230,10 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_aqe(&self) -> PyResult<bool> {
         Ok(self.config.enable_aqe)
+    }
+    #[getter]
+    fn enable_native_executor(&self) -> PyResult<bool> {
+        Ok(self.config.enable_native_executor)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

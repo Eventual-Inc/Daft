@@ -157,12 +157,18 @@ class PyRunner(Runner[MicroPartition]):
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
-                # don't store partition sets in variable to avoid reference
-                tasks = plan_scheduler.to_partition_tasks(
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                )
-                del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(tasks)
+                if daft_execution_config.enable_native_executor:
+                    logger.info("Using new executor")
+                    results_gen = plan_scheduler.run(
+                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                    )
+                else:
+                    # don't store partition sets in variable to avoid reference
+                    tasks = plan_scheduler.to_partition_tasks(
+                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                    )
+                    del plan_scheduler
+                    results_gen = self._physical_plan_to_partitions(tasks)
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -220,7 +226,10 @@ class PyRunner(Runner[MicroPartition]):
                             next_step = next(plan)
                             continue
 
-                        elif not self._can_admit_task(next_step.resource_request, inflight_tasks_resources.values()):
+                        elif not self._can_admit_task(
+                            next_step.resource_request,
+                            inflight_tasks_resources.values(),
+                        ):
                             # Insufficient resources; await some tasks.
                             break
 
@@ -240,9 +249,14 @@ class PyRunner(Runner[MicroPartition]):
                                     and next_step.resource_request.num_gpus > 0
                                 )
                             ):
-                                logger.debug("Running task synchronously in main thread: %s", next_step)
+                                logger.debug(
+                                    "Running task synchronously in main thread: %s",
+                                    next_step,
+                                )
                                 materialized_results = self.build_partitions(
-                                    next_step.instructions, next_step.inputs, next_step.partial_metadatas
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
                                 )
                                 next_step.set_result(materialized_results)
 
@@ -280,7 +294,11 @@ class PyRunner(Runner[MicroPartition]):
 
                         pbar.mark_task_done(done_task)
 
-                        logger.debug("Task completed: %s -> <%s partitions>", done_id, len(materialized_results))
+                        logger.debug(
+                            "Task completed: %s -> <%s partitions>",
+                            done_id,
+                            len(materialized_results),
+                        )
 
                         done_task.set_result(materialized_results)
 
@@ -303,7 +321,11 @@ class PyRunner(Runner[MicroPartition]):
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
             )
 
-    def _can_admit_task(self, resource_request: ResourceRequest, inflight_resources: Iterable[ResourceRequest]) -> bool:
+    def _can_admit_task(
+        self,
+        resource_request: ResourceRequest,
+        inflight_resources: Iterable[ResourceRequest],
+    ) -> bool:
         self._check_resource_requests(resource_request)
 
         total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())

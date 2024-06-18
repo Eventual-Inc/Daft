@@ -177,7 +177,9 @@ mod tests {
     use daft_micropartition::MicroPartition;
     use daft_plan::ResourceRequest;
 
-    use crate::{ops::PartitionTaskOp, partition::partition_ref::PartitionMetadata};
+    use crate::{
+        ops::PartitionTaskOp, partition::partition_ref::PartitionMetadata, test::MockInputOutputOp,
+    };
 
     use super::FusedOpBuilder;
 
@@ -465,56 +467,6 @@ mod tests {
         assert_eq!(builder.build().name(), "light_op-gpu_op");
 
         Ok(())
-    }
-
-    #[derive(Debug)]
-    struct MockInputOutputOp {
-        num_inputs: usize,
-        num_outputs: usize,
-        resource_request: ResourceRequest,
-        name: String,
-    }
-
-    impl MockInputOutputOp {
-        fn new(name: impl Into<String>, num_inputs: usize, num_outputs: usize) -> Self {
-            Self {
-                num_inputs,
-                num_outputs,
-                resource_request: Default::default(),
-                name: name.into(),
-            }
-        }
-    }
-
-    impl PartitionTaskOp for MockInputOutputOp {
-        type Input = MicroPartition;
-
-        fn execute(&self, inputs: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
-            Ok(inputs.to_vec())
-        }
-
-        fn num_inputs(&self) -> usize {
-            self.num_inputs
-        }
-
-        fn num_outputs(&self) -> usize {
-            self.num_outputs
-        }
-
-        fn resource_request(&self) -> &ResourceRequest {
-            &self.resource_request
-        }
-
-        fn partial_metadata_from_input_metadata(
-            &self,
-            input_meta: &[crate::partition::partition_ref::PartitionMetadata],
-        ) -> crate::partition::partition_ref::PartitionMetadata {
-            todo!()
-        }
-
-        fn name(&self) -> &str {
-            &self.name
-        }
     }
 
     /// Tests that the number of inputs is tied to first task op in fused chain.
