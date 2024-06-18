@@ -359,12 +359,12 @@ impl GCSSource {
         let mut client_config = if config.anonymous {
             ClientConfig::default().anonymous()
         } else if let Some(creds) = &config.credentials {
-            let creds_file = CredentialsFile::new_from_file(creds.clone()).await;
-            let creds_str = CredentialsFile::new_from_str(creds).await;
-
-            let creds = match (creds_file, creds_str) {
-                (Ok(creds), _) => creds,
-                (_, res) => res.context(UnableToLoadCredentialsSnafu {})?,
+            // try using credentials as file path first, then as JSON string
+            let creds = match CredentialsFile::new_from_file(creds.clone()).await {
+                Ok(creds) => creds,
+                Err(_) => CredentialsFile::new_from_str(creds)
+                    .await
+                    .context(UnableToLoadCredentialsSnafu {})?,
             };
 
             ClientConfig::default()
