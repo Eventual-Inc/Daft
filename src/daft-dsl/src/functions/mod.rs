@@ -1,4 +1,5 @@
 pub mod float;
+pub mod hash;
 pub mod image;
 pub mod json;
 pub mod list;
@@ -29,6 +30,7 @@ use self::{float::FloatExpr, uri::UriExpr};
 use common_error::DaftResult;
 use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use hash::HashEvaluator;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -52,6 +54,7 @@ pub enum FunctionExpr {
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
     Uri(UriExpr),
+    Hash,
 }
 
 pub trait FunctionEvaluator {
@@ -84,6 +87,7 @@ impl FunctionExpr {
             #[cfg(feature = "python")]
             Python(expr) => expr,
             Partitioning(expr) => expr.get_evaluator(),
+            Hash => &HashEvaluator {},
         }
     }
 }

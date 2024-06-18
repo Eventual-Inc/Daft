@@ -720,6 +720,16 @@ class Expression:
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
+    def hash(self, seed: Any | None = None) -> Expression:
+        """Hashes the values in the Expression"""
+        if seed is None:
+            expr = self._expr.hash()
+        else:
+            if not isinstance(seed, Expression):
+                seed = lit(seed)
+            expr = self._expr.hash(seed._expr)
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 
