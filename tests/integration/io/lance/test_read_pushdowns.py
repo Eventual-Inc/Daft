@@ -4,7 +4,7 @@ import pytest
 
 import daft
 
-WORDS_DATASET = "s3://daft-public-data/lance/words-test-dataset'"
+WORDS_DATASET = "s3://daft-public-data/lance/words-test-dataset"
 
 
 @pytest.mark.integration()
