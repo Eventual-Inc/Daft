@@ -329,7 +329,23 @@ class Expression:
         by which subsequent expressions can refer to the results of this expression.
 
         Example:
-            >>> col("x").alias("y")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> df = df.select(col("x").alias("y"))
+            >>> df.show()
+            ╭───────╮
+            │ y     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             name: New name for expression
@@ -346,11 +362,23 @@ class Expression:
 
         Example:
 
-            >>> # [1.0, 2.5, None]: float32 -> [1, 2, None]: int64
+            >>> import daft
+            >>> df = daft.from_pydict({"float": [1.0, 2.5, None]})
             >>> col("float").cast(DataType.int64())
-            >>>
-            >>> # [Path("/tmp1"), Path("/tmp2"), Path("/tmp3")]: Python -> ["/tmp1", "/tmp1", "/tmp1"]: utf8
-            >>> col("path_obj_col").cast(DataType.string())
+            >>> df.show()
+            ╭─────────╮
+            │ float   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 2.5     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ None    │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Expression with the specified new datatype
@@ -515,44 +543,39 @@ class Expression:
 
         Example of a global calculation of approximate percentiles:
 
-        >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
-        >>> df = df.agg(
-        >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-        >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
-        >>> )
-        >>> df.show()
-        ╭─────────────────────┬────────────────────────────────╮
-        │ approx_median_score ┆ approx_percentiles_scores      │
-        │ ---                 ┆ ---                            │
-        │ Float64             ┆ FixedSizeList[Float64; 3]      │
-        ╞═════════════════════╪════════════════════════════════╡
-        │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
-        ╰─────────────────────┴────────────────────────────────╯
-        (Showing first 1 of 1 rows)
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
+            >>> df = df.agg(df["scores"].approx_percentiles(0.5).alias("approx_median_score"),df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),)
+            >>> df.show()
+            ╭─────────────────────┬────────────────────────────────╮
+            │ approx_median_score ┆ approx_percentiles_scores      │
+            │ ---                 ┆ ---                            │
+            │ Float64             ┆ FixedSizeList[Float64; 3]      │
+            ╞═════════════════════╪════════════════════════════════╡
+            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
+            ╰─────────────────────┴────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
 
-        Example of a grouped calculation of approximate percentiles:
+            Example of a grouped calculation of approximate percentiles:
 
-        >>> df = daft.from_pydict({
-        >>>     "class":  ["a", "a", "a", "b", "c"],
-        >>>     "scores": [1, 2, 3, 1, None],
-        >>> })
-        >>> df = df.groupby("class").agg(
-        >>>     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-        >>>     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
-        >>> )
-        >>> df.show()
-        ╭───────┬─────────────────────┬────────────────────────────────╮
-        │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
-        │ ---   ┆ ---                 ┆ ---                            │
-        │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
-        ╞═══════╪═════════════════════╪════════════════════════════════╡
-        │ c     ┆ None                ┆ None                           │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
-        ╰───────┴─────────────────────┴────────────────────────────────╯
-        (Showing first 3 of 3 rows)
+            >>> df = daft.from_pydict({"class":  ["a", "a", "a", "b", "c"],"scores": [1, 2, 3, 1, None],})
+            >>> df = df.groupby("class").agg(df["scores"].approx_percentiles(0.5).alias("approx_median_score"),df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),)
+            >>> df.show()
+            ╭───────┬─────────────────────┬────────────────────────────────╮
+            │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
+            │ ---   ┆ ---                 ┆ ---                            │
+            │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
+            ╞═══════╪═════════════════════╪════════════════════════════════╡
+            │ c     ┆ None                ┆ None                           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+            ╰───────┴─────────────────────┴────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
 
         Args:
@@ -607,13 +630,15 @@ class Expression:
         """Conditionally choose values between two expressions using the current boolean expression as a condition
 
         Example:
-            >>> # x = [2, 2, 2]
-            >>> # y = [1, 2, 3]
-            >>> # a = ["a", "a", "a"]
-            >>> # b = ["b", "b", "b"]
-            >>> # if_else_result = ["a", "b", "b"]
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [2, 2, 2]})
+            >>> df2 = daft.from_pydict({"y": [1, 2, 3]})
+            >>> df3 = daft.from_pydict({"a":["a", "a", "a"]})
+            >>> df4 = daft.from_pydict({"b":["b", "b", "b"]})
             >>> (col("x") > col("y")).if_else(col("a"), col("b"))
+            >>> [col(x) > col(y)] then [col(a)] else [col(b)]
 
+            # FLAGGED FOR REVIEW
         Args:
             if_true (Expression): Values to choose if condition is true
             if_false (Expression): Values to choose if condition is false
@@ -639,6 +664,8 @@ class Expression:
             >>>
             >>> col("x").apply(f, return_dtype=DataType.int64())
 
+            #FLAGGED
+
         Args:
             func: Function to run per value of the expression
             return_dtype: Return datatype of the function that was ran
@@ -657,8 +684,23 @@ class Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)
 
         Example:
-            >>> # [1., None, NaN] -> [False, True, False]
-            >>> col("x").is_null()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1., None, nan]})
+            >>> df = df.select(df['x'].is_null())
+            >>> df.collect()
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Boolean Expression indicating whether values are missing
@@ -672,6 +714,23 @@ class Expression:
         Example:
             >>> # [1., None, NaN] -> [True, False, True]
             >>> col("x").not_null()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1., None, nan]})
+            >>> df = df.select(df['x'].not_null())
+            >>> df.collect()
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Boolean Expression indicating whether values are not missing
@@ -683,6 +742,7 @@ class Expression:
         """Fills null values in the Expression with the provided fill_value
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"data": [1, None, 3]})
             >>> df = df.select(df["data"].fill_null(2))
             >>> df.collect()
@@ -697,6 +757,8 @@ class Expression:
             ├╌╌╌╌╌╌╌┤
             │ 3     │
             ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Expression with null values filled with the provided fill_value
@@ -710,8 +772,23 @@ class Expression:
         """Checks if values in the Expression are in the provided list
 
         Example:
-            >>> # [1, 2, 3] -> [True, False, True]
-            >>> col("x").is_in([1, 3])
+            >>> import daft
+            >>> df = daft.from_pydict({"data": [1, 2, 3]})
+            >>> df = df.select(df["data"].is_in([1,3]))
+            >>> df.collect()
+            ╭─────────╮
+            │ data    │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
@@ -728,9 +805,25 @@ class Expression:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
         Example:
-            >>> # [1, 2, 3, 4] -> [True, True, False, False]
-            >>> col("x").between(1, 2)
-
+            >>> import daft
+            >>> df = daft.from_pydict({"data": [1, 2, 3, 4]})
+            >>> df = df.select(df["data"].between(1,2))
+            >>> df.collect()
+            ╭─────────╮
+            │ data    │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         Returns:
             Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
         """
@@ -886,8 +979,23 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
         Example:
-            >>> # [1., None, NaN] -> [False, None, True]
-            >>> col("x").float.is_nan()
+            >>> import daft
+            >>> df = daft.from_pydict({"data": [1., None, nan]})
+            >>> df = df.select(df["data"].float.is_nan())
+            >>> df.collect()
+            ╭─────────╮
+            │ data    │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ None    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Boolean Expression indicating whether values are invalid.
@@ -901,8 +1009,25 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
         Example:
-            >>> # [-float("inf"), 0., float("inf"), None] -> [True, False, True, None]
-            >>> col("x").float.is_inf()
+            >>> import daft
+            >>> df = daft.from_pydict({"data": [-float("inf"), 0., float("inf"), None]})
+            >>> df = df.select(df["data"].float.is_inf())
+            >>> df.collect()
+            ╭─────────╮
+            │ data    │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ None    │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
 
         Returns:
             Expression: Boolean Expression indicating whether values are Infinity.
@@ -917,8 +1042,11 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> # [1., None, NaN] -> [True, None, False]
+            >>> df = daft.from_pydict({"data": [1., None, nan]})
+            >>> df = df.select(df["data"].not_nan())
+            >>> df.collect()
             >>> col("x").not_nan()
-
+            #FLAGGED
         Returns:
             Expression: Boolean Expression indicating whether values are not invalid.
         """
@@ -942,6 +1070,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ 3.3     ┆ 3.3     │
             ╰─────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: Expression with Nan values filled with the provided fill_value
@@ -1095,7 +1225,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Checks whether each string contains the given pattern in a string column
 
         Example:
-            >>> col("x").str.contains(col("foo"))
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.contains("foo"))
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: pattern to search for as a literal string, or as a column to pick values from
@@ -1110,19 +1255,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Checks whether each string matches the given regular expression pattern in a string column
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df.with_column("match", df["x"].str.match("ba.")).collect()
-            ╭─────────╮
-            │ match   │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ╰─────────╯
+            ╭──────┬─────────╮
+            │ x    ┆ match   │
+            │ ---  ┆ ---     │
+            │ Utf8 ┆ Boolean │
+            ╞══════╪═════════╡
+            │ foo  ┆ false   │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ bar  ┆ true    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ baz  ┆ true    │
+            ╰──────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: Regex pattern to search for as string or as a column to pick values from
@@ -1137,7 +1285,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Checks whether each string ends with the given pattern in a string column
 
         Example:
-            >>> col("x").str.endswith(col("foo"))
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df.with_column("match", df["x"].str.endswith("foo")).collect()
+            ╭──────┬─────────╮
+            │ x    ┆ match   │
+            │ ---  ┆ ---     │
+            │ Utf8 ┆ Boolean │
+            ╞══════╪═════════╡
+            │ foo  ┆ true    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ bar  ┆ false   │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ baz  ┆ false   │
+            ╰──────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: pattern to search for as a literal string, or as a column to pick values from
@@ -1152,7 +1315,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Checks whether each string starts with the given pattern in a string column
 
         Example:
-            >>> col("x").str.startswith(col("foo"))
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df.with_column("match", df["x"].str.startswith("foo")).collect()
+            ╭──────┬─────────╮
+            │ x    ┆ match   │
+            │ ---  ┆ ---     │
+            │ Utf8 ┆ Boolean │
+            ╞══════╪═════════╡
+            │ foo  ┆ true    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ bar  ┆ false   │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ baz  ┆ false   │
+            ╰──────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: pattern to search for as a literal string, or as a column to pick values from
@@ -1167,6 +1345,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"data": ["foo.bar.baz", "a.b.c", "1.2.3"]})
             >>> df.with_column("split", df["data"].str.split(".")).collect()
             ╭─────────────┬─────────────────╮
@@ -1180,9 +1359,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ 1.2.3       ┆ [1, 2, 3]       │
             ╰─────────────┴─────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
             Split on a regex pattern
 
+            >>> import daft
             >>> df = daft.from_pydict({"data": ["foo.bar...baz", "a.....b.c", "1.2...3.."]})
             >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
             ╭───────────────┬─────────────────╮
@@ -1196,6 +1378,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ 1.2...3..     ┆ [1, 2, 3, ]     │
             ╰───────────────┴─────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
 
         Args:
@@ -1218,6 +1402,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             >>> col("x").str.concat(col("y"))
             >>> col("x") + col("y")
 
+            #FLAGGED
         Args:
             other (Expression): a string expression to concatenate with
 
@@ -1235,7 +1420,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If the pattern does not match or the group does not exist, a null value is returned.
 
         Example:
-            >>> regex = r"(\d)(\d*)"
+            >>> regex = r'^\d{3}-\d{3}$'
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
             >>> df.with_column("match", df["x"].str.extract(regex))
             ╭─────────┬─────────╮
@@ -1249,6 +1434,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ 345-678 ┆ 345     │
             ╰─────────┴─────────╯
+            #FLAGGED
 
             Extract the first capture group
 
@@ -1338,6 +1524,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
             >>> df.with_column("replace", df["data"].str.replace("ba", "123")).collect()
             ╭──────┬─────────╮
@@ -1351,9 +1538,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ baz  ┆ 123z    │
             ╰──────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
             Replace with a regex pattern
 
+            >>> import daft
             >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
             >>> df.with_column("replace", df["data"].str.replace(r"o+", "a", regex=True)).collect()
             ╭───────┬─────────╮
@@ -1367,6 +1557,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ foooo ┆ fa      │
             ╰───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: The pattern to replace
@@ -1384,7 +1576,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Retrieves the length for a UTF-8 string column
 
         Example:
-            >>> col("x").str.length()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.length())
+            >>> df.show()
+            ╭────────╮
+            │ x      │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: an UInt64 expression with the length of each string
@@ -1395,7 +1603,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Convert UTF-8 string to all lowercase
 
         Example:
-            >>> col("x").str.lower()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["FOO", "BAR", "BAZ"]})
+            >>> df = df.select(df["x"].str.lower())
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ foo  │
+            ├╌╌╌╌╌╌┤
+            │ bar  │
+            ├╌╌╌╌╌╌┤
+            │ baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` lowercased
@@ -1406,7 +1630,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Convert UTF-8 string to all upper
 
         Example:
-            >>> col("x").str.upper()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.upper())
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ FOO  │
+            ├╌╌╌╌╌╌┤
+            │ BAR  │
+            ├╌╌╌╌╌╌┤
+            │ BAZ  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` uppercased
@@ -1417,7 +1657,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Strip whitespace from the left side of a UTF-8 string
 
         Example:
-            >>> col("x").str.lstrip()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz"]})
+            >>> df = df.select(df["x"].str.lstrip()
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ foo  │
+            ├╌╌╌╌╌╌┤
+            │ bar  │
+            ├╌╌╌╌╌╌┤
+            │ baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` with leading whitespace stripped
@@ -1428,7 +1684,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Strip whitespace from the right side of a UTF-8 string
 
         Example:
-            >>> col("x").str.rstrip()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz   "]})
+            >>> df = df.select(df["x"].str.rstrip())
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ foo  │
+            ├╌╌╌╌╌╌┤
+            │ bar  │
+            ├╌╌╌╌╌╌┤
+            │ baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` with trailing whitespace stripped
@@ -1439,7 +1711,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Reverse a UTF-8 string
 
         Example:
-            >>> col("x").str.reverse()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.reverse())
+            >>> f.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ oof  │
+            ├╌╌╌╌╌╌┤
+            │ rab  │
+            ├╌╌╌╌╌╌┤
+            │ zab  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` reversed
@@ -1450,7 +1738,24 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Capitalize a UTF-8 string
 
         Example:
-            >>> col("x").str.capitalize()
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.capitalize())
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ Foo  │
+            ├╌╌╌╌╌╌┤
+            │ Bar  │
+            ├╌╌╌╌╌╌┤
+            │ Baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+            col("x").str.capitalize()
 
         Returns:
             Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
@@ -1461,7 +1766,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Gets the n (from nchars) left-most characters of each string
 
         Example:
-            >>> col("x").str.left(3)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.left(3))
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ foo  │
+            ├╌╌╌╌╌╌┤
+            │ bar  │
+            ├╌╌╌╌╌╌┤
+            │ baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is the `n` left-most characters of `self`
@@ -1473,7 +1794,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Gets the n (from nchars) right-most characters of each string
 
         Example:
-            >>> col("x").str.right(3)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.right(3))
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ foo  │
+            ├╌╌╌╌╌╌┤
+            │ bar  │
+            ├╌╌╌╌╌╌┤
+            │ baz  │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is the `n` right-most characters of `self`
@@ -1489,7 +1826,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If the substring is not found, -1 is returned.
 
         Example:
-            >>> col("x").str.find("foo")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.find("foo"))
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 0     │
+            ├╌╌╌╌╌╌╌┤
+            │ -1    │
+            ├╌╌╌╌╌╌╌┤
+            │ -1    │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: an Int64 expression with the index of the first occurrence of the substring in each string
@@ -1505,7 +1858,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             The pad character must be a single character.
 
         Example:
-            >>> col("x").str.rpad(5, "0")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foooooo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.rpad(5, "0"))
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Utf8  │
+            ╞═══════╡
+            │ foooo │
+            ├╌╌╌╌╌╌╌┤
+            │ bar00 │
+            ├╌╌╌╌╌╌╌┤
+            │ baz00 │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` truncated or right-padded with the pad character
@@ -1522,7 +1891,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             The pad character must be a single character.
 
         Example:
-            >>> col("x").str.lpad(5, "0")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foooooo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.rpad(5, "0"))
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Utf8  │
+            ╞═══════╡
+            │ foooo │
+            ├╌╌╌╌╌╌╌┤
+            │ bar00 │
+            ├╌╌╌╌╌╌╌┤
+            │ baz00 │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` truncated or left-padded with the pad character
@@ -1535,7 +1920,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """Repeats each string n times
 
         Example:
-            >>> col("x").str.repeat(3)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.repeat(5))
+            >>> df.show()
+            ╭─────────────────╮
+            │ x               │
+            │ ---             │
+            │ Utf8            │
+            ╞═════════════════╡
+            │ foofoofoofoofoo │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ barbarbarbarbar │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ bazbazbazbazbaz │
+            ╰─────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a String expression which is `self` repeated `n` times
@@ -1550,7 +1951,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
 
         Example:
-            >>> col("x").str.like("foo%")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.like("foo%"))
+            >>> df.show()
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a Boolean expression indicating whether each value matches the provided pattern
@@ -1565,7 +1982,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
 
         Example:
-            >>> col("x").str.ilike("foo%")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.ilike("foo%"))
+            >>> df.show()
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a Boolean expression indicating whether each value matches the provided pattern
@@ -1580,7 +2013,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If `length` is not provided, the substring will include all characters from `start` to the end of the string.
 
         Example:
-            >>> col("x").str.substr(2, 2)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df = df.select(df["x"].str.substr(2,2))
+            >>> df.show()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ o    │
+            ├╌╌╌╌╌╌┤
+            │ r    │
+            ├╌╌╌╌╌╌┤
+            │ z    │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: A String expression representing the extracted substring.
@@ -2089,6 +2538,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
             >>> df.with_column("res", df["col"].json.query(".a")).collect()
             ╭──────────┬──────╮
@@ -2102,6 +2552,8 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
             │ {"a": 3} ┆ 3    │
             ╰──────────┴──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             jq_query (str): JQ query string

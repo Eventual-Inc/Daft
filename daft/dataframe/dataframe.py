@@ -897,6 +897,7 @@ class DataFrame:
         in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
@@ -913,6 +914,7 @@ class DataFrame:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 68719476737 ┆ 4     │
             ╰─────────────┴───────╯
+            <BLANKLINE>
             (Showing first 4 of 4 rows)
 
         Args:
@@ -930,88 +932,66 @@ class DataFrame:
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
 
         Examples:
-
-        Names of columns as strings
-            .. testcode::
-
-                df.select('x','y')
-                df.show()
-
-            .. testoutput::
-
-                ╭───────┬───────╮
-                │ x     ┆ y     │
-                │ ---   ┆ ---   │
-                │ Int64 ┆ Int64 │
-                ╞═══════╪═══════╡
-                │ 1     ┆ 1     │
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-                │ 2     ┆ 2     │
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-                │ 3     ┆ 3     │
-                ╰───────┴───────╯
-                (Showing first 3 of 3 rows)
-
-        Names of columns as expressions
-            .. testcode::
-
-                df = df.select(col('x'), col('y'))
-
-            .. testoutput::
-
-                ╭───────┬───────╮
-                │ x     ┆ y     │
-                │ ---   ┆ ---   │
-                │ Int64 ┆ Int64 │
-                ╞═══════╪═══════╡
-                │ 1     ┆ 1     │
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-                │ 2     ┆ 2     │
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-                │ 3     ┆ 3     │
-                ╰───────┴───────╯
-                (Showing first 3 of 3 rows)
-
-        Call expressions
-            .. testcode::
-
-                df = df.select(col('x') * col('y'))
-
-            .. testoutput::
-
-                ╭───────╮
-                │ x     │
-                │ ---   │
-                │ Int64 │
-                ╞═══════╡
-                │ 1     │
-                ├╌╌╌╌╌╌╌┤
-                │ 4     │
-                ├╌╌╌╌╌╌╌┤
-                │ 9     │
-                ╰───────╯
-                (Showing first 3 of 3 rows)
-
-        Any mix of the above
-            .. testcode::
-
-                df = from_pydict({'x': [1, 2, 3], 'y': [1, 2, 3], 'z':[1,2,3]})
-                df = df.select('x', col('y'), col('z') + 1)
-
-            .. testoutput::
-
-                ╭───────┬───────┬──────╮
-                │ x     ┆ y     │   z  |
-                │ ---   ┆ ---   │  --- |
-                │ Int64 ┆ Int64 │ Int64|
-                ╞═══════╪═══════╡══════|
-                │ 1     ┆ 1     │  2   |
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤------|
-                │ 2     ┆ 2     │  3   |
-                ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤------|
-                │ 3     ┆ 3     │  4   |
-                ╰───────┴───────╯──────╯
-                (Showing first 3 of 3 rows)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = df.select('x', 'y')
+            >>> df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+            >>> df = df.select(col('x'), col('y'))
+            >>> df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+            >>> df = df.select(col('x') * col('y'))
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 10    │
+            ├╌╌╌╌╌╌╌┤
+            │ 18    │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+            >>> df = df.select('x', col('y'), col('z') + 1)
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 9     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 10    │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
 
 
@@ -1030,7 +1010,20 @@ class DataFrame:
         """Computes unique rows, dropping duplicates
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7,8,8]})
             >>> unique_df = df.distinct()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2     ┆ 5     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 4     ┆ 7     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Returns:
             DataFrame: DataFrame that has only  unique rows.
@@ -1050,6 +1043,17 @@ class DataFrame:
 
         Example:
             >>> sampled_df = df.sample(0.5)
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2     ┆ 5     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Args:
             fraction (float): fraction of rows to sample.
