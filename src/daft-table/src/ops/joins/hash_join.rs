@@ -273,7 +273,6 @@ pub(super) fn hash_semi_anti_join(
                     }
                 })
                 .is_some();
-            dbg!(l_idx);
             if is_match == is_semi {
                 left_idx.push(l_idx as u64);
             }
