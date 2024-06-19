@@ -61,6 +61,9 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
     leaf_inputs: &mut Vec<VirtualPartitionSet<T>>,
     psets: &HashMap<String, Vec<T>>,
 ) -> PartitionTaskNodeBuilder {
+    let node_type = physical_plan.name();
+
+    let todo_string = format!("physical_plan_to_partition_task_tree: {node_type}");
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
@@ -106,13 +109,13 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
         }
         PhysicalPlan::Explode(Explode {
             input, to_explode, ..
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Sample(Sample {
             input,
             fraction,
             with_replacement,
             seed,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
@@ -130,13 +133,13 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
             sort_by,
             descending,
             num_partitions,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Split(Split {
             input,
             input_num_partitions,
             output_num_partitions,
-        }) => todo!(),
-        PhysicalPlan::Flatten(Flatten { input }) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Flatten(Flatten { input }) => todo!("{todo_string}"),
         PhysicalPlan::FanoutRandom(FanoutRandom {
             input,
             num_partitions,
@@ -159,19 +162,19 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
         PhysicalPlan::FanoutByRange(_) => unimplemented!(
             "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
         ),
-        PhysicalPlan::ReduceMerge(ReduceMerge { input }) => todo!(),
+        PhysicalPlan::ReduceMerge(ReduceMerge { input }) => todo!("{todo_string}"),
         PhysicalPlan::Aggregate(Aggregate {
             aggregations,
             groupby,
             input,
             ..
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Coalesce(Coalesce {
             input,
             num_from,
             num_to,
-        }) => todo!(),
-        PhysicalPlan::Concat(Concat { other, input }) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Concat(Concat { other, input }) => todo!("{todo_string}"),
         PhysicalPlan::HashJoin(HashJoin {
             left,
             right,
@@ -203,7 +206,7 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
             num_partitions,
             left_is_larger,
             needs_presort,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::BroadcastJoin(BroadcastJoin {
             broadcaster: left,
             receiver: right,
@@ -211,7 +214,7 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
             right_on,
             join_type,
             is_swapped,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteParquet(TabularWriteParquet {
             schema,
             file_info:
@@ -223,7 +226,7 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
                     io_config,
                 },
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
             schema,
             file_info:
@@ -235,7 +238,7 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
                     io_config,
                 },
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteJson(TabularWriteJson {
             schema,
             file_info:
@@ -247,21 +250,21 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
                     io_config,
                 },
             input,
-        }) => todo!(),
-        PhysicalPlan::Pivot(_) => todo!(),
-        PhysicalPlan::Unpivot(_) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Pivot(_) => todo!("{todo_string}"),
+        PhysicalPlan::Unpivot(_) => todo!("{todo_string}"),
         #[cfg(feature = "python")]
         PhysicalPlan::IcebergWrite(IcebergWrite {
             schema: _,
             iceberg_info,
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         #[cfg(feature = "python")]
         PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite {
             schema: _,
             delta_lake_info,
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
     }
 }
 
@@ -271,6 +274,10 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
     psets: &HashMap<String, Vec<T>>,
     executor: Arc<E>,
 ) -> Stage<T, E> {
+    let node_type = physical_plan.name();
+
+    let todo_string = format!("physical_plan_to_stage: {node_type}");
+
     match physical_plan {
         PhysicalPlan::TabularScan(_)
         | PhysicalPlan::Project(_)
@@ -298,8 +305,8 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
             ..
-        }) => todo!(),
-        PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => todo!("{todo_string}"),
         PhysicalPlan::Limit(Limit {
             input,
             limit,
@@ -316,13 +323,13 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
         }
         PhysicalPlan::Explode(Explode {
             input, to_explode, ..
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Sample(Sample {
             input,
             fraction,
             with_replacement,
             seed,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Sort(Sort {
             input,
             sort_by,
@@ -375,17 +382,17 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
             input,
             input_num_partitions,
             output_num_partitions,
-        }) => todo!(),
-        PhysicalPlan::Flatten(Flatten { input }) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Flatten(Flatten { input }) => todo!("{todo_string}"),
         PhysicalPlan::FanoutRandom(FanoutRandom {
             input,
             num_partitions,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::FanoutByHash(FanoutByHash {
             input,
             num_partitions,
             partition_by,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::FanoutByRange(_) => unimplemented!(
             "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
         ),
@@ -412,13 +419,13 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
             groupby,
             input,
             ..
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::Coalesce(Coalesce {
             input,
             num_from,
             num_to,
-        }) => todo!(),
-        PhysicalPlan::Concat(Concat { other, input }) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Concat(Concat { other, input }) => todo!("{todo_string}"),
         PhysicalPlan::SortMergeJoin(SortMergeJoin {
             left,
             right,
@@ -428,7 +435,7 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
             num_partitions,
             left_is_larger,
             needs_presort,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::BroadcastJoin(BroadcastJoin {
             broadcaster: left,
             receiver: right,
@@ -436,7 +443,7 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
             right_on,
             join_type,
             is_swapped,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteParquet(TabularWriteParquet {
             schema,
             file_info:
@@ -448,7 +455,7 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
                     io_config,
                 },
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
             schema,
             file_info:
@@ -460,7 +467,7 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
                     io_config,
                 },
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         PhysicalPlan::TabularWriteJson(TabularWriteJson {
             schema,
             file_info:
@@ -472,20 +479,20 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
                     io_config,
                 },
             input,
-        }) => todo!(),
-        PhysicalPlan::Pivot(_) => todo!(),
-        PhysicalPlan::Unpivot(_) => todo!(),
+        }) => todo!("{todo_string}"),
+        PhysicalPlan::Pivot(_) => todo!("{todo_string}"),
+        PhysicalPlan::Unpivot(_) => todo!("{todo_string}"),
         #[cfg(feature = "python")]
         PhysicalPlan::IcebergWrite(IcebergWrite {
             schema: _,
             iceberg_info,
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
         #[cfg(feature = "python")]
         PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite {
             schema: _,
             delta_lake_info,
             input,
-        }) => todo!(),
+        }) => todo!("{todo_string}"),
     }
 }
