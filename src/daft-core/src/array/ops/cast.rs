@@ -1714,17 +1714,25 @@ impl ListArray {
                 }
 
                 // Cast child
-                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-
+                let mut casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 // Build a FixedSizeListArray
                 match self.validity() {
                     // All valid, easy conversion -- everything is correctly sized and valid
-                    None => Ok(FixedSizeListArray::new(
-                        Field::new(self.name(), dtype.clone()),
-                        casted_child.clone(),
-                        None,
-                    )
-                    .into_series()),
+                    None => {
+                        // Slice child to match offsets if necessary
+                        if casted_child.len() / size > self.len() {
+                            casted_child = casted_child.slice(
+                                *self.offsets().first() as usize,
+                                *self.offsets().last() as usize,
+                            )?;
+                        }
+                        Ok(FixedSizeListArray::new(
+                            Field::new(self.name(), dtype.clone()),
+                            casted_child.clone(),
+                            None,
+                        )
+                        .into_series())
+                    }
                     // Some invalids, we need to insert nulls into the child
                     Some(validity) => {
                         let mut child_growable = make_growable(
