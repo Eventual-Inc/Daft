@@ -106,10 +106,6 @@ fn hash_fixed_size_binary(
             .map(|(v, s)| xxh3_64_with_seed(v, *s))
             .collect::<Vec<_>>()
     } else {
-        println!(
-            "array.values_iter(): {:?}",
-            array.values_iter().collect::<Vec<_>>()
-        );
         array.values_iter().map(xxh3_64).collect::<Vec<_>>()
     };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
