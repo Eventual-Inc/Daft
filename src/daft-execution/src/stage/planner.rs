@@ -78,7 +78,7 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
             let op_builder = FusedOpBuilder::new(Arc::new(scan_op));
             PartitionTaskNodeBuilder::LeafScan(op_builder)
         }
-        PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => todo!(),
+        PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => todo!("{todo_string}"),
         PhysicalPlan::Project(Project {
             input,
             projection,
