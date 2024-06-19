@@ -68,7 +68,7 @@ pub enum DataType {
     Duration(TimeUnit),
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
-    /// Opque binary data of fixed size. Enum parameter specifies the number of bytes per value.
+    /// Opaque binary data of fixed size. Enum parameter specifies the number of bytes per value.
     FixedSizeBinary(usize),
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,

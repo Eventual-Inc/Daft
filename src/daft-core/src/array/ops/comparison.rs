@@ -1538,7 +1538,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
-                    rhs.equal(value)
+                    rhs.equal(value).map(|v| v.rename(self.name()))
                 } else {
                     Ok(BooleanArray::full_null(
                         self.name(),
