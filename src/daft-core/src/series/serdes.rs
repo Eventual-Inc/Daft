@@ -146,6 +146,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                     )
                     .into_series()),
+                    FixedSizeBinary(size) => Ok(FixedSizeBinaryArray::from_iter(
+                        field.name.as_str(),
+                        map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
+                        *size,
+                    )
+                    .into_series()),
                     Extension(..) => {
                         let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow();

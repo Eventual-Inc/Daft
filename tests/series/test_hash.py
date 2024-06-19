@@ -87,6 +87,27 @@ def test_hash_binary_array_with_reference():
     assert hashed_again.to_pylist() == expected
 
 
+def test_hash_fixed_size_binary_array_with_reference():
+    import pyarrow as pa
+
+    arr = Series.from_arrow(pa.array([b"foo", b"bar", None], type=pa.binary(3)))
+    expected = [
+        xxhash.xxh3_64_intdigest(b"foo"),
+        xxhash.xxh3_64_intdigest(b"bar"),
+        xxhash.xxh3_64_intdigest(b"\x00\x00\x00"),
+    ]
+    hashed = arr.hash()
+    assert hashed.to_pylist() == expected
+
+    hashed_again = arr.hash(hashed)
+    expected = [
+        xxhash.xxh3_64_intdigest(b"foo", expected[0]),
+        xxhash.xxh3_64_intdigest(b"bar", expected[1]),
+        xxhash.xxh3_64_intdigest(b"\x00\x00\x00", expected[2]),
+    ]
+    assert hashed_again.to_pylist() == expected
+
+
 def test_hash_null_array_with_reference():
     arr = Series.from_pylist([None, None, None])
     expected = [xxhash.xxh3_64_intdigest(b""), xxhash.xxh3_64_intdigest(b""), xxhash.xxh3_64_intdigest(b"")]
@@ -164,6 +185,16 @@ def test_murmur3_32_hash_string():
 def test_murmur3_32_hash_bytes():
     arr = Series.from_pylist([b"\x00\x01\x02\x03", None])
     assert arr.datatype() == DataType.binary()
+    hashes = arr.murmur3_32()
+    java_answer = -188683207
+    assert hashes.to_pylist() == [java_answer, None]
+
+
+def test_murmur3_32_hash_fixed_sized_bytes():
+    import pyarrow as pa
+
+    arr = Series.from_arrow(pa.array([b"\x00\x01\x02\x03", None], type=pa.binary(4)))
+    assert arr.datatype() == DataType.fixed_size_binary(4)
     hashes = arr.murmur3_32()
     java_answer = -188683207
     assert hashes.to_pylist() == [java_answer, None]

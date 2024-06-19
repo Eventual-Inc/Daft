@@ -2,8 +2,9 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, Int16Array, Int32Array, Int64Array, Int8Array,
-        NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
+        Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        Utf8Array,
     },
     kernels,
 };
@@ -40,6 +41,18 @@ impl Utf8Array {
 }
 
 impl BinaryArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        let as_arrowed = self.as_arrow();
+
+        let seed = seed.map(|v| v.as_arrow());
+
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
+
+        Ok(DataArray::from((self.name(), Box::new(result))))
+    }
+}
+
+impl FixedSizeBinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
 
@@ -134,6 +147,21 @@ impl Utf8Array {
 }
 
 impl BinaryArray {
+    pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        let as_arrowed = self.as_arrow();
+        let has_nulls = as_arrowed
+            .validity()
+            .map(|v| v.unset_bits() > 0)
+            .unwrap_or(false);
+        if has_nulls {
+            murmur3_32_hash_from_iter_with_nulls(self.name(), as_arrowed.into_iter())
+        } else {
+            murmur3_32_hash_from_iter_no_nulls(self.name(), as_arrowed.values_iter())
+        }
+    }
+}
+
+impl FixedSizeBinaryArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
         let as_arrowed = self.as_arrow();
         let has_nulls = as_arrowed

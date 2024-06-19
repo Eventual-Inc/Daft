@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::offset::{Offset, Offsets};
 use crate::{array::*, datatypes::DataType, types::NativeType};
 
@@ -153,6 +153,66 @@ pub fn fixed_size_binary_binary<O: Offset>(
         values,
         from.validity().cloned(),
     )
+}
+
+pub fn binary_to_fixed_size_binary<O: Offset>(
+    from: &BinaryArray<O>,
+    size: usize,
+) -> Result<Box<dyn Array>> {
+    if let Some(validity) = from.validity() {
+        // Ensure all valid elements have the right size
+        for (value, valid) in from.values_iter().zip(validity) {
+            if valid && value.len() != size {
+                return Err(Error::InvalidArgumentError(
+                    format!(
+                        "element has invalid length ({}, expected {})",
+                        value.len(),
+                        size
+                    )
+                    .to_string(),
+                ));
+            }
+        }
+
+        // Copy values to new buffer, accounting for validity
+        let mut values: Vec<u8> = Vec::new();
+        let offsets = from.offsets().buffer().iter();
+        let from_values = from.values();
+        for (off, valid) in offsets.zip(validity) {
+            if valid {
+                let start = off.to_usize();
+                let end = start + size;
+                values.extend(&from_values[start..end]);
+            } else {
+                values.extend(std::iter::repeat(0u8).take(size));
+            }
+        }
+        Ok(Box::new(FixedSizeBinaryArray::try_new(
+            DataType::FixedSizeBinary(size),
+            values.into(),
+            from.validity().cloned(),
+        )?))
+    } else {
+        // Ensure all elements have the right size
+        for value in from.values_iter() {
+            if value.len() != size {
+                return Err(Error::InvalidArgumentError(
+                    format!(
+                        "element has invalid length ({}, expected {})",
+                        value.len(),
+                        size
+                    )
+                    .to_string(),
+                ));
+            }
+        }
+
+        Ok(Box::new(FixedSizeBinaryArray::try_new(
+            DataType::FixedSizeBinary(size),
+            from.values().clone(),
+            from.validity().cloned(),
+        )?))
+    }
 }
 
 /// Conversion of binary

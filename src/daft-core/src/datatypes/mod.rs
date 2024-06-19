@@ -189,6 +189,7 @@ impl_daft_arrow_datatype!(UInt64Type, UInt64);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
+impl_daft_arrow_datatype!(FixedSizeBinaryType, Unknown);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
 impl_daft_arrow_datatype!(ExtensionType, Unknown);
 
@@ -352,6 +353,7 @@ pub type UInt64Array = DataArray<UInt64Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
+pub type FixedSizeBinaryArray = DataArray<FixedSizeBinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 

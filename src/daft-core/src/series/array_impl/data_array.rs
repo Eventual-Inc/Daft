@@ -7,6 +7,7 @@ use crate::array::ops::GroupIndices;
 use crate::array::DataArray;
 use crate::datatypes::DaftArrowBackedType;
 
+use crate::datatypes::FixedSizeBinaryArray;
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
@@ -220,6 +221,7 @@ macro_rules! impl_series_like_for_data_array {
 impl_series_like_for_data_array!(NullArray);
 impl_series_like_for_data_array!(BooleanArray);
 impl_series_like_for_data_array!(BinaryArray);
+impl_series_like_for_data_array!(FixedSizeBinaryArray);
 impl_series_like_for_data_array!(Int8Array);
 impl_series_like_for_data_array!(Int16Array);
 impl_series_like_for_data_array!(Int32Array);

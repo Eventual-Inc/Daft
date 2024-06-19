@@ -54,8 +54,9 @@ def test_series_filter_on_bool() -> None:
     assert result.to_pylist() == expected
 
 
-def test_series_filter_on_binary() -> None:
-    s = Series.from_pylist([b"Y", b"N", None, b"Y", None, b"N"])
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_series_filter_on_binary(type) -> None:
+    s = Series.from_arrow(pa.array([b"Y", b"N", None, b"Y", None, b"N"], type=type))
     pymask = [False, True, True, None, False, False]
     mask = Series.from_pylist(pymask)
 

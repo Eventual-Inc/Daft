@@ -5,7 +5,7 @@ use serde::ser::SerializeMap;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, Int64Array, NullArray, Utf8Array,
+        ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
     },
     DataType, IntoSeries, Series,
 };
@@ -89,6 +89,18 @@ impl serde::Serialize for BooleanArray {
 }
 
 impl serde::Serialize for BinaryArray {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(2))?;
+        s.serialize_entry("field", self.field())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.end()
+    }
+}
+
+impl serde::Serialize for FixedSizeBinaryArray {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

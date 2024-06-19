@@ -179,6 +179,13 @@ class DataType:
         return cls._from_pydatatype(PyDataType.binary())
 
     @classmethod
+    def fixed_size_binary(cls, size: int) -> DataType:
+        """Create a FixedSizeBinary DataType: A fixed-size string of bytes"""
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("The size for a fixed-size binary must be a positive integer, but got: ", size)
+        return cls._from_pydatatype(PyDataType.fixed_size_binary(size))
+
+    @classmethod
     def null(cls) -> DataType:
         """Creates the Null DataType: Always the ``Null`` value"""
         return cls._from_pydatatype(PyDataType.null())
@@ -364,12 +371,10 @@ class DataType:
             return cls.float64()
         elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
             return cls.string()
-        elif (
-            pa.types.is_binary(arrow_type)
-            or pa.types.is_large_binary(arrow_type)
-            or pa.types.is_fixed_size_binary(arrow_type)
-        ):
+        elif pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
             return cls.binary()
+        elif pa.types.is_fixed_size_binary(arrow_type):
+            return cls.fixed_size_binary(arrow_type.byte_width)
         elif pa.types.is_boolean(arrow_type):
             return cls.bool()
         elif pa.types.is_null(arrow_type):

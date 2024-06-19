@@ -112,8 +112,9 @@ def test_series_pylist_round_trip_null() -> None:
     assert words["None"] == 2
 
 
-def test_series_pylist_round_trip_binary() -> None:
-    data = pa.array([b"a", b"b", b"c", None, b"d", None])
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_series_pylist_round_trip_binary(type) -> None:
+    data = pa.array([b"a", b"b", b"c", None, b"d", None], type=type)
 
     s = Series.from_arrow(data)
 
@@ -134,6 +135,16 @@ def test_series_pickling(dtype) -> None:
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES + ARROW_STRING_TYPES)
 def test_series_bincode_serdes(dtype) -> None:
     s = Series.from_pylist([1, 2, 3, None]).cast(DataType.from_arrow_type(dtype))
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
+
+
+def test_series_bincode_serdes_fixed_size_binary() -> None:
+    s = Series.from_arrow(pa.array([b"a", b"b", b"c", None, b"d", None], type=pa.binary(1)))
     serialized = s._debug_bincode_serialize()
     copied_s = Series._debug_bincode_deserialize(serialized)
 

@@ -62,8 +62,9 @@ def test_series_time_take(time_unit) -> None:
     assert taken.to_pylist() == times[::-1]
 
 
-def test_series_binary_take() -> None:
-    data = pa.array([b"1", b"2", b"3", None, b"5", None])
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_series_binary_take(type) -> None:
+    data = pa.array([b"1", b"2", b"3", None, b"5", None], type=type)
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]

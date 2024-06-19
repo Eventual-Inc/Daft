@@ -7,7 +7,6 @@ import pyarrow as pa
 import pytest
 
 from daft import col
-from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import MicroPartition
@@ -186,15 +185,14 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
 )
 def test_table_multiple_col_sorting_binary(data) -> None:
     a, b, a_desc, b_desc, expected = data
-    a = [x.to_bytes(1, "little") if x is not None else None for x in a]
-    b = [x.to_bytes(1, "little") if x is not None else None for x in b]
+    a = pa.array([x.to_bytes(1, "little") if x is not None else None for x in a], type=pa.binary())
+    b = pa.array([x.to_bytes(1, "little") if x is not None else None for x in b], type=pa.binary())
 
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
     argsort_order = Series.from_pylist(expected)
 
     daft_table = MicroPartition.from_arrow(pa_table)
-    daft_table = daft_table.eval_expression_list([col("a").cast(DataType.binary()), col("b").cast(DataType.binary())])
     assert len(daft_table) == 5
     assert daft_table.column_names() == ["a", "b"]
 

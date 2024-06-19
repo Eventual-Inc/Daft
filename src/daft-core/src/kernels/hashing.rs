@@ -1,6 +1,8 @@
 use arrow2::{
-    array::Array,
-    array::{BinaryArray, BooleanArray, NullArray, PrimitiveArray, Utf8Array},
+    array::{
+        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, NullArray, PrimitiveArray,
+        Utf8Array,
+    },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
@@ -93,6 +95,22 @@ fn hash_binary<O: Offset>(
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
+fn hash_fixed_size_binary(
+    array: &FixedSizeBinaryArray,
+    seed: Option<&PrimitiveArray<u64>>,
+) -> PrimitiveArray<u64> {
+    let hashes = if let Some(seed) = seed {
+        array
+            .values_iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| xxh3_64_with_seed(v, *s))
+            .collect::<Vec<_>>()
+    } else {
+        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+}
+
 fn hash_utf8<O: Offset>(
     array: &Utf8Array<O>,
     seed: Option<&PrimitiveArray<u64>>,
@@ -166,6 +184,7 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
         }),
         Binary => hash_binary::<i32>(array.as_any().downcast_ref().unwrap(), seed),
         LargeBinary => hash_binary::<i64>(array.as_any().downcast_ref().unwrap(), seed),
+        FixedSizeBinary => hash_fixed_size_binary(array.as_any().downcast_ref().unwrap(), seed),
         Utf8 => hash_utf8::<i32>(array.as_any().downcast_ref().unwrap(), seed),
         LargeUtf8 => hash_utf8::<i64>(array.as_any().downcast_ref().unwrap(), seed),
         t => {

@@ -47,7 +47,8 @@ impl FixedSizeBinaryArray {
             .map_or(false, |validity| validity.len() != len)
         {
             return Err(Error::oos(
-                "validity mask length must be equal to the number of values divided by size",
+                format!("validity mask length (got {}) must be equal to the number of values ({}) divided by size ({})",
+                validity.unwrap().len(), values.len(), size),
             ));
         }
 

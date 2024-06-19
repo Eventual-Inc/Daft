@@ -266,6 +266,113 @@ impl DaftCompareAggable for DataArray<BinaryType> {
     }
 }
 
+fn cmp_fixed_size_binary<'a, F>(
+    data_array: &'a FixedSizeBinaryArray,
+    op: F,
+) -> DaftResult<FixedSizeBinaryArray>
+where
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
+{
+    let arrow_array = data_array.as_arrow();
+    if arrow_array.null_count() == arrow_array.len() {
+        Ok(FixedSizeBinaryArray::full_null(
+            data_array.name(),
+            &DataType::FixedSizeBinary(arrow_array.size()),
+            1,
+        ))
+    } else if arrow_array.validity().is_some() {
+        let res = arrow_array
+            .iter()
+            .reduce(|v1, v2| match (v1, v2) {
+                (None, v2) => v2,
+                (v1, None) => v1,
+                (Some(v1), Some(v2)) => Some(op(v1, v2)),
+            })
+            .unwrap_or(None);
+        Ok(FixedSizeBinaryArray::from_iter(
+            data_array.name(),
+            std::iter::once(res),
+            arrow_array.size(),
+        ))
+    } else {
+        let res = arrow_array.values_iter().reduce(|v1, v2| op(v1, v2));
+        Ok(FixedSizeBinaryArray::from_iter(
+            data_array.name(),
+            std::iter::once(res),
+            arrow_array.size(),
+        ))
+    }
+}
+
+fn grouped_cmp_fixed_size_binary<'a, F>(
+    data_array: &'a FixedSizeBinaryArray,
+    op: F,
+    groups: &GroupIndices,
+) -> DaftResult<FixedSizeBinaryArray>
+where
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
+{
+    let arrow_array = data_array.as_arrow();
+    let cmp_per_group = if arrow_array.null_count() > 0 {
+        let cmp_values_iter = groups.iter().map(|g| {
+            let reduced_val = g
+                .iter()
+                .map(|i| {
+                    let idx = *i as usize;
+                    match arrow_array.is_null(idx) {
+                        false => Some(unsafe { arrow_array.value_unchecked(idx) }),
+                        true => None,
+                    }
+                })
+                .reduce(|l, r| match (l, r) {
+                    (None, None) => None,
+                    (None, Some(r)) => Some(r),
+                    (Some(l), None) => Some(l),
+                    (Some(l), Some(r)) => Some(op(l, r)),
+                });
+            reduced_val.unwrap_or_default()
+        });
+        Box::new(arrow2::array::FixedSizeBinaryArray::from_iter(
+            cmp_values_iter,
+            arrow_array.size(),
+        ))
+    } else {
+        Box::new(arrow2::array::FixedSizeBinaryArray::from_iter(
+            groups.iter().map(|g| {
+                g.iter()
+                    .map(|i| {
+                        let idx = *i as usize;
+                        unsafe { arrow_array.value_unchecked(idx) }
+                    })
+                    .reduce(|l, r| op(l, r))
+            }),
+            arrow_array.size(),
+        ))
+    };
+    Ok(DataArray::from((
+        data_array.field.name.as_ref(),
+        cmp_per_group,
+    )))
+}
+
+impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
+    type Output = DaftResult<DataArray<FixedSizeBinaryType>>;
+    fn min(&self) -> Self::Output {
+        cmp_fixed_size_binary(self, |l, r| l.min(r))
+    }
+    fn max(&self) -> Self::Output {
+        cmp_fixed_size_binary(self, |l, r| l.max(r))
+    }
+
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_fixed_size_binary(self, |l, r| l.min(r), groups)
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_fixed_size_binary(self, |l, r| l.max(r), groups)
+    }
+}
+
 fn grouped_cmp_bool(
     data_array: &BooleanArray,
     val_to_find: bool,

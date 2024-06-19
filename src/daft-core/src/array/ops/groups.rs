@@ -6,8 +6,8 @@ use fnv::FnvHashMap;
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Float32Array, Float64Array,
-        NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
+        Float32Array, Float64Array, NullArray, Utf8Array,
     },
 };
 use common_error::DaftResult;
@@ -128,6 +128,17 @@ impl IntoGroups for Utf8Array {
 }
 
 impl IntoGroups for BinaryArray {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        let array = self.as_arrow();
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            make_groups(array.values_iter())
+        }
+    }
+}
+
+impl IntoGroups for FixedSizeBinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow();
         if array.null_count() > 0 {

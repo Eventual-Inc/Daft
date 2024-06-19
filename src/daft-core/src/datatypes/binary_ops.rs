@@ -103,7 +103,7 @@ impl Add for &DataType {
                 (Null, other) | (other, Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
-                        Binary | Date => Err(DaftError::TypeError(
+                        Binary | FixedSizeBinary(..) | Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
@@ -115,7 +115,7 @@ impl Add for &DataType {
                 (Utf8, other) | (other, Utf8) => {
                     match other {
                         // Date condition is for backwards compatibility. TODO: remove
-                        Binary | Date => Err(DaftError::TypeError(
+                        Binary | FixedSizeBinary(..) | Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
                         other if other.is_physical() => Ok(Utf8),
@@ -234,7 +234,9 @@ pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType
         (Boolean, other) | (other, Boolean) if other.is_numeric() => Ok(other.clone()),
         #[cfg(feature = "python")]
         (Python, _) | (_, Python) => Ok(Python),
-        (Utf8, o) | (o, Utf8) if o.is_physical() && !matches!(o, Binary) => Ok(Utf8),
+        (Utf8, o) | (o, Utf8) if o.is_physical() && !matches!(o, Binary | FixedSizeBinary(..)) => {
+            Ok(Utf8)
+        }
         _ => Err(DaftError::TypeError(format!(
             "Invalid arguments to try_physical_supertype: {}, {}",
             l, r

@@ -1,8 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Float32Array, Float64Array,
-        NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
+        Float32Array, Float64Array, NullArray, Utf8Array,
     },
     DataType,
 };
@@ -78,6 +78,7 @@ macro_rules! impl_is_in_non_numeric_array {
 impl_is_in_non_numeric_array!(BooleanArray);
 impl_is_in_non_numeric_array!(Utf8Array);
 impl_is_in_non_numeric_array!(BinaryArray);
+impl_is_in_non_numeric_array!(FixedSizeBinaryArray);
 
 impl DaftIsIn<&NullArray> for NullArray {
     type Output = DaftResult<BooleanArray>;

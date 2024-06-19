@@ -3,8 +3,8 @@ use num_traits::{NumCast, ToPrimitive};
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, Field,
+        FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     utils::arrow::arrow_bitmap_and_helper,
 };
@@ -13,7 +13,7 @@ use common_error::{DaftError, DaftResult};
 
 use std::ops::Not;
 
-use super::{full::FullNull, DaftCompare, DaftLogical};
+use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 
 use super::as_arrow::AsArrow;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
@@ -1459,6 +1459,293 @@ impl DaftCompare<&[u8]> for BinaryArray {
             comparison::binary::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+}
+
+fn compare_fixed_size_binary<F>(
+    lhs: &FixedSizeBinaryArray,
+    rhs: &FixedSizeBinaryArray,
+    op: F,
+) -> DaftResult<BooleanArray>
+where
+    F: Fn(&[u8], &[u8]) -> bool,
+{
+    let lhs_arrow = lhs.as_arrow();
+    let rhs_arrow = rhs.as_arrow();
+    let validity = match (lhs_arrow.validity(), rhs_arrow.validity()) {
+        (Some(lhs), None) => Some(lhs.clone()),
+        (None, Some(rhs)) => Some(rhs.clone()),
+        (None, None) => None,
+        (Some(lhs), Some(rhs)) => Some(lhs & rhs),
+    };
+
+    let values = lhs_arrow
+        .values_iter()
+        .zip(rhs_arrow.values_iter())
+        .map(|(lhs, rhs)| op(lhs, rhs));
+    let values = arrow2::bitmap::Bitmap::from_trusted_len_iter(values);
+
+    BooleanArray::from_arrow(
+        Field::new(lhs.name(), DataType::Boolean).into(),
+        Box::new(arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            values,
+            validity,
+        )),
+    )
+}
+
+fn cmp_fixed_size_binary_scalar<F>(
+    lhs: &FixedSizeBinaryArray,
+    rhs: &[u8],
+    op: F,
+) -> DaftResult<BooleanArray>
+where
+    F: Fn(&[u8], &[u8]) -> bool,
+{
+    let lhs_arrow = lhs.as_arrow();
+    let validity = lhs_arrow.validity().cloned();
+
+    let values = lhs_arrow.values_iter().map(|lhs| op(lhs, rhs));
+    let values = arrow2::bitmap::Bitmap::from_trusted_len_iter(values);
+
+    BooleanArray::from_arrow(
+        Field::new(lhs.name(), DataType::Boolean).into(),
+        Box::new(arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            values,
+            validity,
+        )),
+    )
+}
+
+impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
+    type Output = DaftResult<BooleanArray>;
+
+    fn equal(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs == rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.equal(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.equal(value).map(|v| v.rename(self.name()))
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
+    fn not_equal(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs != rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.not_equal(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.not_equal(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
+    fn lt(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs < rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
+    fn lte(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs <= rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lte(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gte(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
+    fn gt(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs > rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
+    fn gte(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs >= rhs),
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gte(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        l_size,
+                    ))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lte(value)
+                } else {
+                    Ok(BooleanArray::full_null(
+                        self.name(),
+                        &DataType::Boolean,
+                        r_size,
+                    ))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+}
+
+impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
+    type Output = DaftResult<BooleanArray>;
+
+    fn equal(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs == rhs)
+    }
+
+    fn not_equal(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs != rhs)
+    }
+
+    fn lt(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs < rhs)
+    }
+
+    fn lte(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs <= rhs)
+    }
+
+    fn gt(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs > rhs)
+    }
+
+    fn gte(&self, rhs: &[u8]) -> Self::Output {
+        cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs >= rhs)
     }
 }
 

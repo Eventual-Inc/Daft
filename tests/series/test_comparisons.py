@@ -582,6 +582,85 @@ def test_comparisons_binary_right_scalar(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, True, None]
 
 
+def test_comparisons_fixed_size_binary() -> None:
+    l_arrow = pa.array([b"11111", b"22222", b"33333", None, b"12345", None], type=pa.binary(5))
+    r_arrow = pa.array([b"11111", b"33333", b"11111", b"12345", None, None], type=pa.binary(5))
+    # eq, lt, gt, None, None, None
+
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
+    lt = (left < right).to_pylist()
+    assert lt == [False, True, False, None, None, None]
+
+    le = (left <= right).to_pylist()
+    assert le == [True, True, False, None, None, None]
+
+    eq = (left == right).to_pylist()
+    assert eq == [True, False, False, None, None, None]
+
+    neq = (left != right).to_pylist()
+    assert neq == [False, True, True, None, None, None]
+
+    ge = (left >= right).to_pylist()
+    assert ge == [True, False, True, None, None, None]
+
+    gt = (left > right).to_pylist()
+    assert gt == [False, False, True, None, None, None]
+
+
+def test_comparisons_fixed_size_binary_left_scalar() -> None:
+    l_arrow = pa.array([b"222"], type=pa.binary(3))
+    r_arrow = pa.array([b"111", b"222", b"333", None], type=pa.binary(3))
+    # gt, eq, lt
+
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
+
+    lt = (left < right).to_pylist()
+    assert lt == [False, False, True, None]
+
+    le = (left <= right).to_pylist()
+    assert le == [False, True, True, None]
+
+    eq = (left == right).to_pylist()
+    assert eq == [False, True, False, None]
+
+    neq = (left != right).to_pylist()
+    assert neq == [True, False, True, None]
+
+    ge = (left >= right).to_pylist()
+    assert ge == [True, True, False, None]
+
+    gt = (left > right).to_pylist()
+    assert gt == [True, False, False, None]
+
+
+def test_comparisons_fixed_size_binary_right_scalar() -> None:
+    l_arrow = pa.array([b"111", b"222", b"333", None, b"555", None], type=pa.binary(3))
+    r_arrow = pa.array([b"222"], type=pa.binary(3))
+    # lt, eq, gt, None, gt, None
+
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
+    lt = (left < right).to_pylist()
+    assert lt == [True, False, False, None, False, None]
+
+    le = (left <= right).to_pylist()
+    assert le == [True, True, False, None, False, None]
+
+    eq = (left == right).to_pylist()
+    assert eq == [False, True, False, None, False, None]
+
+    neq = (left != right).to_pylist()
+    assert neq == [True, False, True, None, True, None]
+
+    ge = (left >= right).to_pylist()
+    assert ge == [False, True, True, None, True, None]
+
+    gt = (left > right).to_pylist()
+    assert gt == [False, False, True, None, True, None]
+
+
 class CustomZero:
     def __eq__(self, other):
         if isinstance(other, CustomZero):

@@ -1028,6 +1028,9 @@ impl PythonArray {
             }
             DataType::Boolean => pycast_then_arrowcast!(self, DataType::Boolean, "bool"),
             DataType::Binary => pycast_then_arrowcast!(self, DataType::Binary, "bytes"),
+            DataType::FixedSizeBinary(size) => {
+                pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
+            }
             DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
             dt @ DataType::UInt8
             | dt @ DataType::UInt16

@@ -9,6 +9,7 @@ import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType, ImageMode, TimeUnit
+from daft.exceptions import DaftCoreException
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -813,3 +814,20 @@ def test_cast_timestamp_to_time_unsupported_timeunit(timeunit):
     input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
     with pytest.raises(ValueError):
         input.cast(DataType.time(timeunit))
+
+
+def test_cast_binary_to_fixed_size_binary():
+    data = [b"abc", b"def", None, b"bcd", None]
+
+    input = Series.from_pylist(data)
+    assert input.datatype() == DataType.binary()
+    casted = input.cast(DataType.fixed_size_binary(3))
+    assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
+
+
+def test_cast_binary_to_fixed_size_binary_fails_with_variable_lengths():
+    data = [b"abc", b"def", None, b"bcd", None, b"long"]
+
+    input = Series.from_pylist(data)
+    with pytest.raises(DaftCoreException):
+        input.cast(DataType.fixed_size_binary(3))

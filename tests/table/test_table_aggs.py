@@ -184,6 +184,32 @@ def test_table_minmax_bool(case) -> None:
     assert res == expected
 
 
+test_table_minmax_binary_cases = [
+    ([], {"min": [None], "max": [None]}),
+    ([None], {"min": [None], "max": [None]}),
+    ([None, None, None], {"min": [None], "max": [None]}),
+    ([b"1"], {"min": [b"1"], "max": [b"1"]}),
+    ([None, b"1"], {"min": [b"1"], "max": [b"1"]}),
+    ([b"a", b"b", b"c", b"a"], {"min": [b"a"], "max": [b"c"]}),
+]
+
+
+@pytest.mark.parametrize("case", test_table_minmax_binary_cases, ids=[f"{_}" for _ in test_table_minmax_binary_cases])
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+def test_table_minmax_binary(case, type) -> None:
+    input, expected = case
+    daft_table = MicroPartition.from_arrow(pa.table({"input": pa.array(input, type=type)}))
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("min").min(),
+            col("input").alias("max").max(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
 test_table_sum_mean_cases = [
     ([], {"sum": [None], "mean": [None]}),
     ([None], {"sum": [None], "mean": [None]}),
@@ -495,18 +521,26 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
     )
 
 
-def test_groupby_binary_bool_some_nulls() -> None:
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+@pytest.mark.parametrize(
+    "agg, expected",
+    [
+        (col("cookies").max(), [b"2", b"4"]),
+        (col("cookies").min(), [b"1", b"3"]),
+    ],
+)
+def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
-            "group": Series.from_pylist([b"1", b"1", None]),
-            "cookies": [2, 2, 3],
+            "group": Series.from_arrow(pa.array([b"1", b"1", None, None], type=type)),
+            "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_table.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"1", None]),
-            "cookies": [4, 3],
+            "cookies": expected,
         }
     )
 
@@ -515,38 +549,26 @@ def test_groupby_binary_bool_some_nulls() -> None:
     )
 
 
-def test_groupby_binary_no_nulls() -> None:
+@pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
+@pytest.mark.parametrize(
+    "agg, expected",
+    [
+        (col("cookies").max(), [b"4", b"3"]),
+        (col("cookies").min(), [b"2", b"1"]),
+    ],
+)
+def test_groupby_binary_no_nulls(type, agg, expected) -> None:
     daft_table = MicroPartition.from_pydict(
         {
-            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
-            "cookies": [1, 2, 2, 3],
+            "group": Series.from_arrow(pa.array([b"1", b"0", b"1", b"0"], type=type)),
+            "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_table.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"0", b"1"]),
-            "cookies": [5, 3],
-        }
-    )
-
-    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
-        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
-    )
-
-
-def test_groupby_binary_no_nulls_max() -> None:
-    daft_table = MicroPartition.from_pydict(
-        {
-            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
-            "cookies": [b"1", b"2", b"2", b"3"],
-        }
-    )
-    result_table = daft_table.agg([col("cookies").max()], group_by=[col("group")])
-    expected_table = MicroPartition.from_pydict(
-        {
-            "group": Series.from_pylist([b"0", b"1"]),
-            "cookies": [b"3", "2"],
+            "cookies": expected,
         }
     )
 
