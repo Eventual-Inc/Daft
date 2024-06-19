@@ -177,9 +177,12 @@ pub fn binary_to_fixed_size_binary<O: Offset>(
         // Copy values to new buffer, accounting for validity
         let mut values: Vec<u8> = Vec::new();
         let offsets = from.offsets().buffer().iter();
+        let from_values = from.values();
         for (off, valid) in offsets.zip(validity) {
             if valid {
-                values.extend(from.values().clone().sliced(off.to_usize(), size).iter());
+                let start = off.to_usize();
+                let end = start + size;
+                values.extend(&from_values[start..end]);
             } else {
                 values.extend(std::iter::repeat(0u8).take(size));
             }

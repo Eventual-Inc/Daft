@@ -824,8 +824,10 @@ def test_cast_binary_to_fixed_size_binary():
     casted = input.cast(DataType.fixed_size_binary(3))
     assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
 
-    data.append(b"long")
+
+def test_cast_binary_to_fixed_size_binary_fails_with_variable_lengths():
+    data = [b"abc", b"def", None, b"bcd", None, b"long"]
+
     input = Series.from_pylist(data)
-    # maybe this should be changed to a more fitting error type?
     with pytest.raises(DaftCoreException):
         input.cast(DataType.fixed_size_binary(3))
