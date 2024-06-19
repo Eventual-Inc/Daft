@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -38,6 +39,30 @@ def test_series_slice_list_array(fixed) -> None:
 
     original_data = s.to_pylist()
     expected = original_data[2:4]
+    assert result.to_pylist() == expected
+
+
+def test_series_slice_list_array_to_fixed_size_with_nulls() -> None:
+    data = [[10, 20], [33, None], [43, 45], None, [50, 52], None]
+
+    s = Series.from_pylist(data)
+    result = s.slice(1, 4).cast(DataType.fixed_size_list(DataType.int64(), 2))
+    assert result.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
+    assert len(result) == 3
+
+    expected = [[33, None], [43, 45], None]
+    assert result.to_pylist() == expected
+
+
+def test_series_slice_list_array_to_fixed_size_without_nulls() -> None:
+    data = [[10, 20], [33, 34], [43, 45], [50, 52], [60, 62]]
+
+    s = Series.from_pylist(data)
+    result = s.slice(1, 4).cast(DataType.fixed_size_list(DataType.int64(), 2))
+    assert result.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
+    assert len(result) == 3
+
+    expected = [[33, 34], [43, 45], [50, 52]]
     assert result.to_pylist() == expected
 
 
