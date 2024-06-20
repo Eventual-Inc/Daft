@@ -151,3 +151,15 @@ def test_daft_iceberg_table_read_partition_column_transformed(local_iceberg_cata
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[["number"]]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_read_table_snapshot(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table("default.test_snapshotting")
+    snapshots = tab.history()
+    assert len(snapshots) == 2
+
+    for snapshot in snapshots:
+        daft_pandas = daft.read_iceberg(tab, snapshot_id=snapshot.snapshot_id).to_pandas()
+        iceberg_pandas = tab.scan(snapshot_id=snapshot.snapshot_id).to_pandas()
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
