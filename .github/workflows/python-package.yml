@@ -87,6 +87,9 @@ jobs:
       if: ${{ (matrix.pyarrow-version == '7.0.0') }}
       run: pip install deltalake==0.10.0
 
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+
     - name: Build library and Test with pytest (unix)
       if: ${{ (runner.os != 'Windows') }}
       run: |
