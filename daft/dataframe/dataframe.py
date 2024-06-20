@@ -729,6 +729,69 @@ class DataFrame:
 
         return with_operations
 
+    @DataframePublicAPI
+    def write_lance(
+        self,
+        uri: Union[str, pathlib.Path],
+        mode: str = "create",
+        io_config: Optional[IOConfig] = None,
+        **kwargs: Any,
+    ) -> "DataFrame":
+        """
+        Writes the DataFrame to a Lance table
+        Args:
+          uri: The URI of the Lance table to write to
+          io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          mode (str, optional): Operation mode of the write. Defaults to "create". See `lance.write_dataset` for more information.
+          **kwargs: Additional keyword arguments to pass to the Lance writer. See `lance.write_dataset` for more information.
+        Example:
+        --------
+
+
+        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+        >>> df.write_lance("/tmp/lance/my_table.lance")
+        >>> daft.read_lance("/tmp/my_table.lance")
+
+
+        # Pass additional keyword arguments to the Lance writer
+        # All additional keyword arguments are passed to `lance.write_dataset`
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
+
+        """
+        from daft import from_pydict
+        from daft.io.object_store_options import io_config_to_storage_options
+
+        try:
+            import lance
+            import pyarrow as pa
+
+        except ImportError:
+            raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
+        tbl = self.to_arrow()
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        if isinstance(uri, (str, pathlib.Path)):
+            if isinstance(uri, str):
+                table_uri = uri
+            elif isinstance(uri, pathlib.Path):
+                table_uri = str(uri)
+            else:
+                table_uri = uri
+
+        storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+        ds = lance.write_dataset(tbl, uri, mode=mode, storage_options=storage_options, **kwargs)
+        stats = ds.stats.dataset_stats()
+
+        tbl = from_pydict(
+            {
+                "operation": pa.array([mode], type=pa.string()),
+                "num_fragments": pa.array([stats["num_fragments"]], type=pa.int64()),
+                "num_deleted_rows": pa.array([stats["num_deleted_rows"]], type=pa.int64()),
+                "num_small_files": pa.array([stats["num_small_files"]], type=pa.int64()),
+                "version": pa.array([ds.version], type=pa.int64()),
+            }
+        )
+        return tbl
+
     ###
     # DataFrame operations
     ###
