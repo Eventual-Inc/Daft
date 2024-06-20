@@ -813,6 +813,11 @@ impl PyExpr {
         )
         .into())
     }
+
+    pub fn hash(&self, seed: Option<PyExpr>) -> PyResult<Self> {
+        use crate::functions::hash::hash;
+        Ok(hash(self.into(), seed.map(|s| s.into())).into())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
