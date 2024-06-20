@@ -82,9 +82,10 @@ def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: Iceber
 
 
 class IcebergScanOperator(ScanOperator):
-    def __init__(self, iceberg_table: Table, storage_config: StorageConfig) -> None:
+    def __init__(self, iceberg_table: Table, snapshot_id: int | None, storage_config: StorageConfig) -> None:
         super().__init__()
         self._table = iceberg_table
+        self._snapshot_id = snapshot_id
         self._storage_config = storage_config
         iceberg_schema = iceberg_table.schema()
         arrow_schema = schema_to_pyarrow(iceberg_schema)
@@ -93,7 +94,9 @@ class IcebergScanOperator(ScanOperator):
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
 
     def schema(self) -> Schema:
-        return self._schema
+        if self._snapshot_id is None:
+            return self._table.schema()
+        return self._table.scan(snapshot_id=self._snapshot_id).projection()
 
     def display_name(self) -> str:
         return f"IcebergScanOperator({'.'.join(self._table.name())})"
@@ -129,7 +132,7 @@ class IcebergScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
-        iceberg_tasks = self._table.scan(limit=limit).plan_files()
+        iceberg_tasks = self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files()
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
