@@ -87,16 +87,20 @@ class IcebergScanOperator(ScanOperator):
         self._table = iceberg_table
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
-        iceberg_schema = iceberg_table.schema()
+
+        iceberg_schema = (
+            iceberg_table.schema()
+            if self._snapshot_id is None
+            else self._table.scan(snapshot_id=self._snapshot_id).projection()
+        )
         arrow_schema = schema_to_pyarrow(iceberg_schema)
         self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
-        self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
+
+        self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._table.spec())
 
     def schema(self) -> Schema:
-        if self._snapshot_id is None:
-            return self._table.schema()
-        return self._table.scan(snapshot_id=self._snapshot_id).projection()
+        return self._schema
 
     def display_name(self) -> str:
         return f"IcebergScanOperator({'.'.join(self._table.name())})"
