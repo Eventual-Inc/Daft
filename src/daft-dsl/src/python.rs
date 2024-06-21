@@ -821,13 +821,32 @@ impl PyExpr {
 
     pub fn minhash(
         &self,
-        num_hashes: usize,
-        ngram_size: usize,
-        permutations: Vec<u32>,
-        hash_seed: Option<u32>,
+        num_hashes: i64,
+        ngram_size: i64,
+        permutations: Vec<i64>,
+        hash_seed: Option<i64>,
     ) -> PyResult<Self> {
+        if num_hashes <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "num_hashes must be positive: {num_hashes}"
+            )));
+        }
+        if ngram_size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "ngram_size must be positive: {ngram_size}"
+            )));
+        }
+        let cast_perms: Vec<u32> = permutations.into_iter().map(|v| v as u32).collect();
+        let cast_seed = hash_seed.map(|v| v as u32);
         use crate::functions::minhash::minhash;
-        Ok(minhash(self.into(), num_hashes, ngram_size, permutations, hash_seed).into())
+        Ok(minhash(
+            self.into(),
+            num_hashes as usize,
+            ngram_size as usize,
+            cast_perms,
+            cast_seed,
+        )
+        .into())
     }
 }
 
