@@ -41,7 +41,20 @@ impl<T: PartitionRef, E: Executor<T>> Exchange<T> for ShuffleExchange<T, E> {
             self.executor.clone(),
         );
         let map_outs = map_task_scheduler.execute().await?;
-        let reduce_ins = map_outs
+        let transposed =
+            map_outs
+                .into_iter()
+                .map(|v| v.into_iter())
+                .fold(Vec::new(), |mut acc, v| {
+                    for (i, item) in v.enumerate() {
+                        if acc.len() <= i {
+                            acc.push(Vec::new());
+                        }
+                        acc[i].push(item);
+                    }
+                    acc
+                });
+        let reduce_ins = transposed
             .into_iter()
             .map(|parts| VirtualPartitionSet::PartitionRef(parts))
             .collect::<Vec<_>>();

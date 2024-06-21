@@ -24,16 +24,8 @@ pub fn task_tree_to_state_tree<T: PartitionRef>(
             }
         }
         OpNode::LeafMemory(LeafMemoryNode { task_op }) => {
-            let num_inputs = task_op.as_ref().map(|op| op.num_inputs()).unwrap_or(1);
-            assert!(
-                leaf_inputs.len() >= num_inputs,
-                "task op = {:?}, num inputs = {}, num leaf inputs = {}",
-                task_op.map(|op| op.name().to_string()),
-                num_inputs,
-                leaf_inputs.len()
-            );
-            let partition_sets = leaf_inputs.drain(..num_inputs);
-            let part_refs = partition_sets
+            let part_refs = leaf_inputs
+                .drain(..)
                 .map(|p| match p {
                     VirtualPartitionSet::PartitionRef(part_refs) => part_refs,
                     VirtualPartitionSet::ScanTask(_) => panic!(
