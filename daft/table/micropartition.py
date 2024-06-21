@@ -154,7 +154,7 @@ class MicroPartition:
         self,
         schema: Schema | None = None,
         cast_tensors_to_ray_tensor_dtype: bool = False,
-        coerce_temporal_nanoseconds: bool = True,
+        coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         return self.to_table().to_pandas(
             schema=schema,

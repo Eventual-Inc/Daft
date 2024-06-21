@@ -28,7 +28,7 @@ def test_sql_show(test_db) -> None:
 def test_sql_create_dataframe_ok(test_db, pdf) -> None:
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
 
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -40,7 +40,7 @@ def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
 
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id")
     assert df.num_partitions() == num_partitions
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -53,7 +53,7 @@ def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
         f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col=partition_col, num_partitions=num_partitions
     )
     assert df.num_partitions() == num_partitions
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -66,7 +66,7 @@ def test_sql_partitioned_read_with_non_uniformly_distributed_column(test_db, num
         num_partitions=num_partitions,
     )
     assert df.num_partitions() == num_partitions
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -122,7 +122,7 @@ def test_sql_read_with_binary_filter_pushdowns(test_db, column, operator, value,
         df = df.where(df[column] <= value)
         pdf = pdf[pdf[column] <= value]
 
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -133,7 +133,7 @@ def test_sql_read_with_is_null_filter_pushdowns(test_db, num_partitions, pdf) ->
 
     pdf = pdf[pdf["null_col"].isnull()]
 
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -144,7 +144,7 @@ def test_sql_read_with_not_null_filter_pushdowns(test_db, num_partitions, pdf) -
 
     pdf = pdf[pdf["null_col"].notnull()]
 
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -155,7 +155,7 @@ def test_sql_read_with_if_else_filter_pushdown(test_db, num_partitions, pdf) -> 
 
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]
 
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -165,7 +165,7 @@ def test_sql_read_with_is_in_filter_pushdown(test_db, num_partitions, pdf) -> No
     df = df.where(df["id"].is_in([1, 2, 3]))
 
     pdf = pdf[pdf["id"].isin([1, 2, 3])]
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
@@ -220,7 +220,7 @@ def test_sql_connection_factory_ok(test_db, pdf) -> None:
         return sqlalchemy.create_engine(test_db).connect()
 
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", create_conn)
-    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()

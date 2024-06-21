@@ -217,7 +217,7 @@ class PartitionSet(Generic[PartitionT]):
         self,
         schema: Schema | None = None,
         cast_tensors_to_ray_tensor_dtype: bool = False,
-        coerce_temporal_nanoseconds: bool = True,
+        coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         merged_partition = self._get_merged_vpartition()
         return merged_partition.to_pandas(
