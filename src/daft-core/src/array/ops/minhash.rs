@@ -1,7 +1,7 @@
 use std::cmp;
 
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use mur3::murmurhash3_x86_32;
 
 use crate::{
@@ -14,6 +14,8 @@ use super::{as_arrow::AsArrow, DaftMinHash};
 
 const MERSENNE_PRIME: u64 = (1 << 61) - 1;
 const MAX_HASH: u32 = 0xffffffff;
+const DEFAULT_SEED: u32 = 1;
+
 fn set_min_hashes(
     out: &mut [u32],
     s: &str,
@@ -23,6 +25,7 @@ fn set_min_hashes(
 ) {
     let mut cur_hash = murmurhash3_x86_32(s.as_bytes(), hash_seed);
     for i in 0..num_hashes {
+        // this has a very low chance to overflow but it's probably fine
         cur_hash = (((permutations[2 * i] as u64) * (cur_hash as u64)
             + (permutations[2 * i + 1] as u64))
             % MERSENNE_PRIME) as u32;
@@ -40,7 +43,23 @@ impl DaftMinHash for Utf8Array {
         permutations: &[u32],
         hash_seed: Option<u32>,
     ) -> Self::Output {
-        let hash_seed = hash_seed.unwrap_or(1);
+        if num_hashes == 0 {
+            return Err(DaftError::ValueError(
+                "Number of hashes must be nonzero".into(),
+            ));
+        }
+        if ngram_size == 0 {
+            return Err(DaftError::ValueError("Ngram size must be nonzero".into()));
+        }
+        if permutations.len() < 2 * num_hashes {
+            return Err(DaftError::ValueError(format!(
+                "Not enough permutations supplied to minhash: got {}, expected {}",
+                permutations.len(),
+                2 * num_hashes
+            )));
+        }
+
+        let hash_seed = hash_seed.unwrap_or(DEFAULT_SEED);
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> = MutablePrimitiveArray::new();
         for maybe_s in self_arrow.iter() {

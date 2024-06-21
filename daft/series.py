@@ -569,8 +569,8 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         permutations: list[int],
-        hash_seed: int | None,
-    ):
+        hash_seed: int | None = None,
+    ) -> Series:
         """
         Runs the MinHash algorithm on the series.
 
@@ -596,10 +596,9 @@ class Series:
         if not isinstance(permutations, list):
             raise ValueError(f"expected a list of integers for permutations but got {type(permutations)}")
         if hash_seed is not None and not isinstance(hash_seed, int):
-            raise ValueError(f"expected a list of integers or None for hash_seed but got {type(hash_seed)}")
+            raise ValueError(f"expected an integer or None for hash_seed but got {type(hash_seed)}")
 
-        # TODO
-        # return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, permutations, hash_seed))
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, permutations, hash_seed))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())

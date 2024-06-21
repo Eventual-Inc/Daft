@@ -27,6 +27,7 @@ pub mod len;
 pub mod list;
 pub mod log;
 pub mod map;
+pub mod minhash;
 pub mod not;
 pub mod null;
 pub mod partitioning;
