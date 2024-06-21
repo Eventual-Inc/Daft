@@ -1923,7 +1923,7 @@ class DataFrame:
             if "extension<arrow.fixed_shape_tensor>" in str(e) and parse(pa.__version__) < parse("13.0.0"):
                 raise ValueError(
                     f"Reading Ray Dataset tensors is only supported with PyArrow >= 13.0.0, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/pull/35933"
-                )
+                ) from e
             raise e
 
         num_rows = len(partition_set)
