@@ -50,7 +50,7 @@ impl DaftMinHash for Utf8Array {
         let mut output: MutablePrimitiveArray<u32> = MutablePrimitiveArray::new();
         for maybe_s in self_arrow.iter() {
             if let Some(s) = maybe_s {
-                let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i + 1).collect();
+                let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
                 let mut min_hash: Vec<u32> = vec![MAX_HASH; num_hashes];
                 if spaces.len() < ngram_size {
                     // hash whole string at once
