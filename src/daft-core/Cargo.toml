@@ -23,6 +23,7 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 dyn-clone = "1.0.17"
+fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
 indexmap = {workspace = true, features = ["serde"]}

@@ -12,8 +12,7 @@ pub(super) struct MinHashEvaluator {}
 pub struct MinHashExpr {
     num_hashes: usize,
     ngram_size: usize,
-    permutations: Vec<u32>,
-    hash_seed: Option<u32>,
+    seed: Option<u32>,
 }
 
 impl FunctionEvaluator for MinHashEvaluator {
@@ -53,18 +52,17 @@ impl FunctionEvaluator for MinHashEvaluator {
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
-        let (num_hashes, ngram_size, permutations, hash_seed) = match expr {
+        let (num_hashes, ngram_size, seed) = match expr {
             FunctionExpr::MinHash(MinHashExpr {
                 num_hashes,
                 ngram_size,
-                permutations,
-                hash_seed,
-            }) => (num_hashes, ngram_size, permutations, hash_seed),
+                seed,
+            }) => (num_hashes, ngram_size, seed),
             _ => panic!("Expected MinHash Expr, got {expr}"),
         };
 
         match inputs {
-            [input] => input.minhash(*num_hashes, *ngram_size, permutations, *hash_seed),
+            [input] => input.minhash(*num_hashes, *ngram_size, *seed),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -73,19 +71,12 @@ impl FunctionEvaluator for MinHashEvaluator {
     }
 }
 
-pub fn minhash(
-    input: ExprRef,
-    num_hashes: usize,
-    ngram_size: usize,
-    permutations: Vec<u32>,
-    hash_seed: Option<u32>,
-) -> ExprRef {
+pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: Option<u32>) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::MinHash(MinHashExpr {
             num_hashes,
             ngram_size,
-            permutations,
-            hash_seed,
+            seed,
         }),
         inputs: vec![input],
     }

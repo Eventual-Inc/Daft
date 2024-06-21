@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, iter::repeat_with};
 
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
@@ -16,33 +16,19 @@ const MERSENNE_PRIME: u64 = (1 << 61) - 1;
 const MAX_HASH: u32 = 0xffffffff;
 const DEFAULT_SEED: u32 = 1;
 
-fn set_min_hashes(
-    out: &mut [u32],
-    s: &str,
-    num_hashes: usize,
-    permutations: &[u32],
-    hash_seed: u32,
-) {
-    let mut cur_hash = murmurhash3_x86_32(s.as_bytes(), hash_seed);
-    for i in 0..num_hashes {
+fn set_min_hashes(out: &mut [u32], s: &str, permutations: &[(u32, u32)], seed: u32) {
+    let mut cur_hash = murmurhash3_x86_32(s.as_bytes(), seed);
+    for (h, (a, b)) in out.iter_mut().zip(permutations) {
         // this has a very low chance to overflow but it's probably fine
-        cur_hash = (((permutations[2 * i] as u64) * (cur_hash as u64)
-            + (permutations[2 * i + 1] as u64))
-            % MERSENNE_PRIME) as u32;
-        out[i] = cmp::min(out[i], cur_hash);
+        cur_hash = (((*a as u64) * (cur_hash as u64) + (*b as u64)) % MERSENNE_PRIME) as u32;
+        *h = cmp::min(*h, cur_hash);
     }
 }
 
 impl DaftMinHash for Utf8Array {
     type Output = DaftResult<FixedSizeListArray>;
 
-    fn minhash(
-        &self,
-        num_hashes: usize,
-        ngram_size: usize,
-        permutations: &[u32],
-        hash_seed: Option<u32>,
-    ) -> Self::Output {
+    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: Option<u32>) -> Self::Output {
         if num_hashes == 0 {
             return Err(DaftError::ValueError(
                 "Number of hashes must be nonzero".into(),
@@ -51,15 +37,15 @@ impl DaftMinHash for Utf8Array {
         if ngram_size == 0 {
             return Err(DaftError::ValueError("Ngram size must be nonzero".into()));
         }
-        if permutations.len() < 2 * num_hashes {
-            return Err(DaftError::ValueError(format!(
-                "Not enough permutations supplied to minhash: got {}, expected {}",
-                permutations.len(),
-                2 * num_hashes
-            )));
-        }
 
-        let hash_seed = hash_seed.unwrap_or(DEFAULT_SEED);
+        // generate permutations
+        let seed = seed.unwrap_or(DEFAULT_SEED);
+        let mut rng = fastrand::Rng::with_seed(seed as u64);
+        let permutations: Vec<(u32, u32)> =
+            repeat_with(|| (rng.u32(1..=u32::MAX), rng.u32(1..=u32::MAX)))
+                .take(2 * num_hashes)
+                .collect();
+
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> = MutablePrimitiveArray::new();
         for maybe_s in self_arrow.iter() {
@@ -68,7 +54,7 @@ impl DaftMinHash for Utf8Array {
                 let mut min_hash: Vec<u32> = vec![MAX_HASH; num_hashes];
                 if spaces.len() < ngram_size {
                     // hash whole string at once
-                    set_min_hashes(&mut min_hash, s, num_hashes, permutations, hash_seed);
+                    set_min_hashes(&mut min_hash, s, &permutations, seed);
                 } else {
                     let last_i = spaces.len() - ngram_size + 1;
                     for i in 0..(last_i + 1) {
@@ -80,13 +66,7 @@ impl DaftMinHash for Utf8Array {
                         } else {
                             spaces[i + ngram_size - 1]
                         };
-                        set_min_hashes(
-                            &mut min_hash,
-                            &s[start_ind..end_ind],
-                            num_hashes,
-                            permutations,
-                            hash_seed,
-                        );
+                        set_min_hashes(&mut min_hash, &s[start_ind..end_ind], &permutations, seed);
                     }
                 }
                 output.extend_from_slice(&min_hash);

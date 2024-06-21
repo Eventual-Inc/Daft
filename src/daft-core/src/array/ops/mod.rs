@@ -138,13 +138,7 @@ pub trait DaftNotNan {
 
 pub trait DaftMinHash {
     type Output;
-    fn minhash(
-        &self,
-        num_hashes: usize,
-        ngram_size: usize,
-        permutations: &[u32],
-        hash_seed: Option<u32>,
-    ) -> Self::Output;
+    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: Option<u32>) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;

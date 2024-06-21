@@ -568,8 +568,7 @@ class Series:
         self,
         num_hashes: int,
         ngram_size: int,
-        permutations: list[int],
-        hash_seed: int | None = None,
+        seed: int | None = None,
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
@@ -577,8 +576,8 @@ class Series:
         For a string, calculates the minimum hash over all its ngrams,
         repeating with `num_hashes` permutations. Returns as a list of 32-bit integers.
 
-        Requires as input a list of `2*num_hashes` randomly-
-        generated positive integers up to 2^32-1.
+        Requires as input a list of `2*num_hashes` randomly-generated
+        positive integers up to 2^32-1.
 
         Tokens for the ngrams are delimited by spaces.
         MurmurHash is used for the initial hash.
@@ -586,19 +585,16 @@ class Series:
         Args:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
-            permutations: A list of random integers used to seed the permutations.
-            hash_seed: Seed used for MurmurHash. Defaults to 1.
+            seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
         """
         if not isinstance(num_hashes, int):
             raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
         if not isinstance(ngram_size, int):
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
-        if not isinstance(permutations, list):
-            raise ValueError(f"expected a list of integers for permutations but got {type(permutations)}")
-        if hash_seed is not None and not isinstance(hash_seed, int):
-            raise ValueError(f"expected an integer or None for hash_seed but got {type(hash_seed)}")
+        if seed is not None and not isinstance(seed, int):
+            raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
 
-        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, permutations, hash_seed))
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
