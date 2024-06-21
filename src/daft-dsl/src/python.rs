@@ -818,6 +818,17 @@ impl PyExpr {
         use crate::functions::hash::hash;
         Ok(hash(self.into(), seed.map(|s| s.into())).into())
     }
+
+    pub fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        permutations: Vec<u32>,
+        hash_seed: Option<u32>,
+    ) -> PyResult<Self> {
+        use crate::functions::minhash::minhash;
+        Ok(minhash(self.into(), num_hashes, ngram_size, permutations, hash_seed).into())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);

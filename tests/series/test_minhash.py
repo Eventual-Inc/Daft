@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from daft import Series
+from daft import DataType, Series
 from daft.exceptions import DaftCoreException
 
 
@@ -101,3 +101,15 @@ def test_minhash_fails_too_few_permutations(num_hashes, ngram_size, hash_seed, n
 
     with pytest.raises(DaftCoreException, match="Not enough permutations supplied to minhash"):
         series.minhash(num_hashes, ngram_size, permutations.tolist(), hash_seed)
+
+
+@pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
+@pytest.mark.parametrize("ngram_size", [1, 2, 4, 5, 100])
+@pytest.mark.parametrize("hash_seed", [1, -1, 123, None])
+def test_minhash_empty_series(num_hashes, ngram_size, hash_seed):
+    series = Series.from_pylist([]).cast(DataType.string())
+    np_rng = np.random.default_rng(123)
+    permutations = np_rng.integers(1, (1 << 32) - 1, num_hashes * 2)
+
+    minhash = series.minhash(num_hashes, ngram_size, permutations.tolist(), hash_seed).to_pylist()
+    assert len(minhash) == 0
