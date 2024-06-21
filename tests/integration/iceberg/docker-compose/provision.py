@@ -406,3 +406,24 @@ spark.sql(
 )
 
 spark.sql("INSERT INTO default.test_evolve_partitioning VALUES (CAST('2021-02-01' AS date))")
+
+
+###
+# Multi-snapshot table
+###
+
+spark.sql("""
+  CREATE OR REPLACE TABLE default.test_snapshotting
+  USING iceberg
+  AS SELECT
+    1            AS idx,
+    float('NaN') AS col_numeric
+UNION ALL SELECT
+    2            AS idx,
+    null         AS col_numeric
+UNION ALL SELECT
+    3            AS idx,
+    1            AS col_numeric
+""")
+
+spark.sql("INSERT INTO default.test_snapshotting VALUES (4, 1)")

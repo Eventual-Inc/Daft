@@ -85,6 +85,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 @PublicAPI
 def read_iceberg(
     pyiceberg_table: "PyIcebergTable",
+    snapshot_id: Optional[int] = None,
     io_config: Optional["IOConfig"] = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table
@@ -106,6 +107,7 @@ def read_iceberg(
 
     Args:
         pyiceberg_table: Iceberg table created using the PyIceberg library
+        snapshot_id: Snapshot ID of the table to query
         io_config: A custom IOConfig to use when accessing Iceberg object storage data. Defaults to None.
 
     Returns:
@@ -123,7 +125,7 @@ def read_iceberg(
     multithreaded_io = not context.get_context().is_ray_runner
     storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
 
-    iceberg_operator = IcebergScanOperator(pyiceberg_table, storage_config=storage_config)
+    iceberg_operator = IcebergScanOperator(pyiceberg_table, snapshot_id=snapshot_id, storage_config=storage_config)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
