@@ -34,6 +34,7 @@ mod log;
 mod map;
 mod mean;
 mod merge_sketch;
+mod minhash;
 mod null;
 mod pairwise;
 mod repr;
@@ -133,6 +134,17 @@ pub trait DaftIsInf {
 pub trait DaftNotNan {
     type Output;
     fn not_nan(&self) -> Self::Output;
+}
+
+pub trait DaftMinHash {
+    type Output;
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        permutations: &[u32],
+        hash_seed: Option<u32>,
+    ) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;
