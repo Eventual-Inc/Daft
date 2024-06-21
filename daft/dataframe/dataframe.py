@@ -1778,9 +1778,15 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pandas.DataFrame":
+    def to_pandas(
+        self, cast_tensors_to_ray_tensor_dtype: bool = False, coerce_temporal_nanoseconds: bool = True
+    ) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
         If results have not computed yet, collect will be called.
+
+        Args:
+            cast_tensors_to_ray_tensor_dtype (bool): Whether to cast tensors to Ray tensor dtype. Defaults to False.
+            coerce_temporal_nanoseconds (bool): Whether to coerce temporal columns to nanoseconds. Only applicable to pandas version >= 2.0 and pyarrow version >= 13.0.0. Defaults to True. See `pyarrow.Table.to_pandas <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html#pyarrow.Table.to_pandas>`__ for more information.
 
         Returns:
             pandas.DataFrame: `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__ converted from a Daft DataFrame
@@ -1795,6 +1801,7 @@ class DataFrame:
         pd_df = result.to_pandas(
             schema=self._builder.schema(),
             cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
+            coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
         return pd_df
 
