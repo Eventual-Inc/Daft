@@ -5,6 +5,7 @@ import uuid
 import pandas as pd
 import pyarrow as pa
 import pytest
+from pandas.api.types import is_datetime64_any_dtype
 
 import daft
 from daft.table import MicroPartition
@@ -175,6 +176,11 @@ def assert_df_equals(
     for col in pd_df.columns:
         df_series = daft_pd_df[col]
         pd_series = pd_df[col]
+
+        # pyarrow 13.0.0 no longer coerces timestamp units to ns which causes assert_series_equal to fail
+        # so we need to manually convert the timestamp columns to ns
+        if is_datetime64_any_dtype(df_series):
+            df_series = pd.to_datetime(df_series, unit="ns")
 
         try:
             pd.testing.assert_series_equal(df_series, pd_series, check_dtype=check_dtype)
