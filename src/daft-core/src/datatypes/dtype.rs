@@ -152,18 +152,18 @@ impl DataType {
             DataType::Utf8 => Ok(ArrowType::LargeUtf8),
             DataType::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
                 Box::new(arrow2::datatypes::Field::new(
-                    "element",
+                    "item",
                     child_dtype.to_arrow()?,
                     true,
                 )),
                 *size,
             )),
             DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
-                arrow2::datatypes::Field::new("element", field.to_arrow()?, true),
+                arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
             DataType::Map(field) => Ok(ArrowType::Map(
                 Box::new(arrow2::datatypes::Field::new(
-                    "element",
+                    "item",
                     field.to_arrow()?,
                     true,
                 )),
