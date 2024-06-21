@@ -180,11 +180,9 @@ def assert_df_equals(
         # pyarrow 13.0.0 no longer coerces timestamp units to ns which causes assert_series_equal to fail
         # so we need to manually convert the timestamp columns to ns
         if is_datetime64_any_dtype(df_series.dtype):
-            print(f"Converting {col} to datetime64[ns]")
-            df_series = pd.to_datetime(df_series, unit="ns")
+            df_series = df_series.astype("datetime64[ns]")
         if is_datetime64_any_dtype(pd_series.dtype):
-            print(f"Converting {col} to datetime64[ns]")
-            pd_series = pd.to_datetime(pd_series, unit="ns")
+            pd_series = pd_series.astype("datetime64[ns]")
 
         try:
             pd.testing.assert_series_equal(df_series, pd_series, check_dtype=check_dtype)
