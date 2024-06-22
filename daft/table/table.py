@@ -217,7 +217,14 @@ class Table:
         column_names = self.column_names()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
-    def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
+    def to_pandas(
+        self,
+        schema: Schema | None = None,
+        cast_tensors_to_ray_tensor_dtype: bool = False,
+        coerce_temporal_nanoseconds: bool = False,
+    ) -> pd.DataFrame:
+        from packaging.version import parse
+
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         python_fields = set()
@@ -236,12 +243,20 @@ class Table:
                     column = column_series.to_pylist()
                 else:
                     # Arrow-native field, so provide column as Arrow array.
-                    column = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype).to_pandas()
+                    column_arrow = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype)
+                    if parse(pa.__version__) < parse("13.0.0"):
+                        column = column_arrow.to_pandas()
+                    else:
+                        column = column_arrow.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
                 table[colname] = column
 
             return pd.DataFrame.from_dict(table)
         else:
-            return self.to_arrow(cast_tensors_to_ray_tensor_dtype).to_pandas()
+            arrow_table = self.to_arrow(cast_tensors_to_ray_tensor_dtype)
+            if parse(pa.__version__) < parse("13.0.0"):
+                return arrow_table.to_pandas()
+            else:
+                return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
 
     ###
     # Compute methods (Table -> Table)

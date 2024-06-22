@@ -1778,9 +1778,15 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pandas.DataFrame":
+    def to_pandas(
+        self, cast_tensors_to_ray_tensor_dtype: bool = False, coerce_temporal_nanoseconds: bool = False
+    ) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
         If results have not computed yet, collect will be called.
+
+        Args:
+            cast_tensors_to_ray_tensor_dtype (bool): Whether to cast tensors to Ray tensor dtype. Defaults to False.
+            coerce_temporal_nanoseconds (bool): Whether to coerce temporal columns to nanoseconds. Only applicable to pandas version >= 2.0 and pyarrow version >= 13.0.0. Defaults to False. See `pyarrow.Table.to_pandas <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html#pyarrow.Table.to_pandas>`__ for more information.
 
         Returns:
             pandas.DataFrame: `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__ converted from a Daft DataFrame
@@ -1795,6 +1801,7 @@ class DataFrame:
         pd_df = result.to_pandas(
             schema=self._builder.schema(),
             cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
+            coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
         return pd_df
 
@@ -1901,6 +1908,8 @@ class DataFrame:
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
         """Creates a DataFrame from a `Ray Dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__."""
+        from ray.exceptions import RayTaskError
+
         context = get_context()
         if context.runner_config.name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
@@ -1912,7 +1921,18 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
-        size_bytes = partition_set.size_bytes()
+        try:
+            size_bytes = partition_set.size_bytes()
+        except RayTaskError as e:
+            import pyarrow as pa
+            from packaging.version import parse
+
+            if "extension<arrow.fixed_shape_tensor>" in str(e) and parse(pa.__version__) < parse("13.0.0"):
+                raise ValueError(
+                    f"Reading Ray Dataset tensors is only supported with PyArrow >= 13.0.0, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/pull/35933"
+                ) from e
+            raise e
+
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(

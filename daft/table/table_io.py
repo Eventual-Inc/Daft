@@ -453,7 +453,7 @@ def write_tabular(
         format = pads.ParquetFileFormat()
         inflation_factor = execution_config.parquet_inflation_factor
         target_file_size = execution_config.parquet_target_filesize
-        opts = format.make_write_options(compression=compression)
+        opts = format.make_write_options(compression=compression, use_compliant_nested_type=False)
     elif file_format == FileFormat.Csv:
         format = pads.CsvFileFormat()
         opts = None
@@ -633,12 +633,14 @@ def write_iceberg(
 
     format = pads.ParquetFileFormat()
 
+    opts = format.make_write_options(compression="zstd", use_compliant_nested_type=False)
+
     _write_tabular_arrow_table(
         arrow_table=arrow_table,
         schema=file_schema,
         full_path=resolved_path,
         format=format,
-        opts=format.make_write_options(compression="zstd"),
+        opts=opts,
         fs=fs,
         rows_per_file=rows_per_file,
         rows_per_row_group=rows_per_row_group,
@@ -735,9 +737,9 @@ def write_deltalake(
     target_row_groups = max(math.ceil(size_bytes / target_row_group_size / inflation_factor), 1)
     rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
 
-    opts = pads.ParquetFileFormat().make_write_options(use_compliant_nested_type=False)
-
     format = pads.ParquetFileFormat()
+
+    opts = format.make_write_options(use_compliant_nested_type=False)
 
     _write_tabular_arrow_table(
         arrow_table=arrow_batch,

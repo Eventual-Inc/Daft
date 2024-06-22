@@ -150,9 +150,16 @@ class MicroPartition:
     def to_pylist(self) -> list[dict[str, Any]]:
         return self.to_table().to_pylist()
 
-    def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
+    def to_pandas(
+        self,
+        schema: Schema | None = None,
+        cast_tensors_to_ray_tensor_dtype: bool = False,
+        coerce_temporal_nanoseconds: bool = False,
+    ) -> pd.DataFrame:
         return self.to_table().to_pandas(
-            schema=schema, cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+            schema=schema,
+            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
+            coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 
     ###

@@ -428,29 +428,25 @@ def test_series_if_else_extension_type(uuid_ext_type, if_true_storage, if_false_
         (
             np.arange(16).reshape((4, 2, 2)),
             np.arange(16, 32).reshape((4, 2, 2)),
-            np.array(
-                [[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[np.nan, np.nan], [np.nan, np.nan]], [[12, 13], [14, 15]]]
-            ),
+            np.array([[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[12, 13], [14, 15]]]),
         ),
         # Broadcast left
         (
             np.arange(4).reshape((1, 2, 2)),
             np.arange(16, 32).reshape((4, 2, 2)),
-            np.array([[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[np.nan, np.nan], [np.nan, np.nan]], [[0, 1], [2, 3]]]),
+            np.array([[[0, 1], [2, 3]], [[20, 21], [22, 23]], [[0, 1], [2, 3]]]),
         ),
         # Broadcast right
         (
             np.arange(16).reshape((4, 2, 2)),
             np.arange(16, 20).reshape((1, 2, 2)),
-            np.array(
-                [[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[np.nan, np.nan], [np.nan, np.nan]], [[12, 13], [14, 15]]]
-            ),
+            np.array([[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[12, 13], [14, 15]]]),
         ),
         # Broadcast both
         (
             np.arange(4).reshape((1, 2, 2)),
             np.arange(16, 20).reshape((1, 2, 2)),
-            np.array([[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[np.nan, np.nan], [np.nan, np.nan]], [[0, 1], [2, 3]]]),
+            np.array([[[0, 1], [2, 3]], [[16, 17], [18, 19]], [[0, 1], [2, 3]]]),
         ),
     ],
 )
@@ -467,7 +463,12 @@ def test_series_if_else_canonical_tensor_extension_type(if_true, if_false, expec
         DataType.from_arrow_type(if_true_arrow.type.storage_type.value_type), (2, 2)
     )
     result_arrow = result.to_arrow()
-    np.testing.assert_equal(result_arrow.to_numpy_ndarray(), expected)
+
+    # null element conversion to numpy is not well defined in pyarrow and changes between releases
+    # so this is a workaround to ensure our tests pass regardless of the pyarrow version
+    assert not result_arrow[2].is_valid
+    result_array_filtered = result_arrow.filter(pa.array([True, True, False, True]))
+    np.testing.assert_equal(result_array_filtered.to_numpy_ndarray(), expected)
 
 
 @pytest.mark.parametrize(

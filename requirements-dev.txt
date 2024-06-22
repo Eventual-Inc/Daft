@@ -34,7 +34,7 @@ Pillow==9.5.0
 opencv-python==4.8.1.78
 
 # Pyarrow
-pyarrow==12.0.1
+pyarrow==13.0.0
 # Ray
 ray[data, client]==2.7.1; python_version < '3.8'
 ray[data, client]==2.10.0; python_version >= '3.8'
