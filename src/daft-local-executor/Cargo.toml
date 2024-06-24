@@ -1,0 +1,25 @@
+[dependencies]
+bincode = {workspace = true}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-plan = {path = "../daft-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
+futures = {workspace = true}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "common-error/python", "common-io-config/python", "common-daft-config/python", "daft-core/python", "daft-micropartition/python", "daft-plan/python", "daft-dsl/python"]
+
+[package]
+edition = {workspace = true}
+name = "daft-local-executor"
+version = {workspace = true}

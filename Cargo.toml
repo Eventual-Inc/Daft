@@ -8,6 +8,7 @@ daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-execution = {path = "src/daft-execution", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
+daft-local-executor = {path = "src/daft-local-executor", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
@@ -93,6 +94,7 @@ members = [
   "src/common/system-info",
   "src/daft-core",
   "src/daft-execution",
+  "src/daft-local-executor",
   "src/daft-io",
   "src/daft-parquet",
   "src/daft-csv",

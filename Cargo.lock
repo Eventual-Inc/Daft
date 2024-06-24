@@ -1538,6 +1538,7 @@ dependencies = [
  "daft-execution",
  "daft-io",
  "daft-json",
+ "daft-local-executor",
  "daft-micropartition",
  "daft-parquet",
  "daft-plan",
@@ -1787,6 +1788,25 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "daft-local-executor"
+version = "0.2.0-dev0"
+dependencies = [
+ "bincode",
+ "common-daft-config",
+ "common-error",
+ "common-io-config",
+ "daft-core",
+ "daft-dsl",
+ "daft-micropartition",
+ "daft-plan",
+ "daft-scan",
+ "futures",
+ "log",
+ "pyo3",
+ "rstest",
 ]
 
 [[package]]
