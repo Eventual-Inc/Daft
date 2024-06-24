@@ -14,6 +14,7 @@ use crate::{
         Executor,
     },
     partition::PartitionRef,
+    simple::pipeline::physical_plan_to_pipeline,
     stage::Stage,
 };
 
@@ -21,6 +22,19 @@ use super::{
     planner::physical_plan_to_stage,
     runner::{ExchangeStageRunner, SinkStageRunner},
 };
+
+pub fn run_local_simple(
+    query_stage: &QueryStageOutput,
+    psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+    let (physical_plan, _is_final) = match query_stage {
+        QueryStageOutput::Partial { physical_plan, .. } => (physical_plan.as_ref(), false),
+        QueryStageOutput::Final { physical_plan, .. } => (physical_plan.as_ref(), true),
+    };
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let results = pipeline.execute()?;
+    Ok(Box::new(results.into_iter().map(Ok)))
+}
 
 /// Run a stage locally and synchronously, with all tasks executed serially.
 pub fn run_local_sync(
