@@ -66,7 +66,7 @@ enum Error {
 }
 
 /// Parse an Azure URI into its components.
-/// Returns (protocol, container if exists, key).
+/// Returns (protocol, (container, key) if exists).
 fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>)> {
     let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
@@ -160,6 +160,10 @@ impl AzureBlobSource {
             .sas_token
             .clone()
             .or_else(|| std::env::var("AZURE_STORAGE_SAS_TOKEN").ok());
+        let bearer_token = config
+            .bearer_token
+            .clone()
+            .or_else(|| std::env::var("AZURE_STORAGE_TOKEN").ok());
 
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
@@ -168,6 +172,8 @@ impl AzureBlobSource {
         } else if let Some(sas_token) = sas_token {
             StorageCredentials::sas_token(sas_token)
                 .map_err(|e| Error::AzureGeneric { source: e })?
+        } else if let Some(bearer_token) = bearer_token {
+            StorageCredentials::bearer_token(bearer_token)
         } else if let Some(tenant_id) = &config.tenant_id
             && let Some(client_id) = &config.client_id
             && let Some(client_secret) = &config.client_secret
