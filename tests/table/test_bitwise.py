@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from operator import and_, or_, xor
+
 import pytest
 
 from daft.expressions import col
 from daft.table import MicroPartition
-from operator import and_, or_, xor
 
 BITWISE_OPERATORS = [and_, or_, xor]
 
@@ -16,7 +17,7 @@ def test_bitwise_op(op):
     table = MicroPartition.from_pydict({"left": left, "right": right})
 
     result = table.eval_expression_list([op(col("left"), col("right"))])
-    expected = [op(l, r) for l, r in zip(left, right)]
+    expected = [op(i, j) for i, j in zip(left, right)]
     assert result.to_pydict()["left"] == expected
 
 
@@ -34,7 +35,7 @@ def test_bitwise_expression(expression, op):
     table = MicroPartition.from_pydict({"left": left, "right": right})
 
     result = table.eval_expression_list([expression])
-    expected = [op(l, r) for l, r in zip(left, right)]
+    expected = [op(i, j) for i, j in zip(left, right)]
     assert result.to_pydict()["left"] == expected
 
 

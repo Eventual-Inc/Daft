@@ -794,7 +794,6 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
     }
 }
 
-
 macro_rules! null_array_comparison_method {
     ($func_name:ident) => {
         fn $func_name(&self, rhs: &NullArray) -> Self::Output {

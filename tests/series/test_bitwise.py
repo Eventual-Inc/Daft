@@ -1,8 +1,10 @@
 import itertools
-import pytest
-from daft.series import Series
-from daft.datatype import DataType
 from operator import and_, or_, xor
+
+import pytest
+
+from daft.datatype import DataType
+from daft.series import Series
 
 BITWISE_OPERATORS = [and_, or_, xor]
 INT_TYPES = [
@@ -31,7 +33,7 @@ def test_bitwise_with_int_and_unsigned_int_types(op, dtype):
     s2 = Series.from_pylist([0b1010, 0b1100, 0b1001]).cast(right_dtype)
 
     result = op(s1, s2)
-    expected = [op(l, r) for l, r in zip(s1.to_pylist(), s2.to_pylist())]
+    expected = [op(i, j) for i, j in zip(s1.to_pylist(), s2.to_pylist())]
     assert result.to_pylist() == expected
 
 
@@ -43,16 +45,14 @@ def test_bitwise_with_different_unsigned_int_types(op, dtype):
     s2 = Series.from_pylist([0b1010, 0b1100, 0b1001]).cast(right_dtype)
 
     result = op(s1, s2)
-    expected = [op(l, r) for l, r in zip(s1.to_pylist(), s2.to_pylist())]
+    expected = [op(i, j) for i, j in zip(s1.to_pylist(), s2.to_pylist())]
     assert result.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
     "left, right",
     [
-        pytest.param(
-            [0b1100, 0b1010, 0b1001], [0b1010, 0b1100, 0b1001], id="same_length"
-        ),
+        pytest.param([0b1100, 0b1010, 0b1001], [0b1010, 0b1100, 0b1001], id="same_length"),
         pytest.param([0b1100, 0b1010, 0b1001], [0b1010], id="broadcast_right"),
         pytest.param([0b1100], [0b1010, 0b1100, 0b1001], id="broadcast_left"),
     ],
@@ -68,7 +68,7 @@ def test_bitwise_broadcasting(left, right, op):
         right = right * len(left)
 
     result = op(s1, s2)
-    expected = [op(l, r) for l, r in zip(left, right)]
+    expected = [op(i, j) for i, j in zip(left, right)]
     assert result.to_pylist() == expected
 
 
@@ -91,10 +91,7 @@ def test_bitwise_broadcasting_with_nulls(left, right, op):
         right = right * len(left)
 
     result = op(s1, s2)
-    expected = [
-        op(l, r) if l is not None and r is not None else None
-        for l, r in zip(left, right)
-    ]
+    expected = [op(i, j) if i is not None and j is not None else None for i, j in zip(left, right)]
     assert result.to_pylist() == expected
 
 
@@ -105,6 +102,7 @@ def test_bitwise_errors_with_non_integer_inputs(op):
 
     with pytest.raises(ValueError, match="Cannot perform logic on types:"):
         op(s1, s2)
+
 
 @pytest.mark.parametrize("op", BITWISE_OPERATORS)
 def test_bitwise_errors_with_incompatible_lengths(op):
