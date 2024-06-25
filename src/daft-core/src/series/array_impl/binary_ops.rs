@@ -104,11 +104,11 @@ macro_rules! physical_logic_op {
         use DataType::*;
         match &output_type {
             #[cfg(feature = "python")]
-            Python => Ok(py_binary_op_bool!(lhs, $rhs, $pyop)
-                .downcast::<BooleanArray>()
-                .cloned()?
-                .into_series()),
-            Boolean => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
+            Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
+                #[cfg(feature = "python")]
+                (Python, _) | (_, Python) => Ok(py_binary_op_bool!(lhs, $rhs, $pyop)),
+                _ => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
+            },
             output_type if output_type.is_integer() => {
                 with_match_integer_daft_types!(output_type, |$T| {
                     cast_downcast_op_into_series!(
