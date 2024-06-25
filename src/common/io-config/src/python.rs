@@ -79,6 +79,7 @@ pub struct S3Credentials {
 ///     storage_account (str): Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
 ///     access_key (str, optional): Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
 ///     sas_token (str, optional): Shared Access Signature token, defaults to reading from `AZURE_STORAGE_SAS_TOKEN` environment variable
+///     bearer_token (str, optional): Bearer Token, defaults to reading from `AZURE_STORAGE_TOKEN` environment variable
 ///     tenant_id (str, optional): Azure Tenant ID
 ///     client_id (str, optional): Azure Client ID
 ///     client_secret (str, optional): Azure Client Secret
@@ -631,6 +632,7 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         sas_token: Option<String>,
+        bearer_token: Option<String>,
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
@@ -644,6 +646,7 @@ impl AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.or(def.access_key),
                 sas_token: sas_token.or(def.sas_token),
+                bearer_token: bearer_token.or(def.bearer_token),
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
                 client_secret: client_secret.or(def.client_secret),
@@ -660,6 +663,7 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         sas_token: Option<String>,
+        bearer_token: Option<String>,
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
@@ -672,6 +676,7 @@ impl AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
                 sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
+                bearer_token: bearer_token.or_else(|| self.config.bearer_token.clone()),
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
                 client_secret: client_secret.or_else(|| self.config.client_secret.clone()),
@@ -698,9 +703,16 @@ impl AzureConfig {
         Ok(self.config.access_key.clone())
     }
 
+    /// Azure Shared Access Signature token
     #[getter]
     pub fn sas_token(&self) -> PyResult<Option<String>> {
         Ok(self.config.sas_token.clone())
+    }
+
+    /// Azure Bearer Token
+    #[getter]
+    pub fn bearer_token(&self) -> PyResult<Option<String>> {
+        Ok(self.config.bearer_token.clone())
     }
 
     #[getter]

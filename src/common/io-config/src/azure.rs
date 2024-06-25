@@ -9,6 +9,7 @@ pub struct AzureConfig {
     pub storage_account: Option<String>,
     pub access_key: Option<String>,
     pub sas_token: Option<String>,
+    pub bearer_token: Option<String>,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
@@ -23,6 +24,7 @@ impl Default for AzureConfig {
             storage_account: None,
             access_key: None,
             sas_token: None,
+            bearer_token: None,
             tenant_id: None,
             client_id: None,
             client_secret: None,
@@ -44,6 +46,9 @@ impl AzureConfig {
         }
         if let Some(sas_token) = &self.sas_token {
             res.push(format!("Shared Access Signature = {}", sas_token));
+        }
+        if let Some(bearer_token) = &self.bearer_token {
+            res.push(format!("Bearer Token = {}", bearer_token));
         }
         if let Some(tenant_id) = &self.tenant_id {
             res.push(format!("Tenant ID = {}", tenant_id));
@@ -71,6 +76,7 @@ impl Display for AzureConfig {
     storage_account: {:?}
     access_key: {:?}
     sas_token: {:?}
+    bearer_token: {:?}
     tenant_id: {:?}
     client_id: {:?}
     client_secret: {:?}
@@ -80,6 +86,7 @@ impl Display for AzureConfig {
             self.storage_account,
             self.access_key,
             self.sas_token,
+            self.bearer_token,
             self.tenant_id,
             self.client_id,
             self.client_secret,
