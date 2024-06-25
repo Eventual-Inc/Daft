@@ -1557,13 +1557,28 @@ class DataFrame:
         Will return a single row that aggregated the entire DataFrame.
 
         Example:
-            >>> df = df.agg(
-            >>>     col('x').sum(),
-            >>>     col('x').mean(),
-            >>>     col('y').min(),
-            >>>     col('y').max(),
-            >>>     (col('x') + col('y')).max(),
-            >>> )
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({
+            ...     "student_id": [1, 2, 3, 4],
+            ...     "test1": [0.5, 0.4, 0.6, 0.7],
+            ...     "test2": [0.9, 0.8, 0.7, 1.0]
+            ... })
+            >>> agg_df = df.agg(
+            ...     col("test1").mean(),
+            ...     col("test2").mean(),
+            ...     ((col("test1") + col("test2"))/2).min().alias("total_min"),
+            ...     ((col("test1") + col("test2"))/2).max().alias("total_max"),
+            ... )
+            >>> agg_df.show()
+            ╭─────────┬────────────────────┬────────────────────┬───────────╮
+            │ test1   ┆ test2              ┆ total_min          ┆ total_max │
+            │ ---     ┆ ---                ┆ ---                ┆ ---       │
+            │ Float64 ┆ Float64            ┆ Float64            ┆ Float64   │
+            ╞═════════╪════════════════════╪════════════════════╪═══════════╡
+            │ 0.55    ┆ 0.8500000000000001 ┆ 0.6000000000000001 ┆ 0.85      │
+            ╰─────────┴────────────────────┴────────────────────┴───────────╯
+            (Showing first 1 of 1 rows)
 
         Args:
             *to_agg (Expression): aggregation expressions
@@ -1576,6 +1591,32 @@ class DataFrame:
     @DataframePublicAPI
     def groupby(self, *group_by: ManyColumnsInputType) -> "GroupedDataFrame":
         """Performs a GroupBy on the DataFrame for aggregation
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({
+            ...     "pet": ["cat", "dog", "dog", "cat"],
+            ...     "age": [1, 2, 3, 4],
+            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
+            ... })
+            >>> grouped_df = df.groupby("pet").agg(
+            ...     col("age").min().alias("min_age"),
+            ...     col("age").max().alias("max_age"),
+            ...     col("pet").count().alias("count"),
+            ...     col("name").any_value()
+            ... )
+            >>> grouped_df.show()
+            ╭──────┬─────────┬─────────┬────────┬────────╮
+            │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
+            │ ---  ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
+            │ Utf8 ┆ Int64   ┆ Int64   ┆ UInt64 ┆ Utf8   │
+            ╞══════╪═════════╪═════════╪════════╪════════╡
+            │ cat  ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
+            ╰──────┴─────────┴─────────┴────────┴────────╯
+            (Showing first 2 of 2 rows)
 
         Args:
             *group_by (Union[str, Expression]): columns to group by
@@ -2153,12 +2194,30 @@ class GroupedDataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:
-            >>> df = df.groupby('x').agg(
-            >>>     col('x').sum(),
-            >>>     col('x').mean(),
-            >>>     col('y').min(),
-            >>>     col('y').max().
-            >>> )
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({
+            ...     "pet": ["cat", "dog", "dog", "cat"],
+            ...     "age": [1, 2, 3, 4],
+            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
+            ... })
+            >>> grouped_df = df.groupby("pet").agg(
+            ...     col("age").min().alias("min_age"),
+            ...     col("age").max().alias("max_age"),
+            ...     col("pet").count().alias("count"),
+            ...     col("name").any_value()
+            ... )
+            >>> grouped_df.show()
+            ╭──────┬─────────┬─────────┬────────┬────────╮
+            │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
+            │ ---  ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
+            │ Utf8 ┆ Int64   ┆ Int64   ┆ UInt64 ┆ Utf8   │
+            ╞══════╪═════════╪═════════╪════════╪════════╡
+            │ cat  ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
+            ╰──────┴─────────┴─────────┴────────┴────────╯
+            (Showing first 2 of 2 rows)
 
         Args:
             *to_agg (Union[Expression, Iterable[Expression]]): aggregation expressions
