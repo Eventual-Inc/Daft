@@ -8,48 +8,23 @@ use super::DataType;
 
 impl DataType {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
+        // Whether a logical op (and, or, xor) is supported between the two types.
         use DataType::*;
         match (self, other) {
             #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
-
-            // Handle Boolean combinations
-            (Boolean, Boolean) => Ok(Boolean),
-            (Boolean, Null) | (Null, Boolean) => Ok(Boolean),
-
-            // Handle Int8 combinations
-            (Int8, Int8) => Ok(Int8),
-            (Int8, Null) | (Null, Int8) => Ok(Int8),
-
-            // Handle Int16 combinations
-            (Int16, Int16) => Ok(Int16),
-            (Int16, Null) | (Null, Int16) => Ok(Int16),
-
-            // Handle Int32 combinations
-            (Int32, Int32) => Ok(Int32),
-            (Int32, Null) | (Null, Int32) => Ok(Int32),
-
-            // Handle Int64 combinations
-            (Int64, Int64) => Ok(Int64),
-            (Int64, Null) | (Null, Int64) => Ok(Int64),
-
-            // Handle UInt8 combinations
-            (UInt8, UInt8) => Ok(UInt8),
-            (UInt8, Null) | (Null, UInt8) => Ok(UInt8),
-
-            // Handle UInt16 combinations
-            (UInt16, UInt16) => Ok(UInt16),
-            (UInt16, Null) | (Null, UInt16) => Ok(UInt16),
-
-            // Handle UInt32 combinations
-            (UInt32, UInt32) => Ok(UInt32),
-            (UInt32, Null) | (Null, UInt32) => Ok(UInt32),
-
-            // Handle UInt64 combinations
-            (UInt64, UInt64) => Ok(UInt64),
-            (UInt64, Null) | (Null, UInt64) => Ok(UInt64),
-
-            // For unsupported combinations
+            (Python, _) | (_, Python) => Ok(Boolean),
+            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(Boolean),
+            (s, o) if s.is_integer() && o.is_integer() => {
+                let dtype = try_numeric_supertype(s, o)?;
+                if dtype.is_floating() {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot perform logic on types: {}, {}",
+                        self, other
+                    )))
+                } else {
+                    Ok(dtype)
+                }
+            }
             _ => Err(DaftError::TypeError(format!(
                 "Cannot perform logic on types: {}, {}",
                 self, other

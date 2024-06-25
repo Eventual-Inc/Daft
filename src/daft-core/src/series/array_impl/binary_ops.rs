@@ -12,7 +12,8 @@ use crate::{
         FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
-    with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
+    with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
+    DataType,
 };
 
 use crate::datatypes::logical::{
@@ -101,45 +102,25 @@ macro_rules! physical_logic_op {
         let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
-        match output_type {
-            Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
-                #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop),
-                _ => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
-            },
-            Int8 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (Int8, Int8) => cast_downcast_op!(lhs, $rhs, &Int8, Int8Array, $op),
-                _ => unreachable!(),
-            },
-            Int16 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (Int16, Int16) => cast_downcast_op!(lhs, $rhs, &Int16, Int16Array, $op),
-                _ => unreachable!(),
-            },
-            Int32 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (Int32, Int32) => cast_downcast_op!(lhs, $rhs, &Int32, Int32Array, $op),
-                _ => unreachable!(),
-            },
-            Int64 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (Int64, Int64) => cast_downcast_op!(lhs, $rhs, &Int64, Int64Array, $op),
-                _ => unreachable!(),
-            },
-            UInt8 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (UInt8, UInt8) => cast_downcast_op!(lhs, $rhs, &UInt8, UInt8Array, $op),
-                _ => unreachable!(),
-            },
-            UInt16 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (UInt16, UInt16) => cast_downcast_op!(lhs, $rhs, &UInt16, UInt16Array, $op),
-                _ => unreachable!(),
-            },
-            UInt32 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (UInt32, UInt32) => cast_downcast_op!(lhs, $rhs, &UInt32, UInt32Array, $op),
-                _ => unreachable!(),
-            },
-            UInt64 => match (&lhs.data_type(), &$rhs.data_type()) {
-                (UInt64, UInt64) => cast_downcast_op!(lhs, $rhs, &UInt64, UInt64Array, $op),
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
+        match &output_type {
+            #[cfg(feature = "python")]
+            Python => Ok(py_binary_op_bool!(lhs, $rhs, $pyop)
+                .downcast::<BooleanArray>()
+                .cloned()?
+                .into_series()),
+            Boolean => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
+            output_type if output_type.is_integer() => {
+                with_match_integer_daft_types!(output_type, |$T| {
+                    cast_downcast_op_into_series!(
+                        lhs,
+                        $rhs,
+                        output_type,
+                        <$T as DaftDataType>::ArrayType,
+                        $op
+                    )
+                })
+            }
+            _ => binary_op_unimplemented!(lhs, $pyop, $rhs, output_type),
         }
     }};
 }

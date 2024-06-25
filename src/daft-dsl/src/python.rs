@@ -413,6 +413,18 @@ impl PyExpr {
         Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
+    pub fn bitwise_and(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
+    }
+
+    pub fn bitwise_or(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
+    }
+
+    pub fn bitwise_xor(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
+    }
+
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
         use crate::{binary_op, Operator};
         match op {

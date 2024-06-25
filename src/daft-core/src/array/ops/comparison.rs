@@ -18,10 +18,6 @@ use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 use super::as_arrow::AsArrow;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
-use crate::Series;
-use crate::datatypes::DaftIntegerType;
-use std::ops::{BitAnd, BitOr, BitXor};
-
 impl<T> PartialEq for DataArray<T>
 where
     T: DaftArrowBackedType + 'static,
@@ -795,87 +791,6 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 rhs.name()
             ))),
         }
-    }
-}
-
-
-impl<T> DaftLogical<&DataArray<T>> for DataArray<T>
-where
-    T: DaftIntegerType,
-    T::Native: Ord + BitAnd<Output = T::Native> + BitOr<Output = T::Native> + BitXor<Output = T::Native>,
-{
-    type Output = DaftResult<Series>;
-
-    fn and(&self, rhs: &DataArray<T>) -> Self::Output {
-        bitwise_helper(self, rhs, |l, r| l & r)
-    }
-
-    fn or(&self, rhs: &DataArray<T>) -> Self::Output {
-        bitwise_helper(self, rhs, |l, r| l | r)
-    }
-
-    fn xor(&self, rhs: &DataArray<T>) -> Self::Output {
-        bitwise_helper(self, rhs, |l, r| l ^ r)
-    }
-}
-
-fn bitwise_helper<T, F>(
-    lhs: &DataArray<T>,
-    rhs: &DataArray<T>,
-    operation: F,
-) -> DaftResult<Series>
-where
-    T: DaftNumericType,
-    F: Fn(T::Native, T::Native) -> T::Native,
-{
-    match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            let result_values: Vec<T::Native> = lhs
-                .as_arrow()
-                .values()
-                .iter()
-                .zip(rhs.as_arrow().values().iter())
-                .map(|(l, r)| operation(*l, *r))
-                .collect();
-
-            let result = DataArray::<T>::from((lhs.name(), result_values));
-            Ok(result.into_series())
-        }
-        (_, 1) => {
-            let opt_rhs = rhs.as_arrow().values().get(0);
-            match opt_rhs {
-                None => Ok(Series::full_null(lhs.name(), lhs.data_type(), lhs.len())),
-                Some(&rhs) => {
-                    let result_values: Vec<T::Native> = lhs
-                        .as_arrow()
-                        .values()
-                        .iter()
-                        .map(|&l| operation(l, rhs))
-                        .collect();
-                    let result = DataArray::<T>::from((lhs.name(), result_values));
-                    Ok(result.into_series())
-                }
-            }
-        }
-        (1, _) => {
-            let opt_lhs = lhs.as_arrow().values().get(0);
-            match opt_lhs {
-                None => Ok(Series::full_null(rhs.name(), lhs.data_type(), rhs.len())),
-                Some(&lhs) => {
-                    let result_values: Vec<T::Native> = rhs
-                        .as_arrow()
-                        .values()
-                        .iter()
-                        .map(|&r| operation(lhs, r))
-                        .collect();
-                    let result = DataArray::<T>::from((rhs.name(), result_values));
-                    Ok(result.into_series())
-                }
-            }
-        }
-        (a, b) => Err(DaftError::ValueError(format!(
-            "Cannot apply operation on arrays of different lengths: {a} vs {b}"
-        ))),
     }
 }
 
