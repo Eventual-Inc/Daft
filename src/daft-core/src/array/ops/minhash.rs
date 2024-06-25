@@ -16,15 +16,6 @@ const MERSENNE_PRIME: u64 = (1 << 61) - 1;
 const MAX_HASH: u32 = 0xffffffff;
 const DEFAULT_SEED: u32 = 1;
 
-fn set_min_hashes(out: &mut [u32], s: &str, permutations: &[(u32, u32)], seed: u32) {
-    let mut cur_hash = murmurhash3_x86_32(s.as_bytes(), seed);
-    for (h, (a, b)) in out.iter_mut().zip(permutations) {
-        // this has a very low chance to overflow but it's probably fine
-        cur_hash = (((*a as u64) * (cur_hash as u64) + (*b as u64)) % MERSENNE_PRIME) as u32;
-        *h = cmp::min(*h, cur_hash);
-    }
-}
-
 impl DaftMinHash for Utf8Array {
     type Output = DaftResult<FixedSizeListArray>;
 
@@ -43,33 +34,48 @@ impl DaftMinHash for Utf8Array {
         let mut rng = fastrand::Rng::with_seed(seed as u64);
         let permutations: Vec<(u32, u32)> =
             repeat_with(|| (rng.u32(1..=u32::MAX), rng.u32(1..=u32::MAX)))
-                .take(2 * num_hashes)
+                .take(num_hashes)
                 .collect();
 
         let self_arrow = self.as_arrow();
-        let mut output: MutablePrimitiveArray<u32> = MutablePrimitiveArray::new();
+        let mut output: MutablePrimitiveArray<u32> =
+            MutablePrimitiveArray::with_capacity(num_hashes * self.len());
         for maybe_s in self_arrow.iter() {
             if let Some(s) = maybe_s {
                 let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
-                let mut min_hash: Vec<u32> = vec![MAX_HASH; num_hashes];
+                let ngram_count = if spaces.len() < ngram_size {
+                    1
+                } else {
+                    spaces.len() - ngram_size + 2
+                };
+                let mut hashes: Vec<u32> = Vec::with_capacity(ngram_count);
+                let s_bytes = s.as_bytes();
                 if spaces.len() < ngram_size {
                     // hash whole string at once
-                    set_min_hashes(&mut min_hash, s, &permutations, seed);
+                    hashes.push(murmurhash3_x86_32(s_bytes, seed));
                 } else {
-                    let last_i = spaces.len() - ngram_size + 1;
-                    for i in 0..(last_i + 1) {
+                    for i in 0..ngram_count {
                         // looking at the substring that starts BEFORE the current space
                         // surely no off by one errors
                         let start_ind = if i == 0 { 0 } else { spaces[i - 1] + 1 };
-                        let end_ind = if i == last_i {
+                        let end_ind = if i == ngram_count - 1 {
                             s.len()
                         } else {
                             spaces[i + ngram_size - 1]
                         };
-                        set_min_hashes(&mut min_hash, &s[start_ind..end_ind], &permutations, seed);
+                        hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed));
                     }
                 }
-                output.extend_from_slice(&min_hash);
+                // compute permutations
+                for (a, b) in permutations.iter() {
+                    let mut min_hash = MAX_HASH;
+                    for hash in hashes.iter_mut() {
+                        *hash =
+                            (((*a as u64) * (*hash as u64) + (*b as u64)) % MERSENNE_PRIME) as u32;
+                        min_hash = cmp::min(min_hash, *hash);
+                    }
+                    output.push(Some(min_hash));
+                }
             } else {
                 for _ in 0..num_hashes {
                     output.push_null();
