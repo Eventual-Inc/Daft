@@ -1822,6 +1822,8 @@ name = "daft-minhash"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "fastrand 2.1.0",
+ "mur3",
 ]
 
 [[package]]
