@@ -217,9 +217,9 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                     };
                     DataType::Timestamp(unified_tu, unified_tz)
                 }
-                (DataType::Timestamp(tu, None), DataType::Date32)
-                | (DataType::Date32, DataType::Timestamp(tu, None)) => {
-                    DataType::Timestamp(tu, None)
+                (DataType::Timestamp(_, None), DataType::Date32)
+                | (DataType::Date32, DataType::Timestamp(_, None)) => {
+                    DataType::Timestamp(TimeUnit::Second, None)
                 }
                 (_, _) => DataType::Utf8,
             }
@@ -229,9 +229,9 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
 
 fn time_unit_to_ordinal(tu: &TimeUnit) -> usize {
     match tu {
-        TimeUnit::Second => 3,
-        TimeUnit::Millisecond => 2,
-        TimeUnit::Microsecond => 1,
-        TimeUnit::Nanosecond => 0,
+        TimeUnit::Second => 0,
+        TimeUnit::Millisecond => 1,
+        TimeUnit::Microsecond => 2,
+        TimeUnit::Nanosecond => 3,
     }
 }

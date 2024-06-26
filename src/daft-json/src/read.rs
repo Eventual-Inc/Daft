@@ -627,18 +627,18 @@ mod tests {
                 Field::new("str", DataType::Utf8),
                 Field::new("null", DataType::Null),
                 Field::new("date", DataType::Date),
-                // Time unit should be finest granularity found in file, i.e. nanoseconds.
-                Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
-                // Time unit should be finest granularity found in file, i.e. microseconds.
+                // Time unit should be coarest granularity found in file, i.e. seconds.
+                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
+                // Time unit should be coarsest granularity found in file, i.e. seconds due to naive date inclusion.
                 Field::new(
                     "naive_timestamp",
-                    DataType::Timestamp(TimeUnit::Microseconds, None)
+                    DataType::Timestamp(TimeUnit::Seconds, None)
                 ),
                 // Timezone should be UTC due to field having multiple different timezones across records.
-                // Time unit should be fines granularity found in file, i.e. microseconds.
+                // Time unit should be coarsest granularity found in file, i.e. milliseconds.
                 Field::new(
                     "timestamp",
-                    DataType::Timestamp(TimeUnit::Microseconds, Some("Z".to_string()))
+                    DataType::Timestamp(TimeUnit::Milliseconds, Some("Z".to_string()))
                 ),
                 Field::new("list", DataType::List(Box::new(DataType::Int64))),
                 Field::new(
