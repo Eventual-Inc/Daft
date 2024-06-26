@@ -1539,6 +1539,7 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-micropartition",
+ "daft-minhash",
  "daft-parquet",
  "daft-plan",
  "daft-scan",
@@ -1814,6 +1815,13 @@ dependencies = [
  "serde",
  "snafu",
  "tokio",
+]
+
+[[package]]
+name = "daft-minhash"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
 ]
 
 [[package]]

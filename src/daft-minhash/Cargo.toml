@@ -1,0 +1,7 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+
+[package]
+edition = {workspace = true}
+name = "daft-minhash"
+version = {workspace = true}
