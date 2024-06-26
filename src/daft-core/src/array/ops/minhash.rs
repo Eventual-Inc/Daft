@@ -32,10 +32,14 @@ impl DaftMinHash for Utf8Array {
         // generate permutations
         let seed = seed.unwrap_or(DEFAULT_SEED);
         let mut rng = fastrand::Rng::with_seed(seed as u64);
-        let permutations: Vec<(u32, u32)> =
-            repeat_with(|| (rng.u32(1..=u32::MAX), rng.u32(1..=u32::MAX)))
+        let permutations: (Vec<u32>, Vec<u32>) = (
+            repeat_with(|| rng.u32(1..=(i32::MAX as u32)))
                 .take(num_hashes)
-                .collect();
+                .collect(),
+            repeat_with(|| rng.u32(0..=(i32::MAX as u32)))
+                .take(num_hashes)
+                .collect(),
+        );
 
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> =
@@ -67,7 +71,7 @@ impl DaftMinHash for Utf8Array {
                     }
                 }
                 // compute permutations
-                for (a, b) in permutations.iter() {
+                for (a, b) in permutations.0.iter().zip(permutations.1.iter()) {
                     let mut min_hash = MAX_HASH;
                     for hash in hashes.iter_mut() {
                         *hash =
