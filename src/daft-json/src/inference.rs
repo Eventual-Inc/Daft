@@ -229,9 +229,9 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
 
 fn time_unit_to_ordinal(tu: &TimeUnit) -> usize {
     match tu {
-        TimeUnit::Second => 0,
-        TimeUnit::Millisecond => 1,
-        TimeUnit::Microsecond => 2,
-        TimeUnit::Nanosecond => 3,
+        TimeUnit::Second => 3,
+        TimeUnit::Millisecond => 2,
+        TimeUnit::Microsecond => 1,
+        TimeUnit::Nanosecond => 0,
     }
 }

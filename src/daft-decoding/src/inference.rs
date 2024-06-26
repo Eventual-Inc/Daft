@@ -36,7 +36,14 @@ pub fn infer_string(string: &str) -> DataType {
     if is_date(string) {
         DataType::Date32
     } else if let Some(time_unit) = is_time(string) {
-        DataType::Time32(time_unit)
+        // NOTE: We only support Time64 with nanosecond or microsecond granularity,
+        // so even if the parsed timeunit is millisecond or second,
+        // we will still map it to Time64 with microsecond granularity.
+        if time_unit == TimeUnit::Nanosecond {
+            DataType::Time64(time_unit)
+        } else {
+            DataType::Time64(TimeUnit::Microsecond)
+        }
     } else if let Some((time_unit, offset)) = is_datetime(string) {
         // NOTE: We try to parse as a non-naive datatime (with timezone information) first,
         // since is_datetime() will return false if timezone information is not present in the string,
