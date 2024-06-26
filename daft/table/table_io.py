@@ -780,7 +780,7 @@ def write_lance(
     num_rows = len(arrow_table)
     rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
     fragments = lance.fragment.write_fragments(
-        arrow_table, mode=mode, storage_options=storage_options, dataset_uri=base_path, max_rows_per_file=rows_per_file
+        arrow_table, base_path, mode, storage_options=storage_options, max_rows_per_file=rows_per_file
     )
 
     mp = MicroPartition.from_pydict({"fragments": fragments})
