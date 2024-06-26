@@ -1,22 +1,14 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
-
-use crate::simple::{common::SourceResultType, sinks::coalesce::CoalesceSink};
+use std::sync::Arc;
 
 use super::{
     common::{Sink, SinkResultType, SourceType},
     intermediate_op::IntermediateOperatorType,
     sinks::collect::CollectSink,
 };
-use common_error::{DaftError, DaftResult};
-use daft_dsl::{common_treenode::TreeNode, AggExpr, Expr, ExprRef};
+use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
-use daft_plan::{
-    physical_ops::{Aggregate, Coalesce, Filter, InMemoryScan, Limit, Project, TabularScan},
-    PhysicalPlan,
-};
-use daft_scan::ScanTask;
-use futures::{future::select_all, sink};
+use futures::future::select_all;
 use snafu::{futures::TryFutureExt, ResultExt};
 
 async fn run_meta_pipeline(
@@ -56,6 +48,7 @@ async fn run_meta_pipeline(
     Ok(result)
 }
 
+#[derive(Clone)]
 pub struct Pipeline {
     pub sources: Option<Vec<SourceType>>,
     pub intermediate_operators: Vec<IntermediateOperatorType>,
@@ -89,39 +82,40 @@ impl Pipeline {
         }
         let local = tokio::task::LocalSet::new();
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = local.block_on(&runtime, async move {
-            let mut sink = self.sink.take().unwrap();
+        let result = local
+            .block_on(&runtime, async move {
+                let mut sink = self.sink.take().unwrap();
 
-            tokio::task::spawn_local(async move {
-                let mut meta_pipeline_futures = self
-                    .sources
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|source| {
-                        let intermediate_operators = self.intermediate_operators.clone();
-                        Box::pin(run_meta_pipeline(source.clone(), intermediate_operators))
-                    })
-                    .collect::<Vec<_>>();
+                tokio::task::spawn_local(async move {
+                    let mut meta_pipeline_futures = self
+                        .sources
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|source| {
+                            let intermediate_operators = self.intermediate_operators.clone();
+                            Box::pin(run_meta_pipeline(source.clone(), intermediate_operators))
+                        })
+                        .collect::<Vec<_>>();
 
-                while !meta_pipeline_futures.is_empty() {
-                    let (result, _index, remaining_futures) =
-                        select_all(meta_pipeline_futures).await;
-                    let sink_result = sink.sink(&result?)?;
-                    match sink_result {
-                        SinkResultType::NeedMoreInput => {
-                            meta_pipeline_futures = remaining_futures;
-                        }
-                        SinkResultType::Finished => {
-                            break;
+                    while !meta_pipeline_futures.is_empty() {
+                        let (result, _index, remaining_futures) =
+                            select_all(meta_pipeline_futures).await;
+                        let sink_result = sink.sink(&result?)?;
+                        match sink_result {
+                            SinkResultType::NeedMoreInput => {
+                                meta_pipeline_futures = remaining_futures;
+                            }
+                            SinkResultType::Finished => {
+                                break;
+                            }
                         }
                     }
-                }
-                sink.finalize()
+                    sink.finalize()
+                })
+                .await
             })
-            .await
-            .unwrap()
-        })?;
+            .context(crate::JoinSnafu {})??;
         Ok(result)
     }
 
@@ -136,7 +130,7 @@ impl Pipeline {
     }
 }
 
-pub fn execute_pipelines(mut pipelines: Vec<Pipeline>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+pub fn execute_pipelines(pipelines: Vec<Pipeline>) -> DaftResult<Vec<Arc<MicroPartition>>> {
     // We can figure out which pipelines have no dependencies and execute them in parallel instead of sequentially like this
     let mut result = vec![];
     for pipeline in pipelines {

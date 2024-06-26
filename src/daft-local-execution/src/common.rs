@@ -3,14 +3,7 @@ use std::sync::Arc;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
 
-use std::any::Any;
-
 use common_error::DaftResult;
-
-pub enum SourceResultType {
-    HasMoreData(Arc<MicroPartition>),
-    Done,
-}
 
 pub enum SinkResultType {
     NeedMoreInput,
@@ -23,8 +16,10 @@ pub enum SourceType {
     InMemory(Arc<MicroPartition>),
 }
 
-pub trait Sink: Send {
+pub trait Sink: Send + dyn_clone::DynClone {
     // make sink streaming
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
 }
+
+dyn_clone::clone_trait_object!(Sink);

@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_execution::run_local_simple;
+use daft_local_execution::run_simple;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
 use serde::{Deserialize, Serialize};
 
@@ -97,7 +97,7 @@ impl PhysicalPlanScheduler {
                 )
             })
             .collect();
-        let out = py.allow_threads(|| run_local_simple(&self.query_stage, native_psets))?;
+        let out = py.allow_threads(|| run_simple(&self.query_stage, native_psets))?;
         let iter = Box::new(out.map(|part| {
             part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
         }));

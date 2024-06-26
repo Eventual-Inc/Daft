@@ -1,23 +1,13 @@
-#![feature(impl_trait_in_assoc_type)]
-#![feature(let_chains)]
-#![feature(assert_matches)]
-// TODO(Clark): Remove this once stage planner, partial metadata, etc. are implemented.
-#![allow(dead_code)]
-#![allow(unused)]
-
-mod executor;
-mod ops;
-mod partition;
-mod scheduler;
-mod stage;
-mod task;
-#[cfg(test)]
-mod test;
-mod tree;
+mod common;
+mod intermediate_op;
+mod pipeline;
+mod run;
+mod sinks;
+mod visitor;
 
 use common_error::DaftError;
+pub use run::run_simple;
 use snafu::Snafu;
-pub use stage::run::{run_local_async, run_local_sync};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -42,6 +32,6 @@ impl From<Error> for DaftError {
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(_py: Python, _parent: &PyModule) -> PyResult<()> {
     Ok(())
 }

@@ -3,8 +3,9 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-use crate::simple::common::{Sink, SinkResultType};
+use crate::common::{Sink, SinkResultType};
 
+#[derive(Clone)]
 pub struct LimitSink {
     limit: usize,
     partitions: Vec<Arc<MicroPartition>>,

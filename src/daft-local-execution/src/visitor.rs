@@ -41,7 +41,7 @@ impl TreeNodeVisitor for PhysicalToPipelineVisitor {
                 Ok(TreeNodeRecursion::Continue)
             }
             PhysicalPlan::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
-                let mut partitions = self.psets.get(&in_memory_info.cache_key).unwrap();
+                let partitions = self.psets.get(&in_memory_info.cache_key).unwrap();
                 let mut new_pipeline = Pipeline::new();
                 new_pipeline.set_sources(
                     partitions
@@ -52,35 +52,33 @@ impl TreeNodeVisitor for PhysicalToPipelineVisitor {
                 self.pipelines.push(new_pipeline);
                 Ok(TreeNodeRecursion::Continue)
             }
-            PhysicalPlan::Filter(Filter { input, predicate }) => {
-                let mut current_pipeline = self.pipelines.last_mut().unwrap();
+            PhysicalPlan::Filter(Filter { predicate, .. }) => {
+                let current_pipeline = self.pipelines.last_mut().unwrap();
                 current_pipeline.add_operator(IntermediateOperatorType::Filter {
                     predicate: predicate.clone(),
                 });
                 Ok(TreeNodeRecursion::Continue)
             }
-            PhysicalPlan::Project(Project {
-                input, projection, ..
-            }) => {
-                let mut current_pipeline = self.pipelines.last_mut().unwrap();
+            PhysicalPlan::Project(Project { projection, .. }) => {
+                let current_pipeline = self.pipelines.last_mut().unwrap();
                 current_pipeline.add_operator(IntermediateOperatorType::Project {
                     projection: projection.clone(),
                 });
                 Ok(TreeNodeRecursion::Continue)
             }
-            PhysicalPlan::Limit(Limit { input, limit, .. }) => {
+            PhysicalPlan::Limit(Limit { limit, .. }) => {
                 let limit_sink = Box::new(LimitSink::new(*limit as usize));
 
-                let mut current_pipeline = self.pipelines.last_mut().unwrap();
+                let current_pipeline = self.pipelines.last_mut().unwrap();
                 current_pipeline.set_sink(limit_sink);
                 Ok(TreeNodeRecursion::Continue)
             }
             PhysicalPlan::Aggregate(Aggregate {
-                input,
                 aggregations,
                 groupby,
+                ..
             }) => {
-                let mut current_pipeline = self.pipelines.last_mut().unwrap();
+                let current_pipeline = self.pipelines.last_mut().unwrap();
                 let agg_op = IntermediateOperatorType::Aggregate {
                     aggregations: aggregations.clone(),
                     groupby: groupby.clone(),
@@ -97,13 +95,11 @@ impl TreeNodeVisitor for PhysicalToPipelineVisitor {
                 Ok(TreeNodeRecursion::Continue)
             }
             PhysicalPlan::Coalesce(Coalesce {
-                input,
-                num_from,
-                num_to,
+                num_from, num_to, ..
             }) => {
                 let coalesce_sink = Box::new(CoalesceSink::new(*num_from, *num_to));
 
-                let mut current_pipeline = self.pipelines.last_mut().unwrap();
+                let current_pipeline = self.pipelines.last_mut().unwrap();
                 current_pipeline.set_sink(coalesce_sink);
                 Ok(TreeNodeRecursion::Continue)
             }

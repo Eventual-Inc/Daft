@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use crate::common::{Sink, SinkResultType};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-use crate::simple::common::{Sink, SinkResultType};
-
+#[derive(Clone)]
 pub struct CollectSink {
     partitions: Vec<Arc<MicroPartition>>,
 }
