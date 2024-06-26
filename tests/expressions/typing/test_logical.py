@@ -21,6 +21,8 @@ def logical_resolvable(lhs: DataType, rhs: DataType) -> bool:
         ):
             return False
         return True
+    elif (is_integer(lhs) and rhs == DataType.null()) or (is_integer(rhs) and lhs == DataType.null()):
+        return True
     else:
         return {lhs, rhs} in ({DataType.bool()}, {DataType.bool(), DataType.null()})
 
