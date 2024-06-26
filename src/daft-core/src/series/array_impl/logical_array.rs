@@ -195,13 +195,13 @@ macro_rules! impl_series_like_for_logical_array {
             fn rem(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::rem(self, rhs)
             }
-            fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+            fn and(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::and(self, rhs)
             }
-            fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+            fn or(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::or(self, rhs)
             }
-            fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+            fn xor(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::xor(self, rhs)
             }
             fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {

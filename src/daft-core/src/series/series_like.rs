@@ -40,9 +40,9 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn mul(&self, rhs: &Series) -> DaftResult<Series>;
     fn div(&self, rhs: &Series) -> DaftResult<Series>;
     fn rem(&self, rhs: &Series) -> DaftResult<Series>;
-    fn and(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn or(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn and(&self, rhs: &Series) -> DaftResult<Series>;
+    fn or(&self, rhs: &Series) -> DaftResult<Series>;
+    fn xor(&self, rhs: &Series) -> DaftResult<Series>;
     fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
     fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
     fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray>;

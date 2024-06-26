@@ -35,11 +35,20 @@ ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
 
 
 ALL_TEMPORAL_DTYPES = [
-    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    (
+        DataType.date(),
+        pa.array(
+            [datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None],
+            type=pa.date32(),
+        ),
+    ),
     *[
         (
             DataType.timestamp(unit),
-            pa.array([datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None], type=pa.timestamp(unit)),
+            pa.array(
+                [datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None],
+                type=pa.timestamp(unit),
+            ),
         )
         for unit in ["ns", "us", "ms"]
     ],
@@ -173,6 +182,25 @@ def is_numeric(dt: DataType) -> bool:
         or dt == DataType.float32()
         or dt == DataType.float64()
     )
+
+
+def is_integer(dt: DataType) -> bool:
+    """Checks if this type is a signed integer type"""
+    return (
+        dt == DataType.int8()
+        or dt == DataType.int16()
+        or dt == DataType.int32()
+        or dt == DataType.int64()
+        or dt == DataType.uint8()
+        or dt == DataType.uint16()
+        or dt == DataType.uint32()
+        or dt == DataType.uint64()
+    )
+
+
+def is_signed_integer(dt: DataType) -> bool:
+    """Checks if this type is a signed integer type"""
+    return dt == DataType.int8() or dt == DataType.int16() or dt == DataType.int32() or dt == DataType.int64()
 
 
 def is_comparable(dt: DataType):

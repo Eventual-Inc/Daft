@@ -265,7 +265,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr % self._expr)
 
     def __and__(self, other: Expression) -> Expression:
-        """Takes the logical AND of two boolean expressions (``e1 & e2``)"""
+        """Takes the logical AND of two boolean expressions, or bitwise AND of two integer expressions (``e1 & e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
@@ -275,9 +275,14 @@ class Expression:
         return Expression._from_pyexpr(expr._expr & self._expr)
 
     def __or__(self, other: Expression) -> Expression:
-        """Takes the logical OR of two boolean expressions (``e1 | e2``)"""
+        """Takes the logical OR of two boolean or integer expressions, or bitwise OR of two integer expressions (``e1 | e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
+
+    def __xor__(self, other: Expression) -> Expression:
+        """Takes the logical XOR of two boolean or integer expressions, or bitwise XOR of two integer expressions (``e1 ^ e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def __ror__(self, other: Expression) -> Expression:
         """Takes the logical reverse OR of two boolean expressions (``e1 | e2``)"""
@@ -467,6 +472,21 @@ class Expression:
         """The e^self of a numeric expression (``expr.exp()``)"""
         expr = self._expr.exp()
         return Expression._from_pyexpr(expr)
+
+    def bitwise_and(self, other: Expression) -> Expression:
+        """Bitwise AND of two integer expressions (``expr.bitwise_and(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr & expr._expr)
+
+    def bitwise_or(self, other: Expression) -> Expression:
+        """Bitwise OR of two integer expressions (``expr.bitwise_or(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr | expr._expr)
+
+    def bitwise_xor(self, other: Expression) -> Expression:
+        """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.

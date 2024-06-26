@@ -98,15 +98,15 @@ impl PySeries {
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.and(&other.series)?.into_series().into())
+        Ok(self.series.and(&other.series)?.into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.or(&other.series)?.into_series().into())
+        Ok(self.series.or(&other.series)?.into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.xor(&other.series)?.into_series().into())
+        Ok(self.series.xor(&other.series)?.into())
     }
 
     pub fn ceil(&self) -> PyResult<Self> {
