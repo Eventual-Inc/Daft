@@ -476,17 +476,17 @@ class Expression:
     def bitwise_and(self, other: Expression) -> Expression:
         """Bitwise AND of two integer expressions (``expr.bitwise_and(other)``)"""
         expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr.bitwise_and(expr._expr))
+        return Expression._from_pyexpr(self._expr & expr._expr)
 
     def bitwise_or(self, other: Expression) -> Expression:
         """Bitwise OR of two integer expressions (``expr.bitwise_or(other)``)"""
         expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr.bitwise_or(expr._expr))
+        return Expression._from_pyexpr(self._expr | expr._expr)
 
     def bitwise_xor(self, other: Expression) -> Expression:
         """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)"""
         expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr.bitwise_xor(expr._expr))
+        return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.

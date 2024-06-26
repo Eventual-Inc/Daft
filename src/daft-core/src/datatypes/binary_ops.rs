@@ -25,6 +25,8 @@ impl DataType {
                     Ok(dtype)
                 }
             }
+            (s, o) if (s.is_integer() && o.is_null()) => Ok(s.clone()),
+            (s, o) if (s.is_null() && o.is_integer()) => Ok(o.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot perform logic on types: {}, {}",
                 self, other
