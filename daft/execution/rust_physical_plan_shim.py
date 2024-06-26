@@ -344,3 +344,17 @@ def write_deltalake(
         version,
         io_config,
     )
+
+
+def write_lance(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    path: str,
+    mode: str,
+    io_config: IOConfig | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.lance_write(
+        input,
+        path,
+        mode,
+        io_config,
+    )

@@ -5,6 +5,7 @@ mod concat;
 mod csv;
 #[cfg(feature = "python")]
 mod deltalake_write;
+
 mod empty_scan;
 mod explode;
 mod fanout;
@@ -15,6 +16,8 @@ mod hash_join;
 mod iceberg_write;
 mod in_memory;
 mod json;
+#[cfg(feature = "python")]
+mod lance_write;
 mod limit;
 mod monotonically_increasing_id;
 mod parquet;
@@ -45,6 +48,8 @@ pub use hash_join::HashJoin;
 pub use iceberg_write::IcebergWrite;
 pub use in_memory::InMemoryScan;
 pub use json::TabularWriteJson;
+#[cfg(feature = "python")]
+pub use lance_write::LanceWrite;
 pub use limit::Limit;
 pub use monotonically_increasing_id::MonotonicallyIncreasingId;
 pub use parquet::TabularWriteParquet;

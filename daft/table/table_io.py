@@ -756,6 +756,38 @@ def write_deltalake(
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
 
+def write_lance(
+    mp: MicroPartition,
+    base_path: str,
+    mode: str,
+    io_config: IOConfig | None = None,
+):
+    import lance
+
+    from daft.io.object_store_options import io_config_to_storage_options
+
+    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = io_config_to_storage_options(io_config, base_path)
+
+    arrow_table = mp.to_arrow()
+
+    execution_config = get_context().daft_execution_config
+    inflation_factor = execution_config.parquet_inflation_factor
+
+    target_file_size = execution_config.parquet_target_filesize
+    size_bytes = arrow_table.nbytes
+    target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+    num_rows = len(arrow_table)
+    rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+    fragments = lance.fragment.write_fragments(
+        arrow_table, mode=mode, storage_options=storage_options, dataset_uri=base_path, max_rows_per_file=rows_per_file
+    )
+
+    mp = MicroPartition.from_pydict({"fragments": fragments})
+
+    return mp
+
+
 def _write_tabular_arrow_table(
     arrow_table: pa.Table,
     schema: pa.Schema | None,

@@ -288,3 +288,18 @@ class LogicalPlanBuilder:
             io_config,
         )
         return LogicalPlanBuilder(builder)
+
+    def write_lance(
+        self,
+        path: str | pathlib.Path,
+        mode: str,
+        io_config: IOConfig,
+    ) -> LogicalPlanBuilder:
+        columns_name = self.schema().column_names()
+        builder = self._builder.lance_write(
+            str(path),
+            columns_name,
+            mode,
+            io_config,
+        )
+        return LogicalPlanBuilder(builder)

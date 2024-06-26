@@ -445,6 +445,40 @@ class WriteDeltaLake(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class WriteLance(SingleOutputInstruction):
+    base_path: str
+    mode: str
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._write_lance(inputs)
+
+    def _write_lance(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        partition = self._handle_file_write(
+            input=input,
+        )
+        return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
+
+    def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
+        return table_io.write_lance(
+            input,
+            base_path=self.base_path,
+            mode=self.mode,
+            io_config=self.io_config,
+        )
+
+
+@dataclass(frozen=True)
 class Filter(SingleOutputInstruction):
     predicate: ExpressionsProjection
 

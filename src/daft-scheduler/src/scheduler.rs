@@ -30,7 +30,7 @@ use std::sync::Arc;
 use daft_plan::physical_ops::*;
 
 #[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo};
+use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -232,6 +232,29 @@ fn deltalake_write(
             delta_lake_info.large_dtypes,
             delta_lake_info.version,
             delta_lake_info
+                .io_config
+                .as_ref()
+                .map(|cfg| common_io_config::python::IOConfig {
+                    config: cfg.clone(),
+                }),
+        ))?;
+    Ok(py_iter.into())
+}
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "python")]
+fn lance_write(
+    py: Python<'_>,
+    upstream_iter: PyObject,
+    lance_info: &LanceCatalogInfo,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_lance"))?
+        .call1((
+            upstream_iter,
+            &lance_info.path,
+            lance_info.mode.clone(),
+            lance_info
                 .io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
@@ -745,6 +768,16 @@ fn physical_plan_to_partition_tasks(
             py,
             physical_plan_to_partition_tasks(input, py, psets)?,
             delta_lake_info,
+        ),
+        #[cfg(feature = "python")]
+        PhysicalPlan::LanceWrite(LanceWrite {
+            schema: _,
+            lance_info,
+            input,
+        }) => lance_write(
+            py,
+            physical_plan_to_partition_tasks(input, py, psets)?,
+            lance_info,
         ),
     }
 }
