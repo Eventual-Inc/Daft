@@ -1,3 +1,4 @@
 #![feature(test)]
 
-pub mod minhash;
+mod minhash;
+pub use minhash::minhash;

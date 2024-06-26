@@ -1577,6 +1577,7 @@ dependencies = [
  "comfy-table 7.1.1",
  "common-daft-config",
  "common-error",
+ "daft-minhash",
  "daft-sketch",
  "dyn-clone",
  "fastrand 2.1.0",
