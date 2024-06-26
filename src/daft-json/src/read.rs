@@ -627,7 +627,7 @@ mod tests {
                 Field::new("str", DataType::Utf8),
                 Field::new("null", DataType::Null),
                 Field::new("date", DataType::Date),
-                // Time unit should be coarest granularity found in file, i.e. seconds.
+                // Time unit should be coarest granularity found in file, i.e. microseconds.
                 Field::new("time", DataType::Time(TimeUnit::Microseconds)),
                 // Time unit should be coarsest granularity found in file, i.e. seconds due to naive date inclusion.
                 Field::new(
