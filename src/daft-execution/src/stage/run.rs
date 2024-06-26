@@ -1,9 +1,14 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use common_error::DaftResult;
+use daft_dsl::common_treenode::{self, TreeNode};
 use daft_micropartition::MicroPartition;
 use daft_plan::QueryStageOutput;
 
+use super::{
+    planner::physical_plan_to_stage,
+    runner::{ExchangeStageRunner, SinkStageRunner},
+};
 use crate::{
     executor::{
         local::{
@@ -14,13 +19,8 @@ use crate::{
         Executor,
     },
     partition::PartitionRef,
-    simple::pipeline::physical_plan_to_pipeline,
+    simple::{pipeline::execute_pipelines, visitor::PhysicalToPipelineVisitor},
     stage::Stage,
-};
-
-use super::{
-    planner::physical_plan_to_stage,
-    runner::{ExchangeStageRunner, SinkStageRunner},
 };
 
 pub fn run_local_simple(
@@ -31,9 +31,14 @@ pub fn run_local_simple(
         QueryStageOutput::Partial { physical_plan, .. } => (physical_plan.as_ref(), false),
         QueryStageOutput::Final { physical_plan, .. } => (physical_plan.as_ref(), true),
     };
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let results = pipeline.execute()?;
-    Ok(Box::new(results.into_iter().map(Ok)))
+    let mut pipeline_visitor = PhysicalToPipelineVisitor {
+        pipelines: Vec::new(),
+        psets: psets.clone(),
+    };
+    Arc::new(physical_plan.clone()).visit(&mut pipeline_visitor)?;
+    let pipelines = pipeline_visitor.pipelines;
+    let result = execute_pipelines(pipelines)?;
+    Ok(Box::new(result.into_iter().map(Ok)))
 }
 
 /// Run a stage locally and synchronously, with all tasks executed serially.

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_micropartition::MicroPartition;
+use daft_scan::ScanTask;
 
 use std::any::Any;
 
@@ -11,20 +12,19 @@ pub enum SourceResultType {
     Done,
 }
 
-pub trait Source {
-    fn get_data(&mut self) -> DaftResult<SourceResultType>;
-}
-
 pub enum SinkResultType {
     NeedMoreInput,
     Finished,
 }
 
-pub trait Sink {
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
+#[derive(Clone)]
+pub enum SourceType {
+    ScanTask(Arc<ScanTask>),
+    InMemory(Arc<MicroPartition>),
 }
 
-pub trait IntermediateOperator {
-    fn execute(&mut self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
+pub trait Sink: Send {
+    // make sink streaming
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
+    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
 }

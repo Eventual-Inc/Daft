@@ -1,5 +1,5 @@
 pub mod common;
-pub mod ops;
+pub mod intermediate_op;
 pub mod pipeline;
 pub mod sinks;
-pub mod sources;
+pub mod visitor;
