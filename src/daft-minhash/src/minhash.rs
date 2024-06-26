@@ -8,6 +8,17 @@ extern crate test;
 const MERSENNE_PRIME: u64 = (1 << 61) - 1;
 const MAX_HASH: u32 = 0xffffffff;
 
+fn calc_perms(hashes: &[u32], pa: &[u32], pb: &[u32], out: &mut [u32]) {
+    for h in hashes {
+        for ((a, b), o) in pa.iter().zip(pb.iter()).zip(out.iter_mut()) {
+            *o = cmp::min(
+                *o,
+                (((*a as u64) * (*h as u64) + (*b as u64)) % MERSENNE_PRIME) as u32,
+            );
+        }
+    }
+}
+
 pub fn minhash(
     s: &str,
     permutations: &(Vec<u32>, Vec<u32>),
@@ -16,7 +27,6 @@ pub fn minhash(
 ) -> DaftResult<Vec<u32>> {
     let num_hashes = permutations.0.len();
 
-    let mut output: Vec<u32> = Vec::with_capacity(num_hashes);
     let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
     let ngram_count = if spaces.len() < ngram_size {
         1
@@ -41,15 +51,9 @@ pub fn minhash(
             hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed));
         }
     }
-    // compute permutations
-    for (a, b) in permutations.0.iter().zip(permutations.1.iter()) {
-        let mut min_hash = MAX_HASH;
-        for hash in hashes.iter_mut() {
-            *hash = (((*a as u64) * (*hash as u64) + (*b as u64)) % MERSENNE_PRIME) as u32;
-            min_hash = cmp::min(min_hash, *hash);
-        }
-        output.push(min_hash);
-    }
+
+    let mut output: Vec<u32> = vec![MAX_HASH; num_hashes];
+    calc_perms(&hashes, &permutations.0, &permutations.1, &mut output);
     Ok(output)
 }
 
@@ -60,7 +64,7 @@ mod tests {
     use std::{iter::repeat_with, ops::Range};
     use test::Bencher;
 
-    const N_TOKENS: usize = 1000;
+    const N_TOKENS: usize = 10000;
     const N_CHARS: Range<usize> = 1..20;
 
     const NUM_HASHES: usize = 128;
@@ -68,7 +72,7 @@ mod tests {
 
     #[bench]
     fn bench_minhash(b: &mut Bencher) {
-        let mut rng = fastrand::Rng::new();
+        let mut rng = fastrand::Rng::with_seed(42);
         let mut s: String = String::new();
         for i in 0..N_TOKENS {
             if i > 0 {
