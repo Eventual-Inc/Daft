@@ -1,26 +1,32 @@
 use std::{
-    ops::{Add, BitAnd, Mul, Rem},
+    ops::{Add, BitAnd, Mul, Rem, Shr},
     simd::{cmp::SimdOrd, Simd},
 };
 
 use common_error::DaftResult;
 use mur3::murmurhash3_x86_32;
 
-const MERSENNE_PRIME: u64 = (1 << 61) - 1;
-const MAX_HASH: u32 = 0xffffffff;
-
 // which SIMD to use
 const SIMD_LANES: usize = 8;
 type S = Simd<u64, SIMD_LANES>;
 
+const MERSENNE_PRIME: u64 = (1 << 61) - 1;
+// const MERSENNE_SIMD: S = S::from_array([MERSENNE_PRIME; SIMD_LANES]);
+// const MERSENNE_EXP_SIMD: S = S::from_array([61; SIMD_LANES]);
+const MAX_HASH: u64 = 0xffffffff;
+const MAX_HASH_SIMD: S = S::from_array([MAX_HASH; SIMD_LANES]);
+
+#[inline(always)]
+fn fast_simd_rem(x: S) -> S {
+    (x + x.shr(61)).bitand(MAX_HASH_SIMD)
+}
+
 #[inline(always)]
 fn simd_min(hh: S, aa: &[S], bb: &[S], out: &mut [S]) {
     let mut h = hh;
-    let mersenne = Simd::splat(MERSENNE_PRIME);
-    let maxhash = Simd::splat(MAX_HASH as u64);
     for ((a, b), o) in aa.iter().zip(bb.iter()).zip(out.iter_mut()) {
         for _ in 0..SIMD_LANES {
-            *o = h.mul(*a).add(*b).rem(mersenne).bitand(maxhash).simd_min(*o);
+            *o = fast_simd_rem(h.mul(*a).add(*b)).simd_min(*o);
             h = h.rotate_elements_left::<1>();
         }
     }
@@ -35,7 +41,7 @@ fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
                     .mul(*a)
                     .add(*b)
                     .rem(MERSENNE_PRIME)
-                    .bitand(MAX_HASH as u64)
+                    .bitand(MAX_HASH)
                     .min(*o);
             }
         }
@@ -64,7 +70,7 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
         perm_b.push(S::from_array(cur_simd));
     }
 
-    let mut out: Vec<S> = vec![S::splat(MAX_HASH as u64); num_simd];
+    let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
 
     let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
     let ngram_count = if spaces.len() < ngram_size {
@@ -123,6 +129,8 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
 // cargo bench --package daft-minhash
 #[cfg(test)]
 mod tests {
+    use fastrand::Rng;
+
     use super::*;
 
     #[test]
@@ -134,6 +142,19 @@ mod tests {
         let mut out = vec![123456];
         rem_min(&hh, &aa, &bb, &mut out);
         assert!(out[0] == 11 * 22 + 33);
+    }
+
+    #[test]
+    fn test_fast_rem() {
+        // test on a bunch of random numbers
+        // failure probability should be small
+        let mut rng = Rng::with_seed(42);
+        for _ in 0..2_000_000 {
+            let v = rng.u64(0..=u64::MAX);
+            let out = fast_simd_rem(S::splat(v)).to_array()[0];
+            let exp = (v % MERSENNE_PRIME) & MAX_HASH;
+            assert!(out == exp);
+        }
     }
 
     #[test]

@@ -59,6 +59,9 @@ version = "0.2.0-dev0"
 arrow2 = {path = "src/arrow2"}
 parquet2 = {path = "src/parquet2"}
 
+[profile.bench]
+debug = true
+
 [profile.dev]
 overflow-checks = false
 
