@@ -48,26 +48,23 @@ fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
     }
 }
 
-pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> DaftResult<Vec<u32>> {
+pub fn minhash(
+    s: &str,
+    perm_a: &[u64],
+    perm_b: &[u64],
+    ngram_size: usize,
+    seed: u32,
+) -> DaftResult<Vec<u32>> {
+    let num_hashes = perm_a.len();
     let num_hashes_aligned = (num_hashes + SIMD_LANES - 1) / SIMD_LANES * SIMD_LANES;
     let num_simd = num_hashes_aligned / SIMD_LANES;
 
     // generate simd permutations
-    let mut rng = fastrand::Rng::with_seed(seed as u64);
-    let mut perm_a: Vec<S> = Vec::with_capacity(num_simd);
-    let mut perm_b: Vec<S> = Vec::with_capacity(num_simd);
-    let mut cur_simd = [0; SIMD_LANES];
-    for _ in 0..num_simd {
-        for v in &mut cur_simd {
-            *v = rng.u64(1..=(i32::MAX as u64));
-        }
-        perm_a.push(S::from_array(cur_simd));
-    }
-    for _ in 0..num_simd {
-        for v in &mut cur_simd {
-            *v = rng.u64(0..=(i32::MAX as u64));
-        }
-        perm_b.push(S::from_array(cur_simd));
+    let mut perm_a_simd: Vec<S> = Vec::with_capacity(num_simd);
+    let mut perm_b_simd: Vec<S> = Vec::with_capacity(num_simd);
+    for i in 0..num_simd {
+        perm_a_simd.push(S::load_or_default(&perm_a[(SIMD_LANES * i)..]));
+        perm_b_simd.push(S::load_or_default(&perm_b[(SIMD_LANES * i)..]));
     }
 
     let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
@@ -96,24 +93,12 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
             hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed) as u64);
             if hashes.len() >= SIMD_LANES {
                 let hashes_simd = S::from_slice(&hashes);
-                simd_min(hashes_simd, &perm_a, &perm_b, &mut out);
+                simd_min(hashes_simd, &perm_a_simd, &perm_b_simd, &mut out);
                 hashes.clear();
             }
         }
     }
 
-    let rem_a: Vec<u64> = perm_a
-        .iter()
-        .flat_map(|x| x.as_array())
-        .take(num_hashes)
-        .copied()
-        .collect();
-    let rem_b: Vec<u64> = perm_b
-        .iter()
-        .flat_map(|x| x.as_array())
-        .take(num_hashes)
-        .copied()
-        .collect();
     let mut rem_out: Vec<u64> = out
         .iter()
         .flat_map(|x| x.as_array())
@@ -121,7 +106,7 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
         .copied()
         .collect();
     if !hashes.is_empty() {
-        rem_min(&hashes, &rem_a, &rem_b, &mut rem_out);
+        rem_min(&hashes, perm_a, perm_b, &mut rem_out);
     }
     Ok(rem_out.into_iter().map(|x| x as u32).collect())
 }
@@ -129,6 +114,8 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
 // cargo bench --package daft-minhash
 #[cfg(test)]
 mod tests {
+    use std::iter::repeat_with;
+
     use fastrand::Rng;
 
     use super::*;
@@ -174,16 +161,45 @@ mod tests {
     #[test]
     fn test_minhash() {
         // just some sanity checks
-        let res1 = minhash("the quick brown fox jumped over the lazy dog", 16, 3, 1).unwrap();
+        let mut rng = Rng::with_seed(42);
+        let perm_a: Vec<u64> = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
+            .take(16)
+            .collect();
+        let perm_b: Vec<u64> = repeat_with(|| rng.u64(0..(i32::MAX as u64)))
+            .take(16)
+            .collect();
+
+        let res1 = minhash(
+            "the quick brown fox jumped over the lazy dog",
+            &perm_a,
+            &perm_b,
+            3,
+            1,
+        )
+        .unwrap();
         assert!(res1.len() == 16);
 
-        let res2 = minhash("this sentence is totally different than that", 16, 3, 1).unwrap();
+        let res2 = minhash(
+            "this sentence is totally different than that",
+            &perm_a,
+            &perm_b,
+            3,
+            1,
+        )
+        .unwrap();
         assert!(res2.len() == 16);
         for i in 0..16 {
             assert!(res1[i] != res2[i]);
         }
 
-        let res3 = minhash("this sentence is totally different than that", 16, 3, 1).unwrap();
+        let res3 = minhash(
+            "this sentence is totally different than that",
+            &perm_a,
+            &perm_b,
+            3,
+            1,
+        )
+        .unwrap();
         for i in 0..16 {
             assert!(res2[i] == res3[i]);
         }
