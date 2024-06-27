@@ -738,8 +738,11 @@ class DataFrame:
     ) -> "DataFrame":
         """
         Writes the DataFrame to a Lance table
+        Note:
+            `write_lance` requires python 3.9 or higher
         Args:
           uri: The URI of the Lance table to write to
+          mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
         Example:
         --------
@@ -755,8 +758,12 @@ class DataFrame:
         >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 
         """
+        import sys
+
         from daft import from_pydict
 
+        if sys.version_info < (3, 9):
+            raise ValueError("'write_lance' requires python 3.9 or higher")
         try:
             import lance
             import pyarrow as pa
