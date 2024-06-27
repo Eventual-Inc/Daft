@@ -185,7 +185,7 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                 (DataType::Int64, DataType::Boolean) | (DataType::Boolean, DataType::Int64) => {
                     DataType::Int64
                 }
-                (DataType::Time32(left_tu), DataType::Time32(right_tu)) => {
+                (DataType::Time64(left_tu), DataType::Time64(right_tu)) => {
                     // Set unified time unit to the lowest granularity time unit.
                     let unified_tu = if left_tu == right_tu
                         || time_unit_to_ordinal(&left_tu) < time_unit_to_ordinal(&right_tu)
@@ -194,7 +194,7 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                     } else {
                         right_tu
                     };
-                    DataType::Time32(unified_tu)
+                    DataType::Time64(unified_tu)
                 }
                 (
                     DataType::Timestamp(left_tu, left_tz),
