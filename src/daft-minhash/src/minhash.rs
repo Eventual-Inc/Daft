@@ -1,6 +1,6 @@
 use std::{
     ops::{Add, BitAnd, Mul, Rem},
-    simd::{cmp::SimdOrd, u64x16, Simd},
+    simd::{cmp::SimdOrd, Simd},
 };
 
 use common_error::DaftResult;
@@ -11,13 +11,17 @@ extern crate test;
 const MERSENNE_PRIME: u64 = (1 << 61) - 1;
 const MAX_HASH: u32 = 0xffffffff;
 
+// which SIMD to use
+const SIMD_LANES: usize = 8;
+type S = Simd<u64, SIMD_LANES>;
+
 #[inline(always)]
-fn simd_min(hh: u64x16, aa: &[u64x16], bb: &[u64x16], out: &mut [u64x16]) {
+fn simd_min(hh: S, aa: &[S], bb: &[S], out: &mut [S]) {
     let mut h = hh;
     let mersenne = Simd::splat(MERSENNE_PRIME);
     let maxhash = Simd::splat(MAX_HASH as u64);
     for ((a, b), o) in aa.iter().zip(bb.iter()).zip(out.iter_mut()) {
-        for _ in 0..16 {
+        for _ in 0..SIMD_LANES {
             *o = h.mul(*a).add(*b).rem(mersenne).bitand(maxhash).simd_min(*o);
             h = h.rotate_elements_left::<1>();
         }
@@ -28,7 +32,7 @@ fn simd_min(hh: u64x16, aa: &[u64x16], bb: &[u64x16], out: &mut [u64x16]) {
 fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
     for h in hh {
         for ((a, b), o) in aa.iter().zip(bb.iter()).zip(out.iter_mut()) {
-            for _ in 0..16 {
+            for _ in 0..SIMD_LANES {
                 *o = h
                     .mul(*a)
                     .add(*b)
@@ -41,28 +45,28 @@ fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
 }
 
 pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> DaftResult<Vec<u32>> {
-    let num_hashes_aligned = (num_hashes + 15) / 16 * 16;
-    let num_simd = num_hashes_aligned / 16;
+    let num_hashes_aligned = (num_hashes + SIMD_LANES - 1) / SIMD_LANES * SIMD_LANES;
+    let num_simd = num_hashes_aligned / SIMD_LANES;
 
     // generate simd permutations
     let mut rng = fastrand::Rng::with_seed(seed as u64);
-    let mut perm_a: Vec<u64x16> = Vec::with_capacity(num_simd);
-    let mut perm_b: Vec<u64x16> = Vec::with_capacity(num_simd);
-    let mut cur_simd = [0; 16];
+    let mut perm_a: Vec<S> = Vec::with_capacity(num_simd);
+    let mut perm_b: Vec<S> = Vec::with_capacity(num_simd);
+    let mut cur_simd = [0; SIMD_LANES];
     for _ in 0..num_simd {
         for v in &mut cur_simd {
             *v = rng.u64(1..=(i32::MAX as u64));
         }
-        perm_a.push(u64x16::from_array(cur_simd));
+        perm_a.push(S::from_array(cur_simd));
     }
     for _ in 0..num_simd {
         for v in &mut cur_simd {
             *v = rng.u64(0..=(i32::MAX as u64));
         }
-        perm_b.push(u64x16::from_array(cur_simd));
+        perm_b.push(S::from_array(cur_simd));
     }
 
-    let mut out: Vec<u64x16> = vec![u64x16::splat(MAX_HASH as u64); num_simd];
+    let mut out: Vec<S> = vec![S::splat(MAX_HASH as u64); num_simd];
 
     let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
     let ngram_count = if spaces.len() < ngram_size {
@@ -70,7 +74,7 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
     } else {
         spaces.len() - ngram_size + 2
     };
-    let mut hashes: Vec<u64> = Vec::with_capacity(16);
+    let mut hashes: Vec<u64> = Vec::with_capacity(SIMD_LANES);
     let s_bytes = s.as_bytes();
     if spaces.len() < ngram_size {
         // hash whole string at once
@@ -86,8 +90,8 @@ pub fn minhash(s: &str, num_hashes: usize, ngram_size: usize, seed: u32) -> Daft
                 spaces[i + ngram_size - 1]
             };
             hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed) as u64);
-            if hashes.len() >= 16 {
-                let hashes_simd = u64x16::from_slice(&hashes);
+            if hashes.len() >= SIMD_LANES {
+                let hashes_simd = S::from_slice(&hashes);
                 simd_min(hashes_simd, &perm_a, &perm_b, &mut out);
                 hashes.clear();
             }
@@ -144,12 +148,12 @@ mod tests {
 
     #[test]
     fn test_simd_min() {
-        let simd_h = u64x16::splat(11);
-        let simd_a = u64x16::splat(22);
+        let simd_h = S::splat(11);
+        let simd_a = S::splat(22);
         let aa = vec![simd_a];
-        let simd_b = u64x16::splat(33);
+        let simd_b = S::splat(33);
         let bb = vec![simd_b];
-        let simd_out = u64x16::splat(123456);
+        let simd_out = S::splat(123456);
         let mut out = vec![simd_out];
         simd_min(simd_h, &aa, &bb, &mut out);
         let out_arr = out[0].as_array();
