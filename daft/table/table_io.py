@@ -788,17 +788,25 @@ def _write_tabular_arrow_table(
     else:
         basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
 
-    pads.write_dataset(
-        arrow_table,
-        schema=schema,
-        base_dir=full_path,
-        basename_template=basename_template,
-        format=format,
-        partitioning=None,
-        file_options=opts,
-        file_visitor=file_visitor,
-        use_threads=True,
-        existing_data_behavior="overwrite_or_ignore",
-        filesystem=fs,
-        **kwargs,
-    )
+    for _ in range(3):
+        try:
+            pads.write_dataset(
+                arrow_table,
+                schema=schema,
+                base_dir=full_path,
+                basename_template=basename_template,
+                format=format,
+                partitioning=None,
+                file_options=opts,
+                file_visitor=file_visitor,
+                use_threads=True,
+                existing_data_behavior="overwrite_or_ignore",
+                filesystem=fs,
+                **kwargs,
+            )
+            break
+        except Exception as e:
+            print(f"!!!!! ERROR WRITING DATASET !!!!!: {e}")
+            error = e
+    else:
+        raise error
