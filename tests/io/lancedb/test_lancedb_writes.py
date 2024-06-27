@@ -15,8 +15,8 @@ data = {
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
 PY_LE_3_9_0 = sys.version_info < (3, 9)
 pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0, reason="lance only supported if pyarrow >= 8.0.0"
-) or pytest.mark.skipif(PY_LE_3_9_0, reason="lance only supported if python >= 3.9.0")
+    PYARROW_LE_8_0_0 or PY_LE_3_9_0, reason="lance only supported if pyarrow >= 8.0.0 and python >= 3.9.0"
+)
 
 
 @pytest.fixture(scope="function")
