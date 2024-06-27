@@ -631,14 +631,23 @@ class Expression:
 
         Example:
             >>> import daft
-            >>> df1 = daft.from_pydict({"x": [2, 2, 2]})
-            >>> df2 = daft.from_pydict({"y": [1, 2, 3]})
-            >>> df3 = daft.from_pydict({"a":["a", "a", "a"]})
-            >>> df4 = daft.from_pydict({"b":["b", "b", "b"]})
-            >>> (col("x") > col("y")).if_else(col("a"), col("b"))
-            >>> [col(x) > col(y)] then [col(a)] else [col(b)]
+            >>> df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
+            >>> df = df.with_column("A_if_bigger_else_B", (df["A"] > df["B"]).if_else(df["A"], df["B"]),)
+            >>> df.collect()
+            ╭───────┬───────┬────────────────────╮
+            │ A     ┆ B     ┆ A_if_bigger_else_B │
+            │ ---   ┆ ---   ┆ ---                │
+            │ Int64 ┆ Int64 ┆ Int64              │
+            ╞═══════╪═══════╪════════════════════╡
+            │ 1     ┆ 0     ┆ 1                  │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 2     ┆ 2                  │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     ┆ 4                  │
+            ╰───────┴───────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
-            # FLAGGED FOR REVIEW
         Args:
             if_true (Expression): Values to choose if condition is true
             if_false (Expression): Values to choose if condition is false
@@ -659,12 +668,26 @@ class Expression:
             use a UDF instead.
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["1", "2", "tim"]})
             >>> def f(x_val: str) -> int:
             >>>     return int(x_val) if x_val.isnumeric() else 0
             >>>
-            >>> col("x").apply(f, return_dtype=DataType.int64())
+            >>> df.with_column("num_x", df['x'].apply(f, return_dtype=DataType.int64())).collect()
 
-            #FLAGGED
+            ╭──────┬───────╮
+            │ x    ┆ num_x │
+            │ ---  ┆ ---   │
+            │ Utf8 ┆ Int64 │
+            ╞══════╪═══════╡
+            │ 1    ┆ 1     │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2    ┆ 2     │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ tim  ┆ 0     │
+            ╰──────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             func: Function to run per value of the expression
@@ -1042,8 +1065,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> # [1., None, NaN] -> [True, None, False]
-            >>> df = daft.from_pydict({"data": [1., None, nan]})
-            >>> df = df.select(df["data"].not_nan())
+            >>> df = daft.from_pydict({"x": [1., None, nan]})
+            >>> df = df.select(df["x"].not_nan())
             >>> df.collect()
             >>> col("x").not_nan()
             #FLAGGED
@@ -1399,8 +1422,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Another (easier!) way to invoke this functionality is using the Python `+` operator which is
             aliased to using `.str.concat`. These are equivalent:
 
-            >>> col("x").str.concat(col("y"))
-            >>> col("x") + col("y")
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
+            >>> df.select(col("x").str.concat(col("y"))).collect()
+            ╭──────╮
+            │ x    │
+            │ ---  │
+            │ Utf8 │
+            ╞══════╡
+            │ fooa │
+            ├╌╌╌╌╌╌┤
+            │ barb │
+            ├╌╌╌╌╌╌┤
+            │ bazc │
+            ╰──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
             #FLAGGED
         Args:
@@ -1420,36 +1457,40 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If the pattern does not match or the group does not exist, a null value is returned.
 
         Example:
-            >>> regex = r'^\d{3}-\d{3}$'
+            >>> import daft
+            >>> regex = r"(\d)(\d*)"
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
-            >>> df.with_column("match", df["x"].str.extract(regex))
-            ╭─────────┬─────────╮
-            │ x       ┆ match   │
-            │ ---     ┆ ---     │
-            │ Utf8    ┆ Utf8    │
-            ╞═════════╪═════════╡
-            │ 123-456 ┆ 123     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ 789     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ 345     │
-            ╰─────────┴─────────╯
-            #FLAGGED
+            >>> df.with_column("match", df["x"].str.extract(regex)).collect()
+            ╭─────────┬───────╮
+            │ x       ┆ match │
+            │ ---     ┆ ---   │
+            │ Utf8    ┆ Utf8  │
+            ╞═════════╪═══════╡
+            │ 123-456 ┆ 123   │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ 789   │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ 345   │
+            ╰─────────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
             Extract the first capture group
 
             >>> df.with_column("match", df["x"].str.extract(regex, 1)).collect()
-            ╭─────────┬─────────╮
-            │ x       ┆ match   │
-            │ ---     ┆ ---     │
-            │ Utf8    ┆ Utf8    │
-            ╞═════════╪═════════╡
-            │ 123-456 ┆ 1       │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ 7       │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ 3       │
-            ╰─────────┴─────────╯
+            ╭─────────┬───────╮
+            │ x       ┆ match │
+            │ ---     ┆ ---   │
+            │ Utf8    ┆ Utf8  │
+            ╞═════════╪═══════╡
+            │ 123-456 ┆ 1     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ 7     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ 3     │
+            ╰─────────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: The regex pattern to extract
@@ -1474,9 +1515,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> regex = r"(\d)(\d*)"
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
-            >>> df.with_column("match", df["x"].str.extract_all(regex))
+            >>> df.with_column("match", df["x"].str.extract_all(regex)).collect()
             ╭─────────┬────────────╮
-            │ x       ┆ matches    │
+            │ x       ┆ match      │
             │ ---     ┆ ---        │
             │ Utf8    ┆ List[Utf8] │
             ╞═════════╪════════════╡
@@ -1486,12 +1527,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ 345-678 ┆ [345, 678] │
             ╰─────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
             Extract the first capture group
 
             >>> df.with_column("match", df["x"].str.extract_all(regex, 1)).collect()
             ╭─────────┬────────────╮
-            │ x       ┆ matches    │
+            │ x       ┆ match      │
             │ ---     ┆ ---        │
             │ Utf8    ┆ List[Utf8] │
             ╞═════════╪════════════╡
@@ -1501,6 +1544,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ 345-678 ┆ [3, 6]     │
             ╰─────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             pattern: The regex pattern to extract
@@ -2061,7 +2106,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             │ None       ┆ None       │
             ╰────────────┴────────────╯
 
-
+            #FLAGGED
+            #AttributeError: 'ExpressionStringNamespace' object has no attribute 'to_date'
         Returns:
             Expression: a Date expression which is parsed by given format
         """
@@ -2106,8 +2152,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ None                          ┆ None                                           │
             ╰───────────────────────────────┴────────────────────────────────────────────────╯
-
-
+            #FLAGGED
+            # cannot import to_datetime
         Returns:
             Expression: a DateTime expression which is parsed by given format and timezone
         """

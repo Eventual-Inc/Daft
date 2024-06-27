@@ -42,32 +42,18 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.linkcode",
     "IPython.sphinxext.ipython_console_highlighting",
+    "myst_nb",
     "sphinx_copybutton",
-    "sphinx_thebe",
     "sphinx_autosummary_accessors",
-    "sphinx.ext.doctest",
 ]
 
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
-autosummary_generate = True
+
 
 # -- Options for Notebook rendering
 # https://myst-nb.readthedocs.io/en/latest/configuration.html?highlight=nb_execution_mode#execution
 
 nb_execution_mode = "off"
-
-
-thebe_config = {
-    "always_load": True,
-    "url": "https://unpkg.com/thebe@latest",
-    "binder_options": {
-        "repo": "binder-examples/jupyter-stacks-datascience",
-        "ref": "main",
-        "binder_base_url": "https://mybinder.org",
-        "notebooks_dir": "notebooks",
-        "use_jupyter_lab": False,
-    },
-}
 
 
 # -- Options for HTML output -------------------------------------------------
