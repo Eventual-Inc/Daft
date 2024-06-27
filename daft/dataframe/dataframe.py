@@ -750,7 +750,7 @@ class DataFrame:
 
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
         >>> df.write_lance("/tmp/lance/my_table.lance")
-        >>> daft.read_lance("/tmp/my_table.lance")
+        >>> daft.read_lance("/tmp/lance/my_table.lance")
 
 
         # Pass additional keyword arguments to the Lance writer
