@@ -2,6 +2,7 @@ use std::iter::repeat_with;
 
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
+use daft_minhash::load_simd;
 
 use crate::{
     array::FixedSizeListArray,
@@ -36,12 +37,21 @@ impl DaftMinHash for Utf8Array {
             .take(num_hashes)
             .collect();
 
+        let perm_a_simd = load_simd(&perm_a);
+        let perm_b_simd = load_simd(&perm_b);
+
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> =
             MutablePrimitiveArray::with_capacity(num_hashes * self.len());
         for maybe_s in self_arrow.iter() {
             if let Some(s) = maybe_s {
-                let minhash_res = daft_minhash::minhash(s, &perm_a, &perm_b, ngram_size, seed)?;
+                let minhash_res = daft_minhash::minhash(
+                    s,
+                    (&perm_a, &perm_b),
+                    (&perm_a_simd, &perm_b_simd),
+                    ngram_size,
+                    seed,
+                )?;
                 output.extend(minhash_res.into_iter().map(Some));
             } else {
                 for _ in 0..num_hashes {

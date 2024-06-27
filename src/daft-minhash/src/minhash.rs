@@ -48,24 +48,29 @@ fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
     }
 }
 
-pub fn minhash(
-    s: &str,
-    perm_a: &[u64],
-    perm_b: &[u64],
-    ngram_size: usize,
-    seed: u32,
-) -> DaftResult<Vec<u32>> {
-    let num_hashes = perm_a.len();
+pub fn load_simd(v: &[u64]) -> Vec<S> {
+    let num_hashes = v.len();
     let num_hashes_aligned = (num_hashes + SIMD_LANES - 1) / SIMD_LANES * SIMD_LANES;
     let num_simd = num_hashes_aligned / SIMD_LANES;
 
-    // generate simd permutations
-    let mut perm_a_simd: Vec<S> = Vec::with_capacity(num_simd);
-    let mut perm_b_simd: Vec<S> = Vec::with_capacity(num_simd);
+    let mut v_simd: Vec<S> = Vec::with_capacity(num_simd);
     for i in 0..num_simd {
-        perm_a_simd.push(S::load_or_default(&perm_a[(SIMD_LANES * i)..]));
-        perm_b_simd.push(S::load_or_default(&perm_b[(SIMD_LANES * i)..]));
+        v_simd.push(S::load_or_default(&v[(SIMD_LANES * i)..]));
     }
+    v_simd
+}
+
+pub fn minhash(
+    s: &str,
+    perm: (&[u64], &[u64]),
+    perm_simd: (&[S], &[S]),
+    ngram_size: usize,
+    seed: u32,
+) -> DaftResult<Vec<u32>> {
+    let (perm_a, perm_b) = perm;
+    let (perm_a_simd, perm_b_simd) = perm_simd;
+    let num_hashes = perm_a.len();
+    let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
 
     let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
 
@@ -93,7 +98,7 @@ pub fn minhash(
             hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed) as u64);
             if hashes.len() >= SIMD_LANES {
                 let hashes_simd = S::from_slice(&hashes);
-                simd_min(hashes_simd, &perm_a_simd, &perm_b_simd, &mut out);
+                simd_min(hashes_simd, perm_a_simd, perm_b_simd, &mut out);
                 hashes.clear();
             }
         }
@@ -169,10 +174,13 @@ mod tests {
             .take(16)
             .collect();
 
+        let perm_a_simd = load_simd(&perm_a);
+        let perm_b_simd = load_simd(&perm_b);
+
         let res1 = minhash(
             "the quick brown fox jumped over the lazy dog",
-            &perm_a,
-            &perm_b,
+            (&perm_a, &perm_b),
+            (&perm_a_simd, &perm_b_simd),
             3,
             1,
         )
@@ -181,8 +189,8 @@ mod tests {
 
         let res2 = minhash(
             "this sentence is totally different than that",
-            &perm_a,
-            &perm_b,
+            (&perm_a, &perm_b),
+            (&perm_a_simd, &perm_b_simd),
             3,
             1,
         )
@@ -194,8 +202,8 @@ mod tests {
 
         let res3 = minhash(
             "this sentence is totally different than that",
-            &perm_a,
-            &perm_b,
+            (&perm_a, &perm_b),
+            (&perm_a_simd, &perm_b_simd),
             3,
             1,
         )

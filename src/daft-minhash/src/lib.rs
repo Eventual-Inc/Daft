@@ -2,4 +2,4 @@
 #![feature(portable_simd)]
 
 mod minhash;
-pub use minhash::minhash;
+pub use minhash::{load_simd, minhash};
