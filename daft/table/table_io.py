@@ -788,7 +788,8 @@ def _write_tabular_arrow_table(
     else:
         basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
 
-    for _ in range(3):
+    errors: list[None | Exception] = [None, None, None]
+    for i in range(3):
         try:
             pads.write_dataset(
                 arrow_table,
@@ -806,7 +807,7 @@ def _write_tabular_arrow_table(
             )
             break
         except Exception as e:
-            print(f"!!!!! ERROR WRITING DATASET !!!!!: {e}")
-            error = e
-    else:
-        raise error
+            errors[i] = e
+
+    if any(errors):
+        raise Exception(f"Errors while writing: \n\t{errors[0]}\n\t{errors[1]}\n\t{errors[2]}")
