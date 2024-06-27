@@ -1,12 +1,10 @@
-mod common;
 mod intermediate_op;
-mod pipeline;
 mod run;
-mod sinks;
-mod visitor;
+mod sink;
+mod streaming_pipeline;
 
 use common_error::DaftError;
-pub use run::run_simple;
+pub use run::run_streaming;
 use snafu::Snafu;
 
 #[cfg(feature = "python")]

@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum IntermediateOperatorType {
     Filter {
         predicate: ExprRef,
