@@ -7,3 +7,6 @@ mur3 = "0.1.0"
 edition = {workspace = true}
 name = "daft-minhash"
 version = {workspace = true}
+
+[profile.bench]
+debug = true
