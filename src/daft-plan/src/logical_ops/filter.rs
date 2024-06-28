@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::DataType;
-use daft_dsl::ExprRef;
+use daft_dsl::{resolve_expr, ExprRef};
 use snafu::ResultExt;
 
 use crate::logical_plan::{CreationSnafu, Result};
@@ -18,9 +18,8 @@ pub struct Filter {
 
 impl Filter {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
-        let field = predicate
-            .to_field(input.schema().as_ref())
-            .context(CreationSnafu)?;
+        let (predicate, field) = resolve_expr(predicate, &input.schema()).context(CreationSnafu)?;
+
         if !matches!(field.dtype, DataType::Boolean) {
             return Err(DaftError::ValueError(format!(
                 "Expected expression {predicate} to resolve to type Boolean, but received: {}",

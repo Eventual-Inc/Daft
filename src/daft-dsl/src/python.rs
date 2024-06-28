@@ -175,6 +175,12 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
 }
 
+#[pyfunction]
+pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
+    let (resolved_expr, field) = crate::resolve_expr(expr.expr.clone(), &schema.schema)?;
+    Ok((resolved_expr.into(), field.into()))
+}
+
 #[derive(FromPyObject)]
 pub enum ApproxPercentileInput {
     Single(f64),

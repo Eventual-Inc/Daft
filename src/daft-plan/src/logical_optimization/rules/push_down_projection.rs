@@ -214,7 +214,7 @@ impl PushDownProjection {
                     .aggregations
                     .iter()
                     .filter(|&e| required_columns.contains(e.name()))
-                    .cloned()
+                    .map(|ae| ae.into())
                     .collect::<Vec<_>>();
 
                 if pruned_aggregate_exprs.len() < aggregate.aggregations.len() {

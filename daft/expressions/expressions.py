@@ -1735,27 +1735,48 @@ class ExpressionMapNamespace(ExpressionNamespace):
         """Retrieves the value for a key in a map column
 
         Example:
-            >>> import pyarrrow as pa
+            >>> import pyarrow as pa
             >>> import daft
-            >>> pa_array = pa.array([[(1, 2)],[],[(2,1)]], type=pa.map_(pa.int64(), pa.int64()))
+            >>> pa_array = pa.array([[("a", 1)],[],[("b",2)]], type=pa.map_(pa.string(), pa.int64()))
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
-            >>> df = df.with_column("1", df["map_col"].map.get(1))
-            >>> df.show()
-            ╭───────────────────────────────────────┬───────╮
-            │ map_col                               ┆ 1     │
-            │ ---                                   ┆ ---   │
-            │ Map[Struct[key: Int64, value: Int64]] ┆ Int64 │
-            ╞═══════════════════════════════════════╪═══════╡
-            │ [{key: 1,                             ┆ 2     │
-            │ value: 2,                             ┆       │
-            │ }]                                    ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []                                    ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: 2,                             ┆ None  │
-            │ value: 1,                             ┆       │
-            │ }]                                    ┆       │
-            ╰───────────────────────────────────────┴───────╯
+            >>> df1 = df.with_column("a", df["map_col"].map.get("a"))
+            >>> df1.show()
+            ╭───────────┬───────╮
+            │ map_col   ┆ a     │
+            │ ---       ┆ ---   │
+            │ Map[Utf8] ┆ Int64 │
+            ╞═══════════╪═══════╡
+            │ [{key: a, ┆ 1     │
+            │ value: 1, ┆       │
+            │ }]        ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []        ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b, ┆ None  │
+            │ value: 2, ┆       │
+            │ }]        ┆       │
+            ╰───────────┴───────╯
+            (Showing first 3 of 3 rows)
+            >>>
+            >>> # you may also use the "column.key" syntax to get map values
+            >>> df2 = df.with_column("b", df["map_col.b"])
+            >>> df2.show()
+            ╭───────────┬───────╮
+            │ map_col   ┆ b     │
+            │ ---       ┆ ---   │
+            │ Map[Utf8] ┆ Int64 │
+            ╞═══════════╪═══════╡
+            │ [{key: a, ┆ None  │
+            │ value: 1, ┆       │
+            │ }]        ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []        ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b, ┆ 2     │
+            │ value: 2, ┆       │
+            │ }]        ┆       │
+            ╰───────────┴───────╯
+            (Showing first 3 of 3 rows)
 
         Args:
             key: the key to retrieve

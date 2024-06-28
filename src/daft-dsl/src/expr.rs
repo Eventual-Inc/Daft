@@ -20,6 +20,8 @@ use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};
 use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
     fmt::{Debug, Display, Formatter, Result},
     io::{self, Write},
     sync::Arc,
@@ -202,7 +204,7 @@ impl AggExpr {
             Sum(_) => Sum(children[0].clone()),
             Mean(_) => Mean(children[0].clone()),
             Min(_) => Min(children[0].clone()),
-            Max(_) => Mean(children[0].clone()),
+            Max(_) => Max(children[0].clone()),
             AnyValue(_, ignore_nulls) => AnyValue(children[0].clone(), *ignore_nulls),
             List(_) => List(children[0].clone()),
             Concat(_) => Concat(children[0].clone()),
@@ -342,6 +344,12 @@ impl AggExpr {
                 name
             ))),
         }
+    }
+}
+
+impl From<&AggExpr> for ExprRef {
+    fn from(agg_expr: &AggExpr) -> Self {
+        Arc::new(Expr::Agg(agg_expr.clone()))
     }
 }
 
@@ -1029,6 +1037,197 @@ impl Operator {
     }
 }
 
+/// Converts an expression with syntactic sugar into struct gets.
+/// Does left-associative parsing to to resolve ambiguity.
+///
+/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
+/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
+fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    use common_treenode::{Transformed, TransformedResult, TreeNode};
+
+    #[derive(PartialEq, Eq)]
+    struct BfsState<'a> {
+        name: String,
+        expr: ExprRef,
+        field: &'a Field,
+    }
+
+    impl Ord for BfsState<'_> {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.name.cmp(&other.name)
+        }
+    }
+
+    impl PartialOrd for BfsState<'_> {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    let mut pq: BinaryHeap<BfsState> = BinaryHeap::new();
+
+    for field in schema.fields.values() {
+        pq.push(BfsState {
+            name: field.name.clone(),
+            expr: Arc::new(Expr::Column(field.name.clone().into())),
+            field,
+        });
+    }
+
+    let mut str_to_get_expr: HashMap<String, ExprRef> = HashMap::new();
+
+    while let Some(BfsState { name, expr, field }) = pq.pop() {
+        if !str_to_get_expr.contains_key(&name) {
+            str_to_get_expr.insert(name.clone(), expr.clone());
+        }
+
+        if let DataType::Struct(children) = &field.dtype {
+            for child in children {
+                pq.push(BfsState {
+                    name: format!("{}.{}", name, child.name),
+                    expr: crate::functions::struct_::get(expr.clone(), &child.name),
+                    field: child,
+                });
+            }
+        }
+    }
+
+    expr.transform(|e| match e.as_ref() {
+        Expr::Column(name) => str_to_get_expr
+            .get(name.as_ref())
+            .ok_or(DaftError::ValueError(format!(
+                "Column not found in schema: {name}"
+            )))
+            .map(|get_expr| match get_expr.as_ref() {
+                Expr::Column(_) => Transformed::no(e),
+                _ => Transformed::yes(get_expr.clone()),
+            }),
+        _ => Ok(Transformed::no(e)),
+    })
+    .data()
+}
+
+fn expr_has_agg(expr: &ExprRef) -> bool {
+    use Expr::*;
+
+    match expr.as_ref() {
+        Agg(_) => true,
+        Column(_) | Literal(_) => false,
+        Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => expr_has_agg(e),
+        BinaryOp { left, right, .. } => expr_has_agg(left) || expr_has_agg(right),
+        Function { inputs, .. } => inputs.iter().any(expr_has_agg),
+        IsIn(l, r) | FillNull(l, r) => expr_has_agg(l) || expr_has_agg(r),
+        Between(v, l, u) => expr_has_agg(v) || expr_has_agg(l) || expr_has_agg(u),
+        IfElse {
+            if_true,
+            if_false,
+            predicate,
+        } => expr_has_agg(if_true) || expr_has_agg(if_false) || expr_has_agg(predicate),
+    }
+}
+
+fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
+    use Expr::*;
+
+    match expr {
+        Agg(agg_expr) => Ok(agg_expr.clone()),
+        Function { func, inputs } => Ok(AggExpr::MapGroups {
+            func: func.clone(),
+            inputs: inputs.clone(),
+        }),
+        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
+            use AggExpr::*;
+
+            // reorder expressions so that alias goes before agg
+            match agg_expr {
+                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
+                Sum(e) => Sum(Alias(e, name.clone()).into()),
+                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
+                ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => ApproxPercentile(ApproxPercentileParams {
+                    child: Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
+                Mean(e) => Mean(Alias(e, name.clone()).into()),
+                Min(e) => Min(Alias(e, name.clone()).into()),
+                Max(e) => Max(Alias(e, name.clone()).into()),
+                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
+                List(e) => List(Alias(e, name.clone()).into()),
+                Concat(e) => Concat(Alias(e, name.clone()).into()),
+                MapGroups { func, inputs } => MapGroups {
+                    func,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+            }
+        }),
+        // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions
+        // as long as the final value always has a cardinality of 1.
+        _ => Err(DaftError::ValueError(format!(
+            "Expected aggregation expression, but got: {expr}"
+        ))),
+    }
+}
+
+/// Resolves and validates the expression with a schema, returning the new expression and its field.
+pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+    // TODO(Kevin): Support aggregation expressions everywhere
+    if expr_has_agg(&expr) {
+        return Err(DaftError::ValueError(format!(
+            "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+        )));
+    }
+
+    let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
+    let resolved_field = resolved_expr.to_field(schema)?;
+    Ok((resolved_expr, resolved_field))
+}
+
+pub fn resolve_exprs(
+    exprs: Vec<ExprRef>,
+    schema: &Schema,
+) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
+    let resolved_iter = exprs.into_iter().map(|e| resolve_expr(e, schema));
+    itertools::process_results(resolved_iter, |res| res.unzip())
+}
+
+/// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
+pub fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
+    let agg_expr = extract_agg_expr(&expr)?;
+
+    let has_nested_agg = agg_expr.children().iter().any(expr_has_agg);
+
+    if has_nested_agg {
+        return Err(DaftError::ValueError(format!(
+            "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+        )));
+    }
+
+    let resolved_children = agg_expr
+        .children()
+        .into_iter()
+        .map(|e| substitute_expr_getter_sugar(e, schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let resolved_agg = agg_expr.with_new_children(resolved_children);
+    let resolved_field = resolved_agg.to_field(schema)?;
+    Ok((resolved_agg, resolved_field))
+}
+
+pub fn resolve_aggexprs(
+    exprs: Vec<ExprRef>,
+    schema: &Schema,
+) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
+    let resolved_iter = exprs.into_iter().map(|e| resolve_aggexpr(e, schema));
+    itertools::process_results(resolved_iter, |res| res.unzip())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1111,6 +1310,90 @@ mod tests {
             op: Operator::Plus,
         };
         assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_substitute_expr_getter_sugar() -> DaftResult<()> {
+        use crate::functions::struct_::get as struct_get;
+
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
+
+        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
+        assert!(substitute_expr_getter_sugar(col("a.b"), &schema).is_err());
+        assert!(matches!(
+            substitute_expr_getter_sugar(col("a.b"), &schema).unwrap_err(),
+            DaftError::ValueError(..)
+        ));
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new("b", DataType::Int64)]),
+        )])?);
+
+        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b").alias("c"), &schema)?,
+            struct_get(col("a"), "b").alias("c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            DataType::Struct(vec![Field::new(
+                "b",
+                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+            )]),
+        )])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            struct_get(col("a"), "b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new(
+                    "b",
+                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+                )]),
+            ),
+            Field::new("a.b", DataType::Int64),
+        ])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b"), &schema)?,
+            col("a.b")
+        );
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            struct_get(struct_get(col("a"), "b"), "c")
+        );
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new("b.c", DataType::Int64)]),
+            ),
+            Field::new(
+                "a.b",
+                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
+            ),
+        ])?);
+
+        assert_eq!(
+            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
+            struct_get(col("a.b"), "c")
+        );
 
         Ok(())
     }

@@ -1668,6 +1668,7 @@ dependencies = [
  "daft-io",
  "daft-sketch",
  "indexmap 2.2.6",
+ "itertools 0.11.0",
  "pyo3",
  "pyo3-log",
  "serde",
