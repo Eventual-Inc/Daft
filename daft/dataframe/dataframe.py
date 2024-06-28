@@ -812,12 +812,10 @@ class DataFrame:
         assert "fragments" in write_result
         fragments = write_result["fragments"]
 
-        if mode == "create":
+        if mode == "create" or mode == "overwrite":
             operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
-        elif mode == "overwrite":
-            operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
 
         dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version)
         stats = dataset.stats.dataset_stats()

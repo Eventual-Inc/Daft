@@ -294,7 +294,7 @@ class LogicalPlanBuilder:
         path: str | pathlib.Path,
         mode: str,
         io_config: IOConfig,
-        kwargs: dict[str, Any] | None = None,
+        kwargs: dict | None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
         builder = self._builder.lance_write(
