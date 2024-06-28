@@ -564,6 +564,35 @@ class Series:
         assert self._series is not None and fill_value._series is not None
         return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
+    def minhash(
+        self,
+        num_hashes: int,
+        ngram_size: int,
+        seed: int = 1,
+    ) -> Series:
+        """
+        Runs the MinHash algorithm on the series.
+
+        For a string, calculates the minimum hash over all its ngrams,
+        repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
+
+        Tokens for the ngrams are delimited by spaces.
+        MurmurHash is used for the initial hash.
+
+        Args:
+            num_hashes: The number of hash permutations to compute.
+            ngram_size: The number of tokens in each shingle/ngram.
+            seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+        """
+        if not isinstance(num_hashes, int):
+            raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
+        if not isinstance(ngram_size, int):
+            raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
+        if seed is not None and not isinstance(seed, int):
+            raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
+
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
+
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
 

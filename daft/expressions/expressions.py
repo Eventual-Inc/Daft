@@ -750,6 +750,33 @@ class Expression:
             expr = self._expr.hash(seed._expr)
         return Expression._from_pyexpr(expr)
 
+    def minhash(
+        self,
+        num_hashes: int,
+        ngram_size: int,
+        seed: int = 1,
+    ) -> Expression:
+        """
+        Runs the MinHash algorithm on the series.
+
+        For a string, calculates the minimum hash over all its ngrams,
+        repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
+
+        Tokens for the ngrams are delimited by spaces.
+        MurmurHash is used for the initial hash.
+        The strings are not normalized or pre-processed, so it is recommended
+        to normalize the strings yourself.
+
+        Args:
+            num_hashes: The number of hash permutations to compute.
+            ngram_size: The number of tokens in each shingle/ngram.
+            seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+        """
+        assert isinstance(num_hashes, int)
+        assert isinstance(ngram_size, int)
+        assert isinstance(seed, int)
+        return Expression._from_pyexpr(self._expr.minhash(num_hashes, ngram_size, seed))
+
     def name(self) -> builtins.str:
         return self._expr.name()
 

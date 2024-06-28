@@ -88,6 +88,7 @@ Logical
     Expression.__ge__
     Expression.between
     Expression.is_in
+    Expression.minhash
 
 .. _api=aggregation-expression:
 
