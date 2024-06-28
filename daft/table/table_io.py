@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import math
 import pathlib
+import random
+import time
 from collections.abc import Callable, Generator
 from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
@@ -805,17 +807,34 @@ def _write_tabular_arrow_table(
     else:
         basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
 
-    pads.write_dataset(
-        arrow_table,
-        schema=schema,
-        base_dir=full_path,
-        basename_template=basename_template,
-        format=format,
-        partitioning=None,
-        file_options=opts,
-        file_visitor=file_visitor,
-        use_threads=True,
-        existing_data_behavior="overwrite_or_ignore",
-        filesystem=fs,
-        **kwargs,
-    )
+    NUM_TRIES = 3
+    JITTER_MS = 2_500
+    MAX_BACKOFF_MS = 20_000
+
+    for attempt in range(NUM_TRIES):
+        try:
+            pads.write_dataset(
+                arrow_table,
+                schema=schema,
+                base_dir=full_path,
+                basename_template=basename_template,
+                format=format,
+                partitioning=None,
+                file_options=opts,
+                file_visitor=file_visitor,
+                use_threads=True,
+                existing_data_behavior="overwrite_or_ignore",
+                filesystem=fs,
+                **kwargs,
+            )
+            break
+        except OSError as e:
+            if "InvalidPart" not in str(e):
+                raise
+
+            if attempt == NUM_TRIES - 1:
+                raise OSError(f"Failed to retry write to {full_path}") from e
+            else:
+                jitter = random.randint(0, (2**attempt) * JITTER_MS)
+                backoff = min(MAX_BACKOFF_MS, jitter)
+                time.sleep(backoff / 1000)
