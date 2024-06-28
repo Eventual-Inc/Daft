@@ -23,7 +23,11 @@ def test_table_expr_minhash(num_hashes, ngram_size, seed):
         }
     )
 
-    res = df.select(col("data").minhash(num_hashes, ngram_size, seed))
+    res = None
+    if seed is None:
+        res = df.select(col("data").minhash(num_hashes, ngram_size))
+    else:
+        res = df.select(col("data").minhash(num_hashes, ngram_size, seed))
     minhash = res.to_pydict()["data"]
     assert minhash[4] is None and minhash[-1] is None
     for lst in minhash:

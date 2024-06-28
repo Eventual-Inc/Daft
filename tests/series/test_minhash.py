@@ -3,6 +3,13 @@ import pytest
 from daft import DataType, Series
 
 
+def minhash_none(series, num_hashes, ngram_size, seed):
+    if seed is None:
+        return series.minhash(num_hashes, ngram_size).to_pylist()
+    else:
+        return series.minhash(num_hashes, ngram_size, seed).to_pylist()
+
+
 @pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
 @pytest.mark.parametrize("ngram_size", [1, 2, 4, 5, 100])
 @pytest.mark.parametrize("seed", [1, -1, 123, None])
@@ -20,7 +27,7 @@ def test_minhash(num_hashes, ngram_size, seed):
         ]
     )
 
-    minhash = series.minhash(num_hashes, ngram_size, seed).to_pylist()
+    minhash = minhash_none(series, num_hashes, ngram_size, seed)
     assert minhash[4] is None and minhash[-1] is None
     for lst in minhash:
         if lst is not None:
@@ -49,7 +56,7 @@ def test_minhash_fails_nonpositive_num_hashes(num_hashes, ngram_size, seed):
     )
 
     with pytest.raises(ValueError, match="num_hashes must be positive"):
-        series.minhash(num_hashes, ngram_size, seed)
+        minhash_none(series, num_hashes, ngram_size, seed)
 
 
 @pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
@@ -70,7 +77,7 @@ def test_minhash_fails_nonpositive_ngram_size(num_hashes, ngram_size, seed):
     )
 
     with pytest.raises(ValueError, match="ngram_size must be positive"):
-        series.minhash(num_hashes, ngram_size, seed)
+        minhash_none(series, num_hashes, ngram_size, seed)
 
 
 @pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
@@ -79,7 +86,7 @@ def test_minhash_fails_nonpositive_ngram_size(num_hashes, ngram_size, seed):
 def test_minhash_empty_series(num_hashes, ngram_size, seed):
     series = Series.from_pylist([]).cast(DataType.string())
 
-    minhash = series.minhash(num_hashes, ngram_size, seed).to_pylist()
+    minhash = minhash_none(series, num_hashes, ngram_size, seed)
     assert len(minhash) == 0
 
 
@@ -100,8 +107,8 @@ def test_minhash_seed_consistency(num_hashes, ngram_size, seed):
         ]
     )
 
-    minhash1 = series.minhash(num_hashes, ngram_size, seed).to_pylist()
-    minhash2 = series.minhash(num_hashes, ngram_size, seed).to_pylist()
+    minhash1 = minhash_none(series, num_hashes, ngram_size, seed)
+    minhash2 = minhash_none(series, num_hashes, ngram_size, seed)
     assert minhash1 == minhash2
 
 
@@ -122,6 +129,6 @@ def test_minhash_seed_differences(num_hashes, ngram_size, seed_pair):
         ]
     )
 
-    minhash1 = series.minhash(num_hashes, ngram_size, seed_pair[0]).to_pylist()
-    minhash2 = series.minhash(num_hashes, ngram_size, seed_pair[1]).to_pylist()
+    minhash1 = minhash_none(series, num_hashes, ngram_size, seed_pair[0])
+    minhash2 = minhash_none(series, num_hashes, ngram_size, seed_pair[1])
     assert minhash1 != minhash2

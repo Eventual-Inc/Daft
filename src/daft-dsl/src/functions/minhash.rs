@@ -12,7 +12,7 @@ pub(super) struct MinHashEvaluator {}
 pub struct MinHashExpr {
     num_hashes: usize,
     ngram_size: usize,
-    seed: Option<u32>,
+    seed: u32,
 }
 
 impl FunctionEvaluator for MinHashEvaluator {
@@ -71,7 +71,7 @@ impl FunctionEvaluator for MinHashEvaluator {
     }
 }
 
-pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: Option<u32>) -> ExprRef {
+pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: u32) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::MinHash(MinHashExpr {
             num_hashes,

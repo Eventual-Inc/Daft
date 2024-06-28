@@ -278,7 +278,7 @@ impl PySeries {
         Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
-    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: Option<i64>) -> PyResult<Self> {
+    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"
@@ -289,7 +289,7 @@ impl PySeries {
                 "ngram_size must be positive: {ngram_size}"
             )));
         }
-        let cast_seed = seed.map(|v| v as u32);
+        let cast_seed = seed as u32;
 
         Ok(self
             .series

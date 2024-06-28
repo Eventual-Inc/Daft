@@ -12,12 +12,10 @@ use crate::{
 
 use super::{as_arrow::AsArrow, DaftMinHash};
 
-const DEFAULT_SEED: u32 = 1;
-
 impl DaftMinHash for Utf8Array {
     type Output = DaftResult<FixedSizeListArray>;
 
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: Option<u32>) -> Self::Output {
+    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output {
         if num_hashes == 0 {
             return Err(DaftError::ValueError(
                 "Number of hashes must be nonzero".into(),
@@ -28,7 +26,6 @@ impl DaftMinHash for Utf8Array {
         }
 
         // generate permutations
-        let seed = seed.unwrap_or(DEFAULT_SEED);
         let mut rng = fastrand::Rng::with_seed(seed as u64);
         let perm_a: Vec<u64> = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
             .take(num_hashes)

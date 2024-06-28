@@ -568,16 +568,13 @@ class Series:
         self,
         num_hashes: int,
         ngram_size: int,
-        seed: int | None = None,
+        seed: int = 1,
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
 
         For a string, calculates the minimum hash over all its ngrams,
-        repeating with `num_hashes` permutations. Returns as a list of 32-bit integers.
-
-        Requires as input a list of `2*num_hashes` randomly-generated
-        positive integers up to 2^32-1.
+        repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
 
         Tokens for the ngrams are delimited by spaces.
         MurmurHash is used for the initial hash.
