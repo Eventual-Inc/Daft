@@ -1,5 +1,5 @@
 use std::{
-    ops::{Add, BitAnd, Mul, Rem, Shr},
+    ops::{Add, BitAnd, Mul, Shr},
     simd::{cmp::SimdOrd, Simd},
 };
 
@@ -11,7 +11,6 @@ const SIMD_LANES: usize = 8;
 type S = Simd<u64, SIMD_LANES>;
 
 const MERSENNE_EXP: u64 = 61;
-const MERSENNE_PRIME: u64 = (1 << MERSENNE_EXP) - 1;
 const MAX_HASH: u64 = 0xffffffff;
 const MAX_HASH_SIMD: S = S::from_array([MAX_HASH; SIMD_LANES]);
 
@@ -34,44 +33,44 @@ fn simd_min(hh: S, aa: &[S], bb: &[S], out: &mut [S]) {
 }
 
 #[inline(always)]
-fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
-    for h in hh {
-        for ((a, b), o) in aa.iter().zip(bb.iter()).zip(out.iter_mut()) {
-            for _ in 0..SIMD_LANES {
-                *o = h
-                    .mul(*a)
-                    .add(*b)
-                    .rem(MERSENNE_PRIME)
-                    .bitand(MAX_HASH)
-                    .min(*o);
-            }
-        }
+fn simd_rem(hh: u64, aa: &[S], bb: &[S], out: &mut [S]) {
+    let h = S::splat(hh);
+    for ((a, b), o) in aa.iter().zip(bb.iter()).zip(out.iter_mut()) {
+        *o = fast_simd_rem(h.mul(*a).add(*b)).simd_min(*o);
     }
 }
 
 // Precalculate the SIMD vectors of the permutations, to save time.
 // Output of this should be passed into the `perm_simd` argument of minhash.
-pub fn load_simd(v: &[u64]) -> Vec<S> {
-    let num_hashes = v.len();
+pub fn load_simd(mut v: impl Iterator<Item = u64>, num_hashes: usize) -> Vec<S> {
     let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
 
-    let mut v_simd: Vec<S> = Vec::with_capacity(num_simd);
-    for i in 0..num_simd {
-        v_simd.push(S::load_or_default(&v[(SIMD_LANES * i)..]));
+    let mut out = Vec::with_capacity(num_simd);
+    loop {
+        match v.next_chunk() {
+            Ok(chunk) => {
+                out.push(S::from_array(chunk));
+            }
+            Err(iter) => {
+                let rem: Vec<u64> = iter.collect();
+                if !rem.is_empty() {
+                    out.push(S::load_or_default(&rem));
+                }
+                break;
+            }
+        }
     }
-    v_simd
+    out
 }
 
 pub fn minhash(
     s: &str,
-    perm: (&[u64], &[u64]),
     perm_simd: (&[S], &[S]),
+    num_hashes: usize,
     ngram_size: usize,
     seed: u32,
 ) -> DaftResult<Vec<u32>> {
-    let (perm_a, perm_b) = perm;
     let (perm_a_simd, perm_b_simd) = perm_simd;
-    let num_hashes = perm_a.len();
     let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
 
     let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
@@ -109,16 +108,16 @@ pub fn minhash(
     }
 
     // Compute remainder of hashes that didn't fit into SIMD
-    let mut rem_out: Vec<u64> = out
+    for hash in hashes {
+        simd_rem(hash, perm_a_simd, perm_b_simd, &mut out);
+    }
+    let rem_out: Vec<u32> = out
         .iter()
         .flat_map(|x| x.as_array())
         .take(num_hashes)
-        .copied()
+        .map(|x| *x as u32)
         .collect();
-    if !hashes.is_empty() {
-        rem_min(&hashes, perm_a, perm_b, &mut rem_out);
-    }
-    Ok(rem_out.into_iter().map(|x| x as u32).collect())
+    Ok(rem_out)
 }
 
 // cargo bench --package daft-minhash
@@ -130,16 +129,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_rem_min() {
-        // basic and not comprehensive test
-        let hh = vec![11];
-        let aa = vec![22];
-        let bb = vec![33];
-        let mut out = vec![123456];
-        rem_min(&hh, &aa, &bb, &mut out);
-        assert!(out[0] == 11 * 22 + 33);
-    }
+    const MERSENNE_PRIME: u64 = (1 << MERSENNE_EXP) - 1;
 
     #[test]
     fn test_fast_rem() {
@@ -172,20 +162,15 @@ mod tests {
     fn test_minhash() {
         // just some sanity checks
         let mut rng = Rng::with_seed(42);
-        let perm_a: Vec<u64> = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
-            .take(16)
-            .collect();
-        let perm_b: Vec<u64> = repeat_with(|| rng.u64(0..(i32::MAX as u64)))
-            .take(16)
-            .collect();
-
-        let perm_a_simd = load_simd(&perm_a);
-        let perm_b_simd = load_simd(&perm_b);
+        let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(16);
+        let perm_a_simd = load_simd(perm_a, 16);
+        let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
+        let perm_b_simd = load_simd(perm_b, 16);
 
         let res1 = minhash(
             "the quick brown fox jumped over the lazy dog",
-            (&perm_a, &perm_b),
             (&perm_a_simd, &perm_b_simd),
+            16,
             3,
             1,
         )
@@ -194,8 +179,8 @@ mod tests {
 
         let res2 = minhash(
             "this sentence is totally different than that",
-            (&perm_a, &perm_b),
             (&perm_a_simd, &perm_b_simd),
+            16,
             3,
             1,
         )
@@ -207,8 +192,8 @@ mod tests {
 
         let res3 = minhash(
             "this sentence is totally different than that",
-            (&perm_a, &perm_b),
             (&perm_a_simd, &perm_b_simd),
+            16,
             3,
             1,
         )

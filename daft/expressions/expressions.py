@@ -744,6 +744,8 @@ class Expression:
 
         Tokens for the ngrams are delimited by spaces.
         MurmurHash is used for the initial hash.
+        The strings are not normalized or pre-processed, so it is recommended
+        to normalize the strings yourself.
 
         Args:
             num_hashes: The number of hash permutations to compute.

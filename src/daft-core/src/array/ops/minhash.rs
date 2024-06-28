@@ -27,15 +27,10 @@ impl DaftMinHash for Utf8Array {
 
         // generate permutations
         let mut rng = fastrand::Rng::with_seed(seed as u64);
-        let perm_a: Vec<u64> = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
-            .take(num_hashes)
-            .collect();
-        let perm_b: Vec<u64> = repeat_with(|| rng.u64(0..(i32::MAX as u64)))
-            .take(num_hashes)
-            .collect();
-
-        let perm_a_simd = load_simd(&perm_a);
-        let perm_b_simd = load_simd(&perm_b);
+        let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(num_hashes);
+        let perm_a_simd = load_simd(perm_a, num_hashes);
+        let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
+        let perm_b_simd = load_simd(perm_b, num_hashes);
 
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> =
@@ -44,8 +39,8 @@ impl DaftMinHash for Utf8Array {
             if let Some(s) = maybe_s {
                 let minhash_res = daft_minhash::minhash(
                     s,
-                    (&perm_a, &perm_b),
                     (&perm_a_simd, &perm_b_simd),
+                    num_hashes,
                     ngram_size,
                     seed,
                 )?;

@@ -15,15 +15,10 @@ const NGRAM_SIZE: usize = 13;
 #[bench]
 fn bench_minhash(b: &mut Bencher) {
     let mut rng = fastrand::Rng::with_seed(42);
-    let perm_a: Vec<u64> = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
-        .take(NUM_HASHES)
-        .collect();
-    let perm_b: Vec<u64> = repeat_with(|| rng.u64(0..(i32::MAX as u64)))
-        .take(NUM_HASHES)
-        .collect();
-
-    let perm_a_simd = load_simd(&perm_a);
-    let perm_b_simd = load_simd(&perm_b);
+    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(NUM_HASHES);
+    let perm_a_simd = load_simd(perm_a, NUM_HASHES);
+    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(NUM_HASHES);
+    let perm_b_simd = load_simd(perm_b, NUM_HASHES);
 
     let mut s: String = String::new();
     for i in 0..N_TOKENS {
@@ -35,13 +30,5 @@ fn bench_minhash(b: &mut Bencher) {
             s.push(rng.alphanumeric());
         }
     }
-    b.iter(|| {
-        minhash(
-            &s,
-            (&perm_a, &perm_b),
-            (&perm_a_simd, &perm_b_simd),
-            NGRAM_SIZE,
-            1,
-        )
-    });
+    b.iter(|| minhash(&s, (&perm_a_simd, &perm_b_simd), NUM_HASHES, NGRAM_SIZE, 1));
 }
