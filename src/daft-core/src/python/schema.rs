@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::datatype::PyDataType;
 use super::field::PyField;
 use crate::datatypes;
+use crate::ffi::field_to_py;
 use crate::impl_bincode_py_state_serialization;
 use crate::schema;
 
@@ -22,6 +23,15 @@ pub struct PySchema {
 impl PySchema {
     pub fn __getitem__(&self, name: &str) -> PyResult<PyField> {
         Ok(self.schema.get_field(name)?.clone().into())
+    }
+
+    pub fn to_pyarrow_schema(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        self.schema
+            .fields
+            .iter()
+            .map(|(_, f)| field_to_py(&f.to_arrow()?, py, pyarrow))
+            .collect::<PyResult<Vec<_>>>()
     }
 
     pub fn names(&self) -> Vec<String> {
