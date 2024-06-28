@@ -858,6 +858,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
+    parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
