@@ -40,6 +40,7 @@ pub struct DaftExecutionConfig {
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub read_sql_partition_size_bytes: usize,
+    pub write_partition_num_retries: usize,
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
 }
@@ -61,6 +62,7 @@ impl Default for DaftExecutionConfig {
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
+            write_partition_num_retries: 3,
             enable_aqe: false,
             enable_native_executor: false,
         }

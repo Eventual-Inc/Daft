@@ -99,6 +99,7 @@ impl PyDaftExecutionConfig {
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
+        write_partition_num_retries: Option<usize>,
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
     ) -> PyResult<PyDaftExecutionConfig> {
@@ -149,6 +150,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
+        }
+        if let Some(table_write_num_retires) = write_partition_num_retries {
+            config.write_partition_num_retries = table_write_num_retires;
         }
 
         if let Some(enable_aqe) = enable_aqe {
@@ -227,6 +231,12 @@ impl PyDaftExecutionConfig {
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
+
+    #[getter]
+    fn get_write_partition_num_retries(&self) -> PyResult<usize> {
+        Ok(self.config.write_partition_num_retries)
+    }
+
     #[getter]
     fn enable_aqe(&self) -> PyResult<bool> {
         Ok(self.config.enable_aqe)

@@ -788,8 +788,9 @@ def _write_tabular_arrow_table(
     else:
         basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
 
-    errors: list[None | Exception] = [None, None, None]
-    for i in range(3):
+    num_retries = get_context().daft_execution_config.write_partition_num_retries
+
+    for _ in range(num_retries):
         try:
             pads.write_dataset(
                 arrow_table,
@@ -807,7 +808,6 @@ def _write_tabular_arrow_table(
             )
             break
         except Exception as e:
-            errors[i] = e
-
-    if any(errors):
-        raise Exception(f"Errors while writing: \n\t{errors[0]}\n\t{errors[1]}\n\t{errors[2]}")
+            error = e
+    else:
+        raise OSError(f"Failed to retry write to {full_path}") from error
