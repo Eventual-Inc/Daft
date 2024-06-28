@@ -81,6 +81,11 @@ enable_error_code = ["attr-defined"]
 module = 'daft.*'
 warn_return_any = false
 
+[tool.pyright]
+typeCheckingMode = "off"
+venv = ".venv"
+venvPath = "."
+
 [tool.pytest.ini_options]
 addopts = "--benchmark-skip -m 'not hypothesis' -m 'not integration'"
 minversion = "6.0"

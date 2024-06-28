@@ -92,6 +92,10 @@ impl Sink {
                     res.push(format!("Sink: DeltaLake({})", deltalake_info.path));
                     res.extend(deltalake_info.multiline_display());
                 }
+                crate::sink_info::CatalogType::Lance(lance_info) => {
+                    res.push(format!("Sink: Lance({})", lance_info.path));
+                    res.extend(lance_info.multiline_display());
+                }
             },
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

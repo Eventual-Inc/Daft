@@ -34,7 +34,7 @@ use crate::{
 };
 
 #[cfg(feature = "python")]
-use daft_plan::physical_ops::{DeltaLakeWrite, IcebergWrite};
+use daft_plan::physical_ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 
 // struct PhysicalPlanToPartitionTaskTreeVisitor<'a, T: PartitionRef> {
 //     leaf_inputs: Vec<VirtualPartitionSet<T>>,
@@ -265,6 +265,12 @@ fn physical_plan_to_partition_task_tree<T: PartitionRef>(
             delta_lake_info,
             input,
         }) => todo!("{todo_string}"),
+        #[cfg(feature = "python")]
+        PhysicalPlan::LanceWrite(LanceWrite {
+            schema: _,
+            lance_info,
+            input,
+        }) => todo!("{todo_string}"),
     }
 }
 
@@ -492,6 +498,12 @@ pub fn physical_plan_to_stage<T: PartitionRef, E: Executor<T> + 'static>(
         PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite {
             schema: _,
             delta_lake_info,
+            input,
+        }) => todo!("{todo_string}"),
+        #[cfg(feature = "python")]
+        PhysicalPlan::LanceWrite(LanceWrite {
+            schema: _,
+            lance_info,
             input,
         }) => todo!("{todo_string}"),
     }

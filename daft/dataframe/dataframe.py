@@ -723,6 +723,107 @@ class DataFrame:
 
         return with_operations
 
+    @DataframePublicAPI
+    def write_lance(
+        self,
+        uri: Union[str, pathlib.Path],
+        mode: Literal["create", "append", "overwrite"] = "create",
+        io_config: Optional[IOConfig] = None,
+        **kwargs,
+    ) -> "DataFrame":
+        """
+        Writes the DataFrame to a Lance table
+        Note:
+            `write_lance` requires python 3.9 or higher
+        Args:
+          uri: The URI of the Lance table to write to
+          mode: The write mode. One of "create", "append", or "overwrite"
+          io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          **kwargs: Additional keyword arguments to pass to the Lance writer
+        Example:
+        --------
+
+
+        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+        >>> df.write_lance("/tmp/lance/my_table.lance")
+        >>> daft.read_lance("/tmp/lance/my_table.lance")
+
+
+        # Pass additional keyword arguments to the Lance writer
+        # All additional keyword arguments are passed to `lance.write_fragments`
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
+
+        """
+        import sys
+
+        from daft import from_pydict
+
+        if sys.version_info < (3, 9):
+            raise ValueError("'write_lance' requires python 3.9 or higher")
+        try:
+            import lance
+            import pyarrow as pa
+
+        except ImportError:
+            raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        if isinstance(uri, (str, pathlib.Path)):
+            if isinstance(uri, str):
+                table_uri = uri
+            elif isinstance(uri, pathlib.Path):
+                table_uri = str(uri)
+            else:
+                table_uri = uri
+        pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
+
+        try:
+            table = lance.dataset(table_uri)
+
+        except ValueError:
+            table = None
+
+        version = 0
+        if table:
+            table_schema = table.schema
+            version = table.latest_version
+            if pyarrow_schema != table_schema and not (mode == "overwrite"):
+                raise ValueError(
+                    "Schema of data does not match table schema\n"
+                    f"Data schema:\n{pyarrow_schema}\nTable Schema:\n{table_schema}"
+                )
+
+        builder = self._builder.write_lance(
+            table_uri,
+            mode,
+            io_config=io_config,
+            kwargs=kwargs,
+        )
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        write_result = write_df.to_pydict()
+        assert "fragments" in write_result
+        fragments = write_result["fragments"]
+
+        if mode == "create" or mode == "overwrite":
+            operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
+        elif mode == "append":
+            operation = lance.LanceOperation.Append(fragments)
+
+        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version)
+        stats = dataset.stats.dataset_stats()
+
+        tbl = from_pydict(
+            {
+                "num_fragments": pa.array([stats["num_fragments"]], type=pa.int64()),
+                "num_deleted_rows": pa.array([stats["num_deleted_rows"]], type=pa.int64()),
+                "num_small_files": pa.array([stats["num_small_files"]], type=pa.int64()),
+                "version": pa.array([dataset.version], type=pa.int64()),
+            }
+        )
+        return tbl
+
     ###
     # DataFrame operations
     ###

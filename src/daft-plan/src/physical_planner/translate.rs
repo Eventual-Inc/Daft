@@ -722,6 +722,14 @@ pub(super) fn translate_single_logical_node(
                         ))
                         .arced())
                     }
+                    crate::sink_info::CatalogType::Lance(lance_info) => {
+                        Ok(PhysicalPlan::LanceWrite(LanceWrite::new(
+                            schema.clone(),
+                            lance_info.clone(),
+                            input_physical,
+                        ))
+                        .arced())
+                    }
                 },
             }
         }
