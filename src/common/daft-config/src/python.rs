@@ -227,7 +227,6 @@ impl PyDaftExecutionConfig {
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
-
     #[getter]
     fn enable_aqe(&self) -> PyResult<bool> {
         Ok(self.config.enable_aqe)
