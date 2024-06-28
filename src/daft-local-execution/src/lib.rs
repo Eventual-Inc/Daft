@@ -1,6 +1,8 @@
-mod intermediate_op;
+mod create_streaming_pipeline;
+mod intermediate_ops;
 mod run;
-mod sink;
+mod sinks;
+mod source;
 mod streaming_pipeline;
 
 use common_error::DaftError;

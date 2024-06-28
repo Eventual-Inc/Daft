@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_plan::QueryStageOutput;
 
-use crate::streaming_pipeline::physical_plan_to_streaming_pipeline;
+use crate::create_streaming_pipeline::physical_plan_to_streaming_pipeline;
 
 pub fn run_streaming(
     query_stage: &QueryStageOutput,
@@ -16,9 +16,8 @@ pub fn run_streaming(
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let res = runtime.block_on(async {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<MicroPartition>>(32);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<Arc<MicroPartition>>>(32);
         let mut streaming_pipelines = physical_plan_to_streaming_pipeline(physical_plan, &psets);
-
         let mut last = streaming_pipelines.pop().unwrap();
         last.set_next_pipeline_tx(tx);
 
@@ -35,7 +34,7 @@ pub fn run_streaming(
         // TODO: don't collect here, just create an iterator
         let mut res = vec![];
         while let Some(part) = rx.recv().await {
-            res.push(part);
+            res.extend(part);
         }
         res
     });
