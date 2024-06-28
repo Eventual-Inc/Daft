@@ -28,7 +28,7 @@ impl Repartition {
                     by: resolved_by,
                 })
             }
-            _ => repartition_spec,
+            RepartitionSpec::Random(_) | RepartitionSpec::IntoPartitions(_) => repartition_spec,
         };
 
         Ok(Self {
