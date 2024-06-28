@@ -735,6 +735,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
+        **kwargs,
     ) -> "DataFrame":
         """
         Writes the DataFrame to a Lance table
@@ -744,6 +745,7 @@ class DataFrame:
           uri: The URI of the Lance table to write to
           mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          **kwargs: Additional keyword arguments to pass to the Lance writer
         Example:
         --------
 
@@ -754,7 +756,7 @@ class DataFrame:
 
 
         # Pass additional keyword arguments to the Lance writer
-        # All additional keyword arguments are passed to `lance.write_dataset`
+        # All additional keyword arguments are passed to `lance.write_fragments`
         >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 
         """
@@ -801,6 +803,7 @@ class DataFrame:
             table_uri,
             mode,
             io_config=io_config,
+            kwargs=kwargs,
         )
         write_df = DataFrame(builder)
         write_df.collect()

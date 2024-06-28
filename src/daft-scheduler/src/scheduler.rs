@@ -260,6 +260,7 @@ fn lance_write(
                 .map(|cfg| common_io_config::python::IOConfig {
                     config: cfg.clone(),
                 }),
+            lance_info.kwargs.clone(),
         ))?;
     Ok(py_iter.into())
 }

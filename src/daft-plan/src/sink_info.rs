@@ -159,6 +159,11 @@ pub struct LanceCatalogInfo {
     pub path: String,
     pub mode: String,
     pub io_config: Option<IOConfig>,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub kwargs: PyObject,
 }
 
 #[cfg(feature = "python")]

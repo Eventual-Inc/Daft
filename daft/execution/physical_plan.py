@@ -167,6 +167,7 @@ def lance_write(
     base_path: str,
     mode: str,
     io_config: IOConfig | None,
+    kwargs: dict[str, str] | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into lance data files described by `write_info`."""
 
@@ -176,6 +177,7 @@ def lance_write(
                 base_path=base_path,
                 mode=mode,
                 io_config=io_config,
+                kwargs=kwargs,
             ),
         )
         if isinstance(step, PartitionTaskBuilder)

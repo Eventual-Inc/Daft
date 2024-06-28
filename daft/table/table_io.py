@@ -761,9 +761,10 @@ def write_lance(
     base_path: str,
     mode: str,
     io_config: IOConfig | None = None,
+    kwargs: dict | None = None,
 ):
     import lance
-
+    print("write_lance kwargs =", kwargs)
     from daft.io.object_store_options import io_config_to_storage_options
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -780,7 +781,7 @@ def write_lance(
     num_rows = len(arrow_table)
     rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
     fragments = lance.fragment.write_fragments(
-        arrow_table, base_path, mode, storage_options=storage_options, max_rows_per_file=rows_per_file
+        arrow_table, base_path, mode, storage_options=storage_options, max_rows_per_file=rows_per_file, **kwargs
     )
 
     mp = MicroPartition.from_pydict({"fragments": fragments})

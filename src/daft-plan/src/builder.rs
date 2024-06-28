@@ -550,13 +550,16 @@ impl LogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<IOConfig>,
+        kwargs: PyObject,
     ) -> DaftResult<Self> {
         use crate::sink_info::LanceCatalogInfo;
+
         let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
             catalog: crate::sink_info::CatalogType::Lance(LanceCatalogInfo {
                 path,
                 mode,
                 io_config,
+                kwargs,
             }),
             catalog_columns: columns_name,
         });
@@ -858,14 +861,23 @@ impl PyLogicalPlanBuilder {
 
     pub fn lance_write(
         &self,
+        py: Python,
         path: String,
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<common_io_config::python::IOConfig>,
+        kwargs: Option<PyObject>,
     ) -> PyResult<Self> {
+        let kwargs = kwargs.unwrap_or_else(|| py.None());
         Ok(self
             .builder
-            .lance_write(path, columns_name, mode, io_config.map(|cfg| cfg.config))?
+            .lance_write(
+                path,
+                columns_name,
+                mode,
+                io_config.map(|cfg| cfg.config),
+                kwargs,
+            )?
             .into())
     }
     pub fn schema(&self) -> PyResult<PySchema> {

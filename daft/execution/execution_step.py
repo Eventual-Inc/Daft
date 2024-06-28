@@ -449,6 +449,7 @@ class WriteLance(SingleOutputInstruction):
     base_path: str
     mode: str
     io_config: IOConfig | None
+    kwargs: dict[str, Any]
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_lance(inputs)
@@ -475,6 +476,7 @@ class WriteLance(SingleOutputInstruction):
             base_path=self.base_path,
             mode=self.mode,
             io_config=self.io_config,
+            kwargs=self.kwargs,
         )
 
 
