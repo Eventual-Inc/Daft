@@ -53,7 +53,10 @@ impl std::error::Error for DaftError {
 
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
-        DaftError::ArrowError(error.to_string())
+        match error {
+            arrow2::error::Error::Io(_) => DaftError::ByteStreamError(error.into()),
+            _ => DaftError::ArrowError(error.to_string()),
+        }
     }
 }
 
