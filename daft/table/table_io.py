@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import math
 import pathlib
+import random
+import time
 from collections.abc import Callable, Generator
 from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
@@ -788,9 +790,11 @@ def _write_tabular_arrow_table(
     else:
         basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
 
-    num_retries = get_context().daft_execution_config.write_partition_num_retries
+    NUM_TRIES = 3
+    JITTER_MS = 2_500
+    MAX_BACKOFF_MS = 20_000
 
-    for _ in range(num_retries):
+    for attempt in range(NUM_TRIES):
         try:
             pads.write_dataset(
                 arrow_table,
@@ -807,7 +811,13 @@ def _write_tabular_arrow_table(
                 **kwargs,
             )
             break
-        except Exception as e:
-            error = e
-    else:
-        raise OSError(f"Failed to retry write to {full_path}") from error
+        except OSError as e:
+            if "InvalidPart" not in str(e):
+                raise
+
+            if attempt == NUM_TRIES - 1:
+                raise OSError(f"Failed to retry write to {full_path}") from e
+            else:
+                jitter = random.randint(0, (2**attempt) * JITTER_MS)
+                backoff = min(MAX_BACKOFF_MS, jitter)
+                time.sleep(backoff / 1000)

@@ -1605,7 +1605,6 @@ class PyDaftExecutionConfig:
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
-        write_partition_num_retries: int | None = None,
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
@@ -1635,8 +1634,6 @@ class PyDaftExecutionConfig:
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
-    @property
-    def write_partition_num_retries(self) -> int: ...
     @property
     def enable_aqe(self) -> bool: ...
     @property

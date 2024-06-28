@@ -284,7 +284,6 @@ def set_execution_config(
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
-    write_partition_num_retries: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
 ) -> DaftContext:
@@ -317,7 +316,6 @@ def set_execution_config(
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
         shuffle_aggregation_default_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
-        write_partition_num_retries: Number of times to retry writing out each MicroPartition. Defaults to 3
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
     """
@@ -341,7 +339,6 @@ def set_execution_config(
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
-            write_partition_num_retries=write_partition_num_retries,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
         )
