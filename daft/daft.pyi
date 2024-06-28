@@ -426,6 +426,13 @@ class FileInfos:
 
     def __len__(self) -> int: ...
 
+class HTTPConfig:
+    """
+    I/O configuration for accessing HTTP systems
+    """
+
+    user_agent: str | None
+
 class S3Config:
     """
     I/O configuration for accessing an S3-compatible system.
@@ -598,12 +605,14 @@ class IOConfig:
     s3: S3Config
     azure: AzureConfig
     gcs: GCSConfig
+    http: HTTPConfig
 
     def __init__(
         self,
         s3: S3Config | None = None,
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
+        http: HTTPConfig | None = None,
     ): ...
     @staticmethod
     def from_json(input: str) -> IOConfig:
@@ -617,6 +626,7 @@ class IOConfig:
         s3: S3Config | None = None,
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
+        http: HTTPConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig"""
         ...

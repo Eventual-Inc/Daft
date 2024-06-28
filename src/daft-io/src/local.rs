@@ -332,7 +332,10 @@ pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
 #[cfg(test)]
 
 mod tests {
+    use std::default;
     use std::io::Write;
+
+    use common_io_config::HTTPConfig;
 
     use crate::object_io::{FileMetadata, FileType, ObjectSource};
     use crate::Result;
@@ -344,7 +347,7 @@ mod tests {
         let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
-        let client = HttpSource::get_client().await?;
+        let client = HttpSource::get_client(&default::Default::default()).await?;
         let parquet_file = client.get(parquet_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
