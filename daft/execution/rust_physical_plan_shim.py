@@ -351,12 +351,6 @@ def write_lance(
     path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict[str, Any] | None,
+    kwargs: dict | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    return physical_plan.lance_write(
-        input,
-        path,
-        mode,
-        io_config,
-        kwargs
-    )
+    return physical_plan.lance_write(input, path, mode, io_config, kwargs)
