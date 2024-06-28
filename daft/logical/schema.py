@@ -76,6 +76,14 @@ class Schema:
             [(pa_field.name, DataType.from_arrow_type(pa_field.type)) for pa_field in pa_schema]
         )
 
+    def to_pyarrow_schema(self) -> pa.Schema:
+        """Converts a Daft Schema to a PyArrow Schema
+
+        Returns:
+            pa.Schema: PyArrow schema that corresponds to the provided Daft schema
+        """
+        return self._schema.to_pyarrow_schema()
+
     @classmethod
     def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
         assert isinstance(fields, list), f"Expected a list of field tuples, received: {fields}"
