@@ -10,17 +10,18 @@ use mur3::murmurhash3_x86_32;
 const SIMD_LANES: usize = 8;
 type S = Simd<u64, SIMD_LANES>;
 
-const MERSENNE_PRIME: u64 = (1 << 61) - 1;
-// const MERSENNE_SIMD: S = S::from_array([MERSENNE_PRIME; SIMD_LANES]);
-// const MERSENNE_EXP_SIMD: S = S::from_array([61; SIMD_LANES]);
+const MERSENNE_EXP: u64 = 61;
+const MERSENNE_PRIME: u64 = (1 << MERSENNE_EXP) - 1;
 const MAX_HASH: u64 = 0xffffffff;
 const MAX_HASH_SIMD: S = S::from_array([MAX_HASH; SIMD_LANES]);
 
+// Fails with probability <= 2^-58, which is good enough for hashing
 #[inline(always)]
 fn fast_simd_rem(x: S) -> S {
-    (x + x.shr(61)).bitand(MAX_HASH_SIMD)
+    (x + x.shr(MERSENNE_EXP)).bitand(MAX_HASH_SIMD)
 }
 
+// Calculate the minhash of permutations of hh, using SIMD.
 #[inline(always)]
 fn simd_min(hh: S, aa: &[S], bb: &[S], out: &mut [S]) {
     let mut h = hh;
@@ -48,10 +49,11 @@ fn rem_min(hh: &[u64], aa: &[u64], bb: &[u64], out: &mut [u64]) {
     }
 }
 
+// Precalculate the SIMD vectors of the permutations, to save time.
+// Output of this should be passed into the `perm_simd` argument of minhash.
 pub fn load_simd(v: &[u64]) -> Vec<S> {
     let num_hashes = v.len();
-    let num_hashes_aligned = (num_hashes + SIMD_LANES - 1) / SIMD_LANES * SIMD_LANES;
-    let num_simd = num_hashes_aligned / SIMD_LANES;
+    let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
 
     let mut v_simd: Vec<S> = Vec::with_capacity(num_simd);
     for i in 0..num_simd {
@@ -74,6 +76,7 @@ pub fn minhash(
 
     let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
 
+    // Compute the initial ngram hashes
     let spaces: Vec<usize> = s.match_indices(' ').map(|(i, _)| i).collect();
     let ngram_count = if spaces.len() < ngram_size {
         1
@@ -97,6 +100,7 @@ pub fn minhash(
             };
             hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed) as u64);
             if hashes.len() >= SIMD_LANES {
+                // We have enough hashes to run with SIMD
                 let hashes_simd = S::from_slice(&hashes);
                 simd_min(hashes_simd, perm_a_simd, perm_b_simd, &mut out);
                 hashes.clear();
@@ -104,6 +108,7 @@ pub fn minhash(
         }
     }
 
+    // Compute remainder of hashes that didn't fit into SIMD
     let mut rem_out: Vec<u64> = out
         .iter()
         .flat_map(|x| x.as_array())
