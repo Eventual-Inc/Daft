@@ -189,3 +189,27 @@ def test_str_to_datetime():
         run_kernel=lambda: s.str.to_datetime(format),
         resolvable=True,
     )
+
+
+@pytest.mark.parametrize("remove_punct", [False, True])
+@pytest.mark.parametrize("lowercase", [False, True])
+@pytest.mark.parametrize("nfd_unicode", [False, True])
+@pytest.mark.parametrize("white_space", [False, True])
+def test_str_normalize(remove_punct, lowercase, nfd_unicode, white_space):
+    s = Series.from_arrow(pa.array(["hello world", "Hello, world!", "Hêllø,   \nworłd!!"]), name="col")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col("col").str.normalize(
+            remove_punct=remove_punct,
+            lowercase=lowercase,
+            nfd_unicode=nfd_unicode,
+            white_space=white_space,
+        ),
+        run_kernel=lambda: s.str.normalize(
+            remove_punct=remove_punct,
+            lowercase=lowercase,
+            nfd_unicode=nfd_unicode,
+            white_space=white_space,
+        ),
+        resolvable=True,
+    )

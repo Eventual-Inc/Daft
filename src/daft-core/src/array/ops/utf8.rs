@@ -18,6 +18,8 @@ use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
 use num_traits::NumCast;
+use serde::{Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
@@ -347,6 +349,19 @@ pub enum PadPlacement {
     Left,
     Right,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Utf8NormalizeOptions {
+    pub remove_punct: bool,
+    pub lowercase: bool,
+    pub nfd_unicode: bool,
+    pub white_space: bool,
+}
+
+const PUNCTUATION: [char; 32] = [
+    '!', '\"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<',
+    '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~',
+];
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -1326,6 +1341,44 @@ impl Utf8Array {
         let result = BooleanArray::from((self.name(), arrow_result?));
         assert_eq!(result.len(), expected_size);
         Ok(result)
+    }
+
+    pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Utf8Array> {
+        let whitespace_regex = regex::Regex::new(r"\s+").expect("whitespace regex should compile");
+
+        let arrow_result = self
+            .as_arrow()
+            .iter()
+            .map(|maybe_s| {
+                if let Some(s) = maybe_s {
+                    let mut s = s.to_string();
+
+                    if opts.remove_punct {
+                        s = s.replace(PUNCTUATION, "");
+                    }
+
+                    if opts.lowercase {
+                        s = s.to_lowercase();
+                    }
+
+                    if opts.white_space {
+                        s = whitespace_regex
+                            .replace_all(s.as_str().trim(), " ")
+                            .to_string();
+                    }
+
+                    if opts.nfd_unicode {
+                        s = s.nfd().collect();
+                    }
+
+                    Ok(Some(s))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>

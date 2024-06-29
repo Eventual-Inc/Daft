@@ -820,6 +820,25 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and start._series is not None
         return Series._from_pyseries(self._series.utf8_substr(start._series, length._series))
 
+    def normalize(
+        self,
+        *,
+        remove_punct: bool = True,
+        lowercase: bool = True,
+        nfd_unicode: bool = True,
+        white_space: bool = True,
+    ) -> Series:
+        if not isinstance(remove_punct, bool):
+            raise ValueError(f"expected bool for remove_punct but got {type(remove_punct)}")
+        if not isinstance(lowercase, bool):
+            raise ValueError(f"expected bool for lowercase but got {type(lowercase)}")
+        if not isinstance(nfd_unicode, bool):
+            raise ValueError(f"expected bool for nfd_unicode but got {type(nfd_unicode)}")
+        if not isinstance(white_space, bool):
+            raise ValueError(f"expected bool for white_space but got {type(white_space)}")
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:

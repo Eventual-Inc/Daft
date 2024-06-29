@@ -44,6 +44,7 @@ regex = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
+unicode-normalization = "0.1.23"
 
 [dependencies.image]
 default-features = false

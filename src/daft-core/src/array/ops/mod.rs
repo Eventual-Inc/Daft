@@ -55,7 +55,7 @@ mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
-pub use utf8::PadPlacement;
+pub use utf8::{PadPlacement, Utf8NormalizeOptions};
 
 use common_error::DaftResult;
 
