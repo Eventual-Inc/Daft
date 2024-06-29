@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
@@ -10,7 +11,7 @@ use crate::{
     ChunkSpec, DataFileSource, ScanTask, ScanTaskRef,
 };
 
-type BoxScanTaskIter = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>;
+type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
 /// Coalesces ScanTasks by their [`ScanTask::size_bytes()`]
 ///
@@ -24,33 +25,30 @@ type BoxScanTaskIter = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>;
 /// * `scan_tasks`: A Boxed Iterator of ScanTaskRefs to perform merging on
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
-pub fn merge_by_sizes(
-    scan_tasks: BoxScanTaskIter,
-    min_size_bytes: usize,
-    max_size_bytes: usize,
-) -> BoxScanTaskIter {
+pub fn merge_by_sizes<'a>(
+    scan_tasks: BoxScanTaskIter<'a>,
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
     Box::new(MergeByFileSize {
         iter: scan_tasks,
-        min_size_bytes,
-        max_size_bytes,
+        cfg,
         accumulator: None,
     })
 }
 
-struct MergeByFileSize {
-    iter: BoxScanTaskIter,
-    min_size_bytes: usize,
-    max_size_bytes: usize,
+struct MergeByFileSize<'a> {
+    iter: BoxScanTaskIter<'a>,
+    cfg: &'a DaftExecutionConfig,
 
     // Current element being accumulated on
     accumulator: Option<ScanTaskRef>,
 }
 
-impl MergeByFileSize {
+impl<'a> MergeByFileSize<'a> {
     fn accumulator_ready(&self) -> bool {
         if let Some(acc) = &self.accumulator
-            && let Some(acc_bytes) = acc.size_bytes()
-            && acc_bytes >= self.min_size_bytes
+            && let Some(acc_bytes) = acc.estimate_in_memory_size_bytes(Some(self.cfg))
+            && acc_bytes >= self.cfg.scan_tasks_min_size_bytes
         {
             true
         } else {
@@ -69,10 +67,12 @@ impl MergeByFileSize {
             && other.storage_config == accumulator.storage_config
             && other.pushdowns == accumulator.pushdowns;
 
-        let sum_smaller_than_max_size_bytes = if let Some(child_bytes) = other.size_bytes()
-            && let Some(accumulator_bytes) = accumulator.size_bytes()
+        let sum_smaller_than_max_size_bytes = if let Some(child_bytes) =
+            other.estimate_in_memory_size_bytes(Some(self.cfg))
+            && let Some(accumulator_bytes) =
+                accumulator.estimate_in_memory_size_bytes(Some(self.cfg))
         {
-            child_bytes + accumulator_bytes <= self.max_size_bytes
+            child_bytes + accumulator_bytes <= self.cfg.scan_tasks_max_size_bytes
         } else {
             false
         };
@@ -81,7 +81,7 @@ impl MergeByFileSize {
     }
 }
 
-impl Iterator for MergeByFileSize {
+impl<'a> Iterator for MergeByFileSize<'a> {
     type Item = DaftResult<ScanTaskRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -104,7 +104,11 @@ impl Iterator for MergeByFileSize {
                 None => return self.accumulator.take().map(Ok),
             };
 
-            if next_item.size_bytes().is_none() || !self.can_merge(&next_item) {
+            if next_item
+                .estimate_in_memory_size_bytes(Some(self.cfg))
+                .is_none()
+                || !self.can_merge(&next_item)
+            {
                 return self.accumulator.replace(next_item).map(Ok);
             }
 
