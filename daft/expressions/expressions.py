@@ -121,7 +121,6 @@ def col(name: str) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-
     Args:
         name: Name of column
 
@@ -363,20 +362,21 @@ class Expression:
         Example:
 
             >>> import daft
+            >>> from daft import DataType, col
             >>> df = daft.from_pydict({"float": [1.0, 2.5, None]})
-            >>> col("float").cast(DataType.int64())
+            >>> df = df.select(col("float").cast(DataType.int64()))
             >>> df.show()
-            ╭─────────╮
-            │ float   │
-            │ ---     │
-            │ Float64 │
-            ╞═════════╡
-            │ 1       │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ 2.5     │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ None    │
-            ╰─────────╯
+            ╭───────╮
+            │ float │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ None  │
+            ╰───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
@@ -577,7 +577,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-
         Args:
             percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
                 float or a list of floats.
@@ -669,12 +668,10 @@ class Expression:
 
         Example:
             >>> import daft
+            >>> from daft import DataType
             >>> df = daft.from_pydict({"x": ["1", "2", "tim"]})
-            >>> def f(x_val: str) -> int:
-            >>>     return int(x_val) if x_val.isnumeric() else 0
-            >>>
+            >>> def f(x_val: str) -> int: return int(x_val) if x_val.isnumeric() else 0
             >>> df.with_column("num_x", df['x'].apply(f, return_dtype=DataType.int64())).collect()
-
             ╭──────┬───────╮
             │ x    ┆ num_x │
             │ ---  ┆ ---   │
@@ -708,6 +705,7 @@ class Expression:
 
         Example:
             >>> import daft
+            >>> from numpy import nan
             >>> df = daft.from_pydict({"x": [1., None, nan]})
             >>> df = df.select(df['x'].is_null())
             >>> df.collect()
@@ -735,9 +733,8 @@ class Expression:
         """Checks if values in the Expression are not Null (a special value indicating missing data)
 
         Example:
-            >>> # [1., None, NaN] -> [True, False, True]
-            >>> col("x").not_null()
             >>> import daft
+            >>> from numpy import nan
             >>> df = daft.from_pydict({"x": [1., None, nan]})
             >>> df = df.select(df['x'].not_null())
             >>> df.collect()
@@ -847,6 +844,7 @@ class Expression:
             ╰─────────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
+
         Returns:
             Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
         """
@@ -1003,6 +1001,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
+            >>> from numpy import nan
             >>> df = daft.from_pydict({"data": [1., None, nan]})
             >>> df = df.select(df["data"].float.is_nan())
             >>> df.collect()
@@ -1064,12 +1063,25 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
         Example:
-            >>> # [1., None, NaN] -> [True, None, False]
+            >>> import daft
+            >>> from numpy import nan
             >>> df = daft.from_pydict({"x": [1., None, nan]})
-            >>> df = df.select(df["x"].not_nan())
+            >>> df = df.select(df["x"].float.not_nan())
             >>> df.collect()
-            >>> col("x").not_nan()
-            #FLAGGED
+            ╭─────────╮
+            │ x       │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ None    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ false   │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
         Returns:
             Expression: Boolean Expression indicating whether values are not invalid.
         """
@@ -1079,6 +1091,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         """Fills NaN values in the Expression with the provided fill_value
 
         Example:
+            >>> import daft
+            >>> from numpy import nan
             >>> df = daft.from_pydict({"data": [1.1, float("nan"), 3.3]})
             >>> df = df.with_column("filled", df["data"].float.fill_nan(2.2))
             >>> df.show()
@@ -1110,7 +1124,24 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the date for a datetime column
 
         Example:
-            >>> col("x").dt.date()
+            >>> import daft
+            >>> import datetime
+            >>> df = daft.from_pydict({"x": [datetime.datetime(2021, 1, 1, 0, 1, 1),datetime.datetime(2021, 1, 1, 0, 1, 59),datetime.datetime(2021, 1, 1, 0, 2, 0),], })
+            >>> df = df.with_column("date", df["x"].dt.date())
+            >>> df.show()
+            ╭───────────────────────────────┬────────────╮
+            │ x                             ┆ date       │
+            │ ---                           ┆ ---        │
+            │ Timestamp(Microseconds, None) ┆ Date       │
+            ╞═══════════════════════════════╪════════════╡
+            │ 2021-01-01 00:01:01           ┆ 2021-01-01 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:01:59           ┆ 2021-01-01 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:02:00           ┆ 2021-01-01 │
+            ╰───────────────────────────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a Date expression
@@ -1121,7 +1152,24 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the day for a datetime column
 
         Example:
-            >>> col("x").dt.day()
+            >>> import daft
+            >>> import datetime
+            >>> df = daft.from_pydict({"x": [datetime.datetime(2021, 1, 1, 0, 1, 1),datetime.datetime(2021, 1, 1, 0, 1, 59),datetime.datetime(2021, 1, 1, 0, 2, 0),], })
+            >>> df = df.with_column("day", df["x"].dt.day())
+            >>> df.show()
+            ╭───────────────────────────────┬────────╮
+            │ x                             ┆ day    │
+            │ ---                           ┆ ---    │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
+            ╞═══════════════════════════════╪════════╡
+            │ 2021-01-01 00:01:01           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:01:59           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:02:00           ┆ 1      │
+            ╰───────────────────────────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
@@ -1132,7 +1180,24 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the day for a datetime column
 
         Example:
-            >>> col("x").dt.day()
+            >>> import daft
+            >>> import datetime
+            >>> df = daft.from_pydict({"x": [datetime.datetime(2021, 1, 1, 0, 1, 1),datetime.datetime(2021, 1, 1, 0, 1, 59),datetime.datetime(2021, 1, 1, 0, 2, 0),], })
+            >>> df = df.with_column("hour", df["x"].dt.hour())
+            >>> df.show()
+            ╭───────────────────────────────┬────────╮
+            │ x                             ┆ hour   │
+            │ ---                           ┆ ---    │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
+            ╞═══════════════════════════════╪════════╡
+            │ 2021-01-01 00:01:01           ┆ 0      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:01:59           ┆ 0      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:02:00           ┆ 0      │
+            ╰───────────────────────────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
@@ -1143,7 +1208,24 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the minute for a datetime column
 
         Example:
-            >>> col("x").dt.minute()
+            >>> import daft
+            >>> import datetime
+            >>> df = daft.from_pydict({"x": [datetime.datetime(2021, 1, 1, 0, 1, 1),datetime.datetime(2021, 1, 1, 0, 1, 59),datetime.datetime(2021, 1, 1, 0, 2, 0),], })
+            >>> df = df.with_column("minute", df["x"].dt.minute())
+            >>> df.show()
+            ╭───────────────────────────────┬────────╮
+            │ x                             ┆ minute │
+            │ ---                           ┆ ---    │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
+            ╞═══════════════════════════════╪════════╡
+            │ 2021-01-01 00:01:01           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:01:59           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:02:00           ┆ 2      │
+            ╰───────────────────────────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a UInt32 expression with just the minute extracted from a datetime column
@@ -1154,7 +1236,24 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the second for a datetime column
 
         Example:
-            >>> col("x").dt.second()
+            >>> import daft
+            >>> import datetime
+            >>> df = daft.from_pydict({"x": [datetime.datetime(2021, 1, 1, 0, 1, 1),datetime.datetime(2021, 1, 1, 0, 1, 59),datetime.datetime(2021, 1, 1, 0, 2, 0),], })
+            >>> df = df.with_column("second", df["x"].dt.second())
+            >>> df.show()
+            ╭───────────────────────────────┬────────╮
+            │ x                             ┆ second │
+            │ ---                           ┆ ---    │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
+            ╞═══════════════════════════════╪════════╡
+            │ 2021-01-01 00:01:01           ┆ 1      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:01:59           ┆ 59     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 00:02:00           ┆ 0      │
+            ╰───────────────────────────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a UInt32 expression with just the second extracted from a datetime column
@@ -1225,12 +1324,14 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             │ ---                           ┆ ---                           │
             │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
             ╞═══════════════════════════════╪═══════════════════════════════╡
-            │ 2021-01-01T00:01:01.000000    ┆ 2021-01-01T00:01:00.000000    │
+            │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:00           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01T00:01:59.000000    ┆ 2021-01-01T00:01:00.000000    │
+            │ 2021-01-01 00:01:59           ┆ 2021-01-01 00:01:00           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01T00:02:00.000000    ┆ 2021-01-01T00:02:00.000000    │
+            │ 2021-01-01 00:02:00           ┆ 2021-01-01 00:02:00           │
             ╰───────────────────────────────┴───────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
@@ -1251,6 +1352,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.contains("foo"))
+            >>> df.show()
             ╭─────────╮
             │ x       │
             │ ---     │
@@ -1513,6 +1615,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If index is 0, the entire match is returned. If the pattern does not match or the group does not exist, an empty list is returned.
 
         Example:
+            >>> import daft
             >>> regex = r"(\d)(\d*)"
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
             >>> df.with_column("match", df["x"].str.extract_all(regex)).collect()
@@ -1704,7 +1807,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz"]})
-            >>> df = df.select(df["x"].str.lstrip()
+            >>> df = df.select(df["x"].str.lstrip())
             >>> df.show()
             ╭──────╮
             │ x    │
@@ -1759,7 +1862,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.reverse())
-            >>> f.show()
+            >>> df.show()
             ╭──────╮
             │ x    │
             │ ---  │
@@ -1800,7 +1903,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╰──────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            col("x").str.capitalize()
 
         Returns:
             Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
@@ -2091,6 +2193,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
             >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
             >>> df.show()
@@ -2106,8 +2209,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             │ None       ┆ None       │
             ╰────────────┴────────────╯
 
-            #FLAGGED
-            #AttributeError: 'ExpressionStringNamespace' object has no attribute 'to_date'
         Returns:
             Expression: a Date expression which is parsed by given format
         """
@@ -2152,8 +2253,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ None                          ┆ None                                           │
             ╰───────────────────────────────┴────────────────────────────────────────────────╯
-            #FLAGGED
-            # cannot import to_datetime
+
         Returns:
             Expression: a DateTime expression which is parsed by given format and timezone
         """
