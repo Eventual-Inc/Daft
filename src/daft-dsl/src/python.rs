@@ -295,6 +295,16 @@ impl PyExpr {
         Ok(ln(self.into()).into())
     }
 
+    pub fn shift_left(&self, bits: &Self) -> PyResult<Self> {
+        use functions::numeric::shift_left;
+        Ok(shift_left(self.into(), bits.into()).into())
+    }
+
+    pub fn shift_right(&self, bits: &Self) -> PyResult<Self> {
+        use functions::numeric::shift_right;
+        Ok(shift_right(self.into(), bits.into()).into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         use functions::numeric::exp;
         Ok(exp(self.into()).into())

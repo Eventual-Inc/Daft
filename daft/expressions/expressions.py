@@ -1696,6 +1696,24 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.list_max())
 
+    def shift_left(self, bits: int | Expression) -> Expression:
+        """Shifts each element of the list to the left by a specified number of bits
+
+        Returns:
+            Expression: an expression with the type of the list values left shifted by bits
+        """
+        bits_expr = Expression._to_expression(bits)
+        return Expression._from_pyexpr(self._expr.shift_left(bits_expr._expr))
+
+    def shift_right(self, bits: int | Expression) -> Expression:
+        """Shifts each element of the list to the right by a specified number of bits
+
+        Returns:
+            Expression: an expression with the type of the list values right shifted by bits
+        """
+        bits_expr = Expression._to_expression(bits)
+        return Expression._from_pyexpr(self._expr.shift_right(bits_expr._expr))
+
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:

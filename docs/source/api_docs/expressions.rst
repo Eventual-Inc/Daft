@@ -67,6 +67,8 @@ Numeric
     Expression.log
     Expression.ln
     Expression.exp
+    Expression.shift_left
+    Expression.shift_right
 
 .. _api-comparison-expression:
 

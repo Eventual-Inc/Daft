@@ -315,6 +315,14 @@ impl PySeries {
         Ok((self.series).max(None)?.into())
     }
 
+    pub fn shift_left(&self, bits: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_left(&bits.series)?.into())
+    }
+
+    pub fn shift_right(&self, bits: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_right(&bits.series)?.into())
+    }
+
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok((self.series).agg_list(None)?.into())
     }

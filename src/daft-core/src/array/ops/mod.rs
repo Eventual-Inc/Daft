@@ -39,6 +39,7 @@ mod pairwise;
 mod repr;
 mod round;
 mod search_sorted;
+mod shift;
 mod sign;
 mod sketch_percentile;
 mod sort;

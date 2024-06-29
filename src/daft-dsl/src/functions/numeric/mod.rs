@@ -4,6 +4,7 @@ mod exp;
 mod floor;
 mod log;
 mod round;
+mod shift;
 mod sign;
 mod sqrt;
 mod trigonometry;
@@ -49,6 +50,8 @@ pub enum NumericExpr {
     Log(FloatWrapper<f64>),
     Ln,
     Exp,
+    ShiftRight,
+    ShiftLeft,
 }
 
 impl NumericExpr {
@@ -76,6 +79,8 @@ impl NumericExpr {
             Log10 => &LogEvaluator(log::LogFunction::Log10),
             Log(_) => &LogEvaluator(log::LogFunction::Log),
             Ln => &LogEvaluator(log::LogFunction::Ln),
+            ShiftLeft => &shift::ShiftEvaluator(shift::ShiftFunction::Left),
+            ShiftRight => &shift::ShiftEvaluator(shift::ShiftFunction::Right),
             Exp => &ExpEvaluator {},
         }
     }
@@ -237,6 +242,22 @@ pub fn ln(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Ln),
         inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn shift_left(input: ExprRef, shift: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ShiftLeft),
+        inputs: vec![input, shift],
+    }
+    .into()
+}
+
+pub fn shift_right(input: ExprRef, shift: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ShiftRight),
+        inputs: vec![input, shift],
     }
     .into()
 }
