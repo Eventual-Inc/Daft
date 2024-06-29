@@ -1825,26 +1825,6 @@ class ExpressionMapNamespace(ExpressionNamespace):
             │ }]        ┆       │
             ╰───────────┴───────╯
             (Showing first 3 of 3 rows)
-            >>>
-            >>> # you may also use the "column.key" syntax to get map values
-            >>> df2 = df.with_column("b", df["map_col.b"])
-            >>> df2.show()
-            ╭───────────┬───────╮
-            │ map_col   ┆ b     │
-            │ ---       ┆ ---   │
-            │ Map[Utf8] ┆ Int64 │
-            ╞═══════════╪═══════╡
-            │ [{key: a, ┆ None  │
-            │ value: 1, ┆       │
-            │ }]        ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []        ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: b, ┆ 2     │
-            │ value: 2, ┆       │
-            │ }]        ┆       │
-            ╰───────────┴───────╯
-            (Showing first 3 of 3 rows)
 
         Args:
             key: the key to retrieve
