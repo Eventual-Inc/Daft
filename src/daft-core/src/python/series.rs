@@ -8,7 +8,11 @@ use pyo3::{
 };
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{
+        ops::{DaftLogical, Utf8NormalizeOptions},
+        pseudo_arrow::PseudoArrowArray,
+        DataArray,
+    },
     count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
     ffi,
@@ -486,6 +490,23 @@ impl PySeries {
 
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
         Ok(self.series.utf8_to_datetime(format, timezone)?.into())
+    }
+
+    pub fn utf8_normalize(
+        &self,
+        remove_punct: bool,
+        lowercase: bool,
+        nfd_unicode: bool,
+        white_space: bool,
+    ) -> PyResult<Self> {
+        let opts = Utf8NormalizeOptions {
+            remove_punct,
+            lowercase,
+            nfd_unicode,
+            white_space,
+        };
+
+        Ok(self.series.utf8_normalize(opts)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {

@@ -1664,6 +1664,47 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
 
+    def normalize(
+        self,
+        *,
+        remove_punct: bool = True,
+        lowercase: bool = True,
+        nfd_unicode: bool = True,
+        white_space: bool = True,
+    ):
+        """Normalizes a string for more useful deduplication.
+
+        .. NOTE::
+            All processing options are on by default.
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
+            >>> df = df.with_column("normalized", df["x"].str.normalize())
+            >>> df.show()
+            ╭───────────────┬─────────────╮
+            │ x             ┆ normalized  │
+            │ ---           ┆ ---         │
+            │ Utf8          ┆ Utf8        │
+            ╞═══════════════╪═════════════╡
+            │ hello world   ┆ hello world │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ Hello, world! ┆ hello world │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ HELLO,        ┆ hello world │
+            │ WORLD!!!!     ┆             │
+            ╰───────────────┴─────────────╯
+
+        Args:
+            remove_punct: Whether to remove all punctuation (ASCII).
+            lowercase: Whether to convert the string to lowercase.
+            nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
+            white_space: Whether to normalize whitespace, replacing newlines etc with spaces and removing double spaces.
+
+        Returns:
+            Expression: a String expression which is normalized.
+        """
+        return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

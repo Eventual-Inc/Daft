@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
@@ -685,6 +686,24 @@ impl PyExpr {
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
         use crate::functions::utf8::to_datetime;
         Ok(to_datetime(self.into(), format, timezone).into())
+    }
+
+    pub fn utf8_normalize(
+        &self,
+        remove_punct: bool,
+        lowercase: bool,
+        nfd_unicode: bool,
+        white_space: bool,
+    ) -> PyResult<Self> {
+        use crate::functions::utf8::normalize;
+        let opts = Utf8NormalizeOptions {
+            remove_punct,
+            lowercase,
+            nfd_unicode,
+            white_space,
+        };
+
+        Ok(normalize(self.into(), opts).into())
     }
 
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {

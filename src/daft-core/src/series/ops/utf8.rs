@@ -1,4 +1,4 @@
-use crate::array::ops::PadPlacement;
+use crate::array::ops::{PadPlacement, Utf8NormalizeOptions};
 use crate::series::array_impl::IntoSeries;
 use crate::series::Series;
 use crate::{datatypes::*, with_match_integer_daft_types};
@@ -246,5 +246,9 @@ impl Series {
 
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone)?.into_series()))
+    }
+
+    pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
     }
 }

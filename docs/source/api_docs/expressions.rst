@@ -150,6 +150,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.substr
    Expression.str.to_date
    Expression.str.to_datetime
+   Expression.str.normalize
 
 .. _api-float-expression-operations:
 
