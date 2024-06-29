@@ -56,6 +56,7 @@ OPS = [
     (ops.sub, "-"),
     (ops.mul, "*"),
     (ops.truediv, "/"),
+    (ops.floordiv, "//"),
     (ops.mod, "%"),
     (ops.lt, "<"),
     (ops.le, "<="),

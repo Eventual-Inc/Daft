@@ -254,6 +254,15 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr / self._expr)
 
+    def __floordiv__(self, other: object) -> Expression:
+        """Performs floor division between two expressions (``e1 // e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr // expr._expr)
+
+    def __rfloordiv__(self, other: object) -> Expression:
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(expr._expr // self._expr)
+
     def __mod__(self, other: Expression) -> Expression:
         """Takes the mod of two numeric expressions (``e1 % e2``)"""
         expr = Expression._to_expression(other)
