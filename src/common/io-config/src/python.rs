@@ -127,15 +127,35 @@ pub struct IOConfig {
     pub config: config::IOConfig,
 }
 
+/// Create configurations to be used when accessing HTTP URLs.
+///
+/// Args:
+///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
+///
+/// Example:
+///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1"))
+///     >>> daft.read_parquet("http://some-path", io_config=io_config)
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct HTTPConfig {
+    pub config: crate::HTTPConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
-    pub fn new(s3: Option<S3Config>, azure: Option<AzureConfig>, gcs: Option<GCSConfig>) -> Self {
+    pub fn new(
+        s3: Option<S3Config>,
+        azure: Option<AzureConfig>,
+        gcs: Option<GCSConfig>,
+        http: Option<HTTPConfig>,
+    ) -> Self {
         IOConfig {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
                 azure: azure.unwrap_or_default().config,
                 gcs: gcs.unwrap_or_default().config,
+                http: http.unwrap_or_default().config,
             },
         }
     }
@@ -145,6 +165,7 @@ impl IOConfig {
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
+        http: Option<HTTPConfig>,
     ) -> Self {
         IOConfig {
             config: config::IOConfig {
@@ -153,6 +174,9 @@ impl IOConfig {
                     .map(|azure| azure.config)
                     .unwrap_or(self.config.azure.clone()),
                 gcs: gcs.map(|gcs| gcs.config).unwrap_or(self.config.gcs.clone()),
+                http: http
+                    .map(|http| http.config)
+                    .unwrap_or(self.config.http.clone()),
             },
         }
     }
@@ -182,6 +206,14 @@ impl IOConfig {
     pub fn gcs(&self) -> PyResult<GCSConfig> {
         Ok(GCSConfig {
             config: self.config.gcs.clone(),
+        })
+    }
+
+    /// Configuration to be used when accessing Azure URLs
+    #[getter]
+    pub fn http(&self) -> PyResult<HTTPConfig> {
+        Ok(HTTPConfig {
+            config: self.config.http.clone(),
         })
     }
 
@@ -826,6 +858,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
+    parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
