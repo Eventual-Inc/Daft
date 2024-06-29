@@ -358,11 +358,6 @@ pub struct Utf8NormalizeOptions {
     pub white_space: bool,
 }
 
-const PUNCTUATION: [char; 32] = [
-    '!', '\"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<',
-    '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~',
-];
-
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
@@ -1344,7 +1339,7 @@ impl Utf8Array {
     }
 
     pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Utf8Array> {
-        let whitespace_regex = regex::Regex::new(r"\s+").expect("whitespace regex should compile");
+        let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
 
         let arrow_result = self
             .as_arrow()
@@ -1354,7 +1349,7 @@ impl Utf8Array {
                     let mut s = s.to_string();
 
                     if opts.remove_punct {
-                        s = s.replace(PUNCTUATION, "");
+                        s = s.chars().filter(|c| !c.is_ascii_punctuation()).collect();
                     }
 
                     if opts.lowercase {
