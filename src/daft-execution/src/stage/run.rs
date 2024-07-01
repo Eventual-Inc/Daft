@@ -1,9 +1,14 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use common_error::DaftResult;
+use daft_dsl::common_treenode::{self, TreeNode};
 use daft_micropartition::MicroPartition;
 use daft_plan::QueryStageOutput;
 
+use super::{
+    planner::physical_plan_to_stage,
+    runner::{ExchangeStageRunner, SinkStageRunner},
+};
 use crate::{
     executor::{
         local::{
@@ -15,11 +20,6 @@ use crate::{
     },
     partition::PartitionRef,
     stage::Stage,
-};
-
-use super::{
-    planner::physical_plan_to_stage,
-    runner::{ExchangeStageRunner, SinkStageRunner},
 };
 
 /// Run a stage locally and synchronously, with all tasks executed serially.
