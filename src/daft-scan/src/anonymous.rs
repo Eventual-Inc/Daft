@@ -80,6 +80,7 @@ impl ScanOperator for AnonymousScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
+                    parquet_metadata: None,
                 }],
                 file_format_config.clone(),
                 schema.clone(),

@@ -53,9 +53,10 @@ def read_parquet(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of Parquet filepaths")
 
+    is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not context.get_context().is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = not is_ray_runner if _multithreaded_io is None else _multithreaded_io
 
     if isinstance(coerce_int96_timestamp_unit, str):
         coerce_int96_timestamp_unit = TimeUnit.from_str(coerce_int96_timestamp_unit)
@@ -76,5 +77,6 @@ def read_parquet(
         schema=schema_hints,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        is_ray_runner=is_ray_runner,
     )
     return DataFrame(builder)

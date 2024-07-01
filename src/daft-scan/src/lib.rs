@@ -16,6 +16,7 @@ use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
 use itertools::Itertools;
+use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
@@ -124,6 +125,7 @@ pub enum DataFileSource {
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
+        parquet_metadata: Option<Arc<FileMetaData>>,
     },
     CatalogDataFile {
         path: String,
@@ -161,6 +163,15 @@ impl DataFileSource {
             | Self::DatabaseDataSource { path, .. } => path,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { module, .. } => module,
+        }
+    }
+
+    pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
+        match self {
+            Self::AnonymousDataFile {
+                parquet_metadata, ..
+            } => parquet_metadata.as_ref(),
+            _ => None,
         }
     }
 
@@ -224,6 +235,7 @@ impl DataFileSource {
                 metadata,
                 partition_spec,
                 statistics,
+                parquet_metadata: _,
             }
             | Self::DatabaseDataSource {
                 path,
