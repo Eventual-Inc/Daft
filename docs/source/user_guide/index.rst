@@ -10,6 +10,7 @@ Daft User Guide
     poweruser
     integrations
     tutorials
+    fotw/index
 
 Welcome to **Daft**!
 
