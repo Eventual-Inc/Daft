@@ -175,6 +175,20 @@ def is_numeric(dt: DataType) -> bool:
     )
 
 
+def is_integer(dt: DataType) -> bool:
+    """Checks if this type is an integer type"""
+    return (
+        dt == DataType.int8()
+        or dt == DataType.int16()
+        or dt == DataType.int32()
+        or dt == DataType.int64()
+        or dt == DataType.uint8()
+        or dt == DataType.uint16()
+        or dt == DataType.uint32()
+        or dt == DataType.uint64()
+    )
+
+
 def is_comparable(dt: DataType):
     """Checks if this type is a comparable type"""
     return (

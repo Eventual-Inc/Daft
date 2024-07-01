@@ -29,10 +29,11 @@ impl FunctionEvaluator for ShiftEvaluator {
             )));
         }
         let field = inputs.first().unwrap().to_field(schema)?;
-        if !field.dtype.is_numeric() {
+        let shift = inputs.last().unwrap().to_field(schema)?;
+        if !field.dtype.is_integer() || !shift.dtype.is_integer() {
             return Err(DaftError::TypeError(format!(
-                "Expected input to shift to be numeric, got {}",
-                field.dtype
+                "Expected inputs to shift to be integers, got {} and {}",
+                field.dtype, shift.dtype
             )));
         }
         Ok(field)

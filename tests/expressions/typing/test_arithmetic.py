@@ -10,6 +10,7 @@ from daft.expressions import col
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
     has_supertype,
+    is_integer,
     is_numeric,
 )
 
@@ -214,4 +215,24 @@ def test_sqrt(unary_data_fixture):
         expr=col(arg.name()).sqrt(),
         run_kernel=lambda: arg.sqrt(),
         resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_shift_left(binary_data_fixture):
+    lhs, rhs = binary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=binary_data_fixture,
+        expr=col(lhs.name()).shift_left(col(rhs.name())),
+        run_kernel=lambda: lhs.shift_left(rhs),
+        resolvable=is_integer(lhs.datatype()) and is_integer(rhs.datatype()),
+    )
+
+
+def test_shift_right(binary_data_fixture):
+    lhs, rhs = binary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=binary_data_fixture,
+        expr=col(lhs.name()).shift_right(col(rhs.name())),
+        run_kernel=lambda: lhs.shift_right(rhs),
+        resolvable=is_integer(lhs.datatype()) and is_integer(rhs.datatype()),
     )
