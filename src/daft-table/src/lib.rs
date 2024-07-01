@@ -385,9 +385,9 @@ impl Table {
                     NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
                     GtEq => Ok(lhs.gte(&rhs)?.into_series()),
                     Gt => Ok(lhs.gt(&rhs)?.into_series()),
-                    And => Ok(lhs.and(&rhs)?.into_series()),
-                    Or => Ok(lhs.or(&rhs)?.into_series()),
-                    Xor => Ok(lhs.xor(&rhs)?.into_series()),
+                    And => lhs.and(&rhs),
+                    Or => lhs.or(&rhs),
+                    Xor => lhs.xor(&rhs),
                     _ => panic!("{op:?} not supported"),
                 }
             }

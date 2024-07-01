@@ -12,18 +12,28 @@ impl DataType {
         use DataType::*;
         match (self, other) {
             #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(()),
-            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(()),
-            _ => Err(()),
-        }
-        .map(|()| Boolean)
-        .map_err(|()| {
-            DaftError::TypeError(format!(
+            (Python, _) | (_, Python) => Ok(Boolean),
+            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(Boolean),
+            (s, o) if s.is_integer() && o.is_integer() => {
+                let dtype = try_numeric_supertype(s, o)?;
+                if dtype.is_floating() {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot perform logic on types: {}, {}",
+                        self, other
+                    )))
+                } else {
+                    Ok(dtype)
+                }
+            }
+            (s, o) if (s.is_integer() && o.is_null()) => Ok(s.clone()),
+            (s, o) if (s.is_null() && o.is_integer()) => Ok(o.clone()),
+            _ => Err(DaftError::TypeError(format!(
                 "Cannot perform logic on types: {}, {}",
                 self, other
-            ))
-        })
+            ))),
+        }
     }
+
     pub fn comparison_op(
         &self,
         other: &Self,

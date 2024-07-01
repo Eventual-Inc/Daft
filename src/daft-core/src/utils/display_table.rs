@@ -34,19 +34,42 @@ pub fn display_date32(val: i32) -> String {
 
 pub fn display_time64(val: i64, unit: &TimeUnit) -> String {
     let time = match unit {
-        TimeUnit::Nanoseconds => chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+        TimeUnit::Nanoseconds => Ok(chrono::NaiveTime::from_num_seconds_from_midnight_opt(
             (val / 1_000_000_000) as u32,
             (val % 1_000_000_000) as u32,
         )
-        .unwrap(),
-        TimeUnit::Microseconds => chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+        .unwrap()),
+        TimeUnit::Microseconds => Ok(chrono::NaiveTime::from_num_seconds_from_midnight_opt(
             (val / 1_000_000) as u32,
             ((val % 1_000_000) * 1_000) as u32,
         )
-        .unwrap(),
-        _ => panic!("Unsupported time unit for time64: {unit}"),
+        .unwrap()),
+        TimeUnit::Milliseconds => {
+            let seconds = u32::try_from(val / 1_000);
+            let nanoseconds = u32::try_from((val % 1_000) * 1_000_000);
+            match (seconds, nanoseconds) {
+                (Ok(secs), Ok(nano)) => {
+                    Ok(chrono::NaiveTime::from_num_seconds_from_midnight_opt(secs, nano).unwrap())
+                }
+                (Err(e), _) => Err(e),
+                (_, Err(e)) => Err(e),
+            }
+        }
+        TimeUnit::Seconds => {
+            let seconds = u32::try_from(val);
+            match seconds {
+                Ok(secs) => {
+                    Ok(chrono::NaiveTime::from_num_seconds_from_midnight_opt(secs, 0).unwrap())
+                }
+                Err(e) => Err(e),
+            }
+        }
     };
-    format!("{time}")
+
+    match time {
+        Ok(time) => format!("{time}"),
+        Err(e) => format!("Display Error: {e}"),
+    }
 }
 
 pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -> String {

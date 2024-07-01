@@ -14,13 +14,13 @@ use crate::{
     source_info::SourceInfo,
     ResourceRequest,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::{col, ApproxPercentileParams, Expr, ExprRef};
+use daft_dsl::{col, ExprRef};
 use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -47,101 +47,6 @@ pub struct LogicalPlanBuilder {
 impl LogicalPlanBuilder {
     pub fn new(plan: Arc<LogicalPlan>) -> Self {
         Self { plan }
-    }
-}
-
-fn check_for_agg(expr: &ExprRef) -> bool {
-    use Expr::*;
-
-    match expr.as_ref() {
-        Agg(_) => true,
-        Column(_) | Literal(_) => false,
-        Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
-        BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
-        Function { inputs, .. } => inputs.iter().any(check_for_agg),
-        IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
-        Between(v, l, u) => check_for_agg(v) || check_for_agg(l) || check_for_agg(u),
-        IfElse {
-            if_true,
-            if_false,
-            predicate,
-        } => check_for_agg(if_true) || check_for_agg(if_false) || check_for_agg(predicate),
-    }
-}
-
-fn err_if_agg(fn_name: &str, exprs: &Vec<ExprRef>) -> DaftResult<()> {
-    for e in exprs {
-        if check_for_agg(e) {
-            return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are not currently supported in {fn_name}: {e}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
-                fn_name=fn_name,
-                e=e
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
-    use Expr::*;
-
-    match expr {
-        Agg(agg_expr) => Ok(agg_expr.clone()),
-        Function { func, inputs } => Ok(daft_dsl::AggExpr::MapGroups {
-            func: func.clone(),
-            inputs: inputs.clone(),
-        }),
-        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
-            use daft_dsl::AggExpr::*;
-
-            // reorder expressions so that alias goes before agg
-            match agg_expr {
-                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
-                Sum(e) => Sum(Alias(e, name.clone()).into()),
-                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
-                ApproxPercentile(ApproxPercentileParams {
-                    child: e,
-                    percentiles,
-                    force_list_output,
-                }) => ApproxPercentile(ApproxPercentileParams {
-                    child: Alias(e, name.clone()).into(),
-                    percentiles,
-                    force_list_output,
-                }),
-                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
-                Mean(e) => Mean(Alias(e, name.clone()).into()),
-                Min(e) => Min(Alias(e, name.clone()).into()),
-                Max(e) => Max(Alias(e, name.clone()).into()),
-                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
-                List(e) => List(Alias(e, name.clone()).into()),
-                Concat(e) => Concat(Alias(e, name.clone()).into()),
-                MapGroups { func, inputs } => MapGroups {
-                    func,
-                    inputs: inputs
-                        .into_iter()
-                        .map(|input| input.alias(name.clone()))
-                        .collect(),
-                },
-            }
-        }),
-        // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions
-        // as long as the final value always has a cardinality of 1.
-        _ => Err(DaftError::ValueError(format!(
-            "Expected aggregation expression, but got: {expr}"
-        ))),
-    }
-}
-
-fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
-    let agg_expr = extract_agg_expr(expr)?;
-    let has_nested_agg = agg_expr.children().iter().any(check_for_agg);
-
-    if has_nested_agg {
-        Err(DaftError::ValueError(format!(
-            "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-        )))
-    } else {
-        Ok(agg_expr)
     }
 }
 
@@ -204,8 +109,6 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
-        err_if_agg("project", &to_select)?;
-
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
         Ok(logical_plan.into())
@@ -216,8 +119,6 @@ impl LogicalPlanBuilder {
         columns: Vec<ExprRef>,
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
-        err_if_agg("with_columns", &columns)?;
-
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -272,8 +173,6 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        err_if_agg("filter", &vec![predicate.to_owned()])?;
-
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
@@ -286,8 +185,6 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
-        err_if_agg("explode", &to_explode)?;
-
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
@@ -332,8 +229,6 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
-        err_if_agg("sort", &sort_by)?;
-
         let logical_plan: LogicalPlan =
             logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
         Ok(logical_plan.into())
@@ -344,8 +239,6 @@ impl LogicalPlanBuilder {
         num_partitions: Option<usize>,
         partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        err_if_agg("hash_repartition", &partition_by)?;
-
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
             RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
@@ -393,12 +286,6 @@ impl LogicalPlanBuilder {
         agg_exprs: Vec<ExprRef>,
         groupby_exprs: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        let agg_exprs = agg_exprs
-            .iter()
-            .map(|v| v.as_ref())
-            .map(extract_and_check_agg_expr)
-            .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
-
         let logical_plan: LogicalPlan =
             logical_ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
@@ -412,7 +299,6 @@ impl LogicalPlanBuilder {
         agg_expr: ExprRef,
         names: Vec<String>,
     ) -> DaftResult<Self> {
-        let agg_expr = extract_and_check_agg_expr(agg_expr.as_ref())?;
         let pivot_logical_plan: LogicalPlan = logical_ops::Pivot::try_new(
             self.plan.clone(),
             group_by,
@@ -433,9 +319,6 @@ impl LogicalPlanBuilder {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
-        err_if_agg("join", &left_on)?;
-        err_if_agg("join", &right_on)?;
-
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
             right.plan.clone(),
@@ -468,10 +351,6 @@ impl LogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        if let Some(partition_cols) = &partition_cols {
-            err_if_agg("table_write", partition_cols)?;
-        }
-
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             file_format,
@@ -533,6 +412,33 @@ impl LogicalPlanBuilder {
                 version,
                 large_dtypes,
                 io_config,
+            }),
+            catalog_columns: columns_name,
+        });
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(logical_plan.into())
+    }
+
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn lance_write(
+        &self,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        io_config: Option<IOConfig>,
+        kwargs: PyObject,
+    ) -> DaftResult<Self> {
+        use crate::sink_info::LanceCatalogInfo;
+
+        let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
+            catalog: crate::sink_info::CatalogType::Lance(LanceCatalogInfo {
+                path,
+                mode,
+                io_config,
+                kwargs,
             }),
             catalog_columns: columns_name,
         });
@@ -832,6 +738,27 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    pub fn lance_write(
+        &self,
+        py: Python,
+        path: String,
+        columns_name: Vec<String>,
+        mode: String,
+        io_config: Option<common_io_config::python::IOConfig>,
+        kwargs: Option<PyObject>,
+    ) -> PyResult<Self> {
+        let kwargs = kwargs.unwrap_or_else(|| py.None());
+        Ok(self
+            .builder
+            .lance_write(
+                path,
+                columns_name,
+                mode,
+                io_config.map(|cfg| cfg.config),
+                kwargs,
+            )?
+            .into())
+    }
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }

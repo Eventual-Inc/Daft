@@ -71,6 +71,7 @@ from daft.convert import (
 )
 from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
+from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, lit
 from daft.io import (
@@ -123,6 +124,7 @@ __all__ = [
     "refresh_logger",
     "udf",
     "ResourceRequest",
+    "Schema",
     "set_planning_config",
     "set_execution_config",
 ]

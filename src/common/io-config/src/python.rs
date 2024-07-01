@@ -79,6 +79,7 @@ pub struct S3Credentials {
 ///     storage_account (str): Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
 ///     access_key (str, optional): Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
 ///     sas_token (str, optional): Shared Access Signature token, defaults to reading from `AZURE_STORAGE_SAS_TOKEN` environment variable
+///     bearer_token (str, optional): Bearer Token, defaults to reading from `AZURE_STORAGE_TOKEN` environment variable
 ///     tenant_id (str, optional): Azure Tenant ID
 ///     client_id (str, optional): Azure Client ID
 ///     client_secret (str, optional): Azure Client Secret
@@ -126,15 +127,35 @@ pub struct IOConfig {
     pub config: config::IOConfig,
 }
 
+/// Create configurations to be used when accessing HTTP URLs.
+///
+/// Args:
+///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
+///
+/// Example:
+///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1"))
+///     >>> daft.read_parquet("http://some-path", io_config=io_config)
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct HTTPConfig {
+    pub config: crate::HTTPConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
-    pub fn new(s3: Option<S3Config>, azure: Option<AzureConfig>, gcs: Option<GCSConfig>) -> Self {
+    pub fn new(
+        s3: Option<S3Config>,
+        azure: Option<AzureConfig>,
+        gcs: Option<GCSConfig>,
+        http: Option<HTTPConfig>,
+    ) -> Self {
         IOConfig {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
                 azure: azure.unwrap_or_default().config,
                 gcs: gcs.unwrap_or_default().config,
+                http: http.unwrap_or_default().config,
             },
         }
     }
@@ -144,6 +165,7 @@ impl IOConfig {
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
+        http: Option<HTTPConfig>,
     ) -> Self {
         IOConfig {
             config: config::IOConfig {
@@ -152,6 +174,9 @@ impl IOConfig {
                     .map(|azure| azure.config)
                     .unwrap_or(self.config.azure.clone()),
                 gcs: gcs.map(|gcs| gcs.config).unwrap_or(self.config.gcs.clone()),
+                http: http
+                    .map(|http| http.config)
+                    .unwrap_or(self.config.http.clone()),
             },
         }
     }
@@ -181,6 +206,14 @@ impl IOConfig {
     pub fn gcs(&self) -> PyResult<GCSConfig> {
         Ok(GCSConfig {
             config: self.config.gcs.clone(),
+        })
+    }
+
+    /// Configuration to be used when accessing Azure URLs
+    #[getter]
+    pub fn http(&self) -> PyResult<HTTPConfig> {
+        Ok(HTTPConfig {
+            config: self.config.http.clone(),
         })
     }
 
@@ -631,6 +664,7 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         sas_token: Option<String>,
+        bearer_token: Option<String>,
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
@@ -644,6 +678,7 @@ impl AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.or(def.access_key),
                 sas_token: sas_token.or(def.sas_token),
+                bearer_token: bearer_token.or(def.bearer_token),
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
                 client_secret: client_secret.or(def.client_secret),
@@ -660,6 +695,7 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         sas_token: Option<String>,
+        bearer_token: Option<String>,
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
@@ -672,6 +708,7 @@ impl AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
                 sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
+                bearer_token: bearer_token.or_else(|| self.config.bearer_token.clone()),
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
                 client_secret: client_secret.or_else(|| self.config.client_secret.clone()),
@@ -698,9 +735,16 @@ impl AzureConfig {
         Ok(self.config.access_key.clone())
     }
 
+    /// Azure Shared Access Signature token
     #[getter]
     pub fn sas_token(&self) -> PyResult<Option<String>> {
         Ok(self.config.sas_token.clone())
+    }
+
+    /// Azure Bearer Token
+    #[getter]
+    pub fn bearer_token(&self) -> PyResult<Option<String>> {
+        Ok(self.config.bearer_token.clone())
     }
 
     #[getter]
@@ -814,6 +858,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
+    parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())

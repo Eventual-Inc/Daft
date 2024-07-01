@@ -1,8 +1,10 @@
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use async_trait::async_trait;
+use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
 
+use hyper::header;
 use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
@@ -74,6 +76,9 @@ enum Error {
         "Unable to parse data as Integer while reading header for file: {path}. {source}"
     ))]
     UnableToParseInteger { path: String, source: ParseIntError },
+
+    #[snafu(display("Unable to create HTTP header: {source}"))]
+    UnableToCreateHeader { source: header::InvalidHeaderValue },
 }
 
 /// Finds and retrieves FileMetadata from HTML text
@@ -162,10 +167,18 @@ impl From<Error> for super::Error {
 }
 
 impl HttpSource {
-    pub async fn get_client() -> super::Result<Arc<Self>> {
+    pub async fn get_client(config: &HTTPConfig) -> super::Result<Arc<Self>> {
+        let mut default_headers = header::HeaderMap::new();
+        default_headers.append(
+            "user-agent",
+            header::HeaderValue::from_str(config.user_agent.as_str())
+                .context(UnableToCreateHeaderSnafu)?,
+        );
+
         Ok(HttpSource {
             client: reqwest::ClientBuilder::default()
                 .pool_max_idle_per_host(70)
+                .default_headers(default_headers)
                 .build()
                 .context(UnableToCreateClientSnafu)?,
         }
@@ -327,6 +340,8 @@ impl ObjectSource for HttpSource {
 #[cfg(test)]
 mod tests {
 
+    use std::default;
+
     use crate::object_io::ObjectSource;
     use crate::HttpSource;
     use crate::Result;
@@ -336,7 +351,7 @@ mod tests {
         let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
-        let client = HttpSource::get_client().await?;
+        let client = HttpSource::get_client(&default::Default::default()).await?;
         let parquet_file = client.get(parquet_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();

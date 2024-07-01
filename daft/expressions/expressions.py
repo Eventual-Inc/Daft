@@ -265,7 +265,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr % self._expr)
 
     def __and__(self, other: Expression) -> Expression:
-        """Takes the logical AND of two boolean expressions (``e1 & e2``)"""
+        """Takes the logical AND of two boolean expressions, or bitwise AND of two integer expressions (``e1 & e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
@@ -275,9 +275,14 @@ class Expression:
         return Expression._from_pyexpr(expr._expr & self._expr)
 
     def __or__(self, other: Expression) -> Expression:
-        """Takes the logical OR of two boolean expressions (``e1 | e2``)"""
+        """Takes the logical OR of two boolean or integer expressions, or bitwise OR of two integer expressions (``e1 | e2``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
+
+    def __xor__(self, other: Expression) -> Expression:
+        """Takes the logical XOR of two boolean or integer expressions, or bitwise XOR of two integer expressions (``e1 ^ e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def __ror__(self, other: Expression) -> Expression:
         """Takes the logical reverse OR of two boolean expressions (``e1 | e2``)"""
@@ -467,6 +472,21 @@ class Expression:
         """The e^self of a numeric expression (``expr.exp()``)"""
         expr = self._expr.exp()
         return Expression._from_pyexpr(expr)
+
+    def bitwise_and(self, other: Expression) -> Expression:
+        """Bitwise AND of two integer expressions (``expr.bitwise_and(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr & expr._expr)
+
+    def bitwise_or(self, other: Expression) -> Expression:
+        """Bitwise OR of two integer expressions (``expr.bitwise_or(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr | expr._expr)
+
+    def bitwise_xor(self, other: Expression) -> Expression:
+        """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
@@ -747,6 +767,33 @@ class Expression:
         """
         bits_expr = Expression._to_expression(bits)
         return Expression._from_pyexpr(self._expr.shift_right(bits_expr._expr))
+
+    def minhash(
+        self,
+        num_hashes: int,
+        ngram_size: int,
+        seed: int = 1,
+    ) -> Expression:
+        """
+        Runs the MinHash algorithm on the series.
+
+        For a string, calculates the minimum hash over all its ngrams,
+        repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
+
+        Tokens for the ngrams are delimited by spaces.
+        MurmurHash is used for the initial hash.
+        The strings are not normalized or pre-processed, so it is recommended
+        to normalize the strings yourself.
+
+        Args:
+            num_hashes: The number of hash permutations to compute.
+            ngram_size: The number of tokens in each shingle/ngram.
+            seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+        """
+        assert isinstance(num_hashes, int)
+        assert isinstance(ngram_size, int)
+        assert isinstance(seed, int)
+        return Expression._from_pyexpr(self._expr.minhash(num_hashes, ngram_size, seed))
 
     def name(self) -> builtins.str:
         return self._expr.name()
@@ -1635,6 +1682,47 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
 
+    def normalize(
+        self,
+        *,
+        remove_punct: bool = True,
+        lowercase: bool = True,
+        nfd_unicode: bool = True,
+        white_space: bool = True,
+    ):
+        """Normalizes a string for more useful deduplication.
+
+        .. NOTE::
+            All processing options are on by default.
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
+            >>> df = df.with_column("normalized", df["x"].str.normalize())
+            >>> df.show()
+            ╭───────────────┬─────────────╮
+            │ x             ┆ normalized  │
+            │ ---           ┆ ---         │
+            │ Utf8          ┆ Utf8        │
+            ╞═══════════════╪═════════════╡
+            │ hello world   ┆ hello world │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ Hello, world! ┆ hello world │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ HELLO,        ┆ hello world │
+            │ WORLD!!!!     ┆             │
+            ╰───────────────┴─────────────╯
+
+        Args:
+            remove_punct: Whether to remove all punctuation (ASCII).
+            lowercase: Whether to convert the string to lowercase.
+            nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
+            white_space: Whether to normalize whitespace, replacing newlines etc with spaces and removing double spaces.
+
+        Returns:
+            Expression: a String expression which is normalized.
+        """
+        return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
@@ -1733,27 +1821,28 @@ class ExpressionMapNamespace(ExpressionNamespace):
         """Retrieves the value for a key in a map column
 
         Example:
-            >>> import pyarrrow as pa
+            >>> import pyarrow as pa
             >>> import daft
-            >>> pa_array = pa.array([[(1, 2)],[],[(2,1)]], type=pa.map_(pa.int64(), pa.int64()))
+            >>> pa_array = pa.array([[("a", 1)],[],[("b",2)]], type=pa.map_(pa.string(), pa.int64()))
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
-            >>> df = df.with_column("1", df["map_col"].map.get(1))
-            >>> df.show()
-            ╭───────────────────────────────────────┬───────╮
-            │ map_col                               ┆ 1     │
-            │ ---                                   ┆ ---   │
-            │ Map[Struct[key: Int64, value: Int64]] ┆ Int64 │
-            ╞═══════════════════════════════════════╪═══════╡
-            │ [{key: 1,                             ┆ 2     │
-            │ value: 2,                             ┆       │
-            │ }]                                    ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []                                    ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: 2,                             ┆ None  │
-            │ value: 1,                             ┆       │
-            │ }]                                    ┆       │
-            ╰───────────────────────────────────────┴───────╯
+            >>> df1 = df.with_column("a", df["map_col"].map.get("a"))
+            >>> df1.show()
+            ╭───────────┬───────╮
+            │ map_col   ┆ a     │
+            │ ---       ┆ ---   │
+            │ Map[Utf8] ┆ Int64 │
+            ╞═══════════╪═══════╡
+            │ [{key: a, ┆ 1     │
+            │ value: 1, ┆       │
+            │ }]        ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []        ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b, ┆ None  │
+            │ value: 2, ┆       │
+            │ }]        ┆       │
+            ╰───────────┴───────╯
+            (Showing first 3 of 3 rows)
 
         Args:
             key: the key to retrieve

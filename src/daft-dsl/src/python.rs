@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
@@ -173,6 +174,12 @@ pub struct PyExpr {
 #[pyfunction]
 pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
+}
+
+#[pyfunction]
+pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
+    let (resolved_expr, field) = crate::resolve_expr(expr.expr.clone(), &schema.schema)?;
+    Ok((resolved_expr.into(), field.into()))
 }
 
 #[derive(FromPyObject)]
@@ -691,6 +698,24 @@ impl PyExpr {
         Ok(to_datetime(self.into(), format, timezone).into())
     }
 
+    pub fn utf8_normalize(
+        &self,
+        remove_punct: bool,
+        lowercase: bool,
+        nfd_unicode: bool,
+        white_space: bool,
+    ) -> PyResult<Self> {
+        use crate::functions::utf8::normalize;
+        let opts = Utf8NormalizeOptions {
+            remove_punct,
+            lowercase,
+            nfd_unicode,
+            white_space,
+        };
+
+        Ok(normalize(self.into(), opts).into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(self.into(), raise_error_on_failure).into())
@@ -827,6 +852,28 @@ impl PyExpr {
     pub fn hash(&self, seed: Option<PyExpr>) -> PyResult<Self> {
         use crate::functions::hash::hash;
         Ok(hash(self.into(), seed.map(|s| s.into())).into())
+    }
+
+    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
+        if num_hashes <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "num_hashes must be positive: {num_hashes}"
+            )));
+        }
+        if ngram_size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "ngram_size must be positive: {ngram_size}"
+            )));
+        }
+        let cast_seed = seed as u32;
+        use crate::functions::minhash::minhash;
+        Ok(minhash(
+            self.into(),
+            num_hashes as usize,
+            ngram_size as usize,
+            cast_seed,
+        )
+        .into())
     }
 }
 

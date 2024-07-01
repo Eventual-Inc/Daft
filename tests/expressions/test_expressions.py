@@ -287,6 +287,24 @@ def test_repr_functions_hash_2() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_minhash() -> None:
+    a = col("a")
+    y = a.minhash(1, 2)
+    repr_out = repr(y)
+    assert repr_out == "minhash(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_minhash_2() -> None:
+    a = col("a")
+    y = a.minhash(1, 2, 3)
+    repr_out = repr(y)
+    assert repr_out == "minhash(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_expr_structurally_equal() -> None:
     e1 = (col("a").max() == col("b").alias("moo") - 3).is_null()
     e2 = (col("a").max() == col("b").alias("moo") - 3).is_null()

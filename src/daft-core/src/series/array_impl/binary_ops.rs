@@ -12,7 +12,8 @@ use crate::{
         FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
-    with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
+    with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
+    DataType,
 };
 
 use crate::datatypes::logical::{
@@ -101,16 +102,25 @@ macro_rules! physical_logic_op {
         let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
-        if let Boolean = output_type {
-            match (&lhs.data_type(), &$rhs.data_type()) {
+        match &output_type {
+            #[cfg(feature = "python")]
+            Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop)
-                    .downcast::<BooleanArray>()
-                    .cloned(),
-                _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanArray, $op),
+                (Python, _) | (_, Python) => Ok(py_binary_op_bool!(lhs, $rhs, $pyop)),
+                _ => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
+            },
+            output_type if output_type.is_integer() => {
+                with_match_integer_daft_types!(output_type, |$T| {
+                    cast_downcast_op_into_series!(
+                        lhs,
+                        $rhs,
+                        output_type,
+                        <$T as DaftDataType>::ArrayType,
+                        $op
+                    )
+                })
             }
-        } else {
-            unreachable!()
+            _ => binary_op_unimplemented!(lhs, $pyop, $rhs, output_type),
         }
     }};
 }
@@ -180,13 +190,13 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
     fn rem(&self, rhs: &Series) -> DaftResult<Series> {
         py_numeric_binary_op!(self, rhs, rem, "mod")
     }
-    fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn and(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, and, "and_")
     }
-    fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn or(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, or, "or_")
     }
-    fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+    fn xor(&self, rhs: &Series) -> DaftResult<Series> {
         physical_logic_op!(self, rhs, xor, "xor")
     }
     fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {

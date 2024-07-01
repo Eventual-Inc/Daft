@@ -55,6 +55,8 @@ def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict[str, str
         storage_options["access_key"] = azure_config.access_key
     if azure_config.sas_token is not None:
         storage_options["sas_token"] = azure_config.sas_token
+    if azure_config.bearer_token is not None:
+        storage_options["bearer_token"] = azure_config.bearer_token
     if azure_config.tenant_id is not None:
         storage_options["tenant_id"] = azure_config.tenant_id
     if azure_config.client_id is not None:
@@ -68,5 +70,8 @@ def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict[str, str
     return storage_options
 
 
-def _gcs_config_to_storage_options(_: GCSConfig) -> dict[str, str]:
-    return {}
+def _gcs_config_to_storage_options(gcs_config: GCSConfig) -> dict[str, str]:
+    storage_options = {}
+    if gcs_config.credentials is not None:
+        storage_options["google_application_credentials"] = gcs_config.credentials
+    return storage_options

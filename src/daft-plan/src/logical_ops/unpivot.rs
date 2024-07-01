@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftError;
 use daft_core::{
     datatypes::Field,
     schema::{Schema, SchemaRef},
     utils::supertype::try_get_supertype,
     DataType,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::{resolve_exprs, ExprRef};
 
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -43,11 +43,8 @@ impl Unpivot {
         }
 
         let input_schema = input.schema();
-        let values_fields = values
-            .iter()
-            .map(|e| e.to_field(&input_schema))
-            .collect::<DaftResult<Vec<_>>>()
-            .context(CreationSnafu)?;
+        let (values, values_fields) =
+            resolve_exprs(values, &input_schema).context(CreationSnafu)?;
 
         let value_dtype = values_fields
             .iter()
@@ -59,12 +56,12 @@ impl Unpivot {
         let variable_field = Field::new(variable_name, DataType::Utf8);
         let value_field = Field::new(value_name, value_dtype);
 
-        let output_fields = ids
-            .iter()
-            .map(|e| e.to_field(&input_schema))
-            .chain(vec![Ok(variable_field), Ok(value_field)])
-            .collect::<DaftResult<Vec<_>>>()
-            .context(CreationSnafu)?;
+        let (ids, ids_fields) = resolve_exprs(ids, &input_schema).context(CreationSnafu)?;
+
+        let output_fields = ids_fields
+            .into_iter()
+            .chain([variable_field, value_field])
+            .collect::<Vec<_>>();
 
         let output_schema = Schema::new(output_fields).context(CreationSnafu)?.into();
 

@@ -278,9 +278,8 @@ mod tests {
                 Field::new("str", DataType::Utf8),
                 Field::new("null", DataType::Null),
                 Field::new("date", DataType::Date),
-                // TODO(Clark): Add coverage for time parsing once we add support for representing time series in Daft.
-                // // Time unit should be coarest granularity found in file, i.e. seconds.
-                // Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
+                // // Time unit should be coarsest granularity found in file, i.e. microseconds.
+                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
                 // Time unit should be coarsest granularity found in file, i.e. seconds due to naive date inclusion.
                 Field::new(
                     "naive_timestamp",

@@ -25,7 +25,7 @@ impl DaftCompare<&Series> for Series {
 }
 
 impl DaftLogical<&Series> for Series {
-    type Output = DaftResult<BooleanArray>;
+    type Output = DaftResult<Series>;
 
     call_inner!(and);
     call_inner!(or);

@@ -12,6 +12,7 @@ mod lower;
 mod lpad;
 mod lstrip;
 mod match_;
+mod normalize;
 mod repeat;
 mod replace;
 mod reverse;
@@ -27,6 +28,7 @@ mod upper;
 
 use capitalize::CapitalizeEvaluator;
 use contains::ContainsEvaluator;
+use daft_core::array::ops::Utf8NormalizeOptions;
 use endswith::EndswithEvaluator;
 use extract::ExtractEvaluator;
 use extract_all::ExtractAllEvaluator;
@@ -38,6 +40,7 @@ use like::LikeEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
 use lstrip::LstripEvaluator;
+use normalize::NormalizeEvaluator;
 use repeat::RepeatEvaluator;
 use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
@@ -84,6 +87,7 @@ pub enum Utf8Expr {
     Substr,
     ToDate(String),
     ToDatetime(String, Option<String>),
+    Normalize(Utf8NormalizeOptions),
 }
 
 impl Utf8Expr {
@@ -117,6 +121,7 @@ impl Utf8Expr {
             Substr => &SubstrEvaluator {},
             ToDate(_) => &ToDateEvaluator {},
             ToDatetime(_, _) => &ToDatetimeEvaluator {},
+            Normalize(_) => &NormalizeEvaluator {},
         }
     }
 }
@@ -327,6 +332,14 @@ pub fn to_datetime(data: ExprRef, format: &str, timezone: Option<&str>) -> ExprR
             format.to_string(),
             timezone.map(|s| s.to_string()),
         )),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn normalize(data: ExprRef, opts: Utf8NormalizeOptions) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Normalize(opts)),
         inputs: vec![data],
     }
     .into()

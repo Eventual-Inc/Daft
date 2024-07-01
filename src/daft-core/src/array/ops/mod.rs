@@ -6,6 +6,7 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 mod between;
+mod bitwise;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod ceil;
@@ -34,6 +35,7 @@ mod log;
 mod map;
 mod mean;
 mod merge_sketch;
+mod minhash;
 mod null;
 mod pairwise;
 mod repr;
@@ -55,7 +57,7 @@ mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
-pub use utf8::PadPlacement;
+pub use utf8::{PadPlacement, Utf8NormalizeOptions};
 
 use common_error::DaftResult;
 
@@ -134,6 +136,11 @@ pub trait DaftIsInf {
 pub trait DaftNotNan {
     type Output;
     fn not_nan(&self) -> Self::Output;
+}
+
+pub trait DaftMinHash {
+    type Output;
+    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;

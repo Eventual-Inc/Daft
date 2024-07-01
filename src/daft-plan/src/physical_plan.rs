@@ -47,6 +47,8 @@ pub enum PhysicalPlan {
     IcebergWrite(IcebergWrite),
     #[cfg(feature = "python")]
     DeltaLakeWrite(DeltaLakeWrite),
+    #[cfg(feature = "python")]
+    LanceWrite(LanceWrite),
 }
 
 pub struct ApproxStats {
@@ -235,11 +237,7 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
             #[cfg(feature = "python")]
-            Self::IcebergWrite(..) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
-            }
-            #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(DeltaLakeWrite { .. }) => {
+            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
             }
         }
@@ -406,9 +404,9 @@ impl PhysicalPlan {
                 ApproxStats::empty()
             }
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) => ApproxStats::empty(),
-            #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(_) => ApproxStats::empty(),
+            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
+                ApproxStats::empty()
+            }
         }
     }
 
@@ -439,6 +437,8 @@ impl PhysicalPlan {
             Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
             Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input.clone()],
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite { input, .. }) => vec![input.clone()],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -542,6 +542,8 @@ impl PhysicalPlan {
             Self::IcebergWrite(..) => "IcebergWrite",
             #[cfg(feature = "python")]
             Self::DeltaLakeWrite(..) => "DeltaLakeWrite",
+            #[cfg(feature = "python")]
+            Self::LanceWrite(..) => "LanceWrite",
         };
         name.to_string()
     }
@@ -583,6 +585,8 @@ impl PhysicalPlan {
             Self::IcebergWrite(iceberg_info) => iceberg_info.multiline_display(),
             #[cfg(feature = "python")]
             Self::DeltaLakeWrite(delta_lake_info) => delta_lake_info.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(lance_info) => lance_info.multiline_display(),
         }
     }
 

@@ -5,6 +5,12 @@ Unity Catalog
 Users of Unity Catalog are able to work with data assets such as tables (Parquet, CSV, Iceberg, Delta), volumes
 (storing raw files), functions and models.
 
+To use Daft with the Unity Catalog, you will need to install Daft with the `unity` option specified like so:
+
+```
+pip install getdaft[unity]
+```
+
 .. WARNING::
 
     These APIs are in beta and may be subject to change as the Unity Catalog continues to be developed.

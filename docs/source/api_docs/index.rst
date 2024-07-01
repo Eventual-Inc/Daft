@@ -8,6 +8,7 @@ API Documentation
    creation
    dataframe
    expressions
+   schema
    datatype
    groupby
    udf

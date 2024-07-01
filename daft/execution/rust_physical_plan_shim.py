@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from daft.context import get_context
 from daft.daft import (
     FileFormat,
     IOConfig,
@@ -32,15 +33,17 @@ def scan_with_tasks(
     """
     # TODO(Clark): Currently hardcoded to have 1 file per instruction
     # We can instead right-size and bundle the ScanTask into single-instruction bulk reads.
+
+    cfg = get_context().daft_execution_config
+
     for scan_task in scan_tasks:
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](
             inputs=[],
             partial_metadatas=None,
         ).add_instruction(
             instruction=execution_step.ScanWithTask(scan_task),
-            # Set the filesize as the memory request.
-            # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
-            resource_request=ResourceRequest(memory_bytes=scan_task.size_bytes()),
+            # Set the estimated in-memory size as the memory request.
+            resource_request=ResourceRequest(memory_bytes=scan_task.estimate_in_memory_size_bytes(cfg)),
         )
         yield scan_step
 
@@ -344,3 +347,13 @@ def write_deltalake(
         version,
         io_config,
     )
+
+
+def write_lance(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    path: str,
+    mode: str,
+    io_config: IOConfig | None,
+    kwargs: dict | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.lance_write(input, path, mode, io_config, kwargs)

@@ -31,6 +31,8 @@ pub enum Error {
     InvalidParameter(String),
     /// When decoding or decompressing, the page would allocate more memory than allowed
     WouldOverAllocate,
+    /// When a transport error occurs when reading data
+    Transport(String),
 }
 
 impl Error {
@@ -63,6 +65,9 @@ impl std::fmt::Display for Error {
             Error::WouldOverAllocate => {
                 write!(fmt, "Operation would exceed memory use threshold")
             }
+            Error::Transport(message) => {
+                write!(fmt, "Transport error: {}", message)
+            }
         }
     }
 }
@@ -90,13 +95,18 @@ impl From<lz4_flex::block::CompressError> for Error {
 
 impl From<parquet_format_safe::thrift::Error> for Error {
     fn from(e: parquet_format_safe::thrift::Error) -> Error {
-        Error::OutOfSpec(format!("Invalid thrift: {}", e))
+        match e {
+            parquet_format_safe::thrift::Error::Transport(msg) => {
+                Error::Transport(format!("io error occurred when decoding thrift: {}", msg))
+            }
+            _ => Error::OutOfSpec(format!("Invalid thrift: {}", e)),
+        }
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
-        Error::OutOfSpec(format!("underlying IO error: {}", e))
+        Error::Transport(format!("underlying IO error: {}", e))
     }
 }
 

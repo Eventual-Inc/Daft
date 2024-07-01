@@ -1539,6 +1539,7 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-micropartition",
+ "daft-minhash",
  "daft-parquet",
  "daft-plan",
  "daft-scan",
@@ -1576,8 +1577,10 @@ dependencies = [
  "comfy-table 7.1.1",
  "common-daft-config",
  "common-error",
+ "daft-minhash",
  "daft-sketch",
  "dyn-clone",
+ "fastrand 2.1.0",
  "fnv",
  "html-escape",
  "image",
@@ -1601,6 +1604,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sketches-ddsketch",
+ "unicode-normalization",
  "xxhash-rust",
 ]
 
@@ -1668,6 +1672,7 @@ dependencies = [
  "daft-io",
  "daft-sketch",
  "indexmap 2.2.6",
+ "itertools 0.11.0",
  "pyo3",
  "pyo3-log",
  "serde",
@@ -1813,6 +1818,15 @@ dependencies = [
  "serde",
  "snafu",
  "tokio",
+]
+
+[[package]]
+name = "daft-minhash"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "fastrand 2.1.0",
+ "mur3",
 ]
 
 [[package]]
@@ -2129,9 +2143,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
+checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "fdeflate"
@@ -4787,7 +4801,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef1adac450ad7f4b3c28589471ade84f25f731a7a0fe30d71dfa9f60fd808e5"
 dependencies = [
  "cfg-if",
- "fastrand 2.0.1",
+ "fastrand 2.1.0",
  "redox_syscall 0.4.1",
  "rustix",
  "windows-sys 0.48.0",
@@ -5163,9 +5177,9 @@ checksum = "3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f"
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c5713f0fc4b5db668a2ac63cdb7bb4469d8c9fed047b1d0292cc7b0ce2ba921"
+checksum = "a56d1686db2308d901306f92a263857ef59ea39678a5458e7cb17f01415101f5"
 dependencies = [
  "tinyvec",
 ]

@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{resolve_aggexpr, resolve_expr, resolve_exprs, AggExpr, ExprRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
@@ -28,19 +27,20 @@ impl Pivot {
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
-        aggregation: AggExpr,
+        aggregation: ExprRef,
         names: Vec<String>,
     ) -> logical_plan::Result<Self> {
+        let upstream_schema = input.schema();
+        let (group_by, group_by_fields) =
+            resolve_exprs(group_by, &upstream_schema).context(CreationSnafu)?;
+        let (pivot_column, _) =
+            resolve_expr(pivot_column, &upstream_schema).context(CreationSnafu)?;
+        let (value_column, value_col_field) =
+            resolve_expr(value_column, &upstream_schema).context(CreationSnafu)?;
+        let (aggregation, _) =
+            resolve_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
+
         let output_schema = {
-            let upstream_schema = input.schema();
-            let group_by_fields = group_by
-                .iter()
-                .map(|e| e.to_field(&upstream_schema))
-                .collect::<DaftResult<Vec<_>>>()
-                .context(CreationSnafu)?;
-            let value_col_field = value_column
-                .to_field(&upstream_schema)
-                .context(CreationSnafu)?;
             let value_col_dtype = value_col_field.dtype;
             let pivot_value_fields = names
                 .iter()

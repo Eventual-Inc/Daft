@@ -35,7 +35,7 @@ pub use source_info::{FileInfo, FileInfos, InMemoryInfo};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo};
+pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use {
     daft_scan::file_format::{

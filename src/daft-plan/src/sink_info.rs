@@ -42,6 +42,7 @@ pub struct CatalogInfo {
 pub enum CatalogType {
     Iceberg(IcebergCatalogInfo),
     DeltaLake(DeltaLakeCatalogInfo),
+    Lance(LanceCatalogInfo),
 }
 
 #[cfg(feature = "python")]
@@ -144,6 +145,52 @@ impl DeltaLakeCatalogInfo {
         res.push(format!("Mode = {}", self.mode));
         res.push(format!("Version = {}", self.version));
         res.push(format!("Large Dtypes = {}", self.large_dtypes));
+        match &self.io_config {
+            None => res.push("IOConfig = None".to_string()),
+            Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+        };
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanceCatalogInfo {
+    pub path: String,
+    pub mode: String,
+    pub io_config: Option<IOConfig>,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub kwargs: PyObject,
+}
+
+#[cfg(feature = "python")]
+impl PartialEq for LanceCatalogInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.mode == other.mode && self.io_config == other.io_config
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for LanceCatalogInfo {}
+
+#[cfg(feature = "python")]
+impl Hash for LanceCatalogInfo {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.mode.hash(state);
+        self.io_config.hash(state);
+    }
+}
+
+#[cfg(feature = "python")]
+impl LanceCatalogInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Table Name = {}", self.path));
+        res.push(format!("Mode = {}", self.mode));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),

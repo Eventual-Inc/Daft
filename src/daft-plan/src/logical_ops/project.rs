@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
+use daft_dsl::{optimization, resolve_exprs, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -26,19 +26,15 @@ impl Project {
         projection: Vec<ExprRef>,
         resource_request: ResourceRequest,
     ) -> Result<Self> {
+        let (projection, fields) =
+            resolve_exprs(projection, &input.schema()).context(CreationSnafu)?;
+
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection, &resource_request)?;
 
-        let upstream_schema = factored_input.schema();
-        let projected_schema = {
-            let fields = factored_projection
-                .iter()
-                .map(|e| e.to_field(&upstream_schema))
-                .collect::<common_error::DaftResult<Vec<_>>>()
-                .context(CreationSnafu)?;
-            Schema::new(fields).context(CreationSnafu)?.into()
-        };
+        let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
+
         Ok(Self {
             input: factored_input,
             projection: factored_projection,

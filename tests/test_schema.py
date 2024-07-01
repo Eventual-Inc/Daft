@@ -190,7 +190,7 @@ def test_schema_pickling():
     assert t_empty.schema() == t_empty_schema_copy
 
 
-def test_schema_from_pyarrow():
+def test_schema_pyarrow_roundtrip():
     pa_schema = pa.schema(
         {
             "int": pa.int64(),
@@ -210,3 +210,14 @@ def test_schema_from_pyarrow():
     )
 
     assert Schema.from_pyarrow_schema(pa_schema) == expected_daft_schema
+
+    roundtrip_pa_schema = pa.schema(
+        {
+            "int": pa.int64(),
+            "str": pa.large_string(),
+            "list": pa.large_list(pa.int64()),
+            "map": pa.map_(pa.large_string(), pa.int64()),
+        }
+    )
+
+    assert Schema.from_pyarrow_schema(pa_schema).to_pyarrow_schema() == roundtrip_pa_schema

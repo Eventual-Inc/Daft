@@ -8,7 +8,11 @@ use pyo3::{
 };
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{
+        ops::{DaftLogical, Utf8NormalizeOptions},
+        pseudo_arrow::PseudoArrowArray,
+        DataArray,
+    },
     count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
     ffi,
@@ -98,15 +102,15 @@ impl PySeries {
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.and(&other.series)?.into_series().into())
+        Ok(self.series.and(&other.series)?.into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.or(&other.series)?.into_series().into())
+        Ok(self.series.or(&other.series)?.into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.xor(&other.series)?.into_series().into())
+        Ok(self.series.xor(&other.series)?.into())
     }
 
     pub fn ceil(&self) -> PyResult<Self> {
@@ -276,6 +280,25 @@ impl PySeries {
             seed_array = Some(seed_series.u64()?);
         }
         Ok(self.series.hash(seed_array)?.into_series().into())
+    }
+
+    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
+        if num_hashes <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "num_hashes must be positive: {num_hashes}"
+            )));
+        }
+        if ngram_size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "ngram_size must be positive: {ngram_size}"
+            )));
+        }
+        let cast_seed = seed as u32;
+
+        Ok(self
+            .series
+            .minhash(num_hashes as usize, ngram_size as usize, cast_seed)?
+            .into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -475,6 +498,23 @@ impl PySeries {
 
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
         Ok(self.series.utf8_to_datetime(format, timezone)?.into())
+    }
+
+    pub fn utf8_normalize(
+        &self,
+        remove_punct: bool,
+        lowercase: bool,
+        nfd_unicode: bool,
+        white_space: bool,
+    ) -> PyResult<Self> {
+        let opts = Utf8NormalizeOptions {
+            remove_punct,
+            lowercase,
+            nfd_unicode,
+            white_space,
+        };
+
+        Ok(self.series.utf8_normalize(opts)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {

@@ -57,11 +57,7 @@ pub(super) fn translate_single_logical_node(
                 );
 
                 // Apply transformations on the ScanTasks to optimize
-                let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(
-                    scan_tasks,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
+                let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, cfg);
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -718,6 +714,14 @@ pub(super) fn translate_single_logical_node(
                         Ok(PhysicalPlan::DeltaLakeWrite(DeltaLakeWrite::new(
                             schema.clone(),
                             deltalake_info.clone(),
+                            input_physical,
+                        ))
+                        .arced())
+                    }
+                    crate::sink_info::CatalogType::Lance(lance_info) => {
+                        Ok(PhysicalPlan::LanceWrite(LanceWrite::new(
+                            schema.clone(),
+                            lance_info.clone(),
                             input_physical,
                         ))
                         .arced())

@@ -41,7 +41,7 @@ def test_merge_scan_task_exceed_max(csv_files):
 
 
 def test_merge_scan_task_below_max(csv_files):
-    with override_merge_scan_tasks_configs(21, 22):
+    with override_merge_scan_tasks_configs(11, 12):
         df = daft.read_csv(str(csv_files))
         assert (
             df.num_partitions() == 2
@@ -49,7 +49,7 @@ def test_merge_scan_task_below_max(csv_files):
 
 
 def test_merge_scan_task_above_min(csv_files):
-    with override_merge_scan_tasks_configs(19, 40):
+    with override_merge_scan_tasks_configs(9, 20):
         df = daft.read_csv(str(csv_files))
         assert (
             df.num_partitions() == 2
@@ -57,7 +57,7 @@ def test_merge_scan_task_above_min(csv_files):
 
 
 def test_merge_scan_task_below_min(csv_files):
-    with override_merge_scan_tasks_configs(35, 40):
+    with override_merge_scan_tasks_configs(17, 20):
         df = daft.read_csv(str(csv_files))
         assert (
             df.num_partitions() == 1
