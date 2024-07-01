@@ -6,6 +6,7 @@ common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+erased-serde = "0.4.5"
 indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}

@@ -36,17 +36,17 @@ pub enum ListExpr {
 
 impl ListExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use ListExpr::*;
         match self {
-            Explode => &ExplodeEvaluator {},
-            Join => &JoinEvaluator {},
-            Count(_) => &CountEvaluator {},
-            Get => &GetEvaluator {},
-            Sum => &SumEvaluator {},
-            Mean => &MeanEvaluator {},
-            Min => &MinEvaluator {},
-            Max => &MaxEvaluator {},
+            Explode => Box::new(ExplodeEvaluator {}),
+            Join => Box::new(JoinEvaluator {}),
+            Count(_) => Box::new(CountEvaluator {}),
+            Get => Box::new(GetEvaluator {}),
+            Sum => Box::new(SumEvaluator {}),
+            Mean => Box::new(MeanEvaluator {}),
+            Min => Box::new(MinEvaluator {}),
+            Max => Box::new(MaxEvaluator {}),
         }
     }
 }

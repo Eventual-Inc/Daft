@@ -14,10 +14,10 @@ pub enum StructExpr {
 
 impl StructExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use StructExpr::*;
         match self {
-            Get(_) => &GetEvaluator {},
+            Get(_) => Box::new(GetEvaluator {}),
         }
     }
 }

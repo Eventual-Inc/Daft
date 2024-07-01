@@ -23,10 +23,10 @@ pub enum UriExpr {
 
 impl UriExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use UriExpr::*;
         match self {
-            Download { .. } => &DownloadEvaluator {},
+            Download { .. } => Box::new(DownloadEvaluator {}),
         }
     }
 }

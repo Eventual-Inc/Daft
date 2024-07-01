@@ -31,10 +31,10 @@ pub enum SketchExpr {
 
 impl SketchExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use SketchExpr::*;
         match self {
-            Percentile { .. } => &PercentileEvaluator {},
+            Percentile { .. } => Box::new(PercentileEvaluator {}),
         }
     }
 }

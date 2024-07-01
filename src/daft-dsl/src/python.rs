@@ -857,13 +857,14 @@ impl PyExpr {
         }
         let cast_seed = seed as u32;
         use crate::functions::minhash::minhash;
-        Ok(minhash(
+        let expr = minhash(
             self.into(),
             num_hashes as usize,
             ngram_size as usize,
             cast_seed,
-        )
-        .into())
+        );
+        println!("expr = {:?}", expr);
+        Ok(expr.into())
     }
 }
 

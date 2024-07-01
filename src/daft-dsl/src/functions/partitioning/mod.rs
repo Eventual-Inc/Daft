@@ -24,15 +24,15 @@ pub enum PartitioningExpr {
 
 impl PartitioningExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use PartitioningExpr::*;
         match self {
-            Years => &YearsEvaluator {},
-            Months => &MonthsEvaluator {},
-            Days => &DaysEvaluator {},
-            Hours => &HoursEvaluator {},
-            IcebergBucket(..) => &IcebergBucketEvaluator {},
-            IcebergTruncate(..) => &IcebergTruncateEvaluator {},
+            Years => Box::new(YearsEvaluator {}),
+            Months => Box::new(MonthsEvaluator {}),
+            Days => Box::new(DaysEvaluator {}),
+            Hours => Box::new(HoursEvaluator {}),
+            IcebergBucket(..) => Box::new(IcebergBucketEvaluator {}),
+            IcebergTruncate(..) => Box::new(IcebergTruncateEvaluator {}),
         }
     }
 }

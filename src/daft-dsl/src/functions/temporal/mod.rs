@@ -36,19 +36,19 @@ pub enum TemporalExpr {
 
 impl TemporalExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
         use TemporalExpr::*;
         match self {
-            Day => &DayEvaluator {},
-            Hour => &HourEvaluator {},
-            Month => &MonthEvaluator {},
-            Year => &YearEvaluator {},
-            DayOfWeek => &DayOfWeekEvaluator {},
-            Date => &DateEvaluator {},
-            Minute => &MinuteEvaluator {},
-            Second => &SecondEvaluator {},
-            Time => &TimeEvaluator {},
-            Truncate(..) => &TruncateEvaluator {},
+            Day => Box::new(DayEvaluator {}),
+            Hour => Box::new(HourEvaluator {}),
+            Month => Box::new(MonthEvaluator {}),
+            Year => Box::new(YearEvaluator {}),
+            DayOfWeek => Box::new(DayOfWeekEvaluator {}),
+            Date => Box::new(DateEvaluator {}),
+            Minute => Box::new(MinuteEvaluator {}),
+            Second => Box::new(SecondEvaluator {}),
+            Time => Box::new(TimeEvaluator {}),
+            Truncate(..) => Box::new(TruncateEvaluator {}),
         }
     }
 }
