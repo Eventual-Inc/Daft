@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use common_error::DaftResult;
@@ -142,5 +143,19 @@ impl<'de> Deserialize<'de> for ScalarFunction {
             &["name", "inputs"],
             ScalarFunctionVisitor,
         )
+    }
+}
+
+impl Display for ScalarFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}(", self.name())?;
+        for (i, input) in self.inputs.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{input}")?;
+        }
+        write!(f, ")")?;
+        Ok(())
     }
 }

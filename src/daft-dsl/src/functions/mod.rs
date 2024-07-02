@@ -105,20 +105,6 @@ impl Display for FunctionExpr {
     }
 }
 
-impl Display for ScalarFunction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}(", self.name())?;
-        for (i, input) in self.inputs.iter().enumerate() {
-            if i != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{input}")?;
-        }
-        write!(f, ")")?;
-        Ok(())
-    }
-}
-
 impl FunctionEvaluator for FunctionExpr {
     fn fn_name(&self) -> &'static str {
         self.get_evaluator().fn_name()
