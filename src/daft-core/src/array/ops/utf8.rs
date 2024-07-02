@@ -19,7 +19,7 @@ use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
 use num_traits::NumCast;
 use serde::{Deserialize, Serialize};
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
@@ -1339,41 +1339,49 @@ impl Utf8Array {
     }
 
     pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Utf8Array> {
-        let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
-
-        let arrow_result = self
-            .as_arrow()
-            .iter()
-            .map(|maybe_s| {
+        Ok(Utf8Array::from_iter(
+            self.name(),
+            self.as_arrow().iter().map(|maybe_s| {
                 if let Some(s) = maybe_s {
-                    let mut s = s.to_string();
+                    let mut s = if opts.white_space {
+                        s.trim().to_string()
+                    } else {
+                        s.to_string()
+                    };
 
-                    if opts.remove_punct {
-                        s = s.chars().filter(|c| !c.is_ascii_punctuation()).collect();
-                    }
+                    let mut prev_white = true;
+                    s = s
+                        .chars()
+                        .flat_map(|c| -> Box<dyn Iterator<Item = char>> {
+                            if opts.white_space && c.is_whitespace() {
+                                if prev_white {
+                                    Box::new(std::iter::empty())
+                                } else {
+                                    prev_white = true;
+                                    Box::new(std::iter::once(' '))
+                                }
+                            } else if opts.lowercase && c.is_uppercase() {
+                                prev_white = false;
+                                Box::new(c.to_lowercase())
+                            } else if opts.remove_punct && c.is_ascii_punctuation() {
+                                Box::new(std::iter::empty::<char>())
+                            } else {
+                                prev_white = false;
+                                Box::new(std::iter::once(c))
+                            }
+                        })
+                        .collect();
 
-                    if opts.lowercase {
-                        s = s.to_lowercase();
-                    }
-
-                    if opts.white_space {
-                        s = whitespace_regex
-                            .replace_all(s.as_str().trim(), " ")
-                            .to_string();
-                    }
-
-                    if opts.nfd_unicode {
+                    if opts.nfd_unicode && is_nfd_quick(s.chars()) != IsNormalized::Yes {
                         s = s.nfd().collect();
                     }
 
-                    Ok(Some(s))
+                    Some(s)
                 } else {
-                    Ok(None)
+                    None
                 }
-            })
-            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
-
-        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+            }),
+        ))
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>
