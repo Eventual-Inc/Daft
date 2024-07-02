@@ -25,14 +25,14 @@ pub enum ImageExpr {
 
 impl ImageExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator{
         use ImageExpr::*;
 
         match self {
-            Decode { .. } => Box::new(DecodeEvaluator {}),
-            Encode { .. } => Box::new(EncodeEvaluator {}),
-            Resize { .. } => Box::new(ResizeEvaluator {}),
-            Crop { .. } => Box::new(CropEvaluator {}),
+            Decode { .. } => &DecodeEvaluator {},
+            Encode { .. } => &EncodeEvaluator {},
+            Resize { .. } => &ResizeEvaluator {},
+            Crop { .. } => &CropEvaluator {},
         }
     }
 }

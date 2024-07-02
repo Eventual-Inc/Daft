@@ -1674,6 +1674,7 @@ dependencies = [
  "erased-serde",
  "indexmap 2.2.6",
  "itertools 0.11.0",
+ "lazy_static",
  "pyo3",
  "pyo3-log",
  "serde",

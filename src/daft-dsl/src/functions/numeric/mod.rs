@@ -53,30 +53,30 @@ pub enum NumericExpr {
 
 impl NumericExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use NumericExpr::*;
         match self {
-            Abs => Box::new(AbsEvaluator {}),
-            Ceil => Box::new(CeilEvaluator {}),
-            Floor => Box::new(FloorEvaluator {}),
-            Sign => Box::new(SignEvaluator {}),
-            Round(_) => Box::new(RoundEvaluator {}),
-            Sqrt => Box::new(SqrtEvaluator {}),
-            Sin => Box::new(TrigonometryEvaluator(TrigonometricFunction::Sin)),
-            Cos => Box::new(TrigonometryEvaluator(TrigonometricFunction::Cos)),
-            Tan => Box::new(TrigonometryEvaluator(TrigonometricFunction::Tan)),
-            Cot => Box::new(TrigonometryEvaluator(TrigonometricFunction::Cot)),
-            ArcSin => Box::new(TrigonometryEvaluator(TrigonometricFunction::ArcSin)),
-            ArcCos => Box::new(TrigonometryEvaluator(TrigonometricFunction::ArcCos)),
-            ArcTan => Box::new(TrigonometryEvaluator(TrigonometricFunction::ArcTan)),
-            ArcTan2 => Box::new(Atan2Evaluator {}),
-            Radians => Box::new(TrigonometryEvaluator(TrigonometricFunction::Radians)),
-            Degrees => Box::new(TrigonometryEvaluator(TrigonometricFunction::Degrees)),
-            Log2 => Box::new(LogEvaluator(log::LogFunction::Log2)),
-            Log10 => Box::new(LogEvaluator(log::LogFunction::Log10)),
-            Log(_) => Box::new(LogEvaluator(log::LogFunction::Log)),
-            Ln => Box::new(LogEvaluator(log::LogFunction::Ln)),
-            Exp => Box::new(ExpEvaluator {}),
+            Abs => &AbsEvaluator {},
+            Ceil => &CeilEvaluator {},
+            Floor => &FloorEvaluator {},
+            Sign => &SignEvaluator {},
+            Round(_) => &RoundEvaluator {},
+            Sqrt => &SqrtEvaluator {},
+            Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
+            Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
+            Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
+            Cot => &TrigonometryEvaluator(TrigonometricFunction::Cot),
+            ArcSin => &TrigonometryEvaluator(TrigonometricFunction::ArcSin),
+            ArcCos => &TrigonometryEvaluator(TrigonometricFunction::ArcCos),
+            ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
+            ArcTan2 => &Atan2Evaluator {},
+            Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
+            Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
+            Log2 => &LogEvaluator(log::LogFunction::Log2),
+            Log10 => &LogEvaluator(log::LogFunction::Log10),
+            Log(_) => &LogEvaluator(log::LogFunction::Log),
+            Ln => &LogEvaluator(log::LogFunction::Ln),
+            Exp => &ExpEvaluator {},
         }
     }
 }

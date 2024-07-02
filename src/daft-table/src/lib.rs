@@ -398,6 +398,14 @@ impl Table {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
+            ScalarFunction { func, inputs } => {
+                let evaluated_inputs = inputs
+                    .iter()
+                    .map(|e| self.eval_expression(e))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                func.udf
+                    .evaluate(evaluated_inputs.as_slice(), func.args.as_slice())
+            }
             Literal(lit_value) => Ok(lit_value.to_series()),
             IfElse {
                 if_true,

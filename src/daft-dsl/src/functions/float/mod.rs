@@ -23,13 +23,13 @@ pub enum FloatExpr {
 
 impl FloatExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use FloatExpr::*;
         match self {
-            IsNan => Box::new(IsNanEvaluator {}),
-            IsInf => Box::new(IsInfEvaluator {}),
-            NotNan => Box::new(NotNanEvaluator {}),
-            FillNan => Box::new(FillNanEvaluator {}),
+            IsNan => &IsNanEvaluator {},
+            IsInf => &IsInfEvaluator {},
+            NotNan => &NotNanEvaluator {},
+            FillNan => &FillNanEvaluator {},
         }
     }
 }

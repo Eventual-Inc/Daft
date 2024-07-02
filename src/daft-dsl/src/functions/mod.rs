@@ -7,6 +7,7 @@ pub mod map;
 pub mod minhash;
 pub mod numeric;
 pub mod partitioning;
+pub mod registry;
 pub mod sketch;
 pub mod struct_;
 pub mod temporal;
@@ -35,7 +36,8 @@ use common_error::DaftResult;
 use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use hash::HashEvaluator;
-use minhash::MinHashExpr;
+
+use registry::REGISTRY;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
@@ -61,39 +63,40 @@ pub enum FunctionExpr {
     Partitioning(PartitioningExpr),
     Uri(UriExpr),
     Hash,
-    ScalarFunction(ScalarFunction),
 }
 
 #[derive(Debug, Clone)]
 pub struct ScalarFunction {
-    name: &'static str,
-    udf: Arc<dyn ScalarUDF>,
+    pub udf: Arc<dyn ScalarUDF>,
+    pub args: Vec<ExprRef>,
 }
 
 impl ScalarFunction {
-    pub fn new<UDF: ScalarUDF + 'static>(udf: UDF) -> Self {
-        let name = udf.name();
+    pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
         Self {
-            name,
             udf: Arc::new(udf),
+            args: inputs,
         }
     }
-}
-impl From<ScalarFunction> for FunctionExpr {
-    fn from(scalar: ScalarFunction) -> Self {
-        FunctionExpr::ScalarFunction(scalar)
+
+    pub fn name(&self) -> &str {
+        &self.udf.name()
+    }
+    pub fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        self.udf.to_field(&inputs, schema)
     }
 }
+
 impl PartialEq for ScalarFunction {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.udf.semantic_id() == other.udf.semantic_id()
+        self.name() == other.name() && self.udf.semantic_id() == other.udf.semantic_id()
     }
 }
 
 impl Eq for ScalarFunction {}
 impl Hash for ScalarFunction {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.name().hash(state);
         self.udf.semantic_id().hash(state);
     }
 }
@@ -104,8 +107,9 @@ impl Serialize for ScalarFunction {
         S: serde::Serializer,
     {
         let mut struct_ = serializer.serialize_struct("ScalarFunction", 2)?;
-        struct_.serialize_field("name", self.name)?;
-        struct_.serialize_field("udf", &self.udf)?;
+        struct_.serialize_field("name", &self.name())?;
+        struct_.serialize_field("inputs", &self.args)?;
+
         struct_.end()
     }
 }
@@ -127,16 +131,21 @@ impl<'de> Deserialize<'de> for ScalarFunction {
             where
                 A: serde::de::SeqAccess<'de>,
             {
-                let name = seq
+                let name: String = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &"2"))?;
-                match name {
-                    MinHashExpr::NAME => {
-                        let minhash = seq.next_element::<minhash::MinHashExpr>()?.unwrap();
-                        Ok(ScalarFunction::new(minhash))
-                    }
-                    _ => {
-                        return Err(serde::de::Error::unknown_field(name, &["minhash"]));
+
+                match REGISTRY.get(&name) {
+                    None => return Err(serde::de::Error::unknown_field(&name, &[])),
+                    Some(udf) => {
+                        let inputs = seq
+                            .next_element::<Vec<ExprRef>>()?
+                            .ok_or_else(|| serde::de::Error::invalid_length(1, &"2"))?;
+
+                        Ok(ScalarFunction {
+                            udf: udf.clone(),
+                            args: inputs,
+                        })
                     }
                 }
             }
@@ -145,18 +154,26 @@ impl<'de> Deserialize<'de> for ScalarFunction {
                 A: serde::de::MapAccess<'de>,
             {
                 let name = map
-                    .next_key::<&str>()?
+                    .next_key::<String>()?
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?;
-                match name {
-                    MinHashExpr::NAME => {
-                        let minhash = map.next_value::<minhash::MinHashExpr>()?;
-                        Ok(ScalarFunction::new(minhash))
+
+                match REGISTRY.get(&name) {
+                    None => return Err(serde::de::Error::unknown_field(&name, &[])),
+                    Some(udf) => {
+                        let inputs = map.next_value::<Vec<ExprRef>>()?;
+                        Ok(ScalarFunction {
+                            udf: udf.clone(),
+                            args: inputs,
+                        })
                     }
-                    _ => Err(serde::de::Error::unknown_field(name, &["minhash"])),
                 }
             }
         }
-        deserializer.deserialize_struct("ScalarFunction", &["name", "udf"], ScalarFunctionVisitor)
+        deserializer.deserialize_struct(
+            "ScalarFunction",
+            &["name", "inputs"],
+            ScalarFunctionVisitor,
+        )
     }
 }
 
@@ -165,35 +182,11 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + erased_serde::Serialize {
     /// Returns this object as an [`Any`] trait object
     fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        schema: &Schema,
-        expr: &FunctionExpr,
-    ) -> DaftResult<Field>;
+    fn evaluate(&self, inputs: &[Series], args: &[ExprRef]) -> DaftResult<Series>;
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
 }
+
 erased_serde::serialize_trait_object!(ScalarUDF);
-pub struct ScalarFunctionEvaluator(Arc<dyn ScalarUDF>);
-
-impl FunctionEvaluator for ScalarFunctionEvaluator {
-    fn fn_name(&self) -> &'static str {
-        self.0.name()
-    }
-
-    fn evaluate(&self, inputs: &[Series], _expr: &FunctionExpr) -> DaftResult<Series> {
-        self.0.evaluate(inputs)
-    }
-
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        schema: &Schema,
-        expr: &FunctionExpr,
-    ) -> DaftResult<Field> {
-        self.0.to_field(inputs, schema, expr)
-    }
-}
 
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
@@ -208,7 +201,7 @@ pub trait FunctionEvaluator {
 
 impl FunctionExpr {
     #[inline]
-    fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
@@ -223,10 +216,9 @@ impl FunctionExpr {
             Image(expr) => expr.get_evaluator(),
             Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
-            Python(expr) => Box::new(expr.clone()),
+            Python(expr) => expr,
             Partitioning(expr) => expr.get_evaluator(),
-            Hash => Box::new(HashEvaluator {}),
-            ScalarFunction(scalar) => Box::new(ScalarFunctionEvaluator(scalar.udf.clone())),
+            Hash => &HashEvaluator {},
         }
     }
 }
@@ -234,6 +226,12 @@ impl FunctionExpr {
 impl Display for FunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.fn_name())
+    }
+}
+
+impl Display for ScalarFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.udf.name())
     }
 }
 
@@ -268,7 +266,37 @@ pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[ExprRe
     Ok(())
 }
 
+pub fn scalar_function_display(
+    f: &mut Formatter,
+    func: &ScalarFunction,
+    inputs: &[ExprRef],
+) -> Result {
+    write!(f, "{}(", func)?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{input}")?;
+    }
+    write!(f, ")")?;
+    Ok(())
+}
+
 pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Schema) -> FieldID {
+    let inputs = inputs
+        .iter()
+        .map(|expr| expr.semantic_id(schema).id.to_string())
+        .collect::<Vec<String>>()
+        .join(", ");
+    // TODO: check for function idempotency here.
+    FieldID::new(format!("Function_{func:?}({inputs})"))
+}
+
+pub fn scalar_function_semantic_id(
+    func: &ScalarFunction,
+    inputs: &[ExprRef],
+    schema: &Schema,
+) -> FieldID {
     let inputs = inputs
         .iter()
         .map(|expr| expr.semantic_id(schema).id.to_string())

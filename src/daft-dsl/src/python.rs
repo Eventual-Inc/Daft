@@ -844,24 +844,24 @@ impl PyExpr {
         Ok(hash(self.into(), seed.map(|s| s.into())).into())
     }
 
-    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
-        if num_hashes <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "num_hashes must be positive: {num_hashes}"
-            )));
-        }
-        if ngram_size <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "ngram_size must be positive: {ngram_size}"
-            )));
-        }
-        let cast_seed = seed as u32;
+    pub fn minhash(&self, num_hashes: PyExpr, ngram_size: PyExpr, seed: PyExpr) -> PyResult<Self> {
+        // if num_hashes <= 0 {
+        //     return Err(PyValueError::new_err(format!(
+        //         "num_hashes must be positive: {num_hashes}"
+        //     )));
+        // }
+        // if ngram_size <= 0 {
+        //     return Err(PyValueError::new_err(format!(
+        //         "ngram_size must be positive: {ngram_size}"
+        //     )));
+        // }
+        // let cast_seed = seed as u32;
         use crate::functions::minhash::minhash;
         let expr = minhash(
             self.into(),
-            num_hashes as usize,
-            ngram_size as usize,
-            cast_seed,
+            num_hashes.into(),
+            ngram_size.into(),
+            seed.into(),
         );
         println!("expr = {:?}", expr);
         Ok(expr.into())

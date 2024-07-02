@@ -27,6 +27,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
         | Expr::Function { .. }
+        | Expr::ScalarFunction { .. }
         | Expr::Not(..)
         | Expr::IsNull(..)
         | Expr::NotNull(..)
@@ -34,6 +35,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::IsIn { .. }
         | Expr::Between { .. }
         | Expr::IfElse { .. } => true,
+        
     }
 }
 

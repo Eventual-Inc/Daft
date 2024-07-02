@@ -14,10 +14,10 @@ pub enum JsonExpr {
 
 impl JsonExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> Box<dyn FunctionEvaluator> {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use JsonExpr::*;
         match self {
-            Query(_) => Box::new(JsonQueryEvaluator {}),
+            Query(_) => &JsonQueryEvaluator {},
         }
     }
 }
