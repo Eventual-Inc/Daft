@@ -499,6 +499,18 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series <= other._series)
 
+    def __lshift__(self, other: object) -> Series:
+        if not isinstance(other, Series):
+            raise TypeError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series << other._series)
+
+    def __rshift__(self, other: object) -> Series:
+        if not isinstance(other, Series):
+            raise TypeError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series >> other._series)
+
     def __invert__(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.__invert__())
@@ -540,6 +552,18 @@ class Series:
     def sum(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
+
+    def shift_right(self, bits: Series) -> Series:
+        if not isinstance(bits, Series):
+            raise TypeError(f"expected another Series but got {type(bits)}")
+        assert self._series is not None and bits._series is not None
+        return Series._from_pyseries(self._series.shift_right(bits._series))
+
+    def shift_left(self, bits: Series) -> Series:
+        if not isinstance(bits, Series):
+            raise TypeError(f"expected another Series but got {type(bits)}")
+        assert self._series is not None and bits._series is not None
+        return Series._from_pyseries(self._series.shift_left(bits._series))
 
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):

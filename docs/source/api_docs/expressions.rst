@@ -47,6 +47,8 @@ Numeric
     Expression.__mul__
     Expression.__truediv__
     Expression.__mod__
+    Expression.__lshift__
+    Expression.__rshift__
     Expression.ceil
     Expression.floor
     Expression.sign
@@ -67,6 +69,8 @@ Numeric
     Expression.log
     Expression.ln
     Expression.exp
+    Expression.shift_left
+    Expression.shift_right
 
 .. _api-comparison-expression:
 

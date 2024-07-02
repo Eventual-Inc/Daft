@@ -754,6 +754,14 @@ impl Expr {
                         let result_type = (&left_field.dtype % &right_field.dtype)?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
+                    Operator::ShiftLeft => {
+                        let result_type = (&left_field.dtype << &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
+                    }
+                    Operator::ShiftRight => {
+                        let result_type = (&left_field.dtype >> &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
+                    }
                     Operator::FloorDivide => {
                         unimplemented!()
                     }
@@ -849,6 +857,8 @@ impl Expr {
                         Operator::GtEq => ">=",
                         Operator::And => "AND",
                         Operator::Or => "OR",
+                        Operator::ShiftLeft => "<<",
+                        Operator::ShiftRight => ">>",
                         _ => {
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
@@ -989,6 +999,8 @@ pub enum Operator {
     And,
     Or,
     Xor,
+    ShiftLeft,
+    ShiftRight,
 }
 
 impl Display for Operator {
@@ -1010,6 +1022,8 @@ impl Display for Operator {
             And => "&",
             Or => "|",
             Xor => "^",
+            ShiftLeft => "<<",
+            ShiftRight => ">>",
         };
         write!(f, "{tkn}")
     }

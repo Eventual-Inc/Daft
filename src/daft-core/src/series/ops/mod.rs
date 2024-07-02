@@ -33,6 +33,7 @@ pub mod null;
 pub mod partitioning;
 pub mod round;
 pub mod search_sorted;
+pub mod shift;
 pub mod sign;
 pub mod sketch_percentile;
 pub mod sort;
