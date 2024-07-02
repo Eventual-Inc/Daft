@@ -12,7 +12,7 @@ impl Series {
                 bits.data_type()
             )));
         }
-        let bits = bits.cast(&DataType::UInt64)?;
+        let bits = bits.cast_to_uint64()?;
         match self.data_type() {
             DataType::Int8 => Ok(self.i8()?.shift_left(bits.u64()?)?.into_series()),
             DataType::Int16 => Ok(self.i16()?.shift_left(bits.u64()?)?.into_series()),
@@ -37,7 +37,7 @@ impl Series {
                 bits.data_type()
             )));
         }
-        let bits = bits.cast(&DataType::UInt64)?;
+        let bits = bits.cast_to_uint64()?;
         match self.data_type() {
             DataType::Int8 => Ok(self.i8()?.shift_right(bits.u64()?)?.into_series()),
             DataType::Int16 => Ok(self.i16()?.shift_right(bits.u64()?)?.into_series()),

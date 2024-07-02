@@ -287,6 +287,14 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_unsigned(&self) -> bool {
+        matches!(
+            self,
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
+        )
+    }
+
+    #[inline]
     pub fn is_floating(&self) -> bool {
         matches!(
             self,
