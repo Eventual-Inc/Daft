@@ -212,6 +212,14 @@ impl AzureBlobSource {
                 storage_credentials,
             )
             .blob_service_client()
+        } else if config.use_fabric_endpoint {
+            ClientBuilder::with_location(
+                CloudLocation::Custom {
+                    uri: format!("https://{}.blob.fabric.microsoft.com", storage_account),
+                },
+                storage_credentials,
+            )
+            .blob_service_client()
         } else {
             BlobServiceClient::new(storage_account, storage_credentials)
         };
