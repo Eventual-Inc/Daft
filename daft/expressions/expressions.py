@@ -138,6 +138,11 @@ class Expression:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
     @property
+    def bytes(self) -> ExpressionBinaryNamespace:
+        """Access methods that work on columns of binary data"""
+        return ExpressionBinaryNamespace.from_expression(self)
+
+    @property
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
@@ -1088,6 +1093,26 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
+
+
+class ExpressionBinaryNamespace(ExpressionNamespace):
+    def upload_to_folder(self, folder_location: str, io_config: IOConfig | None = None) -> Expression:
+        """Uploads a column of binary data to the provided folder location (also supports S3, local etc)
+
+        Files will be written into the folder with a generated UUID filename, and the result will be returned
+        as a column of string paths that is compatible with the ``.url.download()`` Expression.
+
+        Example:
+            >>> col("data").bytes.upload_to_folder("s3://my-bucket/my-folder")
+
+        Args:
+            folder_location: a folder location to upload data into
+            io_config: IOConfig to use when uploading data
+
+        Returns:
+            Expression: a String expression containing the written filepath
+        """
+        return Expression._from_pyexpr(self._expr.binary_upload_to_folder(folder_location, io_config))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
