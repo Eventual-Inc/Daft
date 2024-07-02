@@ -46,6 +46,10 @@ pub enum GetResult {
     ),
 }
 
+pub struct PutResult {
+    pub path: String,
+}
+
 async fn collect_bytes<S>(
     mut stream: S,
     size_hint: Option<usize>,
@@ -178,6 +182,13 @@ pub(crate) trait ObjectSource: Sync + Send {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult>;
+
+    async fn put(
+        &self,
+        uri: &str,
+        data: Vec<u8>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<PutResult>;
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize>;
 

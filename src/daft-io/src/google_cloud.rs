@@ -21,6 +21,7 @@ use crate::object_io::FileMetadata;
 use crate::object_io::FileType;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
+use crate::object_io::PutResult;
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::GetResult;
@@ -414,6 +415,15 @@ impl ObjectSource for GCSSource {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         self.client.get(uri, range, io_stats).await
+    }
+
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: Vec<u8>,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<PutResult> {
+        todo!();
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {

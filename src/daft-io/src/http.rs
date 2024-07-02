@@ -12,7 +12,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
 use crate::{
-    object_io::{FileMetadata, FileType, LSResult},
+    object_io::{FileMetadata, FileType, LSResult, PutResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
 };
@@ -229,6 +229,15 @@ impl ObjectSource for HttpSource {
             None,
             None,
         ))
+    }
+
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: Vec<u8>,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<PutResult> {
+        todo!();
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {

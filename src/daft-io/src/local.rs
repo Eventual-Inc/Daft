@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use crate::object_io::{self, FileMetadata, LSResult};
+use crate::object_io::{self, FileMetadata, LSResult, PutResult};
 use crate::stats::IOStatsRef;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -130,6 +130,15 @@ impl ObjectSource for LocalSource {
         } else {
             Err(Error::InvalidFilePath { path: uri.into() }.into())
         }
+    }
+
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: Vec<u8>,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<PutResult> {
+        todo!();
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
