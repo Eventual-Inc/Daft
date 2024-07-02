@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, ListArray},
+    array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
@@ -8,7 +8,7 @@ use crate::{
     },
     kernels,
     utils::arrow::arrow_bitmap_and_helper,
-    with_match_hashable_daft_types,
+    with_match_hashable_daft_types, DataType, Series,
 };
 
 use common_error::DaftResult;
@@ -91,77 +91,110 @@ impl NullArray {
     }
 }
 
+// we take in offsets as a slice of i64 because that's what's needed for .windows()
+// tuple_windows exists but it's not a TrustedLen iterator which is needed for UInt64Array::from_iter
+// maybe there's a better option because it would be best to avoid materializing for FixedSizeList
+fn hash_list(
+    name: &str,
+    offsets: &[i64],
+    flat_child: &Series,
+    validity: Option<&arrow2::bitmap::Bitmap>,
+    seed: Option<&UInt64Array>,
+) -> DaftResult<UInt64Array> {
+    // first we recursively call hashing on the sublists
+    // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
+    // then we hash each sublist as bytes, giving us [hash, hash, ...] as desired
+    // seed only applies to row as a whole, hashes within a row are unseeded
+    // this code is kind of scuffed because we need to account for every combination of seed existence + self validity
+    if validity.is_some() || seed.is_some_and(|arr| arr.null_count() > 0) {
+        if let Some(seed_arr) = seed {
+            let combined_validity = arrow_bitmap_and_helper(validity, seed_arr.validity())
+                .expect("there should be some invalid element");
+            // need to extract the sublists from the flattened child
+            let windows_iter = offsets
+                .windows(2)
+                .zip(seed_arr.as_arrow().values_iter())
+                .zip(combined_validity);
+            with_match_hashable_daft_types!(flat_child.data_type(), |$T| {
+                let downcasted = flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                Ok(UInt64Array::from_iter(name, windows_iter.map(|((w, s), valid)| {
+                    if !valid {
+                        return None;
+                    }
+                    let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
+                    let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
+                    Some(xxh3_64_with_seed(&bytes, *s))
+                })))
+            })
+        } else {
+            let windows_iter = offsets.windows(2).zip(validity.unwrap());
+            with_match_hashable_daft_types!(flat_child.data_type(), |$T| {
+                let downcasted = flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                Ok(UInt64Array::from_iter(name, windows_iter.map(|(w, valid)| {
+                    if !valid {
+                        return None;
+                    }
+                    let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
+                    let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
+                    Some(xxh3_64(&bytes))
+                })))
+            })
+        }
+    } else {
+        // I think it's more readable this way
+        #[allow(clippy::collapsible_else_if)]
+        if let Some(seed_arr) = seed {
+            let windows_iter = offsets.windows(2).zip(seed_arr.as_arrow().values_iter());
+            with_match_hashable_daft_types!(flat_child.data_type(), |$T| {
+                let downcasted = flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                Ok(UInt64Array::from_iter(name, windows_iter.map(|(w, s)| {
+                    let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
+                    let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
+                    Some(xxh3_64_with_seed(&bytes, *s))
+                })))
+            })
+        } else {
+            let windows_iter = offsets.windows(2);
+            with_match_hashable_daft_types!(flat_child.data_type(), |$T| {
+                let downcasted = flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                Ok(UInt64Array::from_iter(name, windows_iter.map(|w| {
+                    let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
+                    let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
+                    Some(xxh3_64(&bytes))
+                })))
+            })
+        }
+    }
+}
+
 impl ListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        // first we recursively call hashing on the sublists
-        // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
-        // then we hash each sublist as bytes, giving us [hash, hash, ...] as desired
-        // seed only applies to row as a whole, hashes within a row are unseeded
-        // this code is kind of scuffed because we need to account for every combination of seed existence + self validity
-        if self.null_count() > 0 || seed.is_some_and(|arr| arr.null_count() > 0) {
-            if let Some(seed_arr) = seed {
-                let combined_validity =
-                    arrow_bitmap_and_helper(self.validity(), seed_arr.validity())
-                        .expect("there should be some invalid element");
-                // need to extract the sublists from the flattened child
-                let windows_iter = self
-                    .offsets()
-                    .windows(2)
-                    .zip(seed_arr.as_arrow().values_iter())
-                    .zip(combined_validity);
-                with_match_hashable_daft_types!(self.flat_child.data_type(), |$T| {
-                    let downcasted = self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                    Ok(UInt64Array::from_iter(self.name(), windows_iter.map(|((w, s), valid)| {
-                        if !valid {
-                            return None;
-                        }
-                        let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
-                        let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
-                        Some(xxh3_64_with_seed(&bytes, *s))
-                    })))
-                })
-            } else {
-                let windows_iter = self.offsets().windows(2).zip(self.validity().unwrap());
-                with_match_hashable_daft_types!(self.flat_child.data_type(), |$T| {
-                    let downcasted = self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                    Ok(UInt64Array::from_iter(self.name(), windows_iter.map(|(w, valid)| {
-                        if !valid {
-                            return None;
-                        }
-                        let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
-                        let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
-                        Some(xxh3_64(&bytes))
-                    })))
-                })
-            }
-        } else {
-            // I think it's more readable this way
-            #[allow(clippy::collapsible_else_if)]
-            if let Some(seed_arr) = seed {
-                let windows_iter = self
-                    .offsets()
-                    .windows(2)
-                    .zip(seed_arr.as_arrow().values_iter());
-                with_match_hashable_daft_types!(self.flat_child.data_type(), |$T| {
-                    let downcasted = self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                    Ok(UInt64Array::from_iter(self.name(), windows_iter.map(|(w, s)| {
-                        let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
-                        let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
-                        Some(xxh3_64_with_seed(&bytes, *s))
-                    })))
-                })
-            } else {
-                let windows_iter = self.offsets().windows(2);
-                with_match_hashable_daft_types!(self.flat_child.data_type(), |$T| {
-                    let downcasted = self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                    Ok(UInt64Array::from_iter(self.name(), windows_iter.map(|w| {
-                        let hashes = downcasted.slice(w[0] as usize, w[1] as usize).ok()?.hash(None).ok()?;
-                        let bytes: Vec<u8> = hashes.as_arrow().values_iter().flat_map(|v| v.to_le_bytes()).collect();
-                        Some(xxh3_64(&bytes))
-                    })))
-                })
-            }
-        }
+        hash_list(
+            self.name(),
+            self.offsets(),
+            &self.flat_child,
+            self.validity(),
+            seed,
+        )
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        let size = match self.field.dtype {
+            DataType::FixedSizeList(_, s) => s,
+            _ => panic!("dtype is not FixedSizeList"),
+        };
+        let len = self.flat_child.len() as i64;
+        // see comment on hash_list for why we are collecting
+        let offsets: Vec<i64> = (0..=len).step_by(size).collect();
+        hash_list(
+            self.name(),
+            &offsets,
+            &self.flat_child,
+            self.validity(),
+            seed,
+        )
     }
 }
 

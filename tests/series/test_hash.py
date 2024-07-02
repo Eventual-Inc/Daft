@@ -256,6 +256,102 @@ def test_hash_list_array_consistency(dtype):
     assert hashed1 == hashed2
 
 
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_hash_fixed_size_list_array_no_seed(dtype):
+    arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], [2, 1]]).cast(
+        DataType.fixed_size_list(dtype, 2)
+    )
+
+    hashed = arr.hash().to_pylist()
+    assert hashed[0] == hashed[2]
+    assert hashed[4] == hashed[5]
+
+    different_inds = [0, 1, 3, 4, 6]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+@pytest.mark.parametrize("seed", [1, 2, 42])
+def test_hash_fixed_size_list_array_seeded(dtype, seed):
+    arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], [2, 1]]).cast(
+        DataType.fixed_size_list(dtype, 2)
+    )
+    seeds = Series.from_pylist([seed] * 9).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+    assert hashed[0] == hashed[2]
+    assert hashed[4] == hashed[5]
+
+    different_inds = [0, 1, 3, 4, 6]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_hash_fixed_size_list_array_no_seed_with_invalid(dtype):
+    arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], None, [2, 1], None]).cast(
+        DataType.fixed_size_list(dtype, 2)
+    )
+
+    hashed = arr.hash().to_pylist()
+    assert hashed[0] == hashed[2]
+    assert hashed[4] == hashed[5]
+    assert hashed[6] is None
+    assert hashed[8] is None
+
+    different_inds = [0, 1, 3, 4, 7]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+@pytest.mark.parametrize("seed", [1, 2, 42])
+def test_hash_fixed_size_list_array_seeded_with_invalid(dtype, seed):
+    arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], None, [2, 1], None]).cast(
+        DataType.fixed_size_list(dtype, 2)
+    )
+    seeds = Series.from_pylist([seed] * 9).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+    assert hashed[0] == hashed[2]
+    assert hashed[4] == hashed[5]
+    assert hashed[6] is None
+    assert hashed[8] is None
+
+    different_inds = [0, 1, 3, 4, 7]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_hash_fixed_size_list_array_different_seeds(dtype):
+    arr = Series.from_pylist([[1, 2], [1, 2], [1, 2], [1, 2]]).cast(DataType.fixed_size_list(dtype, 2))
+    seeds = Series.from_pylist([1, 2, 3, 4]).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+
+    different_inds = [0, 1, 2, 3]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_hash_fixed_size_list_array_consistency(dtype):
+    data = [[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], None, [2, 1], None]
+    arr1 = Series.from_pylist(data).cast(DataType.fixed_size_list(dtype, 2))
+    arr2 = Series.from_pylist(data).cast(DataType.fixed_size_list(dtype, 2))
+
+    hashed1 = arr1.hash().to_pylist()
+    hashed2 = arr2.hash().to_pylist()
+    assert hashed1 == hashed2
+
+
 @pytest.mark.parametrize(
     "dtype",
     [
