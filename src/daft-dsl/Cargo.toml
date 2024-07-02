@@ -9,11 +9,11 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 erased-serde = "0.4.5"
 indexmap = {workspace = true}
 itertools = {workspace = true}
+lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
-lazy_static = {workspace = true}
 
 [features]
 default = ["python"]
