@@ -83,7 +83,10 @@ pub struct S3Credentials {
 ///     tenant_id (str, optional): Azure Tenant ID
 ///     client_id (str, optional): Azure Client ID
 ///     client_secret (str, optional): Azure Client Secret
+///     use_fabric_endpoint (bool, optional): Whether to use Microsoft Fabric, you may want to set this if your URLs are from "fabric.microsoft.com". Defaults to false
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
+///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. "https://my-account-name.blob.core.windows.net". Overrides `use_fabric_endpoint` if set
+///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
 ///
 /// Example:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
@@ -668,6 +671,7 @@ impl AzureConfig {
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
+        use_fabric_endpoint: Option<bool>,
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
@@ -682,6 +686,7 @@ impl AzureConfig {
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
                 client_secret: client_secret.or(def.client_secret),
+                use_fabric_endpoint: use_fabric_endpoint.unwrap_or(def.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
@@ -699,6 +704,7 @@ impl AzureConfig {
         tenant_id: Option<String>,
         client_id: Option<String>,
         client_secret: Option<String>,
+        use_fabric_endpoint: Option<bool>,
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
@@ -712,6 +718,7 @@ impl AzureConfig {
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
                 client_secret: client_secret.or_else(|| self.config.client_secret.clone()),
+                use_fabric_endpoint: use_fabric_endpoint.unwrap_or(self.config.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
@@ -760,6 +767,12 @@ impl AzureConfig {
     #[getter]
     pub fn client_secret(&self) -> PyResult<Option<String>> {
         Ok(self.config.client_secret.clone())
+    }
+
+    /// Whether to use Microsoft Fabric
+    #[getter]
+    pub fn use_fabric_endpoint(&self) -> PyResult<bool> {
+        Ok(self.config.use_fabric_endpoint)
     }
 
     /// Whether access is anonymous
