@@ -25,7 +25,7 @@ pub enum ImageExpr {
 
 impl ImageExpr {
     #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator{
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use ImageExpr::*;
 
         match self {

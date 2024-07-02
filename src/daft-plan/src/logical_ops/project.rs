@@ -352,8 +352,10 @@ fn replace_column_with_semantic_id(
                     )
                 }
             }
-            Expr::ScalarFunction { func, inputs } => {
-                let transforms = inputs
+            Expr::ScalarFunction(func) => {
+                let mut func = func.clone();
+                let transforms = func
+                    .inputs
                     .iter()
                     .map(|e| {
                         replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
@@ -362,13 +364,8 @@ fn replace_column_with_semantic_id(
                 if transforms.iter().all(|e| e.is_no()) {
                     Transformed::No(e)
                 } else {
-                    Transformed::Yes(
-                        Expr::ScalarFunction {
-                            func: func.clone(),
-                            inputs: transforms.iter().map(|t| t.unwrap()).cloned().collect(),
-                        }
-                        .into(),
-                    )
+                    func.inputs = transforms.iter().map(|t| t.unwrap()).cloned().collect();
+                    Transformed::Yes(Expr::ScalarFunction(func).into())
                 }
             }
         }

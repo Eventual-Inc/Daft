@@ -35,7 +35,6 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::IsIn { .. }
         | Expr::Between { .. }
         | Expr::IfElse { .. } => true,
-        
     }
 }
 

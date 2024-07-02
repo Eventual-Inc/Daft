@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::{ScalarFunction, ScalarUDF};
+use super::{hash::HashFunction, ScalarUDF};
 
 lazy_static::lazy_static! {
     pub static ref REGISTRY: Registry = Registry::new();
@@ -12,8 +12,11 @@ pub struct Registry {
 
 impl Registry {
     fn new() -> Self {
+        let iter: Vec<(&'static str, Arc<dyn ScalarUDF>)> =
+            vec![("hash", Arc::new(HashFunction {}))];
+
         Self {
-            functions: HashMap::new(),
+            functions: iter.into_iter().collect(),
         }
     }
     pub fn register(&mut self, function: Arc<dyn ScalarUDF>) {
