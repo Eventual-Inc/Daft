@@ -85,7 +85,7 @@ pub struct S3Credentials {
 ///     client_secret (str, optional): Azure Client Secret
 ///     use_fabric_endpoint (bool, optional): Whether to use Microsoft Fabric, you may want to set this if your URLs are from "fabric.microsoft.com". Defaults to false
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
-///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. "https://my-account-name.blob.core.windows.net". Overrides `use_fabric_endpoint` if set
+///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. ``https://my-account-name.blob.core.windows.net``. Overrides `use_fabric_endpoint` if set
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
 ///
 /// Example:
