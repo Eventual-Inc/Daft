@@ -62,3 +62,24 @@ pass a different :class:`daft.io.AzureConfig` per function call if you wish!
 
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("az://my_container/my_other_path/**/*", io_config=io_config)
+
+Connect to Onelake
+****************************
+You need to register an App in Azure to get Client_id and Client_secret
+
+.. code:: python
+
+    from azure.identity import ClientSecretCredential, AuthenticationRequiredError
+    import daft
+    from daft.io import IOConfig, AzureConfig
+    credential = ClientSecretCredential(
+                    client_id="xxxxxx",
+                    client_secret="yyyyyyy",
+                    tenant_id="zzzzzzz"
+                    )
+    access_token =       credential.get_token("https://storage.azure.com/.default").token
+    io_config = IOConfig(azure=AzureConfig(storage_account="onelake",endpoint_url="https://onelake.blob.fabric.microsoft.com",bearer_token=access_token))
+    # if your workspace has a blank, then use workspace_id then
+    xx = daft.read_deltalake('abfss://workspace_name@onelake.dfs.fabric.microsoft.com/lakehouse_name.Lakehouse/Tables/', io_config=io_config)
+
+
