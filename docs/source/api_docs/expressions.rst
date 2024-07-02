@@ -47,6 +47,8 @@ Numeric
     Expression.__mul__
     Expression.__truediv__
     Expression.__mod__
+    Expression.__lshift__
+    Expression.__rshift__
     Expression.ceil
     Expression.floor
     Expression.sign

@@ -513,6 +513,12 @@ def test_table_shift_left_bad_shift() -> None:
         table.eval_expression_list([col("a").shift_left(lit("a"))])
 
 
+def test_table_shift_left_broadcast_bits() -> None:
+    table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [1]})
+    shift_left_table = table.eval_expression_list([col("a").shift_right(col("b"))])
+    assert [1 << 1, 2 << 1, 4 << 1] == shift_left_table.get_column("a").to_pylist()
+
+
 def test_table_shift_right() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, 1]})
     shift_right_table = table.eval_expression_list([col("a").shift_right(col("b"))])
@@ -531,3 +537,9 @@ def test_table_shift_right_bad_shift() -> None:
 
     with pytest.raises(ValueError, match="Expected inputs to shift to be integer"):
         table.eval_expression_list([col("a").shift_right(lit("a"))])
+
+
+def test_table_shift_right_broadcast_bits() -> None:
+    table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [1]})
+    shift_right_table = table.eval_expression_list([col("a").shift_right(col("b"))])
+    assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_right_table.get_column("a").to_pylist()

@@ -113,6 +113,14 @@ impl PySeries {
         Ok(self.series.xor(&other.series)?.into())
     }
 
+    pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_left(&other.series)?.into())
+    }
+
+    pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_right(&other.series)?.into())
+    }
+
     pub fn ceil(&self) -> PyResult<Self> {
         Ok(self.series.ceil()?.into())
     }

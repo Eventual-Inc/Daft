@@ -60,7 +60,7 @@ where
             }
             _ => {
                 return Err(DaftError::ValueError(format!(
-                    "Expected input and bits to shift to be of length 1, got {} and {}",
+                    "Trying to operate on different lengths, got {} and {}",
                     self.len(),
                     bits.len()
                 )))
@@ -116,7 +116,7 @@ where
             }
             _ => {
                 return Err(DaftError::ValueError(format!(
-                    "Expected input and bits to shift to be of length 1, got {} and {}",
+                    "Trying to operate on different lengths, got {} and {}",
                     self.len(),
                     bits.len()
                 )))

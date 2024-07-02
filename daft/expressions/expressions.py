@@ -319,6 +319,16 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
+    def __lshift__(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the left (``e1 << e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr << expr._expr)
+
+    def __rshift__(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the right (``e1 >> e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr >> expr._expr)
+
     def __invert__(self) -> Expression:
         """Inverts a boolean expression (``~e``)"""
         expr = self._expr.__invert__()
