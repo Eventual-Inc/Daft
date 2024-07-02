@@ -285,6 +285,16 @@ impl IOClient {
             None => Ok(None),
         }
     }
+
+    async fn single_url_upload(
+        &self,
+        _index: usize,
+        _data: Option<Vec<u8>>,
+        _dest: String,
+        _io_stats: Option<IOStatsRef>,
+    ) -> Result<Option<String>> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
@@ -549,4 +559,116 @@ pub fn url_download(
             "url download not implemented for type {dt}"
         ))),
     }
+}
+
+pub fn upload_to_folder(
+    series: &Series,
+    folder_path: &str,
+    max_connections: usize,
+    multi_thread: bool,
+    config: Arc<IOConfig>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<Series> {
+    fn _upload_bytes_to_folder(
+        folder_path: &str,
+        bytes_iter: impl Iterator<Item = Option<Vec<u8>>>,
+        max_connections: usize,
+        multi_thread: bool,
+        config: Arc<IOConfig>,
+        io_stats: Option<IOStatsRef>,
+    ) -> DaftResult<Vec<Option<String>>> {
+        let runtime_handle = get_runtime(multi_thread)?;
+        let _rt_guard = runtime_handle.enter();
+        let max_connections = match multi_thread {
+            false => max_connections,
+            true => max_connections * usize::from(std::thread::available_parallelism()?),
+        };
+        let io_client = get_io_client(multi_thread, config)?;
+        let folder_path = folder_path.trim_end_matches('/');
+
+        let uploads = futures::stream::iter(bytes_iter.enumerate().map(|(i, data)| {
+            let owned_client = io_client.clone();
+            let owned_io_stats = io_stats.clone();
+
+            // TODO: Allow configuration of this path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
+            let path = format!("{}/{}", folder_path, uuid::Uuid::new_v4());
+
+            tokio::spawn(async move {
+                (
+                    i,
+                    owned_client
+                        .single_url_upload(i, data, path, owned_io_stats)
+                        .await,
+                )
+            })
+        }))
+        .buffer_unordered(max_connections)
+        .then(async move |r| match r {
+            Ok((i, Ok(v))) => Ok((i, v)),
+            Ok((_i, Err(error))) => Err(error),
+            Err(error) => Err(Error::JoinError { source: error }),
+        });
+
+        let collect_future = uploads.try_collect::<Vec<_>>();
+        let mut results = runtime_handle.block_on(collect_future)?;
+        results.sort_by_key(|k| k.0);
+
+        Ok(results.into_iter().map(|(_, path)| path).collect())
+    }
+
+    let results = match series.data_type() {
+        DataType::Binary => {
+            let bytes_iter = series
+                .binary()
+                .unwrap()
+                .as_arrow()
+                .iter()
+                .map(|bytes_slice| bytes_slice.map(|b| b.to_vec()));
+            _upload_bytes_to_folder(
+                folder_path,
+                bytes_iter,
+                max_connections,
+                multi_thread,
+                config,
+                io_stats,
+            )
+        }
+        DataType::FixedSizeBinary(..) => {
+            let bytes_iter = series
+                .fixed_size_binary()
+                .unwrap()
+                .as_arrow()
+                .iter()
+                .map(|bytes_slice| bytes_slice.map(|b| b.to_vec()));
+            _upload_bytes_to_folder(
+                folder_path,
+                bytes_iter,
+                max_connections,
+                multi_thread,
+                config,
+                io_stats,
+            )
+        }
+        DataType::Utf8 => {
+            let bytes_iter = series
+                .utf8()
+                .unwrap()
+                .as_arrow()
+                .iter()
+                .map(|utf8_slice| utf8_slice.map(|s| s.as_bytes().to_vec()));
+            _upload_bytes_to_folder(
+                folder_path,
+                bytes_iter,
+                max_connections,
+                multi_thread,
+                config,
+                io_stats,
+            )
+        }
+        dt => Err(DaftError::TypeError(format!(
+            "upload_to_folder not implemented for type {dt}"
+        ))),
+    }?;
+
+    Ok(Utf8Array::from_iter(series.name(), results.into_iter()).into_series())
 }

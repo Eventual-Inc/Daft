@@ -38,6 +38,7 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 url = {workspace = true}
+uuid = "1.9.1"
 
 [dependencies.reqwest]
 default-features = false
