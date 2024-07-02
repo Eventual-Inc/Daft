@@ -812,7 +812,7 @@ impl Expr {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
-            ScalarFunction(func) => func.name(),
+            ScalarFunction(func) => func.inputs.first().unwrap().name(),
             BinaryOp {
                 op: _,
                 left,

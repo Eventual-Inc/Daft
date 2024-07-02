@@ -35,7 +35,6 @@ impl ScalarFunction {
 }
 
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug + erased_serde::Serialize {
-    fn semantic_id(&self) -> FieldID;
     fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
     // TODO: evaluate should allow for &[Series | LiteralValue] inputs.
@@ -58,7 +57,7 @@ pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> Fi
 
 impl PartialEq for ScalarFunction {
     fn eq(&self, other: &Self) -> bool {
-        self.name() == other.name() && self.udf.semantic_id() == other.udf.semantic_id()
+        self.name() == other.name() && self.inputs == other.inputs
     }
 }
 
@@ -66,7 +65,7 @@ impl Eq for ScalarFunction {}
 impl std::hash::Hash for ScalarFunction {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name().hash(state);
-        self.udf.semantic_id().hash(state);
+        self.inputs.hash(state);
     }
 }
 

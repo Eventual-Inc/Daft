@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{Field, FieldID, UInt64Array},
+    datatypes::{Field, UInt64Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -11,13 +11,9 @@ use crate::{Expr, ExprRef};
 use super::{ScalarFunction, ScalarUDF};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct HashFunction {}
+pub(super) struct HashFunction;
 
 impl ScalarUDF for HashFunction {
-    fn semantic_id(&self) -> daft_core::datatypes::FieldID {
-        FieldID::from_name(self.name())
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
