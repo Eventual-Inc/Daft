@@ -62,6 +62,7 @@ nb_execution_mode = "off"
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["header.css", "custom-function-signatures.css"]
+html_js_files = ["custom.js"]
 html_theme_options = {
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
