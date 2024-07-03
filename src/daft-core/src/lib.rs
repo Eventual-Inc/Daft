@@ -1,6 +1,8 @@
 #![feature(let_chains)]
 #![feature(int_roundings)]
 #![feature(iterator_try_reduce)]
+#![feature(ascii_char)]
+#![feature(ascii_char_variants)]
 
 pub mod array;
 pub mod count_mode;
