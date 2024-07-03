@@ -39,6 +39,12 @@ enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("Unable to open file for writing {}: {}", path, source))]
+    UnableToOpenFileForWriting {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to read data from file {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
@@ -100,7 +106,7 @@ impl From<Error> for super::Error {
                 }
             }
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
-            UnableToWriteToFile { path, source } => {
+            UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
                 super::Error::UnableToWriteToFile { path, source }
             }
             _ => super::Error::Generic {
@@ -150,9 +156,11 @@ impl ObjectSource for LocalSource {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
             let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true) // truncate file if it already exists...
                 .write(true)
                 .open(stripped_uri)
-                .with_context(|_| UnableToOpenFileSnafu { path: uri })?;
+                .with_context(|_| UnableToOpenFileForWritingSnafu { path: uri })?;
             Ok(file
                 .write_all(&data)
                 .with_context(|_| UnableToWriteToFileSnafu { path: uri })?)

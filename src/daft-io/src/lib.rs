@@ -62,6 +62,12 @@ pub enum Error {
     #[snafu(display("Unable to open file {}: {:?}", path, source))]
     UnableToOpenFile { path: String, source: DynError },
 
+    #[snafu(display("Unable to create directory {}: {:?}", path, source))]
+    UnableToCreateDir {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to read data from file {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
@@ -611,6 +617,21 @@ pub fn upload_to_folder(
         config: Arc<IOConfig>,
         io_stats: Option<IOStatsRef>,
     ) -> DaftResult<Vec<Option<String>>> {
+        // HACK: Creates folders if running locally. This is a bit of a hack to do it here because we'd rather delegate this to
+        // the appropriate source. However, most sources such as the object stores don't have the concept of "folders".
+        let (source, folder_path) = parse_url(folder_path)?;
+        if matches!(source, SourceType::File) {
+            let local_prefixless_folder_path = match folder_path.strip_prefix("file://") {
+                Some(p) => p,
+                None => folder_path.as_ref(),
+            };
+            std::fs::create_dir_all(local_prefixless_folder_path).with_context(|_| {
+                UnableToCreateDirSnafu {
+                    path: folder_path.as_ref().to_string(),
+                }
+            })?;
+        }
+
         let runtime_handle = get_runtime(multi_thread)?;
         let _rt_guard = runtime_handle.enter();
         let max_connections = match multi_thread {
@@ -618,7 +639,7 @@ pub fn upload_to_folder(
             true => max_connections * usize::from(std::thread::available_parallelism()?),
         };
         let io_client = get_io_client(multi_thread, config)?;
-        let folder_path = folder_path.trim_end_matches('/');
+        let folder_path = folder_path.as_ref().trim_end_matches('/');
 
         let uploads = futures::stream::iter(bytes_iter.enumerate().map(|(i, data)| {
             let owned_client = io_client.clone();

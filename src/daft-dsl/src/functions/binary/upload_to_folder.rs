@@ -1,4 +1,5 @@
 use daft_core::{datatypes::Field, schema::Schema, series::Series, DataType};
+use daft_io::upload_to_folder;
 
 use crate::ExprRef;
 
@@ -31,7 +32,7 @@ impl FunctionEvaluator for UploadToFolderEvaluator {
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
-        let (_folder_location, _io_config) = match expr {
+        let (folder_location, io_config) = match expr {
             FunctionExpr::Binary(BinaryExpr::UploadToFolder {
                 folder_location,
                 io_config,
@@ -42,7 +43,17 @@ impl FunctionEvaluator for UploadToFolderEvaluator {
         }?;
 
         match inputs {
-            [_data] => todo!("Implement uploading of data"),
+            [data] => upload_to_folder(
+                data,
+                folder_location,
+                // TODO: enable these to be configurable. We probably want to do multi_thread=False for the Ray
+                // case, and override the default s3.max_connections_per_io_thread to be a much higher number
+                // to optimize for small-file uploads
+                io_config.s3.max_connections_per_io_thread as usize,
+                true,
+                io_config.clone(),
+                None,
+            ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()
