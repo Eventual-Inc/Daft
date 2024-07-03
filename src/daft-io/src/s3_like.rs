@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use aws_config::meta::credentials::CredentialsProviderChain;
 use aws_config::retry::RetryMode;
 use aws_config::timeout::TimeoutConfig;
+use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use futures::stream::BoxStream;
 use reqwest::StatusCode;
@@ -59,6 +60,16 @@ enum Error {
         source: SdkError<GetObjectError, Response>,
     },
 
+    #[snafu(display(
+        "Unable to put file to {}: {}",
+        path,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToPutFile {
+        path: String,
+        source: SdkError<PutObjectError, Response>,
+    },
+
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
         path: String,
@@ -105,6 +116,9 @@ enum Error {
     UnableToCreateTlsConnector {
         source: hyper_tls::native_tls::Error,
     },
+
+    #[snafu(display("Uploads cannot be anonymous. Please disable anonymous S3 access."))]
+    UploadsCannotBeAnonymous {},
 }
 
 impl From<Error> for super::Error {
@@ -913,6 +927,51 @@ impl S3LikeSource {
                 .into()),
         }
     }
+
+    #[async_recursion]
+    async fn _put_impl(
+        &self,
+        _permit: OwnedSemaphorePermit,
+        uri: &str,
+        data: Vec<u8>,
+        region: &Region,
+    ) -> super::Result<()> {
+        log::debug!(
+            "S3 put at {uri}, num_bytes: {}, in region: {region}",
+            data.len()
+        );
+        let (_scheme, bucket, key) = parse_url(uri)?;
+
+        if key.is_empty() {
+            Err(Error::NotAFile { path: uri.into() }.into())
+        } else {
+            log::debug!("S3 put parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
+            let request = self
+                .get_s3_client(region)
+                .await?
+                .put_object()
+                .body(data.into())
+                .bucket(bucket)
+                .key(key);
+
+            let request = if self.s3_config.requester_pays {
+                request.request_payer(s3::types::RequestPayer::Requester)
+            } else {
+                request
+            };
+
+            let response = if self.anonymous {
+                return Err(Error::UploadsCannotBeAnonymous {}.into());
+            } else {
+                request.send().await
+            };
+
+            match response {
+                Ok(_) => Ok(()),
+                Err(err) => Err(UnableToPutFileSnafu { path: uri }.into_error(err).into()),
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -954,11 +1013,26 @@ impl ObjectSource for S3LikeSource {
 
     async fn put(
         &self,
-        _uri: &str,
-        _data: Vec<u8>,
-        _io_stats: Option<IOStatsRef>,
+        uri: &str,
+        data: Vec<u8>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        todo!();
+        let data_len = data.len();
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        self._put_impl(permit, uri, data, &self.default_region)
+            .await?;
+
+        if let Some(io_stats) = io_stats {
+            io_stats.as_ref().mark_put_requests(1);
+            io_stats.as_ref().mark_bytes_uploaded(data_len);
+        }
+
+        Ok(())
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
