@@ -21,7 +21,6 @@ use crate::object_io::FileMetadata;
 use crate::object_io::FileType;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
-use crate::object_io::PutResult;
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::GetResult;
@@ -422,7 +421,7 @@ impl ObjectSource for GCSSource {
         _uri: &str,
         _data: Vec<u8>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<PutResult> {
+    ) -> super::Result<()> {
         todo!();
     }
 

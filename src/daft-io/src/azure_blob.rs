@@ -12,7 +12,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 use std::{ops::Range, sync::Arc};
 
 use crate::{
-    object_io::{FileMetadata, FileType, LSResult, ObjectSource, PutResult},
+    object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     GetResult,
@@ -534,7 +534,7 @@ impl ObjectSource for AzureBlobSource {
         _uri: &str,
         _data: Vec<u8>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<PutResult> {
+    ) -> super::Result<()> {
         todo!();
     }
 

@@ -9,7 +9,7 @@ use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
 use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
-use crate::object_io::{FileMetadata, FileType, LSResult, PutResult};
+use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::{get_io_pool_num_threads, InvalidArgumentSnafu, SourceType};
@@ -957,7 +957,7 @@ impl ObjectSource for S3LikeSource {
         _uri: &str,
         _data: Vec<u8>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<PutResult> {
+    ) -> super::Result<()> {
         todo!();
     }
 

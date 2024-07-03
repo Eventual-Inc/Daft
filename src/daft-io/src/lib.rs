@@ -20,7 +20,6 @@ pub mod python;
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;
 pub use object_io::GetResult;
-use object_io::PutResult;
 use object_io::StreamingRetryParams;
 #[cfg(feature = "python")]
 pub use python::register_modules;
@@ -65,6 +64,12 @@ pub enum Error {
 
     #[snafu(display("Unable to read data from file {}: {}", path, source))]
     UnableToReadBytes {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to write data to file {}: {}", path, source))]
+    UnableToWriteToFile {
         path: String,
         source: std::io::Error,
     },
@@ -245,14 +250,13 @@ impl IOClient {
 
     pub async fn single_url_put(
         &self,
-        dest: String,
+        dest: &str,
         data: Vec<u8>,
         io_stats: Option<IOStatsRef>,
-    ) -> Result<PutResult> {
-        let (scheme, dest) = parse_url(&dest)?;
+    ) -> Result<()> {
+        let (scheme, dest) = parse_url(dest)?;
         let source = self.get_source(&scheme).await?;
-        let put_result = source.put(dest.as_ref(), data, io_stats.clone()).await?;
-        Ok(put_result)
+        source.put(dest.as_ref(), data, io_stats.clone()).await
     }
 
     pub async fn single_url_get_size(
@@ -307,14 +311,14 @@ impl IOClient {
         io_stats: Option<IOStatsRef>,
     ) -> Result<Option<String>> {
         let value = if let Some(data) = data {
-            let response = self.single_url_put(dest, data, io_stats).await;
+            let response = self.single_url_put(dest.as_str(), data, io_stats).await;
             Some(response)
         } else {
             None
         };
 
         match value {
-            Some(Ok(res)) => Ok(Some(res.path)),
+            Some(Ok(())) => Ok(Some(dest)),
             Some(Err(err)) => {
                 log::warn!(
                     "Error occurred during file upload at index: {index} {} (falling back to Null)",

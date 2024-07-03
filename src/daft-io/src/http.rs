@@ -12,7 +12,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
 use crate::{
-    object_io::{FileMetadata, FileType, LSResult, PutResult},
+    object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
 };
@@ -236,7 +236,7 @@ impl ObjectSource for HttpSource {
         _uri: &str,
         _data: Vec<u8>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<PutResult> {
+    ) -> super::Result<()> {
         todo!();
     }
 

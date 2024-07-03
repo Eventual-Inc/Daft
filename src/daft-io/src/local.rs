@@ -1,8 +1,8 @@
-use std::io::SeekFrom;
+use std::io::{SeekFrom, Write};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use crate::object_io::{self, FileMetadata, LSResult, PutResult};
+use crate::object_io::{self, FileMetadata, LSResult};
 use crate::stats::IOStatsRef;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -29,6 +29,12 @@ pub(crate) struct LocalSource {}
 enum Error {
     #[snafu(display("Unable to open file {}: {}", path, source))]
     UnableToOpenFile {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to write to file {}: {}", path, source))]
+    UnableToWriteToFile {
         path: String,
         source: std::io::Error,
     },
@@ -94,6 +100,9 @@ impl From<Error> for super::Error {
                 }
             }
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToWriteToFile { path, source } => {
+                super::Error::UnableToWriteToFile { path, source }
+            }
             _ => super::Error::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
@@ -134,11 +143,22 @@ impl ObjectSource for LocalSource {
 
     async fn put(
         &self,
-        _uri: &str,
-        _data: Vec<u8>,
+        uri: &str,
+        data: Vec<u8>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<PutResult> {
-        todo!();
+    ) -> super::Result<()> {
+        const LOCAL_PROTOCOL: &str = "file://";
+        if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(stripped_uri)
+                .with_context(|_| UnableToOpenFileSnafu { path: uri })?;
+            Ok(file
+                .write_all(&data)
+                .with_context(|_| UnableToWriteToFileSnafu { path: uri })?)
+        } else {
+            Err(Error::InvalidFilePath { path: uri.into() }.into())
+        }
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
