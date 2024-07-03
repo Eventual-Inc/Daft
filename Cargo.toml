@@ -104,6 +104,7 @@ members = [
   "src/daft-dsl",
   "src/daft-table",
   "src/daft-plan",
+  "src/daft-physical-plan",
   "src/daft-micropartition",
   "src/daft-scan",
   "src/daft-scheduler",

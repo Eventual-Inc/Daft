@@ -1859,6 +1859,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-physical-plan"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-dsl",
+ "daft-plan",
+ "log",
+]
+
+[[package]]
 name = "daft-plan"
 version = "0.2.0-dev0"
 dependencies = [

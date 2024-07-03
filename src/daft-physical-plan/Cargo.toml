@@ -1,0 +1,11 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-plan = {path = "../daft-plan", default-features = false}
+log = {workspace = true}
+
+
+[package]
+edition = {workspace = true}
+name = "daft-physical-plan"
+version = {workspace = true}
