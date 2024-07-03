@@ -1349,60 +1349,34 @@ impl Utf8Array {
                         s.to_string()
                     };
 
-                    if let Some(ascii_s) = s.as_ascii() {
-                        let mut prev_white = true;
-                        let char_vec: Vec<std::ascii::Char> = ascii_s
-                            .iter()
-                            .filter_map(|c| {
-                                let cc = c.to_char();
-                                if opts.white_space && cc.is_ascii_whitespace() {
-                                    if prev_white {
-                                        None
-                                    } else {
-                                        prev_white = true;
-                                        Some(std::ascii::Char::Space)
-                                    }
-                                } else if opts.lowercase && cc.is_ascii_uppercase() {
-                                    prev_white = false;
-                                    Some(cc.to_ascii_lowercase().as_ascii().unwrap())
-                                } else if opts.remove_punct && cc.is_ascii_punctuation() {
+                    let mut prev_white = true;
+                    s = s
+                        .chars()
+                        .filter_map(|c| {
+                            if opts.white_space && c.is_whitespace() {
+                                if prev_white {
                                     None
                                 } else {
-                                    prev_white = false;
-                                    Some(*c)
+                                    prev_white = true;
+                                    Some(' ')
                                 }
-                            })
-                            .collect();
-                        Some(char_vec.as_str().to_string())
-                    } else {
-                        let mut prev_white = true;
-                        s = s
-                            .chars()
-                            .flat_map(|c| -> Box<dyn Iterator<Item = char>> {
-                                if opts.white_space && c.is_whitespace() {
-                                    if prev_white {
-                                        Box::new(std::iter::empty())
-                                    } else {
-                                        prev_white = true;
-                                        Box::new(std::iter::once(' '))
-                                    }
-                                } else if opts.lowercase && c.is_uppercase() {
-                                    prev_white = false;
-                                    Box::new(c.to_lowercase())
-                                } else if opts.remove_punct && c.is_ascii_punctuation() {
-                                    Box::new(std::iter::empty::<char>())
-                                } else {
-                                    prev_white = false;
-                                    Box::new(std::iter::once(c))
-                                }
-                            })
-                            .collect();
+                            } else if opts.remove_punct && c.is_ascii_punctuation() {
+                                None
+                            } else {
+                                prev_white = false;
+                                Some(c)
+                            }
+                        })
+                        .collect();
 
-                        if opts.nfd_unicode && is_nfd_quick(s.chars()) != IsNormalized::Yes {
-                            s = s.nfd().collect();
-                        }
-                        Some(s)
+                    if opts.lowercase {
+                        s = s.to_lowercase();
                     }
+
+                    if opts.nfd_unicode && is_nfd_quick(s.chars()) != IsNormalized::Yes {
+                        s = s.nfd().collect();
+                    }
+                    Some(s)
                 } else {
                     None
                 }
