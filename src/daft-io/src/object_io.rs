@@ -182,7 +182,7 @@ pub(crate) trait ObjectSource: Sync + Send {
     async fn put(
         &self,
         uri: &str,
-        data: Vec<u8>,
+        data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<()>;
 

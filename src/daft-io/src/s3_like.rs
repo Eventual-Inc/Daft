@@ -933,7 +933,7 @@ impl S3LikeSource {
         &self,
         _permit: OwnedSemaphorePermit,
         uri: &str,
-        data: Vec<u8>,
+        data: bytes::Bytes,
         region: &Region,
     ) -> super::Result<()> {
         log::debug!(
@@ -1014,7 +1014,7 @@ impl ObjectSource for S3LikeSource {
     async fn put(
         &self,
         uri: &str,
-        data: Vec<u8>,
+        data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
         let data_len = data.len();

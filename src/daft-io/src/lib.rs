@@ -257,7 +257,7 @@ impl IOClient {
     pub async fn single_url_put(
         &self,
         dest: &str,
-        data: Vec<u8>,
+        data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
         let (scheme, dest) = parse_url(dest)?;
@@ -313,7 +313,7 @@ impl IOClient {
         &self,
         index: usize,
         dest: String,
-        data: Option<Vec<u8>>,
+        data: Option<bytes::Bytes>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<Option<String>> {
         let value = if let Some(data) = data {
@@ -601,6 +601,10 @@ pub fn url_download(
     }
 }
 
+/// Uploads data from a Binary/FixedSizeBinary/Utf8 Series to the provided folder_path
+///
+/// This performs an async upload of each row, and creates in-memory copies of the data that is currently in-flight.
+/// Memory consumption should be tunable by configuring `max_connections`, which tunes the number of in-flight tokio tasks.
 pub fn upload_to_folder(
     series: &Series,
     folder_path: &str,
@@ -611,7 +615,13 @@ pub fn upload_to_folder(
 ) -> DaftResult<Series> {
     fn _upload_bytes_to_folder(
         folder_path: &str,
-        bytes_iter: impl Iterator<Item = Option<Vec<u8>>>,
+        // TODO: We can further optimize this for larger rows by using instead an Iterator<Item = bytes::Bytes>
+        // This would allow us to iteratively copy smaller chunks of data and feed it to the AWS SDKs, instead
+        // of materializing the entire row at once as a single bytes::Bytes.
+        //
+        // Alternatively, we can find a way of creating a `bytes::Bytes` that just references the underlying
+        // arrow2 buffer, without making a copy. This would be the ideal case.
+        bytes_iter: impl Iterator<Item = Option<bytes::Bytes>>,
         max_connections: usize,
         multi_thread: bool,
         config: Arc<IOConfig>,
@@ -678,7 +688,7 @@ pub fn upload_to_folder(
                 .unwrap()
                 .as_arrow()
                 .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| b.to_vec()));
+                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
             _upload_bytes_to_folder(
                 folder_path,
                 bytes_iter,
@@ -694,7 +704,7 @@ pub fn upload_to_folder(
                 .unwrap()
                 .as_arrow()
                 .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| b.to_vec()));
+                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
             _upload_bytes_to_folder(
                 folder_path,
                 bytes_iter,
@@ -705,12 +715,10 @@ pub fn upload_to_folder(
             )
         }
         DataType::Utf8 => {
-            let bytes_iter = series
-                .utf8()
-                .unwrap()
-                .as_arrow()
-                .iter()
-                .map(|utf8_slice| utf8_slice.map(|s| s.as_bytes().to_vec()));
+            let bytes_iter =
+                series.utf8().unwrap().as_arrow().iter().map(|utf8_slice| {
+                    utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec()))
+                });
             _upload_bytes_to_folder(
                 folder_path,
                 bytes_iter,

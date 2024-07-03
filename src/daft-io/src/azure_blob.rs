@@ -532,7 +532,7 @@ impl ObjectSource for AzureBlobSource {
     async fn put(
         &self,
         _uri: &str,
-        _data: Vec<u8>,
+        _data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
         todo!();

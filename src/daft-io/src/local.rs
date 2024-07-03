@@ -150,7 +150,7 @@ impl ObjectSource for LocalSource {
     async fn put(
         &self,
         uri: &str,
-        data: Vec<u8>,
+        data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
         const LOCAL_PROTOCOL: &str = "file://";
