@@ -744,9 +744,33 @@ class DataFrame:
         --------
 
 
+        >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
         >>> df.write_lance("/tmp/lance/my_table.lance")
-        >>> daft.read_lance("/tmp/lance/my_table.lance")
+        >>> # ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+        >>> # │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+        >>> # │ ---           ┆ ---              ┆ ---             ┆ ---     │
+        >>> # │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+        >>> # ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+        >>> # │ 1             ┆ 0                ┆ 1               ┆ 1       │
+        >>> # ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()
+        ╭───────╮
+        │ a     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ├╌╌╌╌╌╌╌┤
+        │ 3     │
+        ├╌╌╌╌╌╌╌┤
+        │ 4     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
 
 
         # Pass additional keyword arguments to the Lance writer
@@ -951,39 +975,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-            >>> df = df.select(col('x'), col('y'))
-            >>> df.show()
-            ╭───────┬───────╮
-            │ x     ┆ y     │
-            │ ---   ┆ ---   │
-            │ Int64 ┆ Int64 │
-            ╞═══════╪═══════╡
-            │ 1     ┆ 4     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     │
-            ╰───────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            >>> df = df.select(col('x') * col('y'))
-            >>> df.show()
-            ╭───────╮
-            │ x     │
-            │ ---   │
-            │ Int64 │
-            ╞═══════╡
-            │ 4     │
-            ├╌╌╌╌╌╌╌┤
-            │ 10    │
-            ├╌╌╌╌╌╌╌┤
-            │ 18    │
-            ╰───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df = df.select('x', col('y'), col('z') + 1)
             >>> df.show()
             ╭───────┬───────┬───────╮
@@ -1016,7 +1008,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7,8,8]})
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
             >>> unique_df = df.distinct()
             >>> unique_df.show()
             ╭───────┬───────┬───────╮
@@ -1049,20 +1041,19 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sampled_df = df.sample(0.5)
-            >>> sampled_df.show()
-            ╭───────┬───────┬───────╮
-            │ x     ┆ y     ┆ z     │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     ┆ 9     │
-            ╰───────┴───────┴───────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
+            >>> # Samples will vary from output to output
+            >>> # here is a sample output
+            >>> # ╭───────┬───────┬───────╮
+            >>> # │ x     ┆ y     ┆ z     │
+            >>> # │ ---   ┆ ---   ┆ ---   │
+            >>> # │ Int64 ┆ Int64 ┆ Int64 │
+            >>> # |═══════╪═══════╪═══════╡
+            >>> # │ 2     ┆ 5     ┆ 8     │
+            >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            >>> # │ 3     ┆ 6     ┆ 9     │
+            >>> # ╰───────┴───────┴───────╯
 
         Args:
             fraction (float): fraction of rows to sample.
@@ -1086,7 +1077,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df_without_x = df.exclude('x')
             >>> df_without_x.show()
             ╭───────┬───────╮
@@ -1119,7 +1110,7 @@ class DataFrame:
         Example:
 
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
@@ -1154,20 +1145,20 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> new_df = df.with_column('x+1', col('x') + 1)
             >>> new_df.show()
-            ╭───────┬───────┬───────┬───────╮
-            │ x     ┆ y     ┆ z     ┆ x+1   │
-            │ ---   ┆ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╪═══════╡
-            │ 1     ┆ 4     ┆ 7     ┆ 2     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 8     ┆ 3     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     ┆ 9     ┆ 4     │
-            ╰───────┴───────┴───────┴───────╯
+            ╭───────┬───────╮
+            │ x     ┆ x+1   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     │
+            ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
@@ -1234,7 +1225,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
             >>> sorted_df = df.sort(col('x') + col('y'))
             >>> sorted_df.show()
             ╭───────┬───────╮
@@ -1242,33 +1233,16 @@ class DataFrame:
             │ ---   ┆ ---   │
             │ Int64 ┆ Int64 │
             ╞═══════╪═══════╡
-            │ 1     ┆ 4     │
+            │ 2     ┆ 4     │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     │
-            ╰───────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> sorted_df = df.sort([col('x'), col('y')], desc=[False, True])
-            >>> sorted_df.show()
-            ╭───────┬───────╮
-            │ x     ┆ y     │
-            │ ---   ┆ ---   │
-            │ Int64 ┆ Int64 │
-            ╞═══════╪═══════╡
-            │ 1     ┆ 4     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     │
+            │ 1     ┆ 5     │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3     ┆ 6     │
             ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sorted_df = df.sort(['z', col('x'), col('y')], desc=[True, False, True])
             >>> sorted_df.show()
             ╭───────┬───────┬───────╮
@@ -1371,7 +1345,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> random_repart_df = df.repartition(4)
             >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
             >>> part_by_df.show()
@@ -1416,22 +1390,10 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df_with_5_partitions = df.into_partitions(5)
-            >>> df_with_5_partitions.show()
-            ╭───────┬───────┬───────╮
-            │ x     ┆ y     ┆ z     │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ 1     ┆ 4     ┆ 7     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     ┆ 9     │
-            ╰───────┴───────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
+            >>> df_with_5_partitions.num_partitions()
+            5
 
         Args:
             num (int): number of target partitions.
@@ -1677,7 +1639,11 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"year": [2020, 2021, 2022], "Jan": [10, 30, 50], "Feb": [20, 40, 60],})
+            >>> df = daft.from_pydict({
+            ... "year": [2020, 2021, 2022],
+            ... "Jan": [10, 30, 50],
+            ... "Feb": [20, 40, 60],
+            ... })
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
@@ -1921,6 +1887,7 @@ class DataFrame:
             ╞═════════╪════════════════════╪════════════════════╪═══════════╡
             │ 0.55    ┆ 0.8500000000000001 ┆ 0.6000000000000001 ┆ 0.85      │
             ╰─────────┴────────────────────┴────────────────────┴───────────╯
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Args:
@@ -1959,6 +1926,7 @@ class DataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
             │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
             ╰──────┴─────────┴─────────┴────────┴────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
@@ -1987,7 +1955,12 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> data = {"id": [1, 2, 3, 4],"version": ["3.8", "3.8", "3.9", "3.9"],"platform": ["macos", "macos", "macos", "windows"],"downloads": [100, 200, 150, 250],}
+            >>> data = {
+            ... "id": [1, 2, 3, 4],
+            ... "version": ["3.8", "3.8", "3.9", "3.9"],
+            ... "platform": ["macos", "macos", "macos", "windows"],
+            ... "downloads": [100, 200, 150, 250],
+            ... }
             >>> df = daft.from_pydict(data)
             >>> df = df.pivot("version", "platform", "downloads", "sum")
             >>> df.show()
@@ -2150,7 +2123,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> 'x' in df
             True
 
@@ -2561,6 +2534,7 @@ class GroupedDataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
             │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
             ╰──────┴─────────┴─────────┴────────┴────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
