@@ -405,11 +405,11 @@ class Series:
     def arctanh(self) -> Series:
         """The elementwise inverse hyperbolic tangent of a numeric series"""
         return Series._from_pyseries(self._series.arctanh())
-    
+
     def arccosh(self) -> Series:
         """The elementwise inverse hyperbolic cosine of a numeric series"""
         return Series._from_pyseries(self._series.arccosh())
-    
+
     def arcsinh(self) -> Series:
         """The elementwise inverse hyperbolic sine of a numeric series"""
         return Series._from_pyseries(self._series.arcsinh())

@@ -196,6 +196,7 @@ def test_atan2(binary_data_fixture):
         resolvable=is_numeric(lhs.datatype()) and is_numeric(rhs.datatype()),
     )
 
+
 def test_atanh(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
@@ -205,6 +206,7 @@ def test_atanh(unary_data_fixture):
         resolvable=is_numeric(arg.datatype()),
     )
 
+
 def test_asinh(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
@@ -213,6 +215,7 @@ def test_asinh(unary_data_fixture):
         run_kernel=lambda: arg.arcsinh(),
         resolvable=is_numeric(arg.datatype()),
     )
+
 
 def test_acosh(unary_data_fixture):
     arg = unary_data_fixture

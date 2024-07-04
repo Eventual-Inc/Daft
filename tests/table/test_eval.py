@@ -366,6 +366,7 @@ def test_table_numeric_atan2_literals() -> None:
             is True
         )
 
+
 def test_table_numeric_arctanh() -> None:
     table = MicroPartition.from_pydict({"a": [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, math.nan]})
     s = table.to_pandas()["a"]
@@ -389,7 +390,7 @@ def test_table_numeric_arcsinh() -> None:
     arcs = table.eval_expression_list([col("a").arcsinh()])
     assert (
         all(
-            x - y < 1.0e-10 or (x is None and y is None)or (math.isnan(x) and math.isnan(y))
+            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
             for x, y in zip(arcs.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
