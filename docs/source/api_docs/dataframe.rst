@@ -61,8 +61,6 @@ Filtering Rows
     DataFrame.limit
     DataFrame.sample
 
-
-
 Reordering
 **********
 

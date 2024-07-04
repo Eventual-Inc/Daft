@@ -747,13 +747,15 @@ class DataFrame:
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
         >>> df.write_lance("/tmp/lance/my_table.lance")
-        >>> # ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        >>> # │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        >>> # │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        >>> # │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        >>> # ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        >>> # │ 1             ┆ 0                ┆ 1               ┆ 1       │
-        >>> # ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+        │ ---           ┆ ---              ┆ ---             ┆ ---     │
+        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+        │ 1             ┆ 0                ┆ 1               ┆ 1       │
+        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
 
         >>> daft.read_lance("/tmp/lance/my_table.lance").collect()
         ╭───────╮
@@ -776,7 +778,15 @@ class DataFrame:
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
         >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
-
+        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+        │ ---           ┆ ---              ┆ ---             ┆ ---     │
+        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+        │ 1             ┆ 0                ┆ 1               ┆ 2       │
+        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
         """
         import sys
 
@@ -957,26 +967,8 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> from daft import col
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7,8,9]})
-            >>> df = df.select('x', 'y')
-            >>> df.show()
-            ╭───────┬───────╮
-            │ x     ┆ y     │
-            │ ---   ┆ ---   │
-            │ Int64 ┆ Int64 │
-            ╞═══════╪═══════╡
-            │ 1     ┆ 4     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     │
-            ╰───────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df = df.select('x', col('y'), col('z') + 1)
+            >>> df = df.select('x', daft.col('y'), daft.col('z') + 1)
             >>> df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
@@ -1242,6 +1234,8 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            You can also sort by multiple columns, and specify the sort order for each column:
+
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sorted_df = df.sort(['z', col('x'), col('y')], desc=[True, False, True])
             >>> sorted_df.show()
@@ -1346,22 +1340,9 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> random_repart_df = df.repartition(4)
-            >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
-            >>> part_by_df.show()
-            ╭───────┬───────┬───────╮
-            │ x     ┆ y     ┆ z     │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ 1     ┆ 4     ┆ 7     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 6     ┆ 9     │
-            ╰───────┴───────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
+            >>> repartitioned_df = df.repartition(3)
+            >>> repartitioned_df.num_partitions()
+            3
 
         Args:
             num (Optional[int]): Number of target partitions; if None, the number of partitions will not be changed.
@@ -1601,7 +1582,16 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [[1], [2, 3]],"y": [["a"], ["b", "c"]],"z": [[1.0],[2.0, 2.0],]})
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "x": [[1], [2, 3]],
+            ...         "y": [["a"], ["b", "c"]],
+            ...         "z": [
+            ...             [1.0],
+            ...             [2.0, 2.0],
+            ...         ],
+            ...     }
+            ... )
             >>> df.explode(col("x"), col("y")).collect()
             ╭───────┬──────┬───────────────╮
             │ x     ┆ y    ┆ z             │
@@ -1640,9 +1630,9 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({
-            ... "year": [2020, 2021, 2022],
-            ... "Jan": [10, 30, 50],
-            ... "Feb": [20, 40, 60],
+            ...     "year": [2020, 2021, 2022],
+            ...     "Jan": [10, 30, 50],
+            ...     "Feb": [20, 40, 60],
             ... })
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
@@ -1956,10 +1946,10 @@ class DataFrame:
         Example:
             >>> import daft
             >>> data = {
-            ... "id": [1, 2, 3, 4],
-            ... "version": ["3.8", "3.8", "3.9", "3.9"],
-            ... "platform": ["macos", "macos", "macos", "windows"],
-            ... "downloads": [100, 200, 150, 250],
+            ...     "id": [1, 2, 3, 4],
+            ...     "version": ["3.8", "3.8", "3.9", "3.9"],
+            ...     "platform": ["macos", "macos", "macos", "windows"],
+            ...     "downloads": [100, 200, 150, 250],
             ... }
             >>> df = daft.from_pydict(data)
             >>> df = df.pivot("version", "platform", "downloads", "sum")
@@ -2549,12 +2539,11 @@ class GroupedDataFrame:
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
 
         Example:
-            >>> import daft
+            >>> import daft, statistics
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
-            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮
@@ -2566,6 +2555,7 @@ class GroupedDataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 331.62026476076517 │
             ╰───────┴────────────────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
