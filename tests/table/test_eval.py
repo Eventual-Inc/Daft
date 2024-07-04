@@ -368,7 +368,7 @@ def test_table_numeric_atan2_literals() -> None:
 
 
 def test_table_numeric_cbrt() -> None:
-    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    table = MicroPartition.from_pydict({"a": [0, 1, 8, 27, 64, None], "b": [-1, -8, -27, -64, None, None]})
     cbrt_table = table.eval_expression_list([col("a").cbrt(), col("b").cbrt()])
     assert [v ** (1 / 3) if v is not None else v for v in table.get_column("a").to_pylist()] == cbrt_table.get_column(
         "a"
