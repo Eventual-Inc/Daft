@@ -1215,6 +1215,10 @@ class DataFrame:
     ) -> "DataFrame":
         """Sorts DataFrame globally
 
+        Note:
+            * Since this a global sort, this requires an expensive repartition which can be quite slow.
+            * Supports multicolumn sorts and can have unique `descending` flag per column.
+
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
@@ -1234,28 +1238,27 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-            You can also sort by multiple columns, and specify the sort order for each column:
+            You can also sort by multiple columns, and specify the 'descending' flag for each column:
 
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> sorted_df = df.sort(['z', col('x'), col('y')], desc=[True, False, True])
+            >>> df = daft.from_pydict({"x": [1, 2, 1, 2], "y": [9, 8, 7, 6]})
+            >>> sorted_df = df.sort(["x", "y"], [True, False])
             >>> sorted_df.show()
-            ╭───────┬───────┬───────╮
-            │ x     ┆ y     ┆ z     │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ 3     ┆ 6     ┆ 9     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 1     ┆ 4     ┆ 7     │
-            ╰───────┴───────┴───────╯
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 2     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 9     │
+            ╰───────┴───────╯
             <BLANKLINE>
-            (Showing first 3 of 3 rows)
+            (Showing first 4 of 4 rows)
 
-        Note:
-            * Since this a global sort, this requires an expensive repartition which can be quite slow.
-            * Supports multicolumn sorts and can have unique `descending` flag per column.
         Args:
             column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
