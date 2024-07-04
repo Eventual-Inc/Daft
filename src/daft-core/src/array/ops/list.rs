@@ -10,9 +10,9 @@ use crate::{
 };
 use crate::{CountMode, DataType};
 
-use crate::series::Series;
+use crate::series::{IntoSeries, Series};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
 
@@ -137,6 +137,19 @@ impl ListArray {
         )))
     }
 
+    // Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
+    // `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
+    // times, otherwise we simply take the original array.
+    fn create_iter<'a>(&'a self, arr: &'a Int64Array) -> Box<dyn Iterator<Item = i64> + '_> {
+        match arr.len() {
+            1 => Box::new(repeat(arr.get(0).unwrap()).take(self.len())),
+            len => {
+                assert_eq!(len, self.len());
+                Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
+            }
+        }
+    }
+
     fn get_children_helper(
         &self,
         idx_iter: impl Iterator<Item = i64>,
@@ -181,17 +194,70 @@ impl ListArray {
     }
 
     pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
-        match idx.len() {
-            1 => {
-                let idx_iter = repeat(idx.get(0).unwrap()).take(self.len());
-                self.get_children_helper(idx_iter, default)
+        let idx_iter = self.create_iter(idx);
+        self.get_children_helper(idx_iter, default)
+    }
+
+    pub fn get_slices_helper(
+        &self,
+        start_iter: impl Iterator<Item = i64>,
+        length_iter: impl Iterator<Item = i64>,
+    ) -> DaftResult<Series> {
+        let old_offsets = self.offsets();
+        let mut slicing_indexes = Vec::with_capacity(self.len());
+        let mut new_offsets = Vec::with_capacity(self.len() + 1);
+        new_offsets.push(0);
+        for (i, (start, length)) in start_iter.zip(length_iter).enumerate() {
+            if length < 0 {
+                return Err(DaftError::ValueError(
+                    "Length must be greater than or equal to 0".into(),
+                ));
             }
-            len => {
-                assert_eq!(len, self.len());
-                let idx_iter = idx.as_arrow().iter().map(|x| *x.unwrap());
-                self.get_children_helper(idx_iter, default)
+            let is_valid = self.is_valid(i);
+            let starting_idx = old_offsets.get(i).unwrap();
+            let ending_idx = old_offsets.get(i + 1).unwrap();
+            let slice_idx = if start >= 0 {
+                starting_idx + start
+            } else {
+                ending_idx + start
+            };
+            let adjusted_length = (length).min(*ending_idx - slice_idx);
+            if is_valid && slice_idx >= *starting_idx && adjusted_length > 0 {
+                slicing_indexes.push(slice_idx);
+                new_offsets.push(new_offsets.last().unwrap() + adjusted_length);
+            } else {
+                slicing_indexes.push(-1);
+                new_offsets.push(*new_offsets.last().unwrap());
             }
         }
+        let total_capacity = *new_offsets.last().unwrap();
+        let default = Series::full_null("null", self.child_data_type(), 1);
+        let mut growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child, &default],
+            true, // TODO is this right?
+            total_capacity as usize,
+        );
+        for (i, start) in slicing_indexes.iter().enumerate() {
+            if *start >= 0 {
+                let slice_len = new_offsets.get(i + 1).unwrap() - new_offsets.get(i).unwrap();
+                growable.extend(0, *start as usize, slice_len as usize);
+            }
+        }
+        Ok(ListArray::new(
+            self.field.clone(),
+            growable.build()?,
+            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            self.validity().cloned(),
+        )
+        .into_series())
+    }
+
+    pub fn get_slices(&self, start: &Int64Array, length: &Int64Array) -> DaftResult<Series> {
+        let start_iter = self.create_iter(start);
+        let length_iter = self.create_iter(length);
+        self.get_slices_helper(start_iter, length_iter)
     }
 }
 
@@ -278,6 +344,19 @@ impl FixedSizeListArray {
         )))
     }
 
+    // Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
+    // `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
+    // times, otherwise we simply take the original array.
+    fn create_iter<'a>(&'a self, arr: &'a Int64Array) -> Box<dyn Iterator<Item = i64> + '_> {
+        match arr.len() {
+            1 => Box::new(repeat(arr.get(0).unwrap()).take(self.len())),
+            len => {
+                assert_eq!(len, self.len());
+                Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
+            }
+        }
+    }
+
     fn get_children_helper(
         &self,
         idx_iter: impl Iterator<Item = i64>,
@@ -320,17 +399,68 @@ impl FixedSizeListArray {
     }
 
     pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
-        match idx.len() {
-            1 => {
-                let idx_iter = repeat(idx.get(0).unwrap()).take(self.len());
-                self.get_children_helper(idx_iter, default)
+        let idx_iter = self.create_iter(idx);
+        self.get_children_helper(idx_iter, default)
+    }
+
+    pub fn get_slices_helper(
+        &self,
+        start_iter: impl Iterator<Item = i64>,
+        length_iter: impl Iterator<Item = i64>,
+    ) -> DaftResult<Series> {
+        let list_size = self.fixed_element_len();
+        let mut slicing_indexes = Vec::with_capacity(self.len());
+        let mut new_offsets = Vec::with_capacity(self.len() + 1);
+        new_offsets.push(0);
+        for (i, (start, length)) in start_iter.zip(length_iter).enumerate() {
+            if length < 0 {
+                return Err(DaftError::ValueError(
+                    "Length must be greater than or equal to 0".into(),
+                ));
             }
-            len => {
-                assert_eq!(len, self.len());
-                let idx_iter = idx.as_arrow().iter().map(|x| *x.unwrap());
-                self.get_children_helper(idx_iter, default)
+            let is_valid = self.is_valid(i);
+            // If the starting index is negative, wrap around the end
+            let start = if start >= 0 {
+                start
+            } else {
+                list_size as i64 + start
+            };
+            let adjusted_length = length.min(list_size as i64 - start);
+            if is_valid && start >= 0 && adjusted_length > 0 {
+                slicing_indexes.push((i * list_size) as i64 + start);
+                new_offsets.push(new_offsets.last().unwrap() + adjusted_length);
+            } else {
+                slicing_indexes.push(-1);
+                new_offsets.push(*new_offsets.last().unwrap());
             }
         }
+        let total_capacity = *new_offsets.last().unwrap();
+        let mut growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true, // TODO is this right?
+            total_capacity as usize,
+        );
+        for (i, start) in slicing_indexes.iter().enumerate() {
+            let slice_len = new_offsets.get(i + 1).unwrap() - new_offsets.get(i).unwrap();
+            if slice_len > 0 {
+                growable.extend(0, *start as usize, slice_len as usize);
+            }
+        }
+        Ok(ListArray::new(
+            self.field.to_exploded_field()?.to_list_field()?,
+            growable.build()?,
+            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            self.validity().cloned(),
+        )
+        .into_series())
+    }
+
+    pub fn get_slices(&self, start: &Int64Array, length: &Int64Array) -> DaftResult<Series> {
+        let start_iter = self.create_iter(start);
+        let length_iter = self.create_iter(length);
+        self.get_slices_helper(start_iter, length_iter)
     }
 }
 

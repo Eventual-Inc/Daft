@@ -69,6 +69,23 @@ impl Series {
         }
     }
 
+    pub fn list_slice(&self, start: &Series, length: &Series) -> DaftResult<Series> {
+        let start = start.cast(&DataType::Int64)?;
+        let start_arr = start.i64().unwrap();
+        let length = length.cast(&DataType::Int64)?;
+        let length_arr = length.i64().unwrap();
+        match self.data_type() {
+            DataType::List(_) => self.list()?.get_slices(start_arr, length_arr),
+            DataType::FixedSizeList(..) => {
+                self.fixed_size_list()?.get_slices(start_arr, length_arr)
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "list splice not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
     pub fn list_sum(&self) -> DaftResult<Series> {
         match self.data_type() {
             DataType::List(_) => self.list()?.sum(),

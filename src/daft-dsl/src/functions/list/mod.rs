@@ -5,6 +5,7 @@ mod join;
 mod max;
 mod mean;
 mod min;
+mod slice;
 mod sum;
 
 use count::CountEvaluator;
@@ -16,6 +17,7 @@ use max::MaxEvaluator;
 use mean::MeanEvaluator;
 use min::MinEvaluator;
 use serde::{Deserialize, Serialize};
+use slice::SliceEvaluator;
 use sum::SumEvaluator;
 
 use crate::{Expr, ExprRef};
@@ -32,6 +34,7 @@ pub enum ListExpr {
     Mean,
     Min,
     Max,
+    Slice,
 }
 
 impl ListExpr {
@@ -47,6 +50,7 @@ impl ListExpr {
             Mean => &MeanEvaluator {},
             Min => &MinEvaluator {},
             Max => &MaxEvaluator {},
+            Slice => &SliceEvaluator {},
         }
     }
 }
@@ -111,6 +115,14 @@ pub fn max(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Max),
         inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn slice(input: ExprRef, start: ExprRef, end: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::List(ListExpr::Slice),
+        inputs: vec![input, start, end],
     }
     .into()
 }
