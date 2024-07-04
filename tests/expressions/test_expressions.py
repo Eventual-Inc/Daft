@@ -89,6 +89,14 @@ def test_repr_functions_abs() -> None:
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
+def test_repr_functions_cbrt() -> None:
+    a = col("a")
+    y = a.cbrt()
+    repr_out = repr(y)
+    assert repr_out == "cbrt(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
 
 def test_repr_functions_ceil() -> None:
     a = col("a")

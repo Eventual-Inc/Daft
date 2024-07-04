@@ -198,6 +198,11 @@ impl PyExpr {
         Ok(self.expr.clone().alias(name).into())
     }
 
+    pub fn cbrt(&self) -> PyResult<Self> {
+        use functions::numeric::cbrt;
+        Ok(cbrt(self.into()).into())
+    }
+
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }

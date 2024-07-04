@@ -9,6 +9,7 @@ mod between;
 mod bitwise;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
+mod cbrt;
 mod ceil;
 mod compare_agg;
 mod comparison;

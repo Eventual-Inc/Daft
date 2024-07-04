@@ -366,6 +366,17 @@ def test_table_numeric_atan2_literals() -> None:
             is True
         )
 
+        
+def test_table_numeric_cbrt() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    cbrt_table = table.eval_expression_list([col("a").cbrt(), col("b").cbrt()])
+    assert [v ** (1 / 3) if v is not None else v for v in table.get_column("a").to_pylist()] == cbrt_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [v ** (1 / 3) if v is not None else v for v in table.get_column("b").to_pylist()] == cbrt_table.get_column(
+        "b"
+    ).to_pylist()
+    
 
 def test_table_numeric_round() -> None:
     from decimal import ROUND_HALF_UP, Decimal

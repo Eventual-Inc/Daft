@@ -1,4 +1,5 @@
 mod abs;
+mod cbrt;
 mod ceil;
 mod exp;
 mod floor;
@@ -9,6 +10,7 @@ mod sqrt;
 mod trigonometry;
 
 use abs::AbsEvaluator;
+use cbrt::CbrtEvaluator;
 use ceil::CeilEvaluator;
 use floor::FloorEvaluator;
 use log::LogEvaluator;
@@ -29,6 +31,7 @@ use super::FunctionEvaluator;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NumericExpr {
     Abs,
+    Cbrt,
     Ceil,
     Floor,
     Sign,
@@ -57,6 +60,7 @@ impl NumericExpr {
         use NumericExpr::*;
         match self {
             Abs => &AbsEvaluator {},
+            Cbrt => &CbrtEvaluator {},
             Ceil => &CeilEvaluator {},
             Floor => &FloorEvaluator {},
             Sign => &SignEvaluator {},
@@ -84,6 +88,14 @@ impl NumericExpr {
 pub fn abs(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Abs),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn cbrt(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Cbrt),
         inputs: vec![input],
     }
     .into()

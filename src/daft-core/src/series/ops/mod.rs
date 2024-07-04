@@ -9,6 +9,7 @@ pub mod arithmetic;
 pub mod between;
 pub mod broadcast;
 pub mod cast;
+pub mod cbrt;
 pub mod ceil;
 pub mod comparison;
 pub mod concat;

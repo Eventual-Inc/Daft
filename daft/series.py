@@ -353,6 +353,9 @@ class Series:
     def __abs__(self) -> Series:
         return Series._from_pyseries(abs(self._series))
 
+    def cbrt(self) -> Series:
+        return Series._from_pyseries(self._series.cbrt())
+    
     def ceil(self) -> Series:
         return Series._from_pyseries(self._series.ceil())
 
