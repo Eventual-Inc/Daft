@@ -555,9 +555,9 @@ class Expression:
         3. If ``percentiles`` are supplied as a single float, then the resultant column is a ``Float64`` column
         4. If ``percentiles`` is supplied as a list, then the resultant column is a ``FixedSizeList[Float64; N]`` column, where ``N`` is the length of the supplied list.
 
-        Example of a global calculation of approximate percentiles:
-
         Example:
+            A global calculation of approximate percentiles:
+
             >>> import daft
             >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
             >>> df = df.agg(
@@ -575,7 +575,7 @@ class Expression:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-            Example of a grouped calculation of approximate percentiles:
+            A grouped calculation of approximate percentiles:
 
             >>> df = daft.from_pydict({"class":  ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
             >>> df = df.groupby("class").agg(
@@ -688,14 +688,13 @@ class Expression:
 
         Example:
             >>> import daft
-            >>> from daft import DataType
             >>> df = daft.from_pydict({"x": ["1", "2", "tim"]})
             >>> def f(x_val: str) -> int:
             ...     if x_val.isnumeric():
             ...         return int(x_val)
             ...     else:
             ...         return 0
-            >>> df.with_column("num_x", df['x'].apply(f, return_dtype=DataType.int64())).collect()
+            >>> df.with_column("num_x", df['x'].apply(f, return_dtype=daft.DataType.int64())).collect()
             ╭──────┬───────╮
             │ x    ┆ num_x │
             │ ---  ┆ ---   │
