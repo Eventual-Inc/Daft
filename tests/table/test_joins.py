@@ -282,3 +282,23 @@ def test_table_join_single_column_name_null(join_impl) -> None:
     result_sorted = result_table.sort([col("x")])
     assert result_sorted.get_column("y").to_pylist() == []
     assert result_sorted.get_column("right.y").to_pylist() == []
+
+
+def test_table_join_anti() -> None:
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
+
+    result_table = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti)
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [3, 6]
+
+
+def test_table_join_anti_different_names() -> None:
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"z": [2, 3, 5]})
+
+    result_table = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("z")], how=JoinType.Anti)
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column("y").to_pylist() == [3, 6]
