@@ -495,77 +495,77 @@ def test_table_numeric_sqrt() -> None:
 
 def test_table_shift_left() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [3, 2, 1]})
-    shift_left_table = table.eval_expression_list([col("a").shift_left(col("b"))])
+    shift_left_table = table.eval_expression_list([col("a") << (col("b"))])
     assert [1 << 3, 2 << 2, 4 << 1] == shift_left_table.get_column("a").to_pylist()
 
 
 def test_table_shift_left_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Expected inputs to shift to be integer"):
-        table.eval_expression_list([col("a").shift_left(col("a"))])
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: Utf8, Utf8"):
+        table.eval_expression_list([col("a") << (col("a"))])
 
 
 def test_table_shift_left_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Expected inputs to shift to be integer"):
-        table.eval_expression_list([col("a").shift_left(lit("a"))])
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: Int64, Utf8"):
+        table.eval_expression_list([col("a") << (lit("a"))])
 
 
 def test_table_shift_left_broadcast_bits() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
-    shift_left_table = table.eval_expression_list([col("a").shift_left(1)])
+    shift_left_table = table.eval_expression_list([col("a") << (1)])
     assert [1 << 1, 2 << 1, 4 << 1] == shift_left_table.get_column("a").to_pylist()
 
 
 def test_table_shift_left_null_data() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, None], "b": [None, 2, 1]})
-    shift_left_table = table.eval_expression_list([col("a").shift_left(col("b"))])
+    shift_left_table = table.eval_expression_list([col("a") << (col("b"))])
     assert [None, 2 << 2, None] == shift_left_table.get_column("a").to_pylist()
 
 
 def test_table_shift_left_negative_bits() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [3, 2, -1]})
 
-    with pytest.raises(ValueError, match="Cannot cast negative integer to unsigned integer"):
-        table.eval_expression_list([col("a").shift_left(col("b"))])
+    with pytest.raises(ValueError, match="Cannot shift left by a negative number"):
+        table.eval_expression_list([col("a") << (col("b"))])
 
 
 def test_table_shift_right() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, 1]})
-    shift_right_table = table.eval_expression_list([col("a").shift_right(col("b"))])
+    shift_right_table = table.eval_expression_list([col("a") >> (col("b"))])
     assert [8 >> 3, 4 >> 2, 2 >> 1] == shift_right_table.get_column("a").to_pylist()
 
 
 def test_table_shift_right_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Expected inputs to shift to be integer"):
-        table.eval_expression_list([col("a").shift_right(col("a"))])
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: Utf8, Utf8"):
+        table.eval_expression_list([col("a") >> (col("a"))])
 
 
 def test_table_shift_right_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Expected inputs to shift to be integer"):
-        table.eval_expression_list([col("a").shift_right(lit("a"))])
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: Int64, Utf8"):
+        table.eval_expression_list([col("a") >> (lit("a"))])
 
 
 def test_table_shift_right_broadcast_bits() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
-    shift_right_table = table.eval_expression_list([col("a").shift_right(1)])
+    shift_right_table = table.eval_expression_list([col("a") >> (1)])
     assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_right_table.get_column("a").to_pylist()
 
 
 def test_table_shift_right_null_data() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, None], "b": [None, 2, 1]})
-    shift_right_table = table.eval_expression_list([col("a").shift_right(col("b"))])
+    shift_right_table = table.eval_expression_list([col("a") >> (col("b"))])
     assert [None, 4 >> 2, None] == shift_right_table.get_column("a").to_pylist()
 
 
 def test_table_shift_right_negative_bits() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, -1]})
 
-    with pytest.raises(ValueError, match="Cannot cast negative integer to unsigned integer"):
-        table.eval_expression_list([col("a").shift_right(col("b"))])
+    with pytest.raises(ValueError, match="Cannot shift right by a negative number"):
+        table.eval_expression_list([col("a") >> (col("b"))])

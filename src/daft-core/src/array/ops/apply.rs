@@ -83,4 +83,15 @@ where
             ))),
         }
     }
+
+    pub fn any<F>(&self, func: F) -> bool
+    where
+        F: Fn(T::Native) -> bool + Copy,
+    {
+        let arr: &PrimitiveArray<T::Native> = self.data().as_any().downcast_ref().unwrap();
+        arr.iter().any(|v| match v {
+            Some(v) => func(*v),
+            None => false,
+        })
+    }
 }

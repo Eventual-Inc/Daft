@@ -320,12 +320,22 @@ class Expression:
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
     def __lshift__(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the left (``e1 << e2``)"""
+        """Shifts the bits of an integer expression to the left (``e1 << e2``)
+        Args:
+            other: The number of bits to shift the expression to the left
+        """
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr << expr._expr)
 
     def __rshift__(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the right (``e1 >> e2``)"""
+        """Shifts the bits of an integer expression to the right (``e1 >> e2``)
+        .. NOTE::
+            For unsigned integers, this expression perform a logical right shift.
+            For signed integers, this expression perform an arithmetic right shift.
+
+        Args:
+            other: The number of bits to shift the expression to the right
+        """
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
@@ -759,24 +769,6 @@ class Expression:
                 seed = lit(seed)
             expr = self._expr.hash(seed._expr)
         return Expression._from_pyexpr(expr)
-
-    def shift_left(self, bits: int | Expression) -> Expression:
-        """Shifts each element of the list to the left by a specified number of bits
-
-        Returns:
-            Expression: an expression with the type of the list values left shifted by bits
-        """
-        bits_expr = Expression._to_expression(bits)
-        return Expression._from_pyexpr(self._expr.shift_left(bits_expr._expr))
-
-    def shift_right(self, bits: int | Expression) -> Expression:
-        """Shifts each element of the list to the right by a specified number of bits
-
-        Returns:
-            Expression: an expression with the type of the list values right shifted by bits
-        """
-        bits_expr = Expression._to_expression(bits)
-        return Expression._from_pyexpr(self._expr.shift_right(bits_expr._expr))
 
     def minhash(
         self,

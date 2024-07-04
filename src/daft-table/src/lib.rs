@@ -388,6 +388,8 @@ impl Table {
                     And => lhs.and(&rhs),
                     Or => lhs.or(&rhs),
                     Xor => lhs.xor(&rhs),
+                    ShiftLeft => lhs.shift_left(&rhs),
+                    ShiftRight => lhs.shift_right(&rhs),
                     _ => panic!("{op:?} not supported"),
                 }
             }

@@ -12,7 +12,19 @@ impl Series {
                 bits.data_type()
             )));
         }
-        let bits = bits.cast_to_uint64()?;
+        let is_negative = match bits.data_type() {
+            DataType::Int8 => bits.i8()?.any(|x| x.is_negative()),
+            DataType::Int16 => bits.i16()?.any(|x| x.is_negative()),
+            DataType::Int32 => bits.i32()?.any(|x| x.is_negative()),
+            DataType::Int64 => bits.i64()?.any(|x| x.is_negative()),
+            _ => false,
+        };
+        if is_negative {
+            return Err(DaftError::ValueError(
+                "Cannot shift left by a negative number".to_string(),
+            ));
+        }
+        let bits = bits.cast(&DataType::UInt64)?;
         match self.data_type() {
             DataType::Int8 => Ok(self.i8()?.shift_left(bits.u64()?)?.into_series()),
             DataType::Int16 => Ok(self.i16()?.shift_left(bits.u64()?)?.into_series()),
@@ -37,7 +49,19 @@ impl Series {
                 bits.data_type()
             )));
         }
-        let bits = bits.cast_to_uint64()?;
+        let is_negative = match bits.data_type() {
+            DataType::Int8 => bits.i8()?.any(|x| x.is_negative()),
+            DataType::Int16 => bits.i16()?.any(|x| x.is_negative()),
+            DataType::Int32 => bits.i32()?.any(|x| x.is_negative()),
+            DataType::Int64 => bits.i64()?.any(|x| x.is_negative()),
+            _ => false,
+        };
+        if is_negative {
+            return Err(DaftError::ValueError(
+                "Cannot shift right by a negative number".to_string(),
+            ));
+        }
+        let bits = bits.cast(&DataType::UInt64)?;
         match self.data_type() {
             DataType::Int8 => Ok(self.i8()?.shift_right(bits.u64()?)?.into_series()),
             DataType::Int16 => Ok(self.i16()?.shift_right(bits.u64()?)?.into_series()),
