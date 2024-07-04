@@ -374,7 +374,7 @@ def test_table_numeric_arctanh() -> None:
     arct = table.eval_expression_list([col("a").arctanh()])
     assert (
         all(
-            x - y < 1.0e-10 or (math.isnan(x) and math.isnan(y))
+            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
             for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
@@ -389,7 +389,7 @@ def test_table_numeric_arcsinh() -> None:
     arcs = table.eval_expression_list([col("a").arcsinh()])
     assert (
         all(
-            x - y < 1.0e-10 or (math.isnan(x) and math.isnan(y))
+            x - y < 1.0e-10 or (x is None and y is None)or (math.isnan(x) and math.isnan(y))
             for x, y in zip(arcs.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
@@ -404,7 +404,7 @@ def test_table_numeric_arccosh() -> None:
     arcc = table.eval_expression_list([col("a").arccosh()])
     assert (
         all(
-            x - y < 1.0e-10 or (math.isnan(x) and math.isnan(y))
+            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
             for x, y in zip(arcc.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
