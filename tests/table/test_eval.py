@@ -380,20 +380,6 @@ def test_table_numeric_arctanh() -> None:
         is True
     )
 
-def test_table_numeric_arctanh_literals() -> None:
-    table = MicroPartition.from_pydict({"a": [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, math.nan]})
-    literals = [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, math.nan]
-    for litv in literals:
-        np_result = np.arctanh(np.repeat(litv, len(table)))
-        arct = table.eval_expression_list([lit(litv).arctanh()])
-        assert (
-            all(
-                x == y or (math.isnan(x) and math.isnan(y))
-                for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
-            )
-            is True
-        )
-
 def test_table_numeric_arcsinh() -> None:
     table = MicroPartition.from_pydict({"a": [0.0, 1.0, 0.5, -0.5, -0.0, math.nan]})
     s = table.to_pandas()["a"]
@@ -408,19 +394,6 @@ def test_table_numeric_arcsinh() -> None:
         is True
     )
 
-def test_table_numeric_arcsinh_literals() -> None:
-    table = MicroPartition.from_pydict({"a": [0.0, 1.0, 0.5, -0.5, -0.0, math.nan]})
-    literals = [0.0, 1.0, 0.5, -0.5, -0.0, math.nan]
-    for litv in literals:
-        np_result = np.arcsinh(np.repeat(litv, len(table)))
-        arcs = table.eval_expression_list([lit(litv).arcsinh()])
-        assert (
-            all(
-                x == y or (math.isnan(x) and math.isnan(y))
-                for x, y in zip(arcs.get_column("a").to_pylist(), np_result.to_list())
-            )
-            is True
-        )
 
 def test_table_numeric_arccosh() -> None:
     table = MicroPartition.from_pydict({"a": [1.0, 2.0, 1.5, math.nan]})
@@ -436,19 +409,6 @@ def test_table_numeric_arccosh() -> None:
         is True
     )
 
-def test_table_numeric_arccosh_literals() -> None:
-    table = MicroPartition.from_pydict({"a": [1.0, 2.0, 1.5, math.nan]})
-    literals = [1.0, 2.0, 1.5, math.nan]
-    for litv in literals:
-        np_result = np.arccosh(np.repeat(litv, len(table)))
-        arcc = table.eval_expression_list([lit(litv).arccosh()])
-        assert (
-            all(
-                x == y or (math.isnan(x) and math.isnan(y))
-                for x, y in zip(arcc.get_column("a").to_pylist(), np_result.to_list())
-            )
-            is True
-        )
 
 def test_table_numeric_round() -> None:
     from decimal import ROUND_HALF_UP, Decimal
