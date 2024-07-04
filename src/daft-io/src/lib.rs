@@ -605,7 +605,7 @@ pub fn url_download(
 ///
 /// This performs an async upload of each row, and creates in-memory copies of the data that is currently in-flight.
 /// Memory consumption should be tunable by configuring `max_connections`, which tunes the number of in-flight tokio tasks.
-pub fn upload_to_folder(
+pub fn url_upload(
     series: &Series,
     folder_path: &str,
     max_connections: usize,
@@ -729,7 +729,7 @@ pub fn upload_to_folder(
             )
         }
         dt => Err(DaftError::TypeError(format!(
-            "upload_to_folder not implemented for type {dt}"
+            "url_upload not implemented for type {dt}"
         ))),
     }?;
 

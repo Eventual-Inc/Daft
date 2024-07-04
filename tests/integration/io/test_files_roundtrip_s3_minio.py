@@ -15,7 +15,7 @@ def test_files_roundtrip_minio_native_downloader(minio_io_config):
         bytes_data = [b"a", b"b", b"c"]
         data = {"data": bytes_data}
         df = daft.from_pydict(data)
-        df = df.with_column("file_paths", df["data"].bytes.upload_to_folder(folder, io_config=minio_io_config))
+        df = df.with_column("file_paths", df["data"].url.upload(folder, io_config=minio_io_config))
         df.collect()
 
         df = df.with_column("roundtrip_data", df["file_paths"].url.download(io_config=minio_io_config))

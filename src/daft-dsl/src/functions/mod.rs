@@ -1,4 +1,3 @@
-pub mod binary;
 pub mod float;
 pub mod hash;
 pub mod image;
@@ -18,7 +17,6 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::ExprRef;
 
-use self::binary::BinaryExpr;
 use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
@@ -47,7 +45,6 @@ pub enum FunctionExpr {
     Numeric(NumericExpr),
     Float(FloatExpr),
     Utf8(Utf8Expr),
-    Binary(BinaryExpr),
     Temporal(TemporalExpr),
     List(ListExpr),
     Map(MapExpr),
@@ -82,7 +79,6 @@ impl FunctionExpr {
             Numeric(expr) => expr.get_evaluator(),
             Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
-            Binary(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
             Map(expr) => expr.get_evaluator(),

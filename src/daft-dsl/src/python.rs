@@ -198,20 +198,6 @@ impl PyExpr {
         Ok(self.expr.clone().alias(name).into())
     }
 
-    pub fn binary_upload_to_folder(
-        &self,
-        folder_location: &str,
-        io_config: Option<PyIOConfig>,
-    ) -> PyResult<Self> {
-        use functions::binary::upload_to_folder;
-        Ok(upload_to_folder(
-            self.expr.clone(),
-            folder_location,
-            io_config.map(|io_config| io_config.config),
-        )
-        .into())
-    }
-
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }
@@ -849,6 +835,29 @@ impl PyExpr {
             raise_error_on_failure,
             multi_thread,
             Some(config.config),
+        )
+        .into())
+    }
+
+    pub fn url_upload(
+        &self,
+        folder_location: &str,
+        max_connections: i64,
+        multi_thread: bool,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        if max_connections <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "max_connections must be positive and non_zero: {max_connections}"
+            )));
+        }
+        use functions::uri::upload;
+        Ok(upload(
+            self.expr.clone(),
+            folder_location,
+            max_connections as usize,
+            multi_thread,
+            io_config.map(|io_config| io_config.config),
         )
         .into())
     }

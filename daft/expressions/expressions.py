@@ -138,11 +138,6 @@ class Expression:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
     @property
-    def bytes(self) -> ExpressionBinaryNamespace:
-        """Access methods that work on columns of binary data"""
-        return ExpressionBinaryNamespace.from_expression(self)
-
-    @property
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
@@ -821,6 +816,35 @@ class ExpressionNamespace:
 
 
 class ExpressionUrlNamespace(ExpressionNamespace):
+    @staticmethod
+    def _should_use_multithreading_tokio_runtime() -> bool:
+        """Whether or not our expression should use the multithreaded tokio runtime under the hood, or a singlethreaded one
+
+        This matters because for distributed workloads, each process has its own tokio I/O runtime. if each distributed process
+        is multithreaded (by default we spin up `N_CPU` threads) then we will be running `(N_CPU * N_PROC)` number of threads, and
+        opening `(N_CPU * N_PROC * max_connections)` number of connections. This is too large for big machines with many CPU cores.
+
+        Hence for Ray we default to doing the singlethreaded runtime. This means that we will have a limit of
+        `(singlethreaded=1 * N_PROC * max_connections)` number of open connections per machine, which works out to be reasonable at ~2-4k connections.
+
+        For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
+        Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
+        """
+        using_ray_runner = context.get_context().is_ray_runner
+        return not using_ray_runner
+
+    @staticmethod
+    def _override_io_config_max_connections(max_connections: int, io_config: IOConfig | None) -> IOConfig:
+        """Use a user-provided `max_connections` argument to override the value in S3Config
+
+        This is because our Rust code under the hood actually does `min(S3Config's max_connections, url_download's max_connections)` to
+        determine how many connections to allow per-thread. Thus we need to override the io_config here to ensure that the user's max_connections
+        is correctly applied in our Rust code.
+        """
+        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
+        return io_config
+
     def download(
         self,
         max_connections: int = 32,
@@ -862,16 +886,10 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
-            # Use the `max_connections` kwarg to override the value in S3Config
-            # This is because the max parallelism is actually `min(S3Config's max_connections, url_download's max_connections)` under the hood.
-            # However, default max_connections on S3Config is only 8, and even if we specify 32 here we are bottlenecked there.
-            # Therefore for S3 downloads, we override `max_connections` kwarg to have the intended effect.
-            io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-            io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
-
-            using_ray_runner = context.get_context().is_ray_runner
+            multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+            io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
             return Expression._from_pyexpr(
-                self._expr.url_download(max_connections, raise_on_error, not using_ray_runner, io_config)
+                self._expr.url_download(max_connections, raise_on_error, multi_thread, io_config)
             )
         else:
             from daft.udf_library import url_udfs
@@ -881,6 +899,35 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 max_worker_threads=max_connections,
                 on_error=on_error,
             )
+
+    def upload(
+        self,
+        location: str,
+        max_connections: int = 32,
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Uploads a column of binary data to the provided location (also supports S3, local etc)
+
+        Files will be written into the location (folder) with a generated UUID filename, and the result
+        will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
+
+        Example:
+            >>> col("data").url.upload("s3://my-bucket/my-folder")
+
+        Args:
+            location: a folder location to upload data into
+            max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
+            io_config: IOConfig to use when uploading data
+
+        Returns:
+            Expression: a String expression containing the written filepath
+        """
+        if not (isinstance(max_connections, int) and max_connections > 0):
+            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+
+        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        return Expression._from_pyexpr(self._expr.url_upload(location, max_connections, multi_thread, io_config))
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
@@ -1093,26 +1140,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
-
-
-class ExpressionBinaryNamespace(ExpressionNamespace):
-    def upload_to_folder(self, folder_location: str, io_config: IOConfig | None = None) -> Expression:
-        """Uploads a column of binary data to the provided folder location (also supports S3, local etc)
-
-        Files will be written into the folder with a generated UUID filename, and the result will be returned
-        as a column of string paths that is compatible with the ``.url.download()`` Expression.
-
-        Example:
-            >>> col("data").bytes.upload_to_folder("s3://my-bucket/my-folder")
-
-        Args:
-            folder_location: a folder location to upload data into
-            io_config: IOConfig to use when uploading data
-
-        Returns:
-            Expression: a String expression containing the written filepath
-        """
-        return Expression._from_pyexpr(self._expr.binary_upload_to_folder(folder_location, io_config))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):

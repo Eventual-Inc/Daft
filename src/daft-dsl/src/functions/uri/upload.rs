@@ -1,18 +1,18 @@
 use daft_core::{datatypes::Field, schema::Schema, series::Series, DataType};
-use daft_io::upload_to_folder;
+use daft_io::url_upload;
 
 use crate::ExprRef;
 
 use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
 
-use super::{super::FunctionEvaluator, BinaryExpr};
+use super::{super::FunctionEvaluator, UriExpr};
 
-pub(super) struct UploadToFolderEvaluator {}
+pub(super) struct UploadEvaluator {}
 
-impl FunctionEvaluator for UploadToFolderEvaluator {
+impl FunctionEvaluator for UploadEvaluator {
     fn fn_name(&self) -> &'static str {
-        "upload_to_folder"
+        "upload"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
@@ -21,7 +21,7 @@ impl FunctionEvaluator for UploadToFolderEvaluator {
                 let data_field = data.to_field(schema)?;
                 match data_field.dtype {
                     DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Utf8 => Ok(Field::new(data_field.name, DataType::Utf8)),
-                    _ => Err(DaftError::TypeError(format!("Expects input to upload_to_folder to be Binary, FixedSizeBinary or String, but received {}", data_field))),
+                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {}", data_field))),
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
@@ -32,25 +32,24 @@ impl FunctionEvaluator for UploadToFolderEvaluator {
     }
 
     fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
-        let (folder_location, io_config) = match expr {
-            FunctionExpr::Binary(BinaryExpr::UploadToFolder {
-                folder_location,
-                io_config,
-            }) => Ok((folder_location, io_config)),
+        let (location, io_config, max_connections, multi_thread) = match expr {
+            FunctionExpr::Uri(UriExpr::Upload {
+                location,
+                config,
+                max_connections,
+                multi_thread,
+            }) => Ok((location, config, max_connections, multi_thread)),
             _ => Err(DaftError::ValueError(format!(
-                "Expected an UploadToFolder expression but received {expr}"
+                "Expected an Upload expression but received {expr}"
             ))),
         }?;
 
         match inputs {
-            [data] => upload_to_folder(
+            [data] => url_upload(
                 data,
-                folder_location,
-                // TODO: enable these to be configurable. We probably want to do multi_thread=False for the Ray
-                // case, and override the default s3.max_connections_per_io_thread to be a much higher number
-                // to optimize for small-file uploads
-                io_config.s3.max_connections_per_io_thread as usize,
-                true,
+                location,
+                *max_connections,
+                *multi_thread,
                 io_config.clone(),
                 None,
             ),

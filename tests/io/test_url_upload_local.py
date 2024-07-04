@@ -7,7 +7,7 @@ def test_upload_local(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     data = {"data": bytes_data}
     df = daft.from_pydict(data)
-    df = df.with_column("files", df["data"].bytes.upload_to_folder(str(tmpdir)))
+    df = df.with_column("files", df["data"].url.upload(str(tmpdir)))
     df.collect()
 
     results = df.to_pydict()
