@@ -112,7 +112,7 @@ impl PySeries {
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
         Ok(self.series.xor(&other.series)?.into())
     }
-    
+
     pub fn cbrt(&self) -> PyResult<Self> {
         Ok(self.series.cbrt()?.into())
     }

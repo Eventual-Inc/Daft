@@ -78,6 +78,7 @@ def test_abs(unary_data_fixture):
         resolvable=is_numeric(arg.datatype()),
     )
 
+
 def test_cbrt(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
@@ -86,6 +87,7 @@ def test_cbrt(unary_data_fixture):
         run_kernel=lambda: arg.cbrt(),
         resolvable=is_numeric(arg.datatype()),
     )
+
 
 def test_ceil(unary_data_fixture):
     arg = unary_data_fixture

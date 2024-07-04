@@ -388,7 +388,7 @@ class Expression:
         """The square root of a numeric expression (``expr.sqrt()``)"""
         expr = self._expr.sqrt()
         return Expression._from_pyexpr(expr)
-    
+
     def cbrt(self) -> Expression:
         """The cube root of a numeric expression (``expr.cbrt()``)"""
         expr = self._expr.cbrt()
