@@ -504,6 +504,8 @@ pub(super) fn translate_single_logical_node(
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                // This method will panic if called with columns that aren't in the output schema,
+                // which is possible for anti- and semi-joins.
                 let is_primitive = |exprs: &Vec<ExprRef>| {
                     exprs.iter().map(|e| e.name()).all(|col| {
                         let dtype = &output_schema.get_field(col).unwrap().dtype;
@@ -529,10 +531,10 @@ pub(super) fn translate_single_logical_node(
                 // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
                 // TODO(Kevin): Support sort-merge join for other types of joins.
-                } else if is_primitive(left_on)
+                } else if *join_type == JoinType::Inner
+                    && is_primitive(left_on)
                     && is_primitive(right_on)
                     && (is_left_sort_partitioned || is_right_sort_partitioned)
-                    && *join_type == JoinType::Inner
                     && (!is_larger_partitioned
                         || (left_is_larger && is_left_sort_partitioned
                             || !left_is_larger && is_right_sort_partitioned))
