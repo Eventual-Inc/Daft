@@ -19,6 +19,9 @@ pub enum TrigonometricFunction {
     ArcTan,
     Radians,
     Degrees,
+    ArcTanh,
+    ArcCosh,
+    ArcSinh,
 }
 
 impl TrigonometricFunction {
@@ -34,6 +37,9 @@ impl TrigonometricFunction {
             ArcTan => "arctan",
             Radians => "radians",
             Degrees => "degrees",
+            ArcTanh => "arctanh",
+            ArcCosh => "arccosh",
+            ArcSinh => "arcsinh",
         }
     }
 }
@@ -55,6 +61,9 @@ where
             ArcTan => self.apply(|v| v.atan()),
             Radians => self.apply(|v| v.to_radians()),
             Degrees => self.apply(|v| v.to_degrees()),
+            ArcTanh => self.apply(|v| v.atanh()),
+            ArcCosh => self.apply(|v| v.acosh()),
+            ArcSinh => self.apply(|v| v.asinh()),
         }
     }
 }

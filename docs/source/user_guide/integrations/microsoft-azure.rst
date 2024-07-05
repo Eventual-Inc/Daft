@@ -62,3 +62,23 @@ pass a different :class:`daft.io.AzureConfig` per function call if you wish!
 
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("az://my_container/my_other_path/**/*", io_config=io_config)
+
+Connect to Microsoft Fabric/OneLake
+****************************
+
+If you are connecting to storage in OneLake or another Microsoft Fabric service, set the `use_fabric_endpoint` parameter to ``True`` in the :class:`daft.io.AzureConfig` object.
+
+.. code:: python
+
+    from daft.io import IOConfig, AzureConfig
+
+    io_config = IOConfig(
+        azure=AzureConfig(
+            storage_account="onelake",
+            use_fabric_endpoint=True,
+
+            # Set credentials as needed
+        )
+    )
+
+    df = daft.read_deltalake('abfss://[WORKSPACE]@onelake.dfs.fabric.microsoft.com/[LAKEHOUSE].Lakehouse/Tables/[TABLE]', io_config=io_config)

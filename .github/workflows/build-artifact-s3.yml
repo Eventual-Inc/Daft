@@ -98,3 +98,5 @@ jobs:
       run: pip3 install boto3
     - name: Generate New Manifest
       run: python3 tools/generate_whl_html_manifest.py
+    - name: Echo command to pip install (copy this!)
+      run: echo 'pip install getdaft==<version> --pre --extra-index-url http://github-actions-artifacts-bucket.s3-website-us-west-2.amazonaws.com/ --trusted-host github-actions-artifacts-bucket.s3-website-us-west-2.amazonaws.com'

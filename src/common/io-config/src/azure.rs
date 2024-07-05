@@ -13,6 +13,7 @@ pub struct AzureConfig {
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+    pub use_fabric_endpoint: bool,
     pub anonymous: bool,
     pub endpoint_url: Option<String>,
     pub use_ssl: bool,
@@ -28,6 +29,7 @@ impl Default for AzureConfig {
             tenant_id: None,
             client_id: None,
             client_secret: None,
+            use_fabric_endpoint: false,
             anonymous: false,
             endpoint_url: None,
             use_ssl: true,
@@ -59,6 +61,10 @@ impl AzureConfig {
         if let Some(client_secret) = &self.client_secret {
             res.push(format!("Client Secret = {}", client_secret));
         }
+        res.push(format!(
+            "Use Fabric Endpoint = {}",
+            self.use_fabric_endpoint
+        ));
         res.push(format!("Anonymous = {}", self.anonymous));
         if let Some(endpoint_url) = &self.endpoint_url {
             res.push(format!("Endpoint URL = {}", endpoint_url));
@@ -80,6 +86,7 @@ impl Display for AzureConfig {
     tenant_id: {:?}
     client_id: {:?}
     client_secret: {:?}
+    use_fabric_endpoint: {:?}
     anonymous: {:?}
     endpoint_url: {:?}
     use_ssl: {:?}",
@@ -90,6 +97,7 @@ impl Display for AzureConfig {
             self.tenant_id,
             self.client_id,
             self.client_secret,
+            self.use_fabric_endpoint,
             self.anonymous,
             self.endpoint_url,
             self.use_ssl

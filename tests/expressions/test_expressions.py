@@ -215,6 +215,33 @@ def test_repr_functions_atan2() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_arctanh() -> None:
+    a = col("a")
+    y = a.arctanh()
+    repr_out = repr(y)
+    assert repr_out == "arctanh(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_arccosh() -> None:
+    a = col("a")
+    y = a.arccosh()
+    repr_out = repr(y)
+    assert repr_out == "arccosh(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_arcsinh() -> None:
+    a = col("a")
+    y = a.arcsinh()
+    repr_out = repr(y)
+    assert repr_out == "arcsinh(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()

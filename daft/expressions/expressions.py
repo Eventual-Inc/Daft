@@ -454,6 +454,21 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr.arctan2(expr._expr))
 
+    def arctanh(self) -> Expression:
+        """The elementwise inverse hyperbolic tangent of a numeric expression (``expr.arctanh()``)"""
+        expr = self._expr.arctanh()
+        return Expression._from_pyexpr(expr)
+
+    def arccosh(self) -> Expression:
+        """The elementwise inverse hyperbolic cosine of a numeric expression (``expr.arccosh()``)"""
+        expr = self._expr.arccosh()
+        return Expression._from_pyexpr(expr)
+
+    def arcsinh(self) -> Expression:
+        """The elementwise inverse hyperbolic sine of a numeric expression (``expr.arcsinh()``)"""
+        expr = self._expr.arcsinh()
+        return Expression._from_pyexpr(expr)
+
     def radians(self) -> Expression:
         """The elementwise radians of a numeric expression (``expr.radians()``)"""
         expr = self._expr.radians()
