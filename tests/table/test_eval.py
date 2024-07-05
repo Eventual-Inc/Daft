@@ -368,7 +368,7 @@ def test_table_numeric_atan2_literals() -> None:
 
 
 def test_table_numeric_arctanh() -> None:
-    table = MicroPartition.from_pydict({"a": [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, math.nan]})
+    table = MicroPartition.from_pydict({"a": [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, 1, -1.3, math.nan]})
     s = table.to_pandas()["a"]
     np_result = np.arctanh(s)
 
@@ -398,7 +398,7 @@ def test_table_numeric_arcsinh() -> None:
 
 
 def test_table_numeric_arccosh() -> None:
-    table = MicroPartition.from_pydict({"a": [1.0, 2.0, 1.5, math.nan]})
+    table = MicroPartition.from_pydict({"a": [1.0, 2.0, 1.5, 0.5, math.nan]})
     s = table.to_pandas()["a"]
     np_result = np.arccosh(s)
 
