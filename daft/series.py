@@ -557,13 +557,13 @@ class Series:
         if not isinstance(bits, Series):
             raise TypeError(f"expected another Series but got {type(bits)}")
         assert self._series is not None and bits._series is not None
-        return Series._from_pyseries(self._series.shift_right(bits._series))
+        return Series._from_pyseries(self._series >> bits._series)
 
     def shift_left(self, bits: Series) -> Series:
         if not isinstance(bits, Series):
             raise TypeError(f"expected another Series but got {type(bits)}")
         assert self._series is not None and bits._series is not None
-        return Series._from_pyseries(self._series.shift_left(bits._series))
+        return Series._from_pyseries(self._series << bits._series)
 
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):

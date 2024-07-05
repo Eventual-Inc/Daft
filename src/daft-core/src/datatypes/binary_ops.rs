@@ -232,10 +232,7 @@ impl Shl for &DataType {
     type Output = DaftResult<DataType>;
 
     fn shl(self, rhs: Self) -> Self::Output {
-        use DataType::*;
         match (self, rhs) {
-            #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
             (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot operate shift left on types: {}, {}",
@@ -249,10 +246,7 @@ impl Shr for &DataType {
     type Output = DaftResult<DataType>;
 
     fn shr(self, rhs: Self) -> Self::Output {
-        use DataType::*;
         match (self, rhs) {
-            #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
             (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot operate shift right on types: {}, {}",

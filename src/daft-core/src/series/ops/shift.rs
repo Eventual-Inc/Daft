@@ -13,10 +13,22 @@ impl Series {
             )));
         }
         let is_negative = match bits.data_type() {
-            DataType::Int8 => bits.i8()?.any(|x| x.is_negative()),
-            DataType::Int16 => bits.i16()?.any(|x| x.is_negative()),
-            DataType::Int32 => bits.i32()?.any(|x| x.is_negative()),
-            DataType::Int64 => bits.i64()?.any(|x| x.is_negative()),
+            DataType::Int8 => bits
+                .i8()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int16 => bits
+                .i16()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int32 => bits
+                .i32()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int64 => bits
+                .i64()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
             _ => false,
         };
         if is_negative {
@@ -50,10 +62,22 @@ impl Series {
             )));
         }
         let is_negative = match bits.data_type() {
-            DataType::Int8 => bits.i8()?.any(|x| x.is_negative()),
-            DataType::Int16 => bits.i16()?.any(|x| x.is_negative()),
-            DataType::Int32 => bits.i32()?.any(|x| x.is_negative()),
-            DataType::Int64 => bits.i64()?.any(|x| x.is_negative()),
+            DataType::Int8 => bits
+                .i8()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int16 => bits
+                .i16()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int32 => bits
+                .i32()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
+            DataType::Int64 => bits
+                .i64()?
+                .into_iter()
+                .any(|x| x.is_some_and(|x| x.is_negative())),
             _ => false,
         };
         if is_negative {
