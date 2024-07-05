@@ -375,7 +375,9 @@ def test_table_numeric_arctanh() -> None:
     arct = table.eval_expression_list([col("a").arctanh()])
     assert (
         all(
-            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
+            x - y < 1.0e-10
+            or (x is None and y is None)
+            or (math.isnan(x) and math.isnan(y) or math.isinf(x) and math.isinf(y))
             for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
