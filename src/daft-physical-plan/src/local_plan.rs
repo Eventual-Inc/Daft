@@ -1,4 +1,4 @@
-pub enum LocalPhysicalPlan {
+enum LocalPhysicalPlan {
     // InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
     // EmptyScan(EmptyScan),
@@ -34,3 +34,13 @@ pub enum LocalPhysicalPlan {
     // #[cfg(feature = "python")]
     // LanceWrite(LanceWrite),
 }
+
+
+struct PhysicalScan {}
+struct Project {}
+struct Filter {}
+struct Limit {}
+struct Sort {}
+struct Aggregate {}
+struct HashJoin {}
+struct PhysicalWrite {}
