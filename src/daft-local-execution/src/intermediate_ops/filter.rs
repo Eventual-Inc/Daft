@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
@@ -18,14 +18,9 @@ impl FilterOperator {
 }
 
 impl IntermediateOperator for FilterOperator {
-    fn execute(&self, input: &[Arc<MicroPartition>]) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        if input.len() != 1 {
-            return Err(DaftError::ValueError(
-                "FilterOperator can only have one input".to_string(),
-            ));
-        }
-        let input = input.first().unwrap();
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+        println!("FilterOperator::execute");
         let out = input.filter(&[self.predicate.clone()])?;
-        Ok(vec![Arc::new(out)])
+        Ok(Arc::new(out))
     }
 }

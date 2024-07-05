@@ -17,6 +17,7 @@ rayon = {workspace = true}
 snafu = {workspace = true}
 sysinfo = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = "0.1"
 
 [dev-dependencies]
 arrow2 = {workspace = true}

@@ -1,363 +1,185 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{borrow::BorrowMut, pin::Pin, sync::Arc};
 
-use daft_io::IOStatsContext;
+use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
-use tokio::sync::{mpsc, Mutex};
+use futures::{pin_mut, stream::FuturesUnordered, Stream, StreamExt};
+use snafu::ResultExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    create_channel,
     intermediate_ops::intermediate_op::IntermediateOperator,
     sinks::sink::{Sink, SinkResultType},
-    source::{Morsel, Source},
+    sources::source::Source,
+    Receiver, Sender,
 };
 
-struct Producer {
-    id: usize,
-    input: Source,
-    final_tx: mpsc::Sender<(usize, usize, Vec<Arc<MicroPartition>>)>,
-    intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-}
-
-impl Producer {
-    async fn run(self) {
-        let mut handles = vec![];
-        match self.input {
-            Source::Data(data) => {
-                for value in data {
-                    let final_tx = self.final_tx.clone();
-                    let part_idx = handles.len();
-
-                    // Spawn a consumer for each morsel
-                    let handle = tokio::spawn(
-                        Consumer::new(
-                            self.id,
-                            Morsel::Data(vec![value]),
-                            final_tx,
-                            part_idx,
-                            self.intermediate_operators.clone(),
-                        )
-                        .run(),
-                    );
-                    handles.push(handle);
-                }
-            }
-            Source::Receiver(mut rx) => {
-                while let Some(value) = rx.recv().await {
-                    let final_tx = self.final_tx.clone();
-                    let id = handles.len();
-
-                    // Spawn a consumer for each morsel
-                    let handle = tokio::spawn(
-                        Consumer::new(
-                            self.id,
-                            Morsel::Data(value),
-                            final_tx,
-                            id,
-                            self.intermediate_operators.clone(),
-                        )
-                        .run(),
-                    );
-                    handles.push(handle);
-                }
-            }
-            Source::ScanTask(scan_tasks) => {
-                for scan_task in scan_tasks {
-                    let final_tx = self.final_tx.clone();
-                    let part_idx = handles.len();
-
-                    // Spawn a consumer for each morsel
-                    let handle = tokio::spawn(
-                        Consumer::new(
-                            self.id,
-                            Morsel::ScanTask(scan_task.clone()),
-                            final_tx,
-                            part_idx,
-                            self.intermediate_operators.clone(),
-                        )
-                        .run(),
-                    );
-                    handles.push(handle);
-                }
-            }
-        }
-
-        // Wait for all consumers to finish
-        for handle in handles {
-            handle.await.unwrap();
-        }
-    }
-}
-
-struct Consumer {
-    id: usize,
-    input: Morsel,
-    tx: mpsc::Sender<(usize, usize, Vec<Arc<MicroPartition>>)>,
-    part_idx: usize,
-    intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-}
-
-impl Consumer {
-    fn new(
-        id: usize,
-        input: Morsel,
-        tx: mpsc::Sender<(usize, usize, Vec<Arc<MicroPartition>>)>,
-        part_idx: usize,
-        intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-    ) -> Self {
-        Self {
-            id,
-            input,
-            tx,
-            part_idx,
-            intermediate_operators,
-        }
-    }
-
-    async fn run(self) {
-        match self.input {
-            Morsel::Data(value) => {
-                // Apply intermediate operators
-                let mut results = value;
-                for intermediate_operator in &self.intermediate_operators {
-                    results = intermediate_operator.execute(&results).unwrap();
-                }
-                // Send the value to the final consumer
-                let _ = self.tx.send((self.id, self.part_idx, results)).await;
-            }
-            Morsel::ScanTask(scan_task) => {
-                let (send, recv) = tokio::sync::oneshot::channel();
-                // TODO: need to put the scan task in a separate thread because it tries to create another tokio runtime,
-                // which is not allowed because it is already in a tokio runtime
-                // rayon is just a patch, need to think about a better solution
-                rayon::spawn(move || {
-                    let io_stats = IOStatsContext::new(format!(
-                        "MicroPartition::from_scan_task for {:?}",
-                        scan_task.sources
-                    ));
-                    let part =
-                        Arc::new(MicroPartition::from_scan_task(scan_task, io_stats).unwrap());
-                    let _ = send.send(part);
-                });
-                let value = recv.await.unwrap();
-
-                // Apply intermediate operators
-                let mut results = vec![value];
-                for intermediate_operator in &self.intermediate_operators {
-                    results = intermediate_operator.execute(&results).unwrap();
-                }
-                // Send the value to the final consumer
-                self.tx
-                    .send((self.id, self.part_idx, results))
-                    .await
-                    .unwrap();
-            }
-        }
-    }
-}
-
-struct FinalConsumer {
-    rx: mpsc::Receiver<(usize, usize, Vec<Arc<MicroPartition>>)>,
-    next_pipeline_tx: Option<mpsc::Sender<Vec<Arc<MicroPartition>>>>,
-    sink: Option<Arc<Mutex<dyn Sink>>>,
-}
-
-impl FinalConsumer {
-    fn new(
-        rx: mpsc::Receiver<(usize, usize, Vec<Arc<MicroPartition>>)>,
-        next_pipeline_tx: Option<mpsc::Sender<Vec<Arc<MicroPartition>>>>,
-        sink: Option<Arc<Mutex<dyn Sink>>>,
-    ) -> Self {
-        Self {
-            rx,
-            next_pipeline_tx,
-            sink,
-        }
-    }
-
-    async fn run(mut self) {
-        // TODO: in order vs out of order has a lot of dupes, factor out
-        let in_order = match self.sink {
-            Some(ref sink) => sink.lock().await.in_order(),
-            None => false,
-        };
-        let mut done = false;
-
-        if in_order {
-            // Buffer values until they can be processed in order
-            let mut buffer = BTreeMap::new();
-            let mut next_index = 0;
-
-            while let Some((id, part_idx, value)) = self.rx.recv().await {
-                buffer.insert(part_idx, (id, value));
-
-                // Process all consecutive values starting from `next_index`
-                while let Some((id, val)) = buffer.remove(&next_index) {
-                    next_index += 1;
-                    if let Some(sink) = self.sink.as_mut() {
-                        // Sink the value
-                        let sink_result = sink.lock().await.sink(&val, id);
-                        match sink_result {
-                            SinkResultType::Finished(part) => {
-                                if let Some(part) = part {
-                                    if let Some(ref tx) = self.next_pipeline_tx {
-                                        tx.send(vec![part]).await.unwrap();
-                                    }
-                                }
-                                done = true;
-                                break;
-                            }
-                            SinkResultType::NeedMoreInput(part) => {
-                                if let Some(part) = part {
-                                    if let Some(ref tx) = self.next_pipeline_tx {
-                                        tx.send(vec![part]).await.unwrap();
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // If there is no sink, just forward the value
-                        if let Some(ref tx) = self.next_pipeline_tx {
-                            tx.send(val.clone()).await.unwrap();
-                        }
-                    }
-                }
-            }
-
-            // Process remaining values
-            if !done {
-                while let Some((id, val)) = buffer.remove(&next_index) {
-                    if let Some(sink) = self.sink.as_mut() {
-                        // Sink the value
-                        let sink_result = sink.lock().await.sink(&val, id);
-                        match sink_result {
-                            SinkResultType::Finished(part) => {
-                                if let Some(part) = part {
-                                    if let Some(ref tx) = self.next_pipeline_tx {
-                                        tx.send(vec![part]).await.unwrap();
-                                    }
-                                }
-                                done = true;
-                                break;
-                            }
-                            SinkResultType::NeedMoreInput(part) => {
-                                if let Some(part) = part {
-                                    if let Some(ref tx) = self.next_pipeline_tx {
-                                        tx.send(vec![part]).await.unwrap();
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // If there is no sink, just forward the value
-                        if let Some(ref tx) = self.next_pipeline_tx {
-                            tx.send(val.clone()).await.unwrap();
-                        }
-                    }
-                    next_index += 1;
-                }
-            }
-        } else {
-            while let Some((id, _, val)) = self.rx.recv().await {
-                if let Some(sink) = self.sink.as_mut() {
-                    // Sink the value
-                    let sink_result = sink.lock().await.sink(&val, id);
-                    match sink_result {
-                        SinkResultType::Finished(part) => {
-                            if let Some(part) = part {
-                                if let Some(ref tx) = self.next_pipeline_tx {
-                                    tx.send(vec![part]).await.unwrap();
-                                }
-                            }
-                            done = true;
-                            break;
-                        }
-                        SinkResultType::NeedMoreInput(part) => {
-                            if let Some(part) = part {
-                                if let Some(ref tx) = self.next_pipeline_tx {
-                                    tx.send(vec![part]).await.unwrap();
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // If there is no sink, just forward the value
-                    if let Some(ref tx) = self.next_pipeline_tx {
-                        tx.send(val.clone()).await.unwrap();
-                    }
-                }
-            }
-        }
-
-        if !done {
-            if let Some(sink) = self.sink {
-                if let Some(leftover) = sink.lock().await.finalize() {
-                    for part in leftover {
-                        if let Some(ref tx) = self.next_pipeline_tx {
-                            tx.send(vec![part]).await.unwrap();
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
+#[derive(Clone)]
 pub struct StreamingPipeline {
-    id: usize,
-    input: Source,
-    next_pipeline_tx: Option<mpsc::Sender<Vec<Arc<MicroPartition>>>>,
+    source: Box<dyn Source>,
     intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-    sink: Option<Arc<Mutex<dyn Sink>>>,
+    sink: Option<Box<dyn Sink>>,
 }
 
 impl StreamingPipeline {
-    pub fn new(
-        id: usize,
-        input: Source,
-        next_pipeline_tx: Option<mpsc::Sender<Vec<Arc<MicroPartition>>>>,
-    ) -> Self {
+    pub fn new(source: Box<dyn Source>) -> Self {
         Self {
-            id,
-            input,
-            next_pipeline_tx,
+            source,
             intermediate_operators: vec![],
             sink: None,
         }
     }
 
-    pub fn add_operator(&mut self, operator: Box<dyn IntermediateOperator>) {
-        self.intermediate_operators.push(operator);
+    pub fn with_intermediate_operator(mut self, op: Box<dyn IntermediateOperator>) -> Self {
+        self.intermediate_operators.push(op);
+        self
     }
 
-    pub fn set_sink(&mut self, sink: Arc<Mutex<dyn Sink>>) {
+    pub fn with_sink(mut self, sink: Box<dyn Sink>) -> Self {
         self.sink = Some(sink);
+        self
     }
 
-    pub fn set_next_pipeline_tx(&mut self, tx: mpsc::Sender<Vec<Arc<MicroPartition>>>) {
-        self.next_pipeline_tx = Some(tx);
+    async fn run_intermediate_operators(
+        morsel: Arc<MicroPartition>,
+        intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
+        send_to_sink: Sender,
+    ) -> DaftResult<()> {
+        println!(
+            "Running intermediate operators: {}",
+            intermediate_operators.len()
+        );
+
+        let mut data = morsel;
+        for op in intermediate_operators {
+            data = op.execute(&data)?;
+        }
+        let _ = send_to_sink.send(Ok(data)).await;
+        println!("Intermediate operators finished");
+        Ok(())
     }
 
-    pub async fn run(self) {
-        // Create channels
-        let channel_size = match self.sink {
-            Some(ref sink) => sink.lock().await.queue_size(),
-            None => 32,
+    async fn launch_sink(
+        mut receivers: Vec<Receiver>,
+        mut sink: Option<Box<dyn Sink>>,
+        send_to_next_source: Sender,
+    ) -> DaftResult<()> {
+        println!("Launching sink");
+        let in_order = match sink {
+            Some(ref sink) => sink.in_order(),
+            None => false,
         };
-        let (final_tx, final_rx) = mpsc::channel(channel_size);
 
-        // Spawn the producer
-        let producer = Producer {
-            id: self.id,
-            input: self.input,
-            final_tx,
-            intermediate_operators: self.intermediate_operators,
-        };
-        tokio::spawn(producer.run());
+        if in_order {
+            for receiver in receivers.iter_mut() {
+                while let Some(val) = receiver.recv().await {
+                    if let Some(sink) = sink.borrow_mut() {
+                        let sink_result = sink.sink(&val?)?;
+                        match sink_result {
+                            SinkResultType::Finished => {
+                                break;
+                            }
+                            SinkResultType::NeedMoreInput => {}
+                        }
+                    } else {
+                        let _ = send_to_next_source.send(val).await;
+                    }
+                }
+            }
+        } else {
+            let mut unordered_receivers = FuturesUnordered::new();
+            for receiver in receivers.iter_mut() {
+                unordered_receivers.push(receiver.recv());
+            }
+            while let Some(val) = unordered_receivers.next().await {
+                if let Some(val) = val {
+                    if let Some(sink) = sink.borrow_mut() {
+                        let sink_result = sink.sink(&val?)?;
+                        match sink_result {
+                            SinkResultType::Finished => {
+                                break;
+                            }
+                            SinkResultType::NeedMoreInput => {}
+                        }
+                    } else {
+                        let _ = send_to_next_source.send(val).await;
+                    }
+                }
+            }
+        }
 
-        // Spawn the final consumer
-        let final_consumer = FinalConsumer::new(final_rx, self.next_pipeline_tx, self.sink);
-        let final_handle = tokio::spawn(final_consumer.run());
+        if let Some(sink) = sink.borrow_mut() {
+            println!("Finalizing sink");
+            let final_values = sink.finalize()?;
+            for value in final_values {
+                println!("Sending finalized value back to pipeline");
+                let _ = send_to_next_source.send(Ok(value)).await;
+            }
+        }
+        Ok(())
+    }
 
-        // Await the final consumer
-        final_handle.await.unwrap();
+    pub async fn run(
+        send_to_next_source: Sender,
+        source: Box<dyn Source>,
+        intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
+        sink: Option<Box<dyn Sink>>,
+    ) -> DaftResult<()> {
+        println!("Running pipeline");
+
+        let source_stream = source.get_data();
+        pin_mut!(source_stream);
+
+        let mut handles = FuturesUnordered::new();
+        let mut receivers = vec![];
+        while let Some(morsel) = source_stream.next().await {
+            let morsel = morsel?;
+            let (tx, rx) = create_channel();
+            let intermediate_operators = intermediate_operators.clone();
+            let handle = tokio::spawn(Self::run_intermediate_operators(
+                morsel,
+                intermediate_operators,
+                tx,
+            ));
+            handles.push(handle);
+            receivers.push(rx);
+        }
+
+        let sink_handle = tokio::spawn(Self::launch_sink(receivers, sink, send_to_next_source));
+        handles.push(sink_handle);
+
+        tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                println!("Ctrl-c cancelled execution.");
+                return Err(DaftError::InternalError(
+                    "Ctrl-c cancelled execution.".to_string(),
+                ));
+            }
+            Some(result) = handles.next() => {
+                let _ = result.context(crate::JoinSnafu {})??;
+            }
+        }
+        println!("Pipeline finished");
+        Ok(())
+    }
+}
+
+impl Source for StreamingPipeline {
+    fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+        println!("StreamingPipeline::get_data");
+        let (tx, rx) = create_channel();
+        let source = self.source.clone();
+        let intermediate_operators = self.intermediate_operators.clone();
+        let sink = self.sink.clone();
+
+        tokio::spawn(async move {
+            let pipeline_result = Self::run(tx.clone(), source, intermediate_operators, sink).await;
+            if let Err(e) = pipeline_result {
+                let _ = tx.send(Err(e)).await;
+            }
+        });
+
+        Box::pin(ReceiverStream::new(rx))
     }
 }

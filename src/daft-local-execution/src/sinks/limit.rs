@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
 use super::sink::{Sink, SinkResultType};
 
+#[derive(Clone)]
 pub struct LimitSink {
     limit: usize,
     num_rows_taken: usize,
+    result: Vec<Arc<MicroPartition>>,
 }
 
 impl LimitSink {
@@ -14,40 +17,39 @@ impl LimitSink {
         Self {
             limit,
             num_rows_taken: 0,
+            result: Vec::new(),
         }
     }
 }
 
 impl Sink for LimitSink {
-    fn sink(&mut self, input: &[Arc<MicroPartition>], _id: usize) -> SinkResultType {
-        assert_eq!(input.len(), 1);
-        let input = input.first().unwrap();
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+        println!("LimitSink::sink");
         let input_num_rows = input.len();
 
         if self.num_rows_taken == self.limit {
-            return SinkResultType::Finished(None);
+            return Ok(SinkResultType::Finished);
         }
 
         if self.num_rows_taken + input_num_rows <= self.limit {
             self.num_rows_taken += input_num_rows;
-            SinkResultType::NeedMoreInput(Some(input.clone()))
+            self.result.push(input.clone());
+            Ok(SinkResultType::NeedMoreInput)
         } else {
             let num_rows_to_take = self.limit - self.num_rows_taken;
-            let taken = input.head(num_rows_to_take).unwrap();
+            let taken = input.head(num_rows_to_take)?;
             self.num_rows_taken = self.limit;
-            SinkResultType::Finished(Some(Arc::new(taken)))
+            self.result.push(Arc::new(taken));
+            Ok(SinkResultType::Finished)
         }
-    }
-
-    fn queue_size(&self) -> usize {
-        1
     }
 
     fn in_order(&self) -> bool {
         true
     }
 
-    fn finalize(&mut self) -> Option<Vec<Arc<MicroPartition>>> {
-        None
+    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        println!("LimitSink::finalize");
+        Ok(self.result.clone())
     }
 }

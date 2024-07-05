@@ -2,12 +2,22 @@ mod create_streaming_pipeline;
 mod intermediate_ops;
 mod run;
 mod sinks;
-mod source;
+mod sources;
 mod streaming_pipeline;
 
-use common_error::DaftError;
+use std::sync::Arc;
+
+use common_error::{DaftError, DaftResult};
+use daft_micropartition::MicroPartition;
 pub use run::run_streaming;
 use snafu::Snafu;
+
+type Sender = tokio::sync::mpsc::Sender<DaftResult<Arc<MicroPartition>>>;
+type Receiver = tokio::sync::mpsc::Receiver<DaftResult<Arc<MicroPartition>>>;
+
+pub fn create_channel() -> (Sender, Receiver) {
+    tokio::sync::mpsc::channel(1)
+}
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

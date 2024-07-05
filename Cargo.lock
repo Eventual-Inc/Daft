@@ -1815,6 +1815,7 @@ dependencies = [
  "snafu",
  "sysinfo",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
