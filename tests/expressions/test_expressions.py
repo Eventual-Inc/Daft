@@ -162,6 +162,26 @@ def test_repr_functions_ln() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_shift_left() -> None:
+    a = col("a")
+    b = col("b")
+    y = a << (b)
+    repr_out = repr(y)
+    assert repr_out == "col(a) << col(b)"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_shift_right() -> None:
+    a = col("a")
+    b = col("b")
+    y = a >> (b)
+    repr_out = repr(y)
+    assert repr_out == "col(a) >> col(b)"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 @pytest.mark.parametrize(
     "fun",
     [

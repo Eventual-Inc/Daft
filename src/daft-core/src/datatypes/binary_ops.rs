@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Rem, Shl, Shr, Sub};
 
 use common_error::{DaftError, DaftResult};
 
@@ -225,6 +225,34 @@ impl Rem for &DataType {
                 self, other
             ))),
         })
+    }
+}
+
+impl Shl for &DataType {
+    type Output = DaftResult<DataType>;
+
+    fn shl(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot operate shift left on types: {}, {}",
+                self, rhs
+            ))),
+        }
+    }
+}
+
+impl Shr for &DataType {
+    type Output = DaftResult<DataType>;
+
+    fn shr(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot operate shift right on types: {}, {}",
+                self, rhs
+            ))),
+        }
     }
 }
 

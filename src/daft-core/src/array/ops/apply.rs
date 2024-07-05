@@ -29,15 +29,16 @@ where
     // If the two arrays have the same length, applies row-by-row.
     // If one of the arrays has length 1, treats it as if the value were repeated.
     // Note: the name of the output array takes the name of the left hand side.
-    pub fn binary_apply<F>(&self, rhs: &Self, func: F) -> DaftResult<Self>
+    pub fn binary_apply<F, R>(&self, rhs: &DataArray<R>, func: F) -> DaftResult<Self>
     where
-        F: Fn(T::Native, T::Native) -> T::Native + Copy,
+        R: DaftNumericType,
+        F: Fn(T::Native, R::Native) -> T::Native + Copy,
     {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let lhs_arr: &PrimitiveArray<T::Native> =
                     self.data().as_any().downcast_ref().unwrap();
-                let rhs_arr: &PrimitiveArray<T::Native> =
+                let rhs_arr: &PrimitiveArray<R::Native> =
                     rhs.data().as_any().downcast_ref().unwrap();
 
                 let validity = arrow_bitmap_and_helper(lhs_arr.validity(), rhs_arr.validity());
@@ -59,9 +60,14 @@ where
                 }
             }
             (1, r_size) => {
+                let rhs_arr: &PrimitiveArray<R::Native> =
+                    rhs.data().as_any().downcast_ref().unwrap();
                 if let Some(value) = self.get(0) {
-                    rhs.apply(|v| func(value, v))
-                        .map(|arr| arr.rename(self.name()))
+                    let result_arr = PrimitiveArray::from_trusted_len_values_iter(
+                        rhs_arr.values_iter().map(|v| func(value, *v)),
+                    )
+                    .with_validity(rhs_arr.validity().cloned());
+                    Ok(DataArray::from((self.name(), Box::new(result_arr))))
                 } else {
                     Ok(DataArray::<T>::full_null(
                         self.name(),

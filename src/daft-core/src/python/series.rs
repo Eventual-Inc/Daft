@@ -113,6 +113,14 @@ impl PySeries {
         Ok(self.series.xor(&other.series)?.into())
     }
 
+    pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_left(&other.series)?.into())
+    }
+
+    pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_right(&other.series)?.into())
+    }
+
     pub fn ceil(&self) -> PyResult<Self> {
         Ok(self.series.ceil()?.into())
     }
@@ -357,6 +365,14 @@ impl PySeries {
 
     pub fn max(&self) -> PyResult<Self> {
         Ok((self.series).max(None)?.into())
+    }
+
+    pub fn shift_left(&self, bits: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_left(&bits.series)?.into())
+    }
+
+    pub fn shift_right(&self, bits: &Self) -> PyResult<Self> {
+        Ok(self.series.shift_right(&bits.series)?.into())
     }
 
     pub fn agg_list(&self) -> PyResult<Self> {

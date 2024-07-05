@@ -435,6 +435,14 @@ impl PyExpr {
         Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
+    pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::ShiftLeft, self.into(), other.expr.clone()).into())
+    }
+
+    pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::ShiftRight, self.into(), other.expr.clone()).into())
+    }
+
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
         use crate::{binary_op, Operator};
         match op {

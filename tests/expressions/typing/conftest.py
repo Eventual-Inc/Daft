@@ -185,7 +185,7 @@ def is_numeric(dt: DataType) -> bool:
 
 
 def is_integer(dt: DataType) -> bool:
-    """Checks if this type is a signed integer type"""
+    """Checks if this type is an integer type"""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()

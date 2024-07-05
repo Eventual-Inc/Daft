@@ -319,6 +319,26 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
+    def __lshift__(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the left (``e1 << e2``)
+        Args:
+            other: The number of bits to shift the expression to the left
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr << expr._expr)
+
+    def __rshift__(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the right (``e1 >> e2``)
+        .. NOTE::
+            For unsigned integers, this expression perform a logical right shift.
+            For signed integers, this expression perform an arithmetic right shift.
+
+        Args:
+            other: The number of bits to shift the expression to the right
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr >> expr._expr)
+
     def __invert__(self) -> Expression:
         """Inverts a boolean expression (``~e``)"""
         expr = self._expr.__invert__()
@@ -502,6 +522,26 @@ class Expression:
         """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)"""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr ^ expr._expr)
+
+    def shift_left(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the left (``expr << other``)
+        Args:
+            other: The number of bits to shift the expression to the left
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr << expr._expr)
+
+    def shift_right(self, other: Expression) -> Expression:
+        """Shifts the bits of an integer expression to the right (``expr >> other``)
+        .. NOTE::
+            For unsigned integers, this expression perform a logical right shift.
+            For signed integers, this expression perform an arithmetic right shift.
+
+        Args:
+            other: The number of bits to shift the expression to the right
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr >> expr._expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
