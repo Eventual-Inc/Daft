@@ -1752,19 +1752,19 @@ class ExpressionListNamespace(ExpressionNamespace):
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
-    def slice(self, start: int | Expression, length: int | Expression) -> Expression:
+    def slice(self, start: int | Expression, end: int | Expression) -> Expression:
         """Gets a subset of each list
 
         Args:
-            start: index or indices to retrieve from each list. If the index is negative, it's the position from the end of the list
-            length: the number or numbers of elements to retrieve that are within bounds, must be greater than or equal to 0
+            start: index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end of the list
+            end: index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list
 
         Returns:
             Expression: an expression with a list of the type of the list values
         """
         start_expr = Expression._to_expression(start)
-        length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(self._expr.list_slice(start_expr._expr, length_expr._expr))
+        end_expr = Expression._to_expression(end)
+        return Expression._from_pyexpr(self._expr.list_slice(start_expr._expr, end_expr._expr))
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.

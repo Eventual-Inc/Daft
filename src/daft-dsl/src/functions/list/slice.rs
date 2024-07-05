@@ -14,10 +14,10 @@ impl FunctionEvaluator for SliceEvaluator {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
-            [input, start, length] => {
+            [input, start, end] => {
                 let input_field = input.to_field(schema)?;
                 let start_field = start.to_field(schema)?;
-                let length_field = length.to_field(schema)?;
+                let end_field = end.to_field(schema)?;
 
                 if !start_field.dtype.is_integer() {
                     return Err(DaftError::TypeError(format!(
@@ -26,10 +26,10 @@ impl FunctionEvaluator for SliceEvaluator {
                     )));
                 }
 
-                if !length_field.dtype.is_integer() {
+                if !end_field.dtype.is_integer() {
                     return Err(DaftError::TypeError(format!(
-                        "Expected length to be integer, received: {}",
-                        length_field.dtype
+                        "Expected end index to be integer, received: {}",
+                        end_field.dtype
                     )));
                 }
                 Ok(input_field.to_exploded_field()?.to_list_field()?)
@@ -43,7 +43,7 @@ impl FunctionEvaluator for SliceEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
-            [input, start, length] => input.list_slice(start, length),
+            [input, start, end] => input.list_slice(start, end),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 3 input args, got {}",
                 inputs.len()

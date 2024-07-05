@@ -541,8 +541,6 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
-    # TODO: Is this needed?
-
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):
             raise ValueError(f"expected another Series but got {type(if_true)}")
@@ -933,8 +931,6 @@ class SeriesListNamespace(SeriesNamespace):
 
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
-
-    # TODO: is this needed?
 
 
 class SeriesMapNamespace(SeriesNamespace):
