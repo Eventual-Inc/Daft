@@ -270,6 +270,53 @@ def test_table_numeric_atan2_literals() -> None:
         )
 
 
+def test_table_numeric_arctanh() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, 0.5, 0.9, -0.9, -0.5, -0.0, 1, -1.3, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = np.arctanh(s)
+
+    arct = table.eval_expression_list([col("a").arctanh()])
+    assert (
+        all(
+            x - y < 1.0e-10
+            or (x is None and y is None)
+            or (math.isnan(x) and math.isnan(y) or math.isinf(x) and math.isinf(y))
+            for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_arcsinh() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, 1.0, 0.5, -0.5, -0.0, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = np.arcsinh(s)
+
+    arcs = table.eval_expression_list([col("a").arcsinh()])
+    assert (
+        all(
+            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
+            for x, y in zip(arcs.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_arccosh() -> None:
+    table = MicroPartition.from_pydict({"a": [1.0, 2.0, 1.5, 0.5, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = np.arccosh(s)
+
+    arcc = table.eval_expression_list([col("a").arccosh()])
+    assert (
+        all(
+            x - y < 1.0e-10 or (x is None and y is None) or (math.isnan(x) and math.isnan(y))
+            for x, y in zip(arcc.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
 def test_table_numeric_round() -> None:
     from decimal import ROUND_HALF_UP, Decimal
 
