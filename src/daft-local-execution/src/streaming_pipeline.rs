@@ -157,7 +157,7 @@ impl StreamingPipeline {
                 ));
             }
             Some(result) = handles.next() => {
-                let _ = result.context(crate::JoinSnafu {})??;
+                result.context(crate::JoinSnafu {})??;
             }
         }
         println!("Pipeline finished");

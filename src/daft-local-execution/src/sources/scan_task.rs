@@ -27,6 +27,8 @@ impl Source for ScanTaskSource {
                 std::thread::spawn(move || MicroPartition::from_scan_task(scan_task, io_stats))
                     .join()
                     .unwrap()?;
+
+            // TODO: Implement dynamic splitting / merging of MicroPartition from scan task
             Ok(Arc::new(out))
         }));
         Box::pin(stream)

@@ -21,8 +21,7 @@ pub fn run_streaming(
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let res = runtime.block_on(async {
         let streaming_pipeline = physical_plan_to_streaming_pipeline(physical_plan, &psets);
-        let res = streaming_pipeline.get_data().collect::<Vec<_>>().await;
-        res
+        streaming_pipeline.get_data().collect::<Vec<_>>().await
     });
     Ok(Box::new(res.into_iter()))
 }

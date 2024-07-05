@@ -20,14 +20,10 @@ pub fn physical_plan_to_streaming_pipeline(
     match physical_plan.as_ref() {
         PhysicalPlan::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
             let partitions = psets.get(&in_memory_info.cache_key).unwrap();
-            let new_pipeline =
-                StreamingPipeline::new(Box::new(InMemorySource::new(partitions.clone())));
-            new_pipeline
+            StreamingPipeline::new(Box::new(InMemorySource::new(partitions.clone())))
         }
         PhysicalPlan::TabularScan(TabularScan { scan_tasks, .. }) => {
-            let new_pipeline =
-                StreamingPipeline::new(Box::new(ScanTaskSource::new(scan_tasks.clone())));
-            new_pipeline
+            StreamingPipeline::new(Box::new(ScanTaskSource::new(scan_tasks.clone())))
         }
         PhysicalPlan::Project(Project {
             input, projection, ..
@@ -46,8 +42,7 @@ pub fn physical_plan_to_streaming_pipeline(
             let sink = LimitSink::new(*limit as usize);
             let current_pipeline = current_pipeline.with_sink(Box::new(sink));
 
-            let new_pipeline = StreamingPipeline::new(Box::new(current_pipeline));
-            new_pipeline
+            StreamingPipeline::new(Box::new(current_pipeline))
         }
         _ => {
             unimplemented!(
