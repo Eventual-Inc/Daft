@@ -63,6 +63,8 @@ def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict[str, str
         storage_options["client_id"] = azure_config.client_id
     if azure_config.client_secret is not None:
         storage_options["client_secret"] = azure_config.client_secret
+    if azure_config.use_fabric_endpoint is not None:
+        storage_options["use_fabric_endpoint"] = "true" if azure_config.use_fabric_endpoint else "false"
     if azure_config.endpoint_url is not None:
         storage_options["endpoint"] = azure_config.endpoint_url
     if azure_config.use_ssl is not None:

@@ -538,6 +538,7 @@ class AzureConfig:
     tenant_id: str | None
     client_id: str | None
     client_secret: str | None
+    use_fabric_endpoint: bool | None
     anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
@@ -551,6 +552,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
+        use_fabric_endpoint: bool | None = None,
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
@@ -564,6 +566,7 @@ class AzureConfig:
         tenant_id: str | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
+        use_fabric_endpoint: bool | None = None,
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
