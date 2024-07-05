@@ -60,6 +60,9 @@ Numeric
     Expression.arccos
     Expression.arctan
     Expression.arctan2
+    Expression.arctanh
+    Expression.arccosh
+    Expression.arcsinh
     Expression.radians
     Expression.degrees
     Expression.log2

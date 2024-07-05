@@ -282,6 +282,21 @@ impl PyExpr {
         Ok(degrees(self.into()).into())
     }
 
+    pub fn arctanh(&self) -> PyResult<Self> {
+        use functions::numeric::arctanh;
+        Ok(arctanh(self.into()).into())
+    }
+
+    pub fn arccosh(&self) -> PyResult<Self> {
+        use functions::numeric::arccosh;
+        Ok(arccosh(self.into()).into())
+    }
+
+    pub fn arcsinh(&self) -> PyResult<Self> {
+        use functions::numeric::arcsinh;
+        Ok(arcsinh(self.into()).into())
+    }
+
     pub fn log2(&self) -> PyResult<Self> {
         use functions::numeric::log2;
         Ok(log2(self.into()).into())

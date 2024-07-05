@@ -49,6 +49,9 @@ pub enum NumericExpr {
     Log(FloatWrapper<f64>),
     Ln,
     Exp,
+    ArcTanh,
+    ArcCosh,
+    ArcSinh,
 }
 
 impl NumericExpr {
@@ -77,6 +80,9 @@ impl NumericExpr {
             Log(_) => &LogEvaluator(log::LogFunction::Log),
             Ln => &LogEvaluator(log::LogFunction::Ln),
             Exp => &ExpEvaluator {},
+            ArcTanh => &TrigonometryEvaluator(TrigonometricFunction::ArcTanh),
+            ArcCosh => &TrigonometryEvaluator(TrigonometricFunction::ArcCosh),
+            ArcSinh => &TrigonometryEvaluator(TrigonometricFunction::ArcSinh),
         }
     }
 }
@@ -204,6 +210,30 @@ pub fn radians(input: ExprRef) -> ExprRef {
 pub fn degrees(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Degrees),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn arctanh(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ArcTanh),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn arccosh(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ArcCosh),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn arcsinh(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::ArcSinh),
         inputs: vec![input],
     }
     .into()

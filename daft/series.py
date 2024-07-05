@@ -402,6 +402,18 @@ class Series:
             raise TypeError(f"expected another Series but got {type(other)}")
         return Series._from_pyseries(self._series.arctan2(other._series))
 
+    def arctanh(self) -> Series:
+        """The elementwise inverse hyperbolic tangent of a numeric series"""
+        return Series._from_pyseries(self._series.arctanh())
+
+    def arccosh(self) -> Series:
+        """The elementwise inverse hyperbolic cosine of a numeric series"""
+        return Series._from_pyseries(self._series.arccosh())
+
+    def arcsinh(self) -> Series:
+        """The elementwise inverse hyperbolic sine of a numeric series"""
+        return Series._from_pyseries(self._series.arcsinh())
+
     def radians(self) -> Series:
         """The elementwise radians of a numeric series"""
         return Series._from_pyseries(self._series.radians())
