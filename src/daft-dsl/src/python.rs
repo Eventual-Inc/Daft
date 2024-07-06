@@ -794,6 +794,11 @@ impl PyExpr {
         Ok(max(self.into()).into())
     }
 
+    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
+        use crate::functions::list::slice;
+        Ok(slice(self.into(), start.into(), end.into()).into())
+    }
+
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(self.into(), name).into())

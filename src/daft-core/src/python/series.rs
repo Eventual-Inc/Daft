@@ -641,6 +641,10 @@ impl PySeries {
         Ok(self.series.list_get(&idx.series, &default.series)?.into())
     }
 
+    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
+        Ok(self.series.list_slice(&start.series, &end.series)?.into())
+    }
+
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
         Ok(self.series.map_get(&key.series)?.into())
     }
