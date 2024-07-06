@@ -1353,18 +1353,17 @@ impl Utf8Array {
                     s = s
                         .chars()
                         .filter_map(|c| {
-                            if opts.white_space && c.is_whitespace() {
-                                if prev_white {
-                                    None
-                                } else {
-                                    prev_white = true;
-                                    Some(' ')
-                                }
-                            } else if opts.remove_punct && c.is_ascii_punctuation() {
-                                None
-                            } else {
+                            if !(opts.remove_punct && c.is_ascii_punctuation()
+                                || opts.white_space && c.is_whitespace())
+                            {
                                 prev_white = false;
                                 Some(c)
+                            } else if prev_white || (opts.remove_punct && c.is_ascii_punctuation())
+                            {
+                                None
+                            } else {
+                                prev_white = true;
+                                Some(' ')
                             }
                         })
                         .collect();
