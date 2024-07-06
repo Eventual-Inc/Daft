@@ -57,7 +57,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 }
 
 pub fn get_slices_helper(
-    parent_offsets: &arrow2::offset::OffsetsBuffer<i64>,
+    mut parent_offsets: impl Iterator<Item = i64>,
     field: Arc<Field>,
     child_data_type: &DataType,
     flat_child: &Series,
@@ -65,34 +65,35 @@ pub fn get_slices_helper(
     start_iter: impl Iterator<Item = i64>,
     end_iter: impl Iterator<Item = i64>,
 ) -> DaftResult<Series> {
-    let mut slicing_indexes = Vec::with_capacity(parent_offsets.len());
-    let mut new_offsets = Vec::with_capacity(parent_offsets.len() + 1);
+    let mut slicing_indexes = Vec::with_capacity(flat_child.len());
+    let mut new_offsets = Vec::with_capacity(flat_child.len() + 1);
     new_offsets.push(0);
-    for (i, (start, end)) in start_iter.zip(end_iter).enumerate() {
+    let mut starting_idx = parent_offsets.next().unwrap();
+    for (i, ((start, end), ending_idx)) in start_iter.zip(end_iter).zip(parent_offsets).enumerate()
+    {
         let is_valid = match validity {
             None => true,
             Some(v) => v.get(i).unwrap(),
         };
-        let starting_idx = parent_offsets.get(i).unwrap();
-        let ending_idx = parent_offsets.get(i + 1).unwrap();
         let slice_start = if start >= 0 {
             starting_idx + start
         } else {
-            (ending_idx + start).max(*starting_idx)
+            (ending_idx + start).max(starting_idx)
         };
         let slice_end = if end >= 0 {
-            (starting_idx + end).min(*ending_idx)
+            (starting_idx + end).min(ending_idx)
         } else {
-            *ending_idx + end
+            ending_idx + end
         };
         let slice_length = slice_end - slice_start;
-        if is_valid && slice_start >= *starting_idx && slice_length > 0 {
+        if is_valid && slice_start >= starting_idx && slice_length > 0 {
             slicing_indexes.push(slice_start);
             new_offsets.push(new_offsets.last().unwrap() + slice_length);
         } else {
             slicing_indexes.push(-1);
             new_offsets.push(*new_offsets.last().unwrap());
         }
+        starting_idx = ending_idx;
     }
     let total_capacity = *new_offsets.last().unwrap();
     let mut growable: Box<dyn Growable> = make_growable(
@@ -264,7 +265,7 @@ impl ListArray {
         let start_iter = create_iter(start, self.len());
         let end_iter = create_iter(end, self.len());
         get_slices_helper(
-            self.offsets(),
+            self.offsets().iter().copied(),
             self.field.clone(),
             self.child_data_type(),
             &self.flat_child,
@@ -407,15 +408,10 @@ impl FixedSizeListArray {
     pub fn get_slices(&self, start: &Int64Array, end: &Int64Array) -> DaftResult<Series> {
         let start_iter = create_iter(start, self.len());
         let end_iter = create_iter(end, self.len());
-        let mut offsets = Vec::with_capacity(self.len() + 1);
-        offsets.push(0_i64);
-        for i in 0..self.len() {
-            offsets.push(((i + 1) * self.fixed_element_len()) as i64);
-        }
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field()?);
+        let list_size = self.fixed_element_len();
         get_slices_helper(
-            &offsets,
+            (0..=((self.len() * list_size) as i64)).step_by(list_size),
             new_field,
             self.child_data_type(),
             &self.flat_child,
