@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from deltalake.table import DeltaTable
 
 import daft
+import daft.exceptions
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
@@ -33,27 +34,31 @@ class DeltaLakeScanOperator(ScanOperator):
         #
         # See: https://github.com/delta-io/delta-rs/issues/2117
         deltalake_sdk_io_config = storage_config.config.io_config
-        s3_config_from_env = None
-        if (
-            deltalake_sdk_io_config.s3.key_id is None
-            and deltalake_sdk_io_config.s3.access_key is None
-            and deltalake_sdk_io_config.s3.session_token is None
-        ):
-            s3_config_from_env = S3Config.from_env()
-            deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                s3=deltalake_sdk_io_config.s3.replace(
-                    key_id=s3_config_from_env.key_id,
-                    access_key=s3_config_from_env.access_key,
-                    session_token=s3_config_from_env.session_token,
-                )
-            )
-        if deltalake_sdk_io_config.s3.region_name is None:
-            s3_config_from_env = S3Config.from_env() if s3_config_from_env is None else s3_config_from_env
-            deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                s3=deltalake_sdk_io_config.s3.replace(
-                    region_name=s3_config_from_env.region_name,
-                )
-            )
+        if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
+            try:
+                s3_config_from_env = S3Config.from_env()
+            # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
+            except daft.exceptions.DaftCoreException:
+                pass
+            else:
+                if (
+                    deltalake_sdk_io_config.s3.key_id is None
+                    and deltalake_sdk_io_config.s3.access_key is None
+                    and deltalake_sdk_io_config.s3.session_token is None
+                ):
+                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                        s3=deltalake_sdk_io_config.s3.replace(
+                            key_id=s3_config_from_env.key_id,
+                            access_key=s3_config_from_env.access_key,
+                            session_token=s3_config_from_env.session_token,
+                        )
+                    )
+                if deltalake_sdk_io_config.s3.region_name is None:
+                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                        s3=deltalake_sdk_io_config.s3.replace(
+                            region_name=s3_config_from_env.region_name,
+                        )
+                    )
 
         self._table = DeltaTable(
             table_uri, storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri)
