@@ -535,7 +535,7 @@ impl ObjectSource for AzureBlobSource {
         _data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        todo!();
+        todo!("PUTs to Azure blob store are not yet supported! Please file an issue.");
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
