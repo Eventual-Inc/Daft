@@ -1,15 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
+use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_plan::{
-    physical_ops::{Filter, InMemoryScan, Limit, Project, TabularScan},
+    physical_ops::{Aggregate, Filter, InMemoryScan, Limit, Project, TabularScan},
     PhysicalPlan,
 };
 
 use crate::{
     intermediate_ops::{filter::FilterOperator, project::ProjectOperator},
     pipeline::Pipeline,
-    sinks::limit::LimitSink,
+    sinks::{aggregate::AggregateSink, limit::LimitSink},
     sources::{in_memory::InMemorySource, scan_task::ScanTaskSource},
 };
 
@@ -42,6 +43,23 @@ pub fn physical_plan_to_pipeline(
         PhysicalPlan::Limit(Limit { limit, input, .. }) => {
             let current_pipeline = physical_plan_to_pipeline(input, psets);
             let sink = LimitSink::new(*limit as usize);
+            let current_pipeline = current_pipeline.with_sink(Box::new(sink));
+
+            Pipeline::new(Box::new(current_pipeline))
+        }
+        PhysicalPlan::Aggregate(Aggregate {
+            input,
+            aggregations,
+            groupby,
+        }) => {
+            let current_pipeline = physical_plan_to_pipeline(input, psets);
+            let sink = AggregateSink::new(
+                aggregations
+                    .iter()
+                    .map(|agg| Arc::new(Expr::Agg(agg.clone())))
+                    .collect::<Vec<_>>(),
+                groupby.clone(),
+            );
             let current_pipeline = current_pipeline.with_sink(Box::new(sink));
 
             Pipeline::new(Box::new(current_pipeline))
