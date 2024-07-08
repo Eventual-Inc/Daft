@@ -92,9 +92,6 @@ impl NullArray {
     }
 }
 
-// we take in offsets as a slice of i64 because that's what's needed for .windows()
-// tuple_windows exists but it's not a TrustedLen iterator which is needed for UInt64Array::from_iter
-// maybe there's a better option because it would be best to avoid materializing for FixedSizeList
 fn hash_list(
     name: &str,
     offsets: &[i64],
@@ -105,31 +102,49 @@ fn hash_list(
     // first we hash the flat child
     // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
     // then we hash each sublist as bytes, giving us [hash, hash, ...] as desired
-    // seed only applies to row as a whole, hashes within a row are unseeded
+    // if seed is provided, the sublists are hashed with the seed broadcasted
 
-    let hashed_child = flat_child.hash(None)?;
-    // hashing collects the array anyways so this collect doesn't matter
-    let child_bytes: Vec<u8> = hashed_child
-        .as_arrow()
-        .values_iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect();
-    const OFFSET: usize = 8; // how many bytes per u64
     if let Some(seed_arr) = seed {
         let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
         UInt64Array::from_iter(
             name,
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
-                let start = (offsets[i as usize] as usize) * OFFSET;
-                let end = (offsets[i as usize + 1] as usize) * OFFSET;
-                Some(xxh3_64_with_seed(
-                    &child_bytes[start..end],
-                    seed_arr.get(i as usize).unwrap_or(0),
-                ))
+                let start = offsets[i as usize] as usize;
+                let end = offsets[i as usize + 1] as usize;
+                // apply the current seed across this row
+                let cur_seed_opt = seed_arr.get(i as usize);
+                let flat_seed = UInt64Array::from_iter(
+                    "seed",
+                    std::iter::repeat(cur_seed_opt).take(end - start),
+                );
+                let hashed_child = flat_child
+                    .slice(start, end)
+                    .ok()?
+                    .hash(Some(&flat_seed))
+                    .ok()?;
+                let child_bytes: Vec<u8> = hashed_child
+                    .as_arrow()
+                    .values_iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect();
+                if let Some(cur_seed) = cur_seed_opt {
+                    Some(xxh3_64_with_seed(&child_bytes, cur_seed))
+                } else {
+                    Some(xxh3_64(&child_bytes))
+                }
             }),
         )
         .with_validity(combined_validity)
     } else {
+        // since we don't have a seed we can hash entire flat child at once
+        let hashed_child = flat_child.hash(None)?;
+        // hashing collects the array anyways so this collect doesn't matter
+        let child_bytes: Vec<u8> = hashed_child
+            .as_arrow()
+            .values_iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        const OFFSET: usize = (u64::BITS as usize) / 8; // how many bytes per u64
         let combined_validity = validity.cloned();
         UInt64Array::from_iter(
             name,
