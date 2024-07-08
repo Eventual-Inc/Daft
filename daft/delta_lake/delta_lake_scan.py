@@ -11,6 +11,7 @@ from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
     Pushdowns,
+    S3Config,
     ScanTask,
     StorageConfig,
 )
@@ -32,19 +33,25 @@ class DeltaLakeScanOperator(ScanOperator):
         #
         # See: https://github.com/delta-io/delta-rs/issues/2117
         deltalake_sdk_io_config = storage_config.config.io_config
+        s3_config_from_env = None
         if (
             deltalake_sdk_io_config.s3.key_id is None
             and deltalake_sdk_io_config.s3.access_key is None
             and deltalake_sdk_io_config.s3.session_token is None
         ):
-            from daft.daft import S3Config
-
             s3_config_from_env = S3Config.from_env()
             deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
                 s3=deltalake_sdk_io_config.s3.replace(
                     key_id=s3_config_from_env.key_id,
                     access_key=s3_config_from_env.access_key,
                     session_token=s3_config_from_env.session_token,
+                )
+            )
+        if deltalake_sdk_io_config.s3.region_name is None:
+            s3_config_from_env = S3Config.from_env() if s3_config_from_env is None else s3_config_from_env
+            deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                s3=deltalake_sdk_io_config.s3.replace(
+                    region_name=s3_config_from_env.region_name,
                 )
             )
 
