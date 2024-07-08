@@ -15,12 +15,11 @@ pub struct Registry {
 
 impl Registry {
     fn new() -> Self {
-        let iter: Vec<(&'static str, Arc<dyn ScalarUDF>)> =
-            vec![("hash", Arc::new(HashFunction {}))];
+        let iter: Vec<Arc<dyn ScalarUDF>> = vec![Arc::new(HashFunction {})];
 
-        Self {
-            functions: iter.into_iter().collect(),
-        }
+        let functions = iter.into_iter().map(|f| (f.name(), f)).collect();
+
+        Self { functions }
     }
     pub fn register(&mut self, function: Arc<dyn ScalarUDF>) -> DaftResult<()> {
         if self.functions.contains_key(function.name()) {
