@@ -1,5 +1,4 @@
 [dependencies]
-async-trait = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -7,22 +6,14 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
-dyn-clone = "1"
+dyn-clone = {workspace = true}
 futures = {workspace = true}
-itertools = {workspace = true}
+lazy_static = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rand = {workspace = true}
-rayon = {workspace = true}
 snafu = {workspace = true}
-sysinfo = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = "0.1"
-
-[dev-dependencies]
-arrow2 = {workspace = true}
-daft-table = {path = "../daft-table", default-features = false}
-rstest = {workspace = true}
+tokio-stream = {workspace = true}
 
 [features]
 default = ["python"]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import time
 
 import pytest
 from fsspec.implementations.local import LocalFileSystem
@@ -76,12 +75,8 @@ def test_tpch_q5(tmp_path, check_answer, get_df):
 
 
 def test_tpch_q6(tmp_path, check_answer, get_df):
-    daft.context.set_execution_config(enable_aqe=True, enable_native_executor=True)
-    start = time.time()
     daft_df = answers.q6(get_df)
     daft_pd_df = daft_df.to_pandas()
-    end = time.time()
-    print(f"Time taken: {end-start}")
     check_answer(daft_pd_df, 6, tmp_path)
 
 

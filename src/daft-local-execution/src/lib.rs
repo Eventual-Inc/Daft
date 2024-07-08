@@ -1,9 +1,9 @@
-mod create_streaming_pipeline;
+mod create_pipeline;
 mod intermediate_ops;
+mod pipeline;
 mod run;
 mod sinks;
 mod sources;
-mod streaming_pipeline;
 
 use std::sync::Arc;
 

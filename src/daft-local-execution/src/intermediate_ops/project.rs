@@ -19,8 +19,12 @@ impl ProjectOperator {
 
 impl IntermediateOperator for ProjectOperator {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        println!("ProjectOperator::execute");
+        log::debug!("ProjectOperator::execute");
         let out = input.eval_expression_list(&self.projection)?;
         Ok(Arc::new(out))
+    }
+
+    fn name(&self) -> String {
+        "ProjectOperator".to_string()
     }
 }

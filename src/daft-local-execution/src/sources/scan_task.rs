@@ -21,12 +21,13 @@ impl ScanTaskSource {
 
 impl Source for ScanTaskSource {
     fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+        log::debug!("ScanTaskSource::get_data");
         let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| {
             let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
             let out =
                 std::thread::spawn(move || MicroPartition::from_scan_task(scan_task, io_stats))
                     .join()
-                    .unwrap()?;
+                    .expect("Failed to join thread")?;
 
             // TODO: Implement dynamic splitting / merging of MicroPartition from scan task
             Ok(Arc::new(out))

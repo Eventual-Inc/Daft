@@ -19,7 +19,7 @@ impl InMemorySource {
 
 impl Source for InMemorySource {
     fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-        println!("InMemorySource::get_data");
+        log::debug!("InMemorySource::get_data");
         Box::pin(stream::iter(self.data.clone().into_iter().map(Ok)))
     }
 }

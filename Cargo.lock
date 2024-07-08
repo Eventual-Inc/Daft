@@ -1794,8 +1794,6 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
- "arrow2",
- "async-trait",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -1803,17 +1801,12 @@ dependencies = [
  "daft-micropartition",
  "daft-plan",
  "daft-scan",
- "daft-table",
  "dyn-clone",
  "futures",
- "itertools 0.11.0",
+ "lazy_static",
  "log",
  "pyo3",
- "rand 0.8.5",
- "rayon",
- "rstest",
  "snafu",
- "sysinfo",
  "tokio",
  "tokio-stream",
 ]
