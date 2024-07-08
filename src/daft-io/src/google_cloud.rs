@@ -422,7 +422,7 @@ impl ObjectSource for GCSSource {
         _data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        todo!();
+        todo!("PUTS to GCS are not yet supported! Please file an issue.");
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
