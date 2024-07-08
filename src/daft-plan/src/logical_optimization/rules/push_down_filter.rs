@@ -76,14 +76,14 @@ impl OptimizerRule for PushDownFilter {
                     // Filter pushdown is not supported for in-memory sources.
                     SourceInfo::InMemory(_) => return Ok(Transformed::No(plan)),
                     // Do not pushdown if Source node already has a limit
-                    SourceInfo::External(external_info)
+                    SourceInfo::Physical(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }
 
                     // Pushdown filter into the Source node
-                    SourceInfo::External(external_info) => {
+                    SourceInfo::Physical(external_info) => {
                         let predicate = &filter.predicate;
                         let new_predicate = external_info
                             .pushdowns
@@ -144,7 +144,7 @@ impl OptimizerRule for PushDownFilter {
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),
-                            SourceInfo::External(new_external_info).into(),
+                            SourceInfo::Physical(new_external_info).into(),
                         )
                         .into();
                         if !needing_filter_op.is_empty() {

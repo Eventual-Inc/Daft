@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
-use daft_scan::ScanExternalInfo;
+use daft_scan::PhysicalScanInfo;
 
 use crate::source_info::SourceInfo;
 
@@ -30,7 +30,7 @@ impl Source {
         let mut res = vec![];
 
         match self.source_info.as_ref() {
-            SourceInfo::External(ScanExternalInfo {
+            SourceInfo::Physical(PhysicalScanInfo {
                 source_schema,
                 scan_op,
                 partitioning_keys,
