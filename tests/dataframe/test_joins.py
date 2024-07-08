@@ -777,3 +777,62 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id") == sort_arrow_table(
         pa.Table.from_pydict(expected), "id"
     )
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize(
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        (
+            "semi",
+            {
+                "id_left": [2, 3],
+                "values_left": ["b1", "c1"],
+            },
+        ),
+        (
+            "anti",
+            {
+                "id_left": [1, None],
+                "values_left": ["a1", "d1"],
+            },
+        ),
+    ],
+)
+def test_join_semi_anti_different_names(join_strategy, join_type, expected, make_df, repartition_nparts):
+    skip_invalid_join_strategies(join_strategy, join_type)
+
+    daft_df1 = make_df(
+        {
+            "id_left": [1, 2, 3, None],
+            "values_left": ["a1", "b1", "c1", "d1"],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df2 = make_df(
+        {
+            "id_right": [2, 2, 3, 4],
+            "values_right": ["a2", "b2", "c2", "d2"],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = (
+        daft_df1.with_column("id_left", daft_df1["id_left"].cast(DataType.int64()))
+        .join(
+            daft_df2,
+            left_on="id_left",
+            right_on="id_right",
+            how=join_type,
+            strategy=join_strategy,
+        )
+        .sort(["id_left", "values_left"])
+    ).select("id_left", "values_left")
+
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id_left") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "id_left"
+    )
