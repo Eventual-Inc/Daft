@@ -6,6 +6,7 @@ import pathlib
 import random
 import time
 from collections.abc import Callable, Generator
+from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
@@ -687,9 +688,9 @@ def write_deltalake(
     if parse(deltalake.__version__) < parse("0.17.4"):
         get_file_stats_from_metadata = deltalake.writer.get_file_stats_from_metadata
     else:
-
-        def get_file_stats_from_metadata(metadata):
-            return deltalake.writer.get_file_stats_from_metadata(metadata, -1, None)
+        get_file_stats_from_metadata = partial(
+            deltalake.writer.get_file_stats_from_metadata, num_indexed_cols=-1, columns_to_collect_stats=None
+        )
 
     def file_visitor(written_file: Any) -> None:
         path, partition_values = get_partitions_from_path(written_file.path)
