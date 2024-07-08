@@ -867,6 +867,29 @@ impl PyExpr {
         .into())
     }
 
+    pub fn url_upload(
+        &self,
+        folder_location: &str,
+        max_connections: i64,
+        multi_thread: bool,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        if max_connections <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "max_connections must be positive and non_zero: {max_connections}"
+            )));
+        }
+        use functions::uri::upload;
+        Ok(upload(
+            self.expr.clone(),
+            folder_location,
+            max_connections as usize,
+            multi_thread,
+            io_config.map(|io_config| io_config.config),
+        )
+        .into())
+    }
+
     pub fn hash(&self, seed: Option<PyExpr>) -> PyResult<Self> {
         use crate::functions::hash::hash;
         Ok(hash(self.into(), seed.map(|s| s.into())).into())

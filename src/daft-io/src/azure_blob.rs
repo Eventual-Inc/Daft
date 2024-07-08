@@ -537,6 +537,15 @@ impl ObjectSource for AzureBlobSource {
         ))
     }
 
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        todo!("PUTs to Azure blob store are not yet supported! Please file an issue.");
+    }
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let (_, container_and_key) = parse_azure_uri(uri)?;
         let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {

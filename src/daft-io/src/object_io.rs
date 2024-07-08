@@ -179,6 +179,13 @@ pub(crate) trait ObjectSource: Sync + Send {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult>;
 
+    async fn put(
+        &self,
+        uri: &str,
+        data: bytes::Bytes,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()>;
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize>;
 
     async fn glob(

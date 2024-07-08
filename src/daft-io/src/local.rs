@@ -1,4 +1,4 @@
-use std::io::SeekFrom;
+use std::io::{SeekFrom, Write};
 use std::ops::Range;
 use std::path::PathBuf;
 
@@ -29,6 +29,18 @@ pub(crate) struct LocalSource {}
 enum Error {
     #[snafu(display("Unable to open file {}: {}", path, source))]
     UnableToOpenFile {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to write to file {}: {}", path, source))]
+    UnableToWriteToFile {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to open file for writing {}: {}", path, source))]
+    UnableToOpenFileForWriting {
         path: String,
         source: std::io::Error,
     },
@@ -94,6 +106,9 @@ impl From<Error> for super::Error {
                 }
             }
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
+                super::Error::UnableToWriteToFile { path, source }
+            }
             _ => super::Error::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
@@ -127,6 +142,28 @@ impl ObjectSource for LocalSource {
                 path: uri.into(),
                 range,
             }))
+        } else {
+            Err(Error::InvalidFilePath { path: uri.into() }.into())
+        }
+    }
+
+    async fn put(
+        &self,
+        uri: &str,
+        data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        const LOCAL_PROTOCOL: &str = "file://";
+        if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true) // truncate file if it already exists...
+                .write(true)
+                .open(stripped_uri)
+                .with_context(|_| UnableToOpenFileForWritingSnafu { path: uri })?;
+            Ok(file
+                .write_all(&data)
+                .with_context(|_| UnableToWriteToFileSnafu { path: uri })?)
         } else {
             Err(Error::InvalidFilePath { path: uri.into() }.into())
         }

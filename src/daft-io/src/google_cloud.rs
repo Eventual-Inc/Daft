@@ -416,6 +416,15 @@ impl ObjectSource for GCSSource {
         self.client.get(uri, range, io_stats).await
     }
 
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        todo!("PUTS to GCS are not yet supported! Please file an issue.");
+    }
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         self.client.get_size(uri, io_stats).await
     }

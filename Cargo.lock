@@ -775,7 +775,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.4.1",
+ "uuid 1.9.1",
 ]
 
 [[package]]
@@ -796,7 +796,7 @@ dependencies = [
  "time",
  "tz-rs",
  "url",
- "uuid 1.4.1",
+ "uuid 1.9.1",
 ]
 
 [[package]]
@@ -818,7 +818,7 @@ dependencies = [
  "sha2",
  "time",
  "url",
- "uuid 1.4.1",
+ "uuid 1.9.1",
 ]
 
 [[package]]
@@ -838,7 +838,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.4.1",
+ "uuid 1.9.1",
 ]
 
 [[package]]
@@ -1751,6 +1751,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "url",
+ "uuid 1.9.1",
 ]
 
 [[package]]
@@ -5256,9 +5257,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.4.1"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
+checksum = "5de17fd2f7da591098415cff336e12965a28061ddace43b59cb3c430179c9439"
 dependencies = [
  "getrandom 0.2.10",
  "serde",

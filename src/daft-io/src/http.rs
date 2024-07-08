@@ -231,6 +231,15 @@ impl ObjectSource for HttpSource {
         ))
     }
 
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        todo!("PUTs to HTTP URLs are not yet supported! Please file an issue.");
+    }
+
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let request = self.client.head(uri);
         let response = request
