@@ -24,8 +24,34 @@ logger = logging.getLogger(__name__)
 class DeltaLakeScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
-        storage_options = io_config_to_storage_options(storage_config.config.io_config, table_uri)
-        self._table = DeltaTable(table_uri, storage_options=storage_options)
+
+        # Unfortunately delta-rs doesn't do very good inference of credentials for S3. Thus the current Daft behavior of passing
+        # in `None` for credentials will cause issues when instantiating the DeltaTable without credentials.
+        #
+        # Thus, if we don't detect any credentials being available, we attempt to detect it from the environment using our Daft credentials chain.
+        #
+        # See: https://github.com/delta-io/delta-rs/issues/2117
+        deltalake_sdk_io_config = storage_config.config.io_config
+        if (
+            deltalake_sdk_io_config.s3.key_id is None
+            and deltalake_sdk_io_config.s3.access_key is None
+            and deltalake_sdk_io_config.s3.session_token is None
+        ):
+            from daft.daft import S3Config
+
+            s3_config_from_env = S3Config.from_env()
+            deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                s3=deltalake_sdk_io_config.s3.replace(
+                    key_id=s3_config_from_env.key_id,
+                    access_key=s3_config_from_env.access_key,
+                    session_token=s3_config_from_env.session_token,
+                )
+            )
+
+        self._table = DeltaTable(
+            table_uri, storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri)
+        )
+
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())
         partition_columns = set(self._table.metadata().partition_columns)
