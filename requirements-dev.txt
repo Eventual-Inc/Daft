@@ -48,7 +48,7 @@ tenacity==8.2.3; python_version >= '3.8'
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.15.3; platform_system != "Windows" and python_version >= '3.8'
+deltalake==0.18.2; platform_system != "Windows" and python_version >= '3.8'
 
 # Databricks
 databricks-sdk==0.12.0
