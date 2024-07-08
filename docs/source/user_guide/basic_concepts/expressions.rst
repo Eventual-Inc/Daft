@@ -314,3 +314,188 @@ The :meth:`.if_else() <daft.expressions.Expression.if_else>` method is a useful 
     (Showing first 3 of 3 rows)
 
 This is a useful expression for cleaning your data!
+
+
+
+Temporal Operations
+-------------------
+
+Daft lets you work with various temporal data types such as Time, Timestamp, and Duration. Let's explore how to use these types and their interactions.
+
+.. code:: python
+
+    df = daft.from_pydict({"x": [
+        datetime.datetime(2021, 1, 1, 0, 1, 1),
+        datetime.datetime(2021, 1, 1, 0, 1, 59),
+        datetime.datetime(2021, 1, 1, 0, 2, 0),
+        ]
+    })
+    df.show()
+
+.. code:: none
+
+    +------------------------+
+    | x                      |
+    | DateTime               |
+    +========================+
+    | 2021-01-01T00:01:01    |
+    +------------------------+
+    | 2021-01-01T00:01:59    |
+    +------------------------+
+    | 2021-01-01T00:02:00    |
+    +------------------------+
+    (Showing first 3 rows)
+
+Let's add 10 seconds to each timestamp.
+
+.. code:: python
+
+    df = df.with_column("x_plus_10_seconds", df["x"] + datetime.timedelta(seconds=10))
+    df.show()
+
+.. code:: none
+
+    +------------------------+------------------------+
+    | x                      | x_plus_10_seconds      |
+    | DateTime               | DateTime               |
+    +========================+========================+
+    | 2021-01-01T00:01:01    | 2021-01-01T00:01:11    |
+    +------------------------+------------------------+
+    | 2021-01-01T00:01:59    | 2021-01-01T00:02:09    |
+    +------------------------+------------------------+
+    | 2021-01-01T00:02:00    | 2021-01-01T00:02:10    |
+    +------------------------+------------------------+
+    (Showing first 3 rows)
+
+Subtracting Timestamps
+^^^^^^^^^^^^^^^^^^^^^^
+
+You can subtract one Timestamp from another to get a Duration.
+
+.. code:: python
+
+    df = df.with_column("duration_between_x_plus_10_and_x", df["x_plus_10_seconds"] - df["x"])
+    df.show()
+
+.. code:: none
+
+    +------------------------+------------------------+-------------------------------+
+    | x                      | x_plus_10_seconds      | duration_between_x_plus_10_and_x|
+    | DateTime               | DateTime               | Duration                      |
+    +========================+========================+===============================+
+    | 2021-01-01T00:01:01    | 2021-01-01T00:01:11    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    | 2021-01-01T00:01:59    | 2021-01-01T00:02:09    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    | 2021-01-01T00:02:00    | 2021-01-01T00:02:10    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    (Showing first 3 rows)
+
+
+Extracting Time Stamps
+^^^^^^^^^^^^^^^^^^^^^^
+
+You can extract parts of a Timestamp, such as the year, month, day, hour, minute, and second.
+
+.. code:: python
+
+    df = df.with_columns("year", df["x"].dt.year()) // with columns integration
+    df = df.with_column("month", df["x"].dt.month())
+    df = df.with_column("day", df["x"].dt.day())
+    df = df.with_column("hour", df["x"].dt.hour())
+    df = df.with_column("minute", df["x"].dt.minute())
+    df = df.with_column("second", df["x"].dt.second())
+    df.show()
+
+.. code:: none
+
+    +------------------------+------+------+-----+------+-------+--------+
+    | x                      | year | month| day | hour | minute| second |
+    | DateTime               | Int32| Int32|Int32| Int32| Int32 | Int32  |
+    +========================+======+======+=====+======+=======+========+
+    | 2021-01-01T00:01:01    | 2021 | 1    | 1   | 0    | 1     | 1      |
+    +------------------------+------+------+-----+------+-------+--------+
+    | 2021-01-01T00:01:59    | 2021 | 1    | 1   | 0    | 1     | 59     |
+    +------------------------+------+------+-----+------+-------+--------+
+    | 2021-01-01T00:02:00    | 2021 | 1    | 1   | 0    | 2     | 0      |
+    +------------------------+------+------+-----+------+-------+--------+
+    (Showing first 3 rows)
+
+
+Converting Between Time Zones
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can convert a Timestamp to a different time zone.
+
+.. code:: python
+
+    df = daft.from_pydict({
+        "json": [
+            '{"a": 1, "b": 2}',
+            '{"a": 3, "b": 4}',
+        ],
+    })
+    df = df.with_column("a", df["json"].json.query(".a"))
+    df.collect()
+
+.. code:: none
+
+    ╭──────────────────┬──────╮
+    │ json             ┆ a    │
+    │ ---              ┆ ---  │
+    │ Utf8             ┆ Utf8 │
+    ╞══════════════════╪══════╡
+    │ {"a": 1, "b": 2} ┆ 1    │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ {"a": 3, "b": 4} ┆ 3    │
+    ╰──────────────────┴──────╯
+
+    (Showing first 2 of 2 rows)
+
+
+Using the Truncate Function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The `truncate` function can be used to truncate dates to a specific time unit. This can be useful when you want to group or round dates to the nearest week, month, etc.
+
+.. code:: python
+
+    import pandas as pd
+    import daft
+
+    # Create a DataFrame with a range of dates
+    df = daft.from_pydict({
+        "dates": pd.date_range(start="2023-07-01", end="2023-07-06", freq='D').to_list()
+    })
+
+    # Truncate dates to the start of the week
+    df = df.with_column("truncated_dates", df["dates"].dt.truncate(freq="W-SUN"))
+    df.collect()
+
+.. code:: none
+    ╭────────────────────┬────────────────────╮
+    │ dates              ┆ truncated_dates    │
+    │ ---                ┆ ---                │
+    │ datetime64[ns]     ┆ datetime64[ns]     │
+    ╞════════════════════╪════════════════════╡
+    │ 2023-07-01 00:00:00┆ 2023-06-25 00:00:00│
+    ├────────────────────┼────────────────────┤
+    │ 2023-07-02 00:00:00┆ 2023-07-02 00:00:00│
+    ├────────────────────┼────────────────────┤
+    │ 2023-07-03 00:00:00┆ 2023-07-02 00:00:00│
+    ├────────────────────┼────────────────────┤
+    │ 2023-07-04 00:00:00┆ 2023-07-02 00:00:00│
+    ├────────────────────┼────────────────────┤
+    │ 2023-07-05 00:00:00┆ 2023-07-02 00:00:00│
+    ├────────────────────┼────────────────────┤
+    │ 2023-07-06 00:00:00┆ 2023-07-02 00:00:00│
+    ╰────────────────────┴────────────────────╯
+
+    (Showing first 6 of 6 rows)
+
+Explanation:
+- The `dates` column contains dates from July 1, 2023, to July 6, 2023.
+- The `truncated_dates` column shows the dates truncated to the start of the week.
+- For dates between July 1 and July 6, the start of the week is considered as the closest preceding Sunday.
+
+This example demonstrates the advantage of using the `truncate` function to group or round dates to a desired time unit, such as the start of the week, which can be particularly useful for summarizing or aggregating data by weeks.
