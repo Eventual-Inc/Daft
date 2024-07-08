@@ -689,7 +689,7 @@ def write_deltalake(
     else:
 
         def get_file_stats_from_metadata(metadata):
-            deltalake.writer.get_file_stats_from_metadata(metadata, -1, None)
+            return deltalake.writer.get_file_stats_from_metadata(metadata, -1, None)
 
     def file_visitor(written_file: Any) -> None:
         path, partition_values = get_partitions_from_path(written_file.path)
