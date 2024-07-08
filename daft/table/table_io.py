@@ -682,14 +682,14 @@ def write_deltalake(
 
     data_files: list[AddAction] = []
 
-    # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" argument
+    # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" and "columns_to_collect_stats" arguments
     # https://github.com/delta-io/delta-rs/blob/353e08be0202c45334dcdceee65a8679f35de710/python/deltalake/writer.py#L725
     if parse(deltalake.__version__) < parse("0.17.4"):
         get_file_stats_from_metadata = deltalake.writer.get_file_stats_from_metadata
     else:
 
         def get_file_stats_from_metadata(metadata):
-            deltalake.writer.get_file_stats_from_metadata(metadata, -1)
+            deltalake.writer.get_file_stats_from_metadata(metadata, -1, None)
 
     def file_visitor(written_file: Any) -> None:
         path, partition_values = get_partitions_from_path(written_file.path)
