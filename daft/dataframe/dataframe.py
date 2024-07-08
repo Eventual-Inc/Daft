@@ -744,15 +744,49 @@ class DataFrame:
         --------
 
 
+        >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
         >>> df.write_lance("/tmp/lance/my_table.lance")
-        >>> daft.read_lance("/tmp/lance/my_table.lance")
+        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+        │ ---           ┆ ---              ┆ ---             ┆ ---     │
+        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+        │ 1             ┆ 0                ┆ 1               ┆ 1       │
+        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()
+        ╭───────╮
+        │ a     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ├╌╌╌╌╌╌╌┤
+        │ 3     │
+        ├╌╌╌╌╌╌╌┤
+        │ 4     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
 
 
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
         >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
-
+        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+        │ ---           ┆ ---              ┆ ---             ┆ ---     │
+        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+        │ 1             ┆ 0                ┆ 1               ┆ 2       │
+        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
         """
         import sys
 
@@ -897,6 +931,7 @@ class DataFrame:
         in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
@@ -913,6 +948,7 @@ class DataFrame:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 68719476737 ┆ 4     │
             ╰─────────────┴───────╯
+            <BLANKLINE>
             (Showing first 4 of 4 rows)
 
         Args:
@@ -929,19 +965,24 @@ class DataFrame:
     def select(self, *columns: ColumnInputType) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
 
-        Example:
-
-            >>> # names of columns as strings
-            >>> df = df.select('x', 'y')
-            >>>
-            >>> # names of columns as expressions
-            >>> df = df.select(col('x'), col('y'))
-            >>>
-            >>> # call expressions
-            >>> df = df.select(col('x') * col('y'))
-            >>>
-            >>> # any mix of the above
-            >>> df = df.select('x', col('y'), col('z') + 1)
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df = df.select('x', daft.col('y'), daft.col('z') + 1)
+            >>> df.show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 9     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 10    │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
@@ -958,7 +999,21 @@ class DataFrame:
         """Computes unique rows, dropping duplicates
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
             >>> unique_df = df.distinct()
+            >>> unique_df.show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2     ┆ 5     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 4     ┆ 7     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Returns:
             DataFrame: DataFrame that has only  unique rows.
@@ -977,7 +1032,20 @@ class DataFrame:
         """Samples a fraction of rows from the DataFrame
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sampled_df = df.sample(0.5)
+            >>> # Samples will vary from output to output
+            >>> # here is a sample output
+            >>> # ╭───────┬───────┬───────╮
+            >>> # │ x     ┆ y     ┆ z     │
+            >>> # │ ---   ┆ ---   ┆ ---   │
+            >>> # │ Int64 ┆ Int64 ┆ Int64 │
+            >>> # |═══════╪═══════╪═══════╡
+            >>> # │ 2     ┆ 5     ┆ 8     │
+            >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            >>> # │ 3     ┆ 6     ┆ 9     │
+            >>> # ╰───────┴───────┴───────╯
 
         Args:
             fraction (float): fraction of rows to sample.
@@ -1000,7 +1068,23 @@ class DataFrame:
         This is equivalent of performing a select with all the columns but the ones excluded.
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df_without_x = df.exclude('x')
+            >>> df_without_x.show()
+            ╭───────┬───────╮
+            │ y     ┆ z     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 5     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 6     ┆ 9     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             *names (str): names to exclude
@@ -1016,7 +1100,21 @@ class DataFrame:
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
-            >>> filtered_df = df.where((col('x') < 10) & (col('y') == 10))
+
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2     ┆ 5     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 9     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
@@ -1038,7 +1136,23 @@ class DataFrame:
         with all current columns and the new one
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> new_df = df.with_column('x+1', col('x') + 1)
+            >>> new_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ x+1   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             column_name (str): name of new column
@@ -1060,13 +1174,9 @@ class DataFrame:
         with all current columns and the new ones
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
-            >>>
-            >>> new_df = df.with_columns({
-                    'foo': df['x'] + 1,
-                    'bar': df['y'] - df['x']
-                })
-
+            >>> new_df = df.with_columns({'foo': df['x'] + 1,'bar': df['y'] - df['x']})
             >>> new_df.show()
             ╭───────┬───────┬───────┬───────╮
             │ x     ┆ y     ┆ foo   ┆ bar   │
@@ -1079,6 +1189,7 @@ class DataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3     ┆ 6     ┆ 4     ┆ 3     │
             ╰───────┴───────┴───────┴───────╯
+            <BLANKLINE>
             (Showing first 3 of 3 rows)
 
         Args:
@@ -1104,14 +1215,50 @@ class DataFrame:
     ) -> "DataFrame":
         """Sorts DataFrame globally
 
-        Example:
-            >>> sorted_df = df.sort(col('x') + col('y'))
-            >>> sorted_df = df.sort([col('x'), col('y')], desc=[False, True])
-            >>> sorted_df = df.sort(['z', col('x'), col('y')], desc=[True, False, True])
-
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
             * Supports multicolumn sorts and can have unique `descending` flag per column.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
+            >>> sorted_df = df.sort(col('x') + col('y'))
+            >>> sorted_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 2     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+            You can also sort by multiple columns, and specify the 'descending' flag for each column:
+
+            >>> df = daft.from_pydict({"x": [1, 2, 1, 2], "y": [9, 8, 7, 6]})
+            >>> sorted_df = df.sort(["x", "y"], [True, False])
+            >>> sorted_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 2     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 9     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
         Args:
             column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
@@ -1132,7 +1279,27 @@ class DataFrame:
         """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
 
         Example:
-            >>> df_limited = df.limit(10) # returns 10 rows
+            >>> import daft
+            >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df_limited = df.limit(5) # returns 5 rows
+            >>> df_limited.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 5     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
 
         Args:
             num (int): maximum rows to allow.
@@ -1174,8 +1341,11 @@ class DataFrame:
             which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
 
         Example:
-            >>> random_repart_df = df.repartition(4)
-            >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> repartitioned_df = df.repartition(3)
+            >>> repartitioned_df.num_partitions()
+            3
 
         Args:
             num (Optional[int]): Number of target partitions; if None, the number of partitions will not be changed.
@@ -1203,7 +1373,11 @@ class DataFrame:
         (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
 
         Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df_with_5_partitions = df.into_partitions(5)
+            >>> df_with_5_partitions.num_partitions()
+            5
 
         Args:
             num (int): number of target partitions.
@@ -1304,10 +1478,38 @@ class DataFrame:
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
-            >>> df.drop_na()  # drops rows where any column contains NaN values
+            >>> df.drop_nan().collect() # drops rows where any column contains NaN values
+            ╭─────────╮
+            │ a       │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 2.2     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 3.5     │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
             >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
-            >>> df.drop_na("a")  # drops rows where column a contains NaN values
+            >>> df.drop_nan("a").collect()  # drops rows where column a contains NaN values
+            ╭─────────╮
+            │ a       │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1.6     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 2.5     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 3.3     │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             *cols (str): column names by which rows containing nans/NULLs should be filtered
@@ -1342,10 +1544,22 @@ class DataFrame:
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
 
         Example:
-            >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("NaN")]})
-            >>> df.drop_null()  # drops rows where any column contains Null/NaN values
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.6, 2.5, None, float("NaN")]})
-            >>> df.drop_null("a")  # drops rows where column a contains Null/NaN values
+            >>> df.drop_null("a").collect()
+            ╭─────────╮
+            │ a       │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1.6     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 2.5     │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ NaN     │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             *cols (str): column names by which rows containing nans should be filtered
@@ -1370,27 +1584,31 @@ class DataFrame:
         Exploding Null values or empty lists will create a single Null entry (see example below).
 
         Example:
-            >>> df = daft.from_pydict({
-            >>>     "x": [[1], [2, 3]],
-            >>>     "y": [["a"], ["b", "c"]],
-            >>>     "z": [1.0, 2.0],
-            >>> ]})
-            >>>
-            >>> df.explode(col("x"), col("y"))
-            >>>
-            >>> # +------+-----------+-----+      +------+------+-----+
-            >>> # | x    | y         | z   |      |  x   |  y   | z   |
-            >>> # +------+-----------+-----+      +------+------+-----+
-            >>> # |[1]   | ["a"]     | 1.0 |      |  1   | "a"  | 1.0 |
-            >>> # +------+-----------+-----+  ->  +------+------+-----+
-            >>> # |[2, 3]| ["b", "c"]| 2.0 |      |  2   | "b"  | 2.0 |
-            >>> # +------+-----------+-----+      +------+------+-----+
-            >>> # |[]    | []        | 3.0 |      |  3   | "c"  | 2.0 |
-            >>> # +------+-----------+-----+      +------+------+-----+
-            >>> # |None  | None      | 4.0 |      | None | None | 3.0 |
-            >>> # +------+-----------+-----+      +------+------+-----+
-            >>> #                                 | None | None | 4.0 |
-            >>> #                                 +------+------+-----+
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "x": [[1], [2, 3]],
+            ...         "y": [["a"], ["b", "c"]],
+            ...         "z": [
+            ...             [1.0],
+            ...             [2.0, 2.0],
+            ...         ],
+            ...     }
+            ... )
+            >>> df.explode(col("x"), col("y")).collect()
+            ╭───────┬──────┬───────────────╮
+            │ x     ┆ y    ┆ z             │
+            │ ---   ┆ ---  ┆ ---           │
+            │ Int64 ┆ Utf8 ┆ List[Float64] │
+            ╞═══════╪══════╪═══════════════╡
+            │ 1     ┆ a    ┆ [1]           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ b    ┆ [2, 2]        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ c    ┆ [2, 2]        │
+            ╰───────┴──────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             *columns (ColumnInputType): columns to explode
@@ -1413,24 +1631,12 @@ class DataFrame:
         """Unpivots a DataFrame from wide to long format.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({
             ...     "year": [2020, 2021, 2022],
             ...     "Jan": [10, 30, 50],
             ...     "Feb": [20, 40, 60],
             ... })
-            >>> df
-            ╭───────┬───────┬───────╮
-            │ year  ┆ Jan   ┆ Feb   │
-            │ ---   ┆ ---   ┆ ---   │
-            │ Int64 ┆ Int64 ┆ Int64 │
-            ╞═══════╪═══════╪═══════╡
-            │ 2020  ┆ 10    ┆ 20    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2021  ┆ 30    ┆ 40    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2022  ┆ 50    ┆ 60    │
-            ╰───────┴───────┴───────╯
-            (Showing first 3 of 3 rows)
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
@@ -1451,6 +1657,7 @@ class DataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2022  ┆ Feb   ┆ 60        │
             ╰───────┴───────┴───────────╯
+            <BLANKLINE>
             (Showing first 6 of 6 rows)
 
         Args:
@@ -1673,6 +1880,7 @@ class DataFrame:
             ╞═════════╪════════════════════╪════════════════════╪═══════════╡
             │ 0.55    ┆ 0.8500000000000001 ┆ 0.6000000000000001 ┆ 0.85      │
             ╰─────────┴────────────────────┴────────────────────┴───────────╯
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Args:
@@ -1711,6 +1919,7 @@ class DataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
             │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
             ╰──────┴─────────┴─────────┴────────┴────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
@@ -1738,12 +1947,13 @@ class DataFrame:
             determine the unique values to pivot on.
 
         Example:
+            >>> import daft
             >>> data = {
-                "id": [1, 2, 3, 4],
-                "version": ["3.8", "3.8", "3.9", "3.9"],
-                "platform": ["macos", "macos", "macos", "windows"],
-                "downloads": [100, 200, 150, 250],
-            }
+            ...     "id": [1, 2, 3, 4],
+            ...     "version": ["3.8", "3.8", "3.9", "3.9"],
+            ...     "platform": ["macos", "macos", "macos", "windows"],
+            ...     "downloads": [100, 200, 150, 250],
+            ... }
             >>> df = daft.from_pydict(data)
             >>> df = df.pivot("version", "platform", "downloads", "sum")
             >>> df.show()
@@ -1756,6 +1966,8 @@ class DataFrame:
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3.8     ┆ None    ┆ 300   │
             ╰─────────┴─────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Args:
             group_by (ManyColumnsInputType): columns to group by
@@ -1903,7 +2115,10 @@ class DataFrame:
         """Returns whether the column exists in the dataframe.
 
         Example:
-            >>> "x" in df
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> 'x' in df
+            True
 
         Args:
             col_name (str): column name
@@ -2312,6 +2527,7 @@ class GroupedDataFrame:
             ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
             │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
             ╰──────┴─────────┴─────────┴────────┴────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
@@ -2326,12 +2542,11 @@ class GroupedDataFrame:
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
 
         Example:
+            >>> import daft, statistics
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
-            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
-            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮
@@ -2343,6 +2558,7 @@ class GroupedDataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 331.62026476076517 │
             ╰───────┴────────────────────╯
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Args:
