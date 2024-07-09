@@ -83,6 +83,16 @@ impl Series {
         }
     }
 
+    pub fn list_chunk(&self, size: usize) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.get_chunks(size),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.get_chunks(size),
+            dt => Err(DaftError::TypeError(format!(
+                "list chunk not implemented for {dt}"
+            ))),
+        }
+    }
+
     pub fn list_sum(&self) -> DaftResult<Series> {
         match self.data_type() {
             DataType::List(_) => self.list()?.sum(),

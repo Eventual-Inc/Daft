@@ -56,7 +56,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
     }
 }
 
-pub fn get_slices_helper(
+fn get_slices_helper(
     mut parent_offsets: impl Iterator<Item = i64>,
     field: Arc<Field>,
     child_data_type: &DataType,
@@ -116,6 +116,61 @@ pub fn get_slices_helper(
         validity.cloned(),
     )
     .into_series())
+}
+
+fn get_chunks_helper(
+    to_skip: Option<impl Iterator<Item = usize>>,
+    total_elements_to_skip: usize,
+    flat_child: &Series,
+    field: Arc<Field>,
+    new_offsets: Vec<i64>,
+    validity: Option<&arrow2::bitmap::Bitmap>,
+    size: usize,
+) -> DaftResult<Series> {
+    // If there is a list where the number of elements that do not fit properly when chunked into
+    // sublists of `size` elements, we skip the elements that don't fit. If all lists in the
+    // Series can be chunked cleanly, we use a fast path where we pass the underlying array of
+    // elements to the result, but reinterpret it as a list of sublists. If there is at least one
+    // list that cannot be chunked cleanly, we use a slower path that removes excess elements.
+    if total_elements_to_skip == 0 {
+        let inner_list_field = field.to_exploded_field()?.to_fixed_size_list_field(size)?;
+        let inner_list = FixedSizeListArray::new(
+            inner_list_field.clone(),
+            Series::from_arrow(field.to_exploded_field()?.into(), flat_child.to_arrow())?,
+            None,
+        );
+        Ok(ListArray::new(
+            inner_list_field.to_list_field()?,
+            inner_list.into_series(),
+            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            validity.cloned(),
+        )
+        .into_series())
+    } else {
+        let mut growable: Box<dyn Growable> = make_growable(
+            &field.name,
+            &field.to_exploded_field()?.dtype,
+            vec![flat_child],
+            false,
+            flat_child.len() - total_elements_to_skip,
+        );
+        let mut starting_idx = 0;
+        for (i, to_skip) in to_skip.unwrap().enumerate() {
+            let num_chunks = new_offsets.get(i + 1).unwrap() - new_offsets.get(i).unwrap();
+            let slice_len = num_chunks as usize * size;
+            growable.extend(0, starting_idx, slice_len);
+            starting_idx += slice_len + to_skip;
+        }
+        let inner_list_field = field.to_exploded_field()?.to_fixed_size_list_field(size)?;
+        let inner_list = FixedSizeListArray::new(inner_list_field.clone(), growable.build()?, None);
+        Ok(ListArray::new(
+            inner_list_field.to_list_field()?,
+            inner_list.into_series(),
+            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            validity.cloned(),
+        )
+        .into_series())
+    }
 }
 
 impl ListArray {
@@ -274,6 +329,34 @@ impl ListArray {
             end_iter,
         )
     }
+
+    pub fn get_chunks(&self, size: usize) -> DaftResult<Series> {
+        let mut to_skip = Vec::with_capacity(self.flat_child.len());
+        let mut new_offsets = Vec::with_capacity(self.flat_child.len() + 1);
+        let mut total_elements_to_skip = 0;
+        new_offsets.push(0);
+        for i in 0..self.offsets().len() - 1 {
+            let slice_len = self.offsets().get(i + 1).unwrap() - self.offsets().get(i).unwrap();
+            let modulo = slice_len as usize % size;
+            to_skip.push(modulo);
+            total_elements_to_skip += modulo;
+            new_offsets.push(new_offsets.last().unwrap() + (slice_len / size as i64));
+        }
+        let to_skip = if total_elements_to_skip == 0 {
+            None
+        } else {
+            Some(to_skip.iter().copied())
+        };
+        get_chunks_helper(
+            to_skip,
+            total_elements_to_skip,
+            &self.flat_child,
+            self.field.clone(),
+            new_offsets,
+            self.validity(),
+            size,
+        )
+    }
 }
 
 impl FixedSizeListArray {
@@ -418,6 +501,34 @@ impl FixedSizeListArray {
             self.validity(),
             start_iter,
             end_iter,
+        )
+    }
+
+    pub fn get_chunks(&self, size: usize) -> DaftResult<Series> {
+        let list_size = self.fixed_element_len();
+        let num_chunks = list_size / size;
+        let modulo = list_size % size;
+        let total_elements_to_skip = modulo * self.len();
+        let new_offsets: Vec<i64> = if !self.is_empty() && num_chunks > 0 {
+            (0..=((self.len() * num_chunks) as i64))
+                .step_by(num_chunks)
+                .collect()
+        } else {
+            vec![0; self.len() + 1]
+        };
+        let to_skip = if total_elements_to_skip == 0 {
+            None
+        } else {
+            Some(std::iter::repeat(modulo).take(self.len()))
+        };
+        get_chunks_helper(
+            to_skip,
+            total_elements_to_skip,
+            &self.flat_child,
+            self.field.clone(),
+            new_offsets,
+            self.validity(),
+            size,
         )
     }
 }

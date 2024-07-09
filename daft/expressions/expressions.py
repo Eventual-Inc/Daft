@@ -2597,6 +2597,18 @@ class ExpressionListNamespace(ExpressionNamespace):
         end_expr = Expression._to_expression(end)
         return Expression._from_pyexpr(self._expr.list_slice(start_expr._expr, end_expr._expr))
 
+    def chunk(self, size: int) -> Expression:
+        """Splits each list into chunks of the given size
+
+        Args:
+            size: size of chunks to split the list into. Must be greater than 0
+        Returns:
+            Expression: an expression with lists of fixed size lists of the type of the list values
+        """
+        if not (isinstance(size, int) and size > 0):
+            raise ValueError(f"Invalid value for `size`: {size}")
+        return Expression._from_pyexpr(self._expr.list_chunk(size))
+
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
 

@@ -113,6 +113,18 @@ impl Field {
         })
     }
 
+    pub fn to_fixed_size_list_field(&self, size: usize) -> DaftResult<Self> {
+        if self.dtype.is_python() {
+            return Ok(self.clone());
+        }
+        let list_dtype = DataType::FixedSizeList(Box::new(self.dtype.clone()), size);
+        Ok(Self {
+            name: self.name.clone(),
+            dtype: list_dtype,
+            metadata: self.metadata.clone(),
+        })
+    }
+
     pub fn to_exploded_field(&self) -> DaftResult<Self> {
         match &self.dtype {
             DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => {

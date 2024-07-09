@@ -799,6 +799,11 @@ impl PyExpr {
         Ok(slice(self.into(), start.into(), end.into()).into())
     }
 
+    pub fn list_chunk(&self, size: usize) -> PyResult<Self> {
+        use crate::functions::list::chunk;
+        Ok(chunk(self.into(), size).into())
+    }
+
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(self.into(), name).into())
