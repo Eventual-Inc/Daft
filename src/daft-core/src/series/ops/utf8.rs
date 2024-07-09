@@ -251,4 +251,18 @@ impl Series {
     pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
     }
+
+    pub fn tokenize_encode(&self, tokens_path: &str) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.tokenize_encode(tokens_path)?.into_series()))
+    }
+
+    pub fn tokenize_decode(&self, tokens_path: &str) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.tokenize_decode(tokens_path)?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Tokenize decode not implemented for type {}",
+                dt
+            ))),
+        }
+    }
 }

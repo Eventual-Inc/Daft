@@ -546,6 +546,14 @@ impl PySeries {
         Ok(self.series.utf8_normalize(opts)?.into())
     }
 
+    pub fn tokenize_encode(&self, tokens_path: &str) -> PyResult<Self> {
+        Ok(self.series.tokenize_encode(tokens_path)?.into())
+    }
+
+    pub fn tokenize_decode(&self, tokens_path: &str) -> PyResult<Self> {
+        Ok(self.series.tokenize_decode(tokens_path)?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }
