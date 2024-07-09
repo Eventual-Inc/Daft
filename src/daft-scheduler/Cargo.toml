@@ -6,6 +6,7 @@ common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-execution = {path = "../daft-execution", default-features = false}
+daft-local-execution = {path = "../daft-local-execution", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
@@ -19,7 +20,7 @@ rstest = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python", "common-io-config/python", "common-daft-config/python", "daft-core/python", "daft-execution/python", "daft-micropartition/python", "daft-plan/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-error/python", "common-io-config/python", "common-daft-config/python", "daft-core/python", "daft-execution/python", "daft-local-execution/python", "daft-micropartition/python", "daft-plan/python", "daft-dsl/python"]
 
 [package]
 edition = {workspace = true}

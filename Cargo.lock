@@ -1538,6 +1538,7 @@ dependencies = [
  "daft-execution",
  "daft-io",
  "daft-json",
+ "daft-local-execution",
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
@@ -1796,6 +1797,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-local-execution"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "daft-micropartition",
+ "daft-plan",
+ "daft-scan",
+ "dyn-clone",
+ "futures",
+ "lazy_static",
+ "log",
+ "pyo3",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "daft-micropartition"
 version = "0.2.0-dev0"
 dependencies = [
@@ -1925,6 +1947,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-execution",
+ "daft-local-execution",
  "daft-micropartition",
  "daft-plan",
  "daft-scan",
