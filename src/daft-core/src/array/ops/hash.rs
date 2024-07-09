@@ -8,7 +8,7 @@ use crate::{
     },
     kernels,
     utils::arrow::arrow_bitmap_and_helper,
-    DataType, Series,
+    Series,
 };
 
 use arrow2::types::Index;
@@ -172,10 +172,7 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        let size = match self.field.dtype {
-            DataType::FixedSizeList(_, s) => s,
-            _ => panic!("dtype is not FixedSizeList"),
-        };
+        let size = self.fixed_element_len();
         let len = self.flat_child.len() as i64;
         // see comment on hash_list for why we are collecting
         let offsets: Vec<i64> = (0..=len).step_by(size).collect();
