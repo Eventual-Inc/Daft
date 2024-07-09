@@ -7,7 +7,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
             match source.source_info.as_ref() {
-                SourceInfo::InMemory(_) => unimplemented!(),
+                SourceInfo::InMemory(info) => Ok(LocalPhysicalPlan::in_memory_scan(info.clone())),
                 SourceInfo::Physical(info) => {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks_iter = info.scan_op.0.to_scan_tasks(info.pushdowns.clone())?;

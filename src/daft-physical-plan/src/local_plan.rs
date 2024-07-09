@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::ResourceRequest;
+use daft_plan::{InMemoryInfo, ResourceRequest};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -53,6 +53,14 @@ impl LocalPhysicalPlan {
 
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
+    }
+
+    pub(crate) fn in_memory_scan(in_memory_info: InMemoryInfo) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
+            info: in_memory_info,
+            plan_stats: PlanStats {},
+        })
+        .arced()
     }
 
     pub(crate) fn physical_scan(
@@ -149,7 +157,10 @@ impl LocalPhysicalPlan {
 
 #[derive(Debug)]
 
-pub struct InMemoryScan {}
+pub struct InMemoryScan {
+    info: InMemoryInfo,
+    plan_stats: PlanStats,
+}
 #[derive(Debug)]
 
 pub struct PhysicalScan {
