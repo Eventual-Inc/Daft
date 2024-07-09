@@ -7,7 +7,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import DataType, col, utils
+from daft import DataType, col, from_pydict, utils
 from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import MicroPartition
@@ -816,3 +816,39 @@ def test_concat_aggs_empty() -> None:
     res = daft_table.to_pydict()
 
     assert res == {"col_B": [], "concat": []}
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_list(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [[1, 2, 3], [1, 2, 3], [1, 2], [], [1, 2, 3], [], [1, 2]],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.list(dtype)))
+    res = df.groupby("a").agg_list("b").to_pydict()
+    expected = [[0, 1, 4], [2, 6], [3, 5]]
+    for lt in expected:
+        assert lt in res["b"]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_fixed_size_list(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [
+                [1, 2, 3],
+                [1, 2, 3],
+                [1, 2, 4],
+                [3, 2, 1],
+                [1, 2, 3],
+                [3, 2, 1],
+                [1, 2, 4],
+            ],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.fixed_size_list(dtype, 3)))
+    res = df.groupby("a").agg_list("b").to_pydict()
+    expected = [[0, 1, 4], [2, 6], [3, 5]]
+    for lt in expected:
+        assert lt in res["b"]

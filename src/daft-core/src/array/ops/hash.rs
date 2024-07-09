@@ -1,5 +1,5 @@
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
@@ -7,9 +7,13 @@ use crate::{
         Utf8Array,
     },
     kernels,
+    utils::arrow::arrow_bitmap_and_helper,
+    Series,
 };
 
+use arrow2::types::Index;
 use common_error::DaftResult;
+use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 use super::as_arrow::AsArrow;
 
@@ -85,6 +89,100 @@ impl NullArray {
         let result = kernels::hashing::hash(as_arrowed, seed)?;
 
         Ok(DataArray::from((self.name(), Box::new(result))))
+    }
+}
+
+fn hash_list(
+    name: &str,
+    offsets: &[i64],
+    flat_child: &Series,
+    validity: Option<&arrow2::bitmap::Bitmap>,
+    seed: Option<&UInt64Array>,
+) -> DaftResult<UInt64Array> {
+    // first we hash the flat child
+    // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
+    // then we hash each sublist as bytes, giving us [hash, hash, ...] as desired
+    // if seed is provided, the sublists are hashed with the seed broadcasted
+
+    if let Some(seed_arr) = seed {
+        let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
+        UInt64Array::from_iter(
+            name,
+            u64::range(0, offsets.len() - 1).unwrap().map(|i| {
+                let start = offsets[i as usize] as usize;
+                let end = offsets[i as usize + 1] as usize;
+                // apply the current seed across this row
+                let cur_seed_opt = seed_arr.get(i as usize);
+                let flat_seed = UInt64Array::from_iter(
+                    "seed",
+                    std::iter::repeat(cur_seed_opt).take(end - start),
+                );
+                let hashed_child = flat_child
+                    .slice(start, end)
+                    .ok()?
+                    .hash(Some(&flat_seed))
+                    .ok()?;
+                let child_bytes: Vec<u8> = hashed_child
+                    .as_arrow()
+                    .values_iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect();
+                if let Some(cur_seed) = cur_seed_opt {
+                    Some(xxh3_64_with_seed(&child_bytes, cur_seed))
+                } else {
+                    Some(xxh3_64(&child_bytes))
+                }
+            }),
+        )
+        .with_validity(combined_validity)
+    } else {
+        // since we don't have a seed we can hash entire flat child at once
+        let hashed_child = flat_child.hash(None)?;
+        // hashing collects the array anyways so this collect doesn't matter
+        let child_bytes: Vec<u8> = hashed_child
+            .as_arrow()
+            .values_iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        const OFFSET: usize = (u64::BITS as usize) / 8; // how many bytes per u64
+        let combined_validity = validity.cloned();
+        UInt64Array::from_iter(
+            name,
+            u64::range(0, offsets.len() - 1).unwrap().map(|i| {
+                let start = (offsets[i as usize] as usize) * OFFSET;
+                let end = (offsets[i as usize + 1] as usize) * OFFSET;
+                Some(xxh3_64(&child_bytes[start..end]))
+            }),
+        )
+        .with_validity(combined_validity)
+    }
+}
+
+impl ListArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        hash_list(
+            self.name(),
+            self.offsets(),
+            &self.flat_child,
+            self.validity(),
+            seed,
+        )
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        let size = self.fixed_element_len();
+        let len = self.flat_child.len() as i64;
+        // see comment on hash_list for why we are collecting
+        let offsets: Vec<i64> = (0..=len).step_by(size).collect();
+        hash_list(
+            self.name(),
+            &offsets,
+            &self.flat_child,
+            self.validity(),
+            seed,
+        )
     }
 }
 

@@ -4,7 +4,7 @@ use arrow2::array::Array;
 use fnv::FnvHashMap;
 
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
         Float32Array, Float64Array, NullArray, Utf8Array,
@@ -168,5 +168,17 @@ impl IntoGroups for NullArray {
         }
         let v = (0u64..l).collect::<Vec<u64>>();
         Ok((vec![0], vec![v]))
+    }
+}
+
+impl IntoGroups for ListArray {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        self.hash(None)?.make_groups()
+    }
+}
+
+impl IntoGroups for FixedSizeListArray {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        self.hash(None)?.make_groups()
     }
 }
