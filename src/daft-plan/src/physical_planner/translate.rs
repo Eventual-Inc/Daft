@@ -15,7 +15,7 @@ use daft_core::DataType;
 use daft_dsl::ExprRef;
 use daft_dsl::{col, ApproxPercentileParams};
 
-use daft_scan::ScanExternalInfo;
+use daft_scan::PhysicalScanInfo;
 
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
@@ -41,7 +41,7 @@ pub(super) fn translate_single_logical_node(
 ) -> DaftResult<PhysicalPlanRef> {
     match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
-            SourceInfo::External(ScanExternalInfo {
+            SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
                 scan_op,
                 source_schema,

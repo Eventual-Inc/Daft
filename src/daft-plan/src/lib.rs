@@ -30,7 +30,7 @@ pub use physical_planner::{
 };
 pub use resource_request::ResourceRequest;
 pub use sink_info::OutputFileInfo;
-pub use source_info::{FileInfo, FileInfos, InMemoryInfo};
+pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

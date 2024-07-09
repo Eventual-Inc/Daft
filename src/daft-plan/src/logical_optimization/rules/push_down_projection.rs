@@ -145,7 +145,7 @@ impl PushDownProjection {
                     panic!()
                 };
                 match source.source_info.as_ref() {
-                    SourceInfo::External(external_info) => {
+                    SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
                                 .fields
@@ -156,7 +156,7 @@ impl PushDownProjection {
                             let schema = Schema::new(pruned_upstream_schema)?;
                             let new_source: LogicalPlan = Source::new(
                                 schema.into(),
-                                Arc::new(SourceInfo::External(external_info.with_pushdowns(
+                                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
                                     external_info.pushdowns.with_columns(Some(Arc::new(
                                         required_columns.iter().cloned().collect(),
                                     ))),

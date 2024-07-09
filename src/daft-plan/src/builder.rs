@@ -21,7 +21,7 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 use daft_dsl::{col, ExprRef};
-use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
+use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
 use {
@@ -80,7 +80,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
-        let source_info = SourceInfo::External(ScanExternalInfo::new(
+        let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),

@@ -53,19 +53,19 @@ impl OptimizerRule for PushDownLimit {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::No(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
-                            SourceInfo::External(external_info)
+                            SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
                                     && existing_limit <= limit =>
                             {
                                 Ok(Transformed::No(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
-                            SourceInfo::External(external_info) => {
+                            SourceInfo::Physical(external_info) => {
                                 let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
-                                    SourceInfo::External(new_external_info).into(),
+                                    SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
                                 let out_plan = if external_info.scan_op.0.can_absorb_limit() {

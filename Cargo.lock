@@ -1882,6 +1882,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-physical-plan"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-plan",
+ "daft-scan",
+ "log",
+ "strum 0.26.2",
+]
+
+[[package]]
 name = "daft-plan"
 version = "0.2.0-dev0"
 dependencies = [
@@ -4691,6 +4704,9 @@ name = "strum"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
+dependencies = [
+ "strum_macros 0.26.2",
+]
 
 [[package]]
 name = "strum_macros"

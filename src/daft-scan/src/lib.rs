@@ -716,14 +716,14 @@ impl Display for ScanOperatorRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ScanExternalInfo {
+pub struct PhysicalScanInfo {
     pub scan_op: ScanOperatorRef,
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
 }
 
-impl ScanExternalInfo {
+impl PhysicalScanInfo {
     pub fn new(
         scan_op: ScanOperatorRef,
         source_schema: SchemaRef,

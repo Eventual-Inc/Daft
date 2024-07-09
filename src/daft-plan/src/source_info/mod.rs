@@ -1,6 +1,6 @@
 pub mod file_info;
 use daft_core::schema::SchemaRef;
-use daft_scan::ScanExternalInfo;
+use daft_scan::PhysicalScanInfo;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
@@ -18,7 +18,7 @@ use {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
     InMemory(InMemoryInfo),
-    External(ScanExternalInfo),
+    Physical(PhysicalScanInfo),
     PlaceHolder(PlaceHolderInfo),
 }
 
