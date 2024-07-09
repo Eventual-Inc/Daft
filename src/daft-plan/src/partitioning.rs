@@ -256,6 +256,16 @@ fn translate_clustering_spec_expr(
             }
             .into())
         }
+        Expr::ScalarFunction(func) => {
+            let mut func = func.clone();
+            let new_inputs = func
+                .inputs
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            func.inputs = new_inputs;
+            Ok(Expr::ScalarFunction(func).into())
+        }
         Expr::Not(child) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.not())

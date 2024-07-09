@@ -14,7 +14,7 @@ pub enum JsonExpr {
 
 impl JsonExpr {
     #[inline]
-    pub fn query_evaluator(&self) -> &dyn FunctionEvaluator {
+    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use JsonExpr::*;
         match self {
             Query(_) => &JsonQueryEvaluator {},

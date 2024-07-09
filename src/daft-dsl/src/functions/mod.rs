@@ -7,6 +7,8 @@ pub mod map;
 pub mod minhash;
 pub mod numeric;
 pub mod partitioning;
+pub mod registry;
+pub mod scalar;
 pub mod sketch;
 pub mod struct_;
 pub mod temporal;
@@ -14,6 +16,7 @@ pub mod uri;
 pub mod utf8;
 
 use std::fmt::{Display, Formatter, Result};
+use std::hash::Hash;
 
 use crate::ExprRef;
 
@@ -28,10 +31,12 @@ use self::struct_::StructExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
 use self::{float::FloatExpr, uri::UriExpr};
+pub use scalar::*;
+
 use common_error::DaftResult;
 use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
-use hash::HashEvaluator;
+
 use minhash::{MinHashEvaluator, MinHashExpr};
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +61,6 @@ pub enum FunctionExpr {
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
     Uri(UriExpr),
-    Hash,
     MinHash(MinHashExpr),
 }
 
@@ -84,13 +88,12 @@ impl FunctionExpr {
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
-            Json(expr) => expr.query_evaluator(),
+            Json(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
             Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
             Partitioning(expr) => expr.get_evaluator(),
-            Hash => &HashEvaluator {},
             MinHash(_) => &MinHashEvaluator {},
         }
     }

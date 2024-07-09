@@ -4,33 +4,25 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    functions::{FunctionEvaluator, FunctionExpr},
-    Expr, ExprRef,
-};
+use crate::{Expr, ExprRef};
 
-pub(super) struct HashEvaluator {}
+use super::{ScalarFunction, ScalarUDF};
 
-impl FunctionEvaluator for HashEvaluator {
-    fn fn_name(&self) -> &'static str {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub(super) struct HashFunction;
+
+impl ScalarUDF for HashFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
         "hash"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
-        match inputs {
-            [input] | [input, _] => match input.to_field(schema) {
-                Ok(field) => Ok(Field::new(field.name, DataType::UInt64)),
-                e => e,
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input arg, got {}",
-                inputs.len()
-            ))),
-        }
-    }
-
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.hash(None).map(|s| s.into_series()),
             [input, seed] => {
@@ -60,6 +52,19 @@ impl FunctionEvaluator for HashEvaluator {
             _ => Err(DaftError::ValueError("Expected 2 input arg".to_string())),
         }
     }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] | [input, _] => match input.to_field(schema) {
+                Ok(field) => Ok(Field::new(field.name, DataType::UInt64)),
+                e => e,
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 2 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
 }
 
 pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
@@ -68,9 +73,5 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
         None => vec![input],
     };
 
-    Expr::Function {
-        func: FunctionExpr::Hash,
-        inputs,
-    }
-    .into()
+    Expr::ScalarFunction(ScalarFunction::new(HashFunction {}, inputs)).into()
 }

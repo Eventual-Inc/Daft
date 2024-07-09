@@ -7,10 +7,10 @@ use daft_core::{
 
 use crate::{
     functions::{
-        function_display, function_semantic_id,
+        function_display, function_semantic_id, scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator,
+        FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -58,6 +58,7 @@ pub enum Expr {
         if_false: ExprRef,
         predicate: ExprRef,
     },
+    ScalarFunction(ScalarFunction),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -576,6 +577,7 @@ impl Expr {
 
             // Agg: Separate path.
             Agg(agg_expr) => agg_expr.semantic_id(schema),
+            ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
         }
     }
 
@@ -607,6 +609,7 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
+            ScalarFunction(sf) => sf.inputs.clone(),
         }
     }
 
@@ -658,6 +661,7 @@ impl Expr {
                 func: func.clone(),
                 inputs: children,
             },
+            ScalarFunction(sf) => ScalarFunction(sf.clone()),
         }
     }
 
@@ -710,6 +714,8 @@ impl Expr {
             }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
+            ScalarFunction(sf) => sf.to_field(schema),
+
             BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
@@ -814,6 +820,7 @@ impl Expr {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
+            ScalarFunction(func) => func.inputs.first().unwrap().name(),
             BinaryOp {
                 op: _,
                 left,
@@ -903,7 +910,8 @@ impl Expr {
                 | Expr::IsIn(..)
                 | Expr::Between(..)
                 | Expr::Function { .. }
-                | Expr::FillNull(..) => Err(io::Error::new(
+                | Expr::FillNull(..)
+                | Expr::ScalarFunction { .. } => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),
@@ -946,6 +954,8 @@ impl Display for Expr {
             Between(expr, lower, upper) => write!(f, "{expr} in [{lower},{upper}]"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => function_display(f, func, inputs),
+            ScalarFunction(func) => write!(f, "{func}"),
+
             IfElse {
                 if_true,
                 if_false,
@@ -1130,6 +1140,7 @@ fn expr_has_agg(expr: &ExprRef) -> bool {
         Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => expr_has_agg(e),
         BinaryOp { left, right, .. } => expr_has_agg(left) || expr_has_agg(right),
         Function { inputs, .. } => inputs.iter().any(expr_has_agg),
+        ScalarFunction(func) => func.inputs.iter().any(expr_has_agg),
         IsIn(l, r) | FillNull(l, r) => expr_has_agg(l) || expr_has_agg(r),
         Between(v, l, u) => expr_has_agg(v) || expr_has_agg(l) || expr_has_agg(u),
         IfElse {

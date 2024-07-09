@@ -352,6 +352,22 @@ fn replace_column_with_semantic_id(
                     )
                 }
             }
+            Expr::ScalarFunction(func) => {
+                let mut func = func.clone();
+                let transforms = func
+                    .inputs
+                    .iter()
+                    .map(|e| {
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+                if transforms.iter().all(|e| e.is_no()) {
+                    Transformed::No(e)
+                } else {
+                    func.inputs = transforms.iter().map(|t| t.unwrap()).cloned().collect();
+                    Transformed::Yes(Expr::ScalarFunction(func).into())
+                }
+            }
         }
     }
 }

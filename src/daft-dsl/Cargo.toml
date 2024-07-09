@@ -6,8 +6,11 @@ common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+dashmap = "6.0.1"
+erased-serde = "0.4.5"
 indexmap = {workspace = true}
 itertools = {workspace = true}
+lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
