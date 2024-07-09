@@ -26,8 +26,7 @@ lazy_static! {
 
 pub struct InnerPipelineManager {
     intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-    senders_and_handles: Vec<(Sender, JoinHandle<DaftResult<()>>)>,
-    sink_receivers: Vec<Receiver>,
+    channel_and_handles: Vec<(Sender, Receiver, JoinHandle<DaftResult<()>>)>,
     curr_idx: usize,
 }
 
@@ -35,8 +34,7 @@ impl InnerPipelineManager {
     pub fn new(intermediate_operators: Vec<Box<dyn IntermediateOperator>>) -> Self {
         Self {
             intermediate_operators,
-            senders_and_handles: Vec::with_capacity(*NUM_CPUS),
-            sink_receivers: vec![],
+            channel_and_handles: Vec::with_capacity(*NUM_CPUS),
             curr_idx: 0,
         }
     }
@@ -74,27 +72,30 @@ impl InnerPipelineManager {
             sink_sender,
         ));
 
-        self.sink_receivers.push(sink_receiver);
-        self.senders_and_handles
-            .push((intermediate_sender.clone(), handle));
+        self.channel_and_handles
+            .push((intermediate_sender.clone(), sink_receiver, handle));
         intermediate_sender
     }
 
     pub fn get_or_create_next_sender(&mut self) -> Sender {
-        let sender = if let Some((tx, _)) = self.senders_and_handles.get(self.curr_idx) {
+        let sender = if let Some((tx, _, _)) = self.channel_and_handles.get(self.curr_idx) {
             tx.clone()
         } else {
             self.create_next_sender()
         };
-        self.curr_idx = (self.curr_idx + 1) % self.senders_and_handles.len();
+        self.curr_idx = (self.curr_idx + 1) % self.channel_and_handles.len();
         sender
     }
 
-    pub fn retrieve_handles(&mut self) -> Vec<JoinHandle<DaftResult<()>>> {
-        self.senders_and_handles
+    pub fn retrieve_handles_and_receivers(
+        &mut self,
+    ) -> (Vec<JoinHandle<DaftResult<()>>>, Vec<Receiver>) {
+        let (handles, receivers) = self
+            .channel_and_handles
             .drain(..)
-            .map(|(_, handle)| handle)
-            .collect()
+            .map(|(_, rx, handle)| (handle, rx))
+            .unzip();
+        (handles, receivers)
     }
 }
 
@@ -216,14 +217,14 @@ impl Pipeline {
             let inner_pipeline_sender = inner_pipeline_manager.get_or_create_next_sender();
             let _ = inner_pipeline_sender.send(morsel).await;
         }
-        handles_unordered.extend(inner_pipeline_manager.retrieve_handles());
+
+        let (handles, receivers) = inner_pipeline_manager.retrieve_handles_and_receivers();
+        handles_unordered.extend(handles);
 
         // Create the sink manager and run the sink
         let sink_handle = tokio::spawn(async move {
             let mut sink_manager = SinkManager::new(sink, send_to_next_source);
-            sink_manager
-                .run(inner_pipeline_manager.sink_receivers)
-                .await
+            sink_manager.run(receivers).await
         });
         handles_unordered.push(sink_handle);
 
