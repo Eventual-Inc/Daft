@@ -1693,6 +1693,55 @@ class DataFrame:
         """
         return self.unpivot(ids, values, variable_name, value_name)
 
+    @DataframePublicAPI
+    def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
+        """Apply a function that takes and returns a DataFrame.
+
+        Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
+            >>> def add_1(df):
+            ...     df = df.select(daft.col("col_a") + 1)
+            ...     return df
+            ...
+            >>> def multiply_x(df, x):
+            ...     df = df.select(daft.col("col_a") * x)
+            ...     return df
+            ...
+            >>> df = df.transform(add_1).transform(multiply_x, 4)
+            >>> df.show()
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 8     │
+            ├╌╌╌╌╌╌╌┤
+            │ 12    │
+            ├╌╌╌╌╌╌╌┤
+            │ 16    │
+            ├╌╌╌╌╌╌╌┤
+            │ 20    │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+        Args:
+            func: A function that takes and returns a DataFrame.
+            *args: Positional arguments to pass to func.
+            **kwargs: Keyword arguments to pass to func.
+
+        Returns:
+            DataFrame: Transformed DataFrame.
+        """
+        result = func(self, *args, **kwargs)
+        assert isinstance(
+            result, DataFrame
+        ), "Func returned an instance of type [%s], " "should have been DataFrame." % type(result)
+        return result
+
     def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
         builder = self._builder.agg(to_agg, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
