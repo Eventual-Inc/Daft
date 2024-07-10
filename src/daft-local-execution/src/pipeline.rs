@@ -41,13 +41,13 @@ impl InnerPipelineManager {
 
         for sink_sender in sink_senders.into_iter() {
             let (source_sender, source_receiver) = create_channel();
-            let job = tokio::spawn(Self::run_single_inner_pipeline(
+            let handle = tokio::spawn(Self::run_single_inner_pipeline(
                 intermediate_operators.clone(),
                 sink_sender,
                 source_receiver,
             ));
 
-            handles.push(job);
+            handles.push(handle);
             senders.push(source_sender);
         }
         Self {
