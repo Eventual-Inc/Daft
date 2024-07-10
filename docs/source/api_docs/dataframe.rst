@@ -45,6 +45,7 @@ Manipulating Columns
     DataFrame.explode
     DataFrame.unpivot
     DataFrame.melt
+    DataFrame.transform
 
 Filtering Rows
 **************
