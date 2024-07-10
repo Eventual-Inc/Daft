@@ -1696,9 +1696,7 @@ class DataFrame:
     @DataframePublicAPI
     def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
-
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
-
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
@@ -1710,7 +1708,7 @@ class DataFrame:
             ...     df = df.select(daft.col("col_a") * x)
             ...     return df
             ...
-            >>> df = df.trasform(add_1).transform(multiply_x, 4)
+            >>> df = df.transform(add_1).transform(multiply_x, 4)
             >>> df.show()
             ╭───────╮
             │ col_a │
@@ -1727,12 +1725,10 @@ class DataFrame:
             ╰───────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
-
         Args:
-            func: a function that takes and returns a DataFrame.
+            func: A function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.
             **kwargs: Keyword arguments to pass to func.
-
         Returns:
             DataFrame: Transformed DataFrame.
         """
