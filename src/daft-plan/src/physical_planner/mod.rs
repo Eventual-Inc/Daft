@@ -11,6 +11,7 @@ use common_treenode::TreeNode;
 mod planner;
 pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 mod translate;
+pub use translate::populate_aggregation_stages;
 
 /// Translate a logical plan to a physical plan.
 pub fn logical_to_physical(

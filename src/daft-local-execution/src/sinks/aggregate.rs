@@ -6,9 +6,6 @@ use daft_micropartition::MicroPartition;
 
 use super::sink::{Sink, SinkResultType};
 
-// TODO: Implement streaming aggregations with first / second stage aggs.
-// This is a super naive agg implementation that just concatenates all the input partitions
-
 #[derive(Clone)]
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,

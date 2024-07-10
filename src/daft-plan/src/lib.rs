@@ -26,7 +26,8 @@ pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
 pub use physical_plan::{PhysicalPlan, PhysicalPlanRef};
 pub use physical_planner::{
-    logical_to_physical, AdaptivePlanner, MaterializedResults, QueryStageOutput,
+    logical_to_physical, populate_aggregation_stages, AdaptivePlanner, MaterializedResults,
+    QueryStageOutput,
 };
 pub use resource_request::ResourceRequest;
 pub use sink_info::OutputFileInfo;

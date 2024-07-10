@@ -1,5 +1,6 @@
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
@@ -8,7 +9,6 @@ use futures::{stream, Stream};
 
 use super::source::Source;
 
-#[derive(Clone)]
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
 }
@@ -19,8 +19,11 @@ impl ScanTaskSource {
     }
 }
 
+#[async_trait]
 impl Source for ScanTaskSource {
-    fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+    async fn get_data(
+        &self,
+    ) -> Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send + Unpin> {
         log::debug!("ScanTaskSource::get_data");
         let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| {
             let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
@@ -32,6 +35,6 @@ impl Source for ScanTaskSource {
             // TODO: Implement dynamic splitting / merging of MicroPartition from scan task
             Ok(Arc::new(out))
         }));
-        Box::pin(stream)
+        Box::new(stream)
     }
 }

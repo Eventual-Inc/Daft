@@ -750,7 +750,7 @@ pub(super) fn translate_single_logical_node(
 /// Given a list of aggregation expressions, return the aggregation expressions to apply in the first and second stages,
 /// as well as the final expressions to project.
 #[allow(clippy::type_complexity)]
-fn populate_aggregation_stages(
+pub fn populate_aggregation_stages(
     aggregations: &[daft_dsl::AggExpr],
     schema: &SchemaRef,
     group_by: &[ExprRef],

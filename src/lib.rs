@@ -62,6 +62,7 @@ pub mod pylib {
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
         daft_execution::register_modules(_py, m)?;
+        daft_local_execution::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;
         daft_table::register_modules(_py, m)?;
         daft_io::register_modules(_py, m)?;

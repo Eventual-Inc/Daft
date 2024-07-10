@@ -1800,11 +1800,13 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-micropartition",
+ "daft-physical-plan",
  "daft-plan",
  "daft-scan",
  "dyn-clone",
