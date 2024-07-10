@@ -24,7 +24,7 @@ impl IntermediateOperator for ProjectOperator {
         Ok(Arc::new(out))
     }
 
-    fn name(&self) -> String {
-        "ProjectOperator".to_string()
+    fn name(&self) -> &'static str {
+        "ProjectOperator"
     }
 }

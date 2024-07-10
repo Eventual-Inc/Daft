@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use futures::{stream, Stream};
+use futures::{stream, StreamExt};
 
-use super::source::Source;
+use super::source::{Source, SourceStream};
 
 pub struct InMemorySource {
     data: Vec<Arc<MicroPartition>>,
@@ -19,10 +18,8 @@ impl InMemorySource {
 
 #[async_trait]
 impl Source for InMemorySource {
-    async fn get_data(
-        &self,
-    ) -> Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send + Unpin> {
+    async fn get_data(&self) -> SourceStream {
         log::debug!("InMemorySource::get_data");
-        Box::new(stream::iter(self.data.clone().into_iter().map(Ok)))
+        stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
 }

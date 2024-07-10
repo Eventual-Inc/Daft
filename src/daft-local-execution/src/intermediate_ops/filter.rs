@@ -24,7 +24,7 @@ impl IntermediateOperator for FilterOperator {
         Ok(Arc::new(out))
     }
 
-    fn name(&self) -> String {
-        "FilterOperator".to_string()
+    fn name(&self) -> &'static str {
+        "FilterOperator"
     }
 }

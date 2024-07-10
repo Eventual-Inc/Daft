@@ -28,7 +28,7 @@ impl IntermediateOperator for AggregateOperator {
         Ok(Arc::new(out))
     }
 
-    fn name(&self) -> String {
-        "AggregateOperator".to_string()
+    fn name(&self) -> &'static str {
+        "AggregateOperator"
     }
 }

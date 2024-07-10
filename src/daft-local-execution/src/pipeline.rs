@@ -6,7 +6,7 @@ use daft_micropartition::MicroPartition;
 use futures::{
     pin_mut,
     stream::{FuturesOrdered, FuturesUnordered},
-    Stream, StreamExt,
+    StreamExt,
 };
 use lazy_static::lazy_static;
 use snafu::ResultExt;
@@ -17,7 +17,7 @@ use crate::{
     create_channel,
     intermediate_ops::intermediate_op::IntermediateOperator,
     sinks::sink::{Sink, SinkResultType},
-    sources::source::Source,
+    sources::source::{Source, SourceStream},
     JoinSnafu, Receiver, Sender,
 };
 
@@ -66,7 +66,7 @@ impl InnerPipelineManager {
             "Running intermediate operators: {}",
             intermediate_operators
                 .iter()
-                .fold(String::new(), |acc, op| { acc + &op.name() + " -> " })
+                .fold(String::new(), |acc, op| { acc + op.name() + " -> " })
         );
 
         while let Some(morsel) = receiver.recv().await {
@@ -245,14 +245,12 @@ impl Pipeline {
 
 #[async_trait]
 impl Source for Pipeline {
-    async fn get_data(
-        &self,
-    ) -> Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send + Unpin> {
+    async fn get_data(&self) -> SourceStream {
         log::debug!("Pipeline::get_data");
         let (tx, rx) = create_channel();
 
         let _ = self.run(tx.clone()).await;
 
-        Box::new(ReceiverStream::new(rx))
+        ReceiverStream::new(rx).boxed()
     }
 }
