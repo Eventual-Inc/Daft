@@ -158,40 +158,40 @@ impl LocalPhysicalPlan {
 #[derive(Debug)]
 
 pub struct InMemoryScan {
-    info: InMemoryInfo,
-    plan_stats: PlanStats,
+    pub info: InMemoryInfo,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
 pub struct PhysicalScan {
-    scan_tasks: Vec<ScanTaskRef>,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub scan_tasks: Vec<ScanTaskRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
 pub struct Project {
-    input: LocalPhysicalPlanRef,
-    projection: Vec<ExprRef>,
-    resource_request: ResourceRequest,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub input: LocalPhysicalPlanRef,
+    pub projection: Vec<ExprRef>,
+    pub resource_request: ResourceRequest,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
 pub struct Filter {
-    input: LocalPhysicalPlanRef,
-    predicate: ExprRef,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub input: LocalPhysicalPlanRef,
+    pub predicate: ExprRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
 pub struct Limit {
-    input: LocalPhysicalPlanRef,
-    num_rows: i64,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub input: LocalPhysicalPlanRef,
+    pub num_rows: i64,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
@@ -199,19 +199,19 @@ pub struct Sort {}
 #[derive(Debug)]
 
 pub struct UnGroupedAggregate {
-    input: LocalPhysicalPlanRef,
-    aggregations: Vec<AggExpr>,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub input: LocalPhysicalPlanRef,
+    pub aggregations: Vec<AggExpr>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 
 pub struct HashAggregate {
-    input: LocalPhysicalPlanRef,
-    aggregations: Vec<AggExpr>,
-    group_by: Vec<ExprRef>,
-    schema: SchemaRef,
-    plan_stats: PlanStats,
+    pub input: LocalPhysicalPlanRef,
+    pub aggregations: Vec<AggExpr>,
+    pub group_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 #[derive(Debug)]
 

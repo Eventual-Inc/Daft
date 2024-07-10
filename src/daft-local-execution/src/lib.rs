@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
-pub use run::run_streaming;
+pub use run::NativeExecutor;
 use snafu::Snafu;
 
 type Sender = tokio::sync::mpsc::Sender<DaftResult<Arc<MicroPartition>>>;
@@ -42,6 +42,7 @@ impl From<Error> for DaftError {
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, _parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<NativeExecutor>()?;
     Ok(())
 }

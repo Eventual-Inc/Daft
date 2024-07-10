@@ -1,11 +1,12 @@
-use std::{borrow::BorrowMut, pin::Pin, sync::Arc};
+use std::{borrow::BorrowMut, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use async_trait::async_trait;
+use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use futures::{
     pin_mut,
     stream::{FuturesOrdered, FuturesUnordered},
-    Stream, StreamExt,
+    StreamExt,
 };
 use lazy_static::lazy_static;
 use snafu::ResultExt;
@@ -16,39 +17,56 @@ use crate::{
     create_channel,
     intermediate_ops::intermediate_op::IntermediateOperator,
     sinks::sink::{Sink, SinkResultType},
-    sources::source::Source,
-    Receiver, Sender,
+    sources::source::{Source, SourceStream},
+    JoinSnafu, Receiver, Sender,
 };
 
 lazy_static! {
-    static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+    pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
 pub struct InnerPipelineManager {
-    intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-    channel_and_handles: Vec<(Sender, Receiver, JoinHandle<DaftResult<()>>)>,
+    senders: Vec<Sender>,
     curr_idx: usize,
+    handles: Vec<JoinHandle<DaftResult<()>>>,
 }
 
 impl InnerPipelineManager {
-    pub fn new(intermediate_operators: Vec<Box<dyn IntermediateOperator>>) -> Self {
+    pub fn new(
+        intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
+        sink_senders: Vec<Sender>,
+    ) -> Self {
+        let mut senders = vec![];
+        let mut handles = vec![];
+
+        for sink_sender in sink_senders.into_iter() {
+            let (source_sender, source_receiver) = create_channel();
+            let handle = tokio::spawn(Self::run_single_inner_pipeline(
+                intermediate_operators.clone(),
+                sink_sender,
+                source_receiver,
+            ));
+
+            handles.push(handle);
+            senders.push(source_sender);
+        }
         Self {
-            intermediate_operators,
-            channel_and_handles: Vec::with_capacity(*NUM_CPUS),
+            senders,
             curr_idx: 0,
+            handles,
         }
     }
 
     async fn run_single_inner_pipeline(
-        mut receiver: Receiver,
         intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-        sink_sender: Sender,
+        sender: Sender,
+        mut receiver: Receiver,
     ) -> DaftResult<()> {
         log::debug!(
             "Running intermediate operators: {}",
             intermediate_operators
                 .iter()
-                .fold(String::new(), |acc, op| { acc + &op.name() + " -> " })
+                .fold(String::new(), |acc, op| { acc + op.name() + " -> " })
         );
 
         while let Some(morsel) = receiver.recv().await {
@@ -56,46 +74,21 @@ impl InnerPipelineManager {
             for op in intermediate_operators.iter() {
                 result = op.execute(&result)?;
             }
-            let _ = sink_sender.send(Ok(result)).await;
+            let _ = sender.send(Ok(result)).await;
         }
 
         log::debug!("Intermediate operators finished");
         Ok(())
     }
 
-    fn create_next_sender(&mut self) -> Sender {
-        let (intermediate_sender, intermediate_receiver) = create_channel();
-        let (sink_sender, sink_receiver) = create_channel();
-        let handle = tokio::spawn(Self::run_single_inner_pipeline(
-            intermediate_receiver,
-            self.intermediate_operators.clone(),
-            sink_sender,
-        ));
-
-        self.channel_and_handles
-            .push((intermediate_sender.clone(), sink_receiver, handle));
-        intermediate_sender
+    pub fn get_next_sender(&mut self) -> Sender {
+        let idx = self.curr_idx;
+        self.curr_idx = (self.curr_idx + 1) % self.senders.len();
+        self.senders[idx].clone()
     }
 
-    pub fn get_or_create_next_sender(&mut self) -> Sender {
-        let sender = if let Some((tx, _, _)) = self.channel_and_handles.get(self.curr_idx) {
-            tx.clone()
-        } else {
-            self.create_next_sender()
-        };
-        self.curr_idx = (self.curr_idx + 1) % self.channel_and_handles.len();
-        sender
-    }
-
-    pub fn retrieve_handles_and_receivers(
-        &mut self,
-    ) -> (Vec<JoinHandle<DaftResult<()>>>, Vec<Receiver>) {
-        let (handles, receivers) = self
-            .channel_and_handles
-            .drain(..)
-            .map(|(_, rx, handle)| (handle, rx))
-            .unzip();
-        (handles, receivers)
+    pub fn retrieve_handles(self) -> Vec<JoinHandle<DaftResult<()>>> {
+        self.handles
     }
 }
 
@@ -170,7 +163,6 @@ impl SinkManager {
     }
 }
 
-#[derive(Clone)]
 pub struct Pipeline {
     source: Box<dyn Source>,
     intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
@@ -196,71 +188,69 @@ impl Pipeline {
         self
     }
 
-    pub async fn run(
-        send_to_next_source: Sender,
-        source: Box<dyn Source>,
-        intermediate_operators: Vec<Box<dyn IntermediateOperator>>,
-        sink: Option<Box<dyn Sink>>,
-    ) -> DaftResult<()> {
+    pub async fn run(&self, send_to_next_source: Sender) -> DaftResult<()> {
         log::debug!("Running pipeline");
 
-        // Initialize the unordered handles to store the handles of the inner pipelines and the sink
-        let mut handles_unordered = FuturesUnordered::new();
+        let mut all_handles = vec![];
 
-        // Get the data from the source
-        let source_stream = source.get_data();
-        pin_mut!(source_stream);
+        // Initialize the channels to send morsels from the source to the inner pipelines, and from the inner pipelines to the sink
+        let (sink_senders, sink_receivers) = (0..*NUM_CPUS)
+            .map(|_| create_channel())
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+
+        // Spawn the sink manager
+        let sink = self.sink.clone();
+        let sink_job = tokio::spawn(async move {
+            let mut sink_manager = SinkManager::new(sink, send_to_next_source);
+            sink_manager.run(sink_receivers).await
+        });
+        all_handles.push(sink_job);
 
         // Create the inner pipeline manager and send the data from the source to the inner pipelines
-        let mut inner_pipeline_manager = InnerPipelineManager::new(intermediate_operators);
+        let mut inner_pipeline_manager =
+            InnerPipelineManager::new(self.intermediate_operators.clone(), sink_senders);
+
+        // Get the data from the source
+        let source_stream = self.source.get_data().await;
+        pin_mut!(source_stream);
         while let Some(morsel) = source_stream.next().await {
-            let inner_pipeline_sender = inner_pipeline_manager.get_or_create_next_sender();
+            let inner_pipeline_sender = inner_pipeline_manager.get_next_sender();
             let _ = inner_pipeline_sender.send(morsel).await;
         }
+        let inner_pipeline_jobs = inner_pipeline_manager.retrieve_handles();
+        all_handles.extend(inner_pipeline_jobs);
 
-        let (handles, receivers) = inner_pipeline_manager.retrieve_handles_and_receivers();
-        handles_unordered.extend(handles);
-
-        // Create the sink manager and run the sink
-        let sink_handle = tokio::spawn(async move {
-            let mut sink_manager = SinkManager::new(sink, send_to_next_source);
-            sink_manager.run(receivers).await
-        });
-        handles_unordered.push(sink_handle);
-
-        // Wait for the inner pipelines and the sink to finish
-        tokio::select! {
-            biased;
-            _ = tokio::signal::ctrl_c() => {
-                log::debug!("Ctrl-c cancelled execution");
-                return Err(DaftError::InternalError(
-                    "Ctrl-c cancelled execution.".to_string(),
-                ));
+        // Wait for all the tasks to finish
+        let awaiting_all_handles = async {
+            for handle in all_handles.iter_mut() {
+                let _ = handle.await.context(JoinSnafu {});
             }
-            Some(result) = handles_unordered.next() => {
-                result.context(crate::JoinSnafu {})??;
+            Ok(())
+        };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                for handle in all_handles {
+                    handle.abort();
+                }
+            }
+            result = awaiting_all_handles => {
+                result.context(JoinSnafu {})?;
             }
         }
+
         log::debug!("Pipeline finished");
         Ok(())
     }
 }
 
+#[async_trait]
 impl Source for Pipeline {
-    fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+    async fn get_data(&self) -> SourceStream {
         log::debug!("Pipeline::get_data");
         let (tx, rx) = create_channel();
-        let source = self.source.clone();
-        let intermediate_operators = self.intermediate_operators.clone();
-        let sink = self.sink.clone();
 
-        tokio::spawn(async move {
-            let pipeline_result = Self::run(tx.clone(), source, intermediate_operators, sink).await;
-            if let Err(e) = pipeline_result {
-                let _ = tx.send(Err(e)).await;
-            }
-        });
+        let _ = self.run(tx.clone()).await;
 
-        Box::pin(ReceiverStream::new(rx))
+        ReceiverStream::new(rx).boxed()
     }
 }

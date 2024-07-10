@@ -1,12 +1,11 @@
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
-use common_error::DaftResult;
+use async_trait::async_trait;
 use daft_micropartition::MicroPartition;
-use futures::{stream, Stream};
+use futures::{stream, StreamExt};
 
-use super::source::Source;
+use super::source::{Source, SourceStream};
 
-#[derive(Clone)]
 pub struct InMemorySource {
     data: Vec<Arc<MicroPartition>>,
 }
@@ -17,9 +16,10 @@ impl InMemorySource {
     }
 }
 
+#[async_trait]
 impl Source for InMemorySource {
-    fn get_data(&self) -> Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+    async fn get_data(&self) -> SourceStream {
         log::debug!("InMemorySource::get_data");
-        Box::pin(stream::iter(self.data.clone().into_iter().map(Ok)))
+        stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
 }

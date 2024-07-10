@@ -9,6 +9,7 @@ from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, PartitionTask
+from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
@@ -183,14 +184,15 @@ class PyRunner(Runner[MicroPartition]):
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
-            plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
             if daft_execution_config.enable_native_executor:
                 logger.info("Using new executor")
-                results_gen = plan_scheduler.run(
+                executor = NativeExecutor.from_logical_plan_builder(builder)
+                results_gen = executor.run(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 )
                 yield from results_gen
             else:
+                plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
                 tasks = plan_scheduler.to_partition_tasks(psets)
