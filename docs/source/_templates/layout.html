@@ -13,6 +13,26 @@
 
   gtag('config', 'G-YN4QSRPV0K');
 </script>
+<script>
+  (function() {
+    if (typeof window === 'undefined') return;
+    if (typeof window.signals !== 'undefined') return;
+    var script = document.createElement('script');
+    script.src = 'https://cdn.cr-relay.com/v1/site/9bf5cfb7-d3ce-4f5c-9de2-0802bea74edb/signals.js';
+    script.async = true;
+    window.signals = Object.assign(
+      [],
+      ['page', 'identify', 'form'].reduce(function (acc, method){
+        acc[method] = function () {
+          signals.push([method, arguments]);
+          return signals;
+        };
+       return acc;
+      }, {})
+    );
+    document.head.appendChild(script);
+  })();
+</script>
 {% endblock %}
 
 {% block docs_main %}
