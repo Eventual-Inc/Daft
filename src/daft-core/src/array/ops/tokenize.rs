@@ -31,9 +31,9 @@ fn get_bpe(tokens_path: &str) -> DaftResult<CoreBPE> {
 }
 
 fn decode_list(series: &Series, bpe: &CoreBPE) -> DaftResult<String> {
-    if !series.data_type().is_numeric() {
+    if !series.data_type().is_integer() {
         return Err(DaftError::TypeError(format!(
-            "expected numeric list inner type, got {}",
+            "expected integer list inner type, got {}",
             series.data_type()
         )));
     }
@@ -44,9 +44,13 @@ fn decode_list(series: &Series, bpe: &CoreBPE) -> DaftResult<String> {
         .values_iter()
         .map(|v| *v as usize)
         .collect();
-    match bpe.decode(tokens) {
-        Ok(str) => Ok(str),
-        Err(err) => Err(DaftError::ValueError(format!(
+    let res = std::panic::catch_unwind(|| bpe.decode(tokens));
+    match res {
+        Ok(Ok(str)) => Ok(str),
+        Err(_) => Err(DaftError::ValueError(
+            "Panic while decoding tokens, potentially invalid input".into(),
+        )),
+        Ok(Err(err)) => Err(DaftError::ValueError(format!(
             "Error while decoding tokens: {}",
             err
         ))),
@@ -96,6 +100,7 @@ impl ListArray {
                 decode_list(&sub_series, &bpe)
             })
             .collect::<DaftResult<Vec<String>>>()?;
-        Ok(Utf8Array::from_iter(self.name(), strs.iter().map(Some)))
+        Utf8Array::from_iter(self.name(), strs.iter().map(Some))
+            .with_validity(self.validity().cloned())
     }
 }
