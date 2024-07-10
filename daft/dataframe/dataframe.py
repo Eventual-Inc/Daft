@@ -1694,7 +1694,9 @@ class DataFrame:
         return self.unpivot(ids, values, variable_name, value_name)
 
     @DataframePublicAPI
-    def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
+    def transform(
+        self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any
+    ) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
 
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
@@ -1710,7 +1712,7 @@ class DataFrame:
             ...     df = df.select(daft.col("col_a") * x)
             ...     return df
             ...
-            >>> df = df.transform(add_1).transform(multiply_x, 4)
+            >>> df = df.trasform(add_1).transform(multiply_x, 4)
             >>> df.show()
             ╭───────╮
             │ col_a │
@@ -1729,7 +1731,7 @@ class DataFrame:
             (Showing first 4 of 4 rows)
 
         Args:
-            func: A function that takes and returns a DataFrame.
+            func: a function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.
             **kwargs: Keyword arguments to pass to func.
 
@@ -1737,9 +1739,10 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), "Func returned an instance of type [%s], " "should have been DataFrame." % type(result)
+        assert isinstance(result, DataFrame), (
+            "Func returned an instance of type [%s], "
+            "should have been DataFrame." % type(result)
+        )
         return result
 
     def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
