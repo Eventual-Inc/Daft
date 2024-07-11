@@ -1,10 +1,8 @@
 mod download;
 mod upload;
 
-use std::sync::Arc;
-
 use common_io_config::IOConfig;
-use daft_dsl::{functions::ScalarFunction, Expr, ExprRef};
+use daft_dsl::{functions::ScalarFunction, ExprRef};
 use download::DownloadFunction;
 use upload::UploadFunction;
 
@@ -15,7 +13,7 @@ pub fn download(
     multi_thread: bool,
     config: Option<IOConfig>,
 ) -> ExprRef {
-    let func = ScalarFunction::new(
+    ScalarFunction::new(
         DownloadFunction {
             max_connections,
             raise_error_on_failure,
@@ -23,8 +21,8 @@ pub fn download(
             config: config.unwrap_or_default().into(),
         },
         vec![input],
-    );
-    Expr::ScalarFunction(func).into()
+    )
+    .into()
 }
 
 pub fn upload(
@@ -34,16 +32,16 @@ pub fn upload(
     multi_thread: bool,
     config: Option<IOConfig>,
 ) -> ExprRef {
-    let func = ScalarFunction {
-        udf: Arc::new(UploadFunction {
+    ScalarFunction::new(
+        UploadFunction {
             location: location.to_string(),
             max_connections,
             multi_thread,
             config: config.unwrap_or_default().into(),
-        }),
-        inputs: vec![input],
-    };
-    Expr::ScalarFunction(func).into()
+        },
+        vec![input],
+    )
+    .into()
 }
 
 #[cfg(feature = "python")]

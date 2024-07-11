@@ -6,7 +6,7 @@ use daft_core::{
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
-    Expr, ExprRef,
+    ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -74,10 +74,7 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
         None => vec![input],
     };
 
-    <std::sync::Arc<Expr>>::from(Expr::ScalarFunction(ScalarFunction::new(
-        HashFunction {},
-        inputs,
-    )))
+    ScalarFunction::new(HashFunction {}, inputs).into()
 }
 
 #[cfg(feature = "python")]

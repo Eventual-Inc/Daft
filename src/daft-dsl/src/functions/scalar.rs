@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
-use crate::ExprRef;
+use crate::{Expr, ExprRef};
 
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,11 @@ impl ScalarFunction {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         self.udf.to_field(&self.inputs, schema)
+    }
+}
+impl From<ScalarFunction> for ExprRef {
+    fn from(func: ScalarFunction) -> Self {
+        Expr::ScalarFunction(func).into()
     }
 }
 
