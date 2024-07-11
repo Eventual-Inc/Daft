@@ -31,26 +31,26 @@ impl Utf8Array {
     pub fn tokenize_encode(&self, tokens_path: &str) -> DaftResult<ListArray> {
         let bpe = DaftBPE::from_str(tokens_path)?;
 
-        let mut flat_child = MutablePrimitiveArray::<i32>::new();
+        let mut flat_child = MutablePrimitiveArray::<u32>::new();
         let mut offsets: Vec<i64> = Vec::with_capacity(self.len() + 1);
         offsets.push(0);
         let self_arrow = self.as_arrow();
         for s_opt in self_arrow.iter() {
             if let Some(s) = s_opt {
                 let tokens = bpe.encode(s);
-                let tokens_iter = tokens.iter().map(|t| Some(*t as i32));
+                let tokens_iter = tokens.iter().map(|t| Some(*t));
                 flat_child.extend(tokens_iter);
             }
             offsets.push(flat_child.len() as i64);
         }
-        let flat_child: PrimitiveArray<i32> = flat_child.into();
+        let flat_child: PrimitiveArray<u32> = flat_child.into();
         let child_series = Series::from_arrow(
-            Field::new("flat_child", DataType::Int32).into(),
+            Field::new("flat_child", DataType::UInt32).into(),
             Box::new(flat_child),
         )?;
         let offsets = OffsetsBuffer::try_from(offsets)?;
         Ok(ListArray::new(
-            Field::new(self.name(), DataType::List(Box::new(DataType::Int32))),
+            Field::new(self.name(), DataType::List(Box::new(DataType::UInt32))),
             child_series,
             offsets,
             self.validity().cloned(),

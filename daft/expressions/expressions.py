@@ -2540,6 +2540,36 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
 
+    def tokenize_encode(self, tokens_path: str) -> Expression:
+        """Encodes each string as a list of integer tokens using a tokenizer.
+
+        Uses [tiktoken](https://github.com/openai/tiktoken) for tokenization.
+
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
+
+        Args:
+            tokens_path: The name of a built-in tokenizer. Support for loading token files to be added.
+
+        Returns:
+            Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
+        """
+        return Expression._from_pyexpr(self._expr.tokenize_encode(tokens_path))
+
+    def tokenize_decode(self, tokens_path: str) -> Expression:
+        """Decodes each list of integer tokens into a string using a tokenizer.
+
+        Uses [tiktoken](https://github.com/openai/tiktoken) for tokenization.
+
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
+
+        Args:
+            tokens_path: The name of a built-in tokenizer. Support for loading token files to be added.
+
+        Returns:
+            Expression: An expression with decoded strings.
+        """
+        return Expression._from_pyexpr(self._expr.tokenize_decode(tokens_path))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
