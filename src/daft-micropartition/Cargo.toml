@@ -11,6 +11,7 @@ daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
+futures = {workspace = true}
 indexmap = {workspace = true, features = ["serde"]}
 log = {workspace = true}
 parquet2 = {workspace = true}

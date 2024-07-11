@@ -1838,6 +1838,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "futures",
  "indexmap 2.2.6",
  "log",
  "parquet2",

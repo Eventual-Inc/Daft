@@ -12,7 +12,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{create_pipeline::physical_plan_to_pipeline, sources::source::Source};
+use crate::create_pipeline::physical_plan_to_pipeline;
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -87,7 +87,7 @@ pub fn run_local(
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let res = runtime.block_on(async {
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);
-        let stream = pipeline.get_data().await;
+        let stream = pipeline.run();
         stream.collect::<Vec<_>>().await
     });
     Ok(Box::new(res.into_iter()))

@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
-use futures::{stream, StreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 
 use super::source::{Source, SourceStream};
 
@@ -18,20 +17,19 @@ impl ScanTaskSource {
     }
 }
 
-#[async_trait]
 impl Source for ScanTaskSource {
-    async fn get_data(&self) -> SourceStream {
-        log::debug!("ScanTaskSource::get_data");
-        let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| {
-            let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
-            let out =
-                std::thread::spawn(move || MicroPartition::from_scan_task(scan_task, io_stats))
-                    .join()
-                    .expect("Failed to join thread")?;
+    fn get_data(&self) -> SourceStream {
+        let scan_tasks = self.scan_tasks.clone();
+        std::thread::spawn(move || {
+            let streams = scan_tasks.into_iter().map(|scan_task| {
+                let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
+                MicroPartition::from_scan_task_streaming(scan_task, io_stats).unwrap()
+            });
 
-            // TODO: Implement dynamic splitting / merging of MicroPartition from scan task
-            Ok(Arc::new(out))
-        }));
-        stream.boxed()
+            let combined_stream = stream::select_all(streams);
+            combined_stream.map_ok(Arc::new).boxed()
+        })
+        .join()
+        .expect("Failed to join thread.")
     }
 }
