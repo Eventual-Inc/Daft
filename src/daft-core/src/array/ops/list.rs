@@ -118,32 +118,55 @@ fn get_slices_helper(
     .into_series())
 }
 
+/// Helper function that gets chunks of a given `size` from each list in the Series. Discards excess
+/// elements that do not fit into the chunks.
+///
+/// This function has two paths. The first is a fast path that is taken when all lists in the
+/// Series have a length that is a multiple of `size`, which means they can be chunked cleanly
+/// without leftover elements. In the fast path, we simply pass the underlying array of elements to
+/// the result, but reinterpret it as a list of fixed sized lists.
+///
+/// If there is at least one list that cannot be chunked cleanly, the underlying array of elements
+/// has to be compacted to remove the excess elements. In this case we take the slower path that
+/// does this compaction.
+///
+///
+/// # Arguments
+///
+/// * `flat_child`  - The Series that we're extracting chunks from.
+/// * `field`       - The field of the parent list.
+/// * `validity`    - The parent list's validity.
+/// * `size`        - The size for each chunk.
+/// * `total_elements_to_skip` - The number of elements in the Series that do not fit cleanly into
+///                              chunks. We take the fast path iff this value is 0.
+/// * `to_skip`     - An optional iterator of the number of elements to skip for each list. Elements
+///                   are skipped when they cannot fit into their parent list's chunks.
+/// * `new_offsets` - The new offsets to use for the topmost list array, this is computed based on
+///                   the number of chunks extracted from each list.
 fn get_chunks_helper(
-    to_skip: Option<impl Iterator<Item = usize>>,
-    total_elements_to_skip: usize,
     flat_child: &Series,
     field: Arc<Field>,
-    new_offsets: Vec<i64>,
     validity: Option<&arrow2::bitmap::Bitmap>,
     size: usize,
+    total_elements_to_skip: usize,
+    to_skip: Option<impl Iterator<Item = usize>>,
+    new_offsets: Vec<i64>,
 ) -> DaftResult<Series> {
-    // If there is a list where the number of elements that do not fit properly when chunked into
-    // sublists of `size` elements, we skip the elements that don't fit. If all lists in the
-    // Series can be chunked cleanly, we use a fast path where we pass the underlying array of
-    // elements to the result, but reinterpret it as a list of sublists. If there is at least one
-    // list that cannot be chunked cleanly, we use a slower path that removes excess elements.
     if total_elements_to_skip == 0 {
         let inner_list_field = field.to_exploded_field()?.to_fixed_size_list_field(size)?;
         let inner_list = FixedSizeListArray::new(
             inner_list_field.clone(),
-            Series::from_arrow(field.to_exploded_field()?.into(), flat_child.to_arrow())?,
-            None,
+            flat_child.clone(),
+            None, // Since we're creating an extra layer of lists, this layer doesn't have any
+                  // validity information. The topmost list takes the parent's validity, and the
+                  // child list is unaffected by the chunking operation and maintains its validity.
+                  // This reasoning applies to the places that follow where validity is set.
         );
         Ok(ListArray::new(
             inner_list_field.to_list_field()?,
             inner_list.into_series(),
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
-            validity.cloned(),
+            validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
     } else {
@@ -151,7 +174,7 @@ fn get_chunks_helper(
             &field.name,
             &field.to_exploded_field()?.dtype,
             vec![flat_child],
-            false,
+            false, // There's no validity to set, see the comment above.
             flat_child.len() - total_elements_to_skip,
         );
         let mut starting_idx = 0;
@@ -167,7 +190,7 @@ fn get_chunks_helper(
             inner_list_field.to_list_field()?,
             inner_list.into_series(),
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
-            validity.cloned(),
+            validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
     }
@@ -348,13 +371,13 @@ impl ListArray {
             Some(to_skip.iter().copied())
         };
         get_chunks_helper(
-            to_skip,
-            total_elements_to_skip,
             &self.flat_child,
             self.field.clone(),
-            new_offsets,
             self.validity(),
             size,
+            total_elements_to_skip,
+            to_skip,
+            new_offsets,
         )
     }
 }
@@ -522,13 +545,13 @@ impl FixedSizeListArray {
             Some(std::iter::repeat(modulo).take(self.len()))
         };
         get_chunks_helper(
-            to_skip,
-            total_elements_to_skip,
             &self.flat_child,
             self.field.clone(),
-            new_offsets,
             self.validity(),
             size,
+            total_elements_to_skip,
+            to_skip,
+            new_offsets,
         )
     }
 }

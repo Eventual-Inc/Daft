@@ -40,10 +40,15 @@ def test_list_chunk():
         {
             # Test list of an atomic type.
             "col1": [[1, 2, None, 4, 5], None, [7, 8, 9, None, 11, 12]],
-            # Test list of a nested type.
+            # Test lists of nested types.
             "col2": [
                 [[1, 1], [2, 2], [None, None], [4, 4], [5, 5]],
                 [[7, 7], [8, 8], [9, 9], [None, None], [11, 11], [12, 12]],
+                None,
+            ],
+            "col3": [
+                [[[1, 1]], None, [[None, None]], [[4, 4]], [[5, 5]]],
+                [[[7, 7]], [[8, 8]], [None], [[None, None]], None, [[12, 12]]],
                 None,
             ],
         }
@@ -56,6 +61,7 @@ def test_list_chunk():
             col("col1").list.chunk(3).alias("col1-3"),
             col("col1").list.chunk(10).alias("col1-10"),  # Test chunk size > list size
             col("col2").list.chunk(2).alias("col2-2"),
+            col("col3").list.chunk(2).alias("col3-2"),
         ]
     )
 
@@ -67,6 +73,11 @@ def test_list_chunk():
         "col2-2": [
             [[[1, 1], [2, 2]], [[None, None], [4, 4]]],
             [[[7, 7], [8, 8]], [[9, 9], [None, None]], [[11, 11], [12, 12]]],
+            None,
+        ],
+        "col3-2": [
+            [[[[1, 1]], None], [[[None, None]], [[4, 4]]]],
+            [[[[7, 7]], [[8, 8]]], [[None], [[None, None]]], [None, [[12, 12]]]],
             None,
         ],
     }
@@ -85,17 +96,25 @@ def test_fixed_size_list_chunk():
                 [[None, 111], [22, 222]],
                 None,
             ],
+            # Test deeper nested types.
+            "col4": [
+                [[[1]], [[None]]],
+                [[[None], [111]], None],
+                None,
+            ],
         }
     )
 
     dtype1 = DataType.fixed_size_list(DataType.string(), 4)
     dtype2 = DataType.fixed_size_list(DataType.list(DataType.int32()), 2)
+    dtype3 = DataType.fixed_size_list(DataType.list(DataType.list(DataType.int32())), 2)
 
     table = table.eval_expression_list(
         [
             col("col1").cast(dtype1),
             col("col2").cast(dtype1),
             col("col3").cast(dtype2),
+            col("col4").cast(dtype3),
         ]
     )
 
@@ -108,6 +127,7 @@ def test_fixed_size_list_chunk():
             col("col3").list.chunk(2).alias("col3-2"),
             col("col3").list.chunk(3).alias("col3-3"),  # Test chunk size > list size
             col("col3").list.chunk(4).alias("col3-4"),  # Test chunk size > list size
+            col("col4").list.chunk(2).alias("col4-2"),
         ]
     )
 
@@ -119,6 +139,7 @@ def test_fixed_size_list_chunk():
         "col3-2": [[[[1], [2]]], [[[None, 111], [22, 222]]], None],
         "col3-3": [[], [], None],
         "col3-4": [[], [], None],
+        "col4-2": [[[[[1]], [[None]]]], [[[[None], [111]], None]], None],
     }
 
 
