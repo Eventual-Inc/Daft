@@ -6,6 +6,7 @@ daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-execution = {path = "src/daft-execution", default-features = false}
+daft-functions = {path = "src/daft-functions", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
@@ -43,6 +44,7 @@ python = [
   "daft-scheduler/python",
   "daft-stats/python",
   "daft-table/python",
+  "daft-functions/python",
   "common-daft-config/python",
   "common-system-info/python"
 ]
@@ -111,7 +113,8 @@ members = [
   "src/daft-micropartition",
   "src/daft-scan",
   "src/daft-scheduler",
-  "src/daft-sketch"
+  "src/daft-sketch",
+  "src/daft-functions"
 ]
 
 [workspace.dependencies]
