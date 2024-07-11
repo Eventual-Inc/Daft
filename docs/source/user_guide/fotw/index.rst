@@ -18,7 +18,7 @@ Table of Contents
 
 The Daft User Guide is laid out as follows:
 
-:doc:`Data Access <fotw-000-data-access>`
-**************************************
+:doc:`#000 - Data Access <fotw-000-data-access>`
+************************************************
 
 A tutorial on the canonical ways of accessing data with Daft.
