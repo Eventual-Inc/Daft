@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
@@ -120,6 +120,10 @@ class PyRunner(Runner[MicroPartition]):
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
         self._thread_pool = futures.ThreadPoolExecutor()
 
+        # Global accounting of tasks and resources
+        self._inflight_tasks_resources: dict[str, ResourceRequest] = dict()
+        self._inflight_tasks: dict[str, PartitionTask] = dict()
+
         system_info = SystemInfo()
         num_cpus = system_info.cpu_count()
         if num_cpus is None:
@@ -213,8 +217,6 @@ class PyRunner(Runner[MicroPartition]):
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
     ) -> Iterator[PyMaterializedResult]:
-        inflight_tasks: dict[str, PartitionTask] = dict()
-        inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
         pbar = ProgressBar(use_ray_tqdm=False)
@@ -240,7 +242,6 @@ class PyRunner(Runner[MicroPartition]):
 
                     elif not self._can_admit_task(
                         next_step.resource_request,
-                        inflight_tasks_resources.values(),
                     ):
                         # Insufficient resources; await some tasks.
                         break
@@ -288,8 +289,8 @@ class PyRunner(Runner[MicroPartition]):
                             # Register the inflight task and resources used.
                             future_to_task[future] = next_step.id()
 
-                            inflight_tasks[next_step.id()] = next_step
-                            inflight_tasks_resources[next_step.id()] = next_step.resource_request
+                            self._inflight_tasks[next_step.id()] = next_step
+                            self._inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
                         next_step = next(plan)
 
@@ -298,8 +299,8 @@ class PyRunner(Runner[MicroPartition]):
                 done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                 for done_future in done_set:
                     done_id = future_to_task.pop(done_future)
-                    del inflight_tasks_resources[done_id]
-                    done_task = inflight_tasks.pop(done_id)
+                    del self._inflight_tasks_resources[done_id]
+                    done_task = self._inflight_tasks.pop(done_id)
                     materialized_results = done_future.result()
 
                     pbar.mark_task_done(done_task)
@@ -334,10 +335,10 @@ class PyRunner(Runner[MicroPartition]):
     def _can_admit_task(
         self,
         resource_request: ResourceRequest,
-        inflight_resources: Iterable[ResourceRequest],
     ) -> bool:
         self._check_resource_requests(resource_request)
 
+        inflight_resources = self._inflight_tasks_resources.values()
         total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
         cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
         gpus_okay = (total_inflight_resources.num_gpus or 0) + (resource_request.num_gpus or 0) <= self.num_gpus
