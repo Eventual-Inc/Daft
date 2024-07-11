@@ -37,12 +37,6 @@ impl ScalarFunction {
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
-    /// Inputs are columnar values or other exprs.
-    /// Args are the arguments to the function.
-    /// The difference is that args are scalar values that are applied across ALL rows,
-    /// while inputs are columnar values that are applied to EACH row.
-    /// An example of an arg is the max_connections in the download function.
-    /// An example of an `input` is the url in the download function.
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
 }
