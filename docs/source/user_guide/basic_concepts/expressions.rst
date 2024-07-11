@@ -429,26 +429,24 @@ You can convert a Timestamp to a different time zone.
 
 .. code:: python
 
-    df = daft.from_pydict({
-        "json": [
-            '{"a": 1, "b": 2}',
-            '{"a": 3, "b": 4}',
-        ],
+    df = daft.from_pydict({"x": [
+        "2021-01-01 00:00:00.123 +0800",
+        "2021-01-02 12:30:00.456 +0800"]
     })
-    df = df.with_column("a", df["json"].json.query(".a"))
+    df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="America/New_York"))
     df.collect()
 
 .. code:: none
 
-    ╭──────────────────┬──────╮
-    │ json             ┆ a    │
-    │ ---              ┆ ---  │
-    │ Utf8             ┆ Utf8 │
-    ╞══════════════════╪══════╡
-    │ {"a": 1, "b": 2} ┆ 1    │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ {"a": 3, "b": 4} ┆ 3    │
-    ╰──────────────────┴──────╯
+    ╭───────────────────────────────┬───────────────────────────────────────────────────╮
+    │ x                             ┆ datetime                                          │
+    │ ---                           ┆ ---                                               │
+    │ Utf8                          ┆ Timestamp(Milliseconds, Some("America/New_York")) │
+    ╞═══════════════════════════════╪═══════════════════════════════════════════════════╡
+    │ 2021-01-01 00:00:00.123 +0800 ┆ 2020-12-31 11:00:00.123 EST                       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-01 23:30:00.456 EST                       │
+    ╰───────────────────────────────┴───────────────────────────────────────────────────╯
 
     (Showing first 2 of 2 rows)
 
@@ -456,8 +454,8 @@ You can convert a Timestamp to a different time zone.
 Using the Truncate Function
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The `truncate` function can be used to truncate dates to a specific time unit. This can be useful when you want to group or round dates to the nearest week, month, etc.
 
+The `truncate` function can be used to truncate timestamps to a specific time unit. For example, you can use it to truncate timestamps to the nearest day
 .. code:: python
 
     import pandas as pd
@@ -465,37 +463,38 @@ The `truncate` function can be used to truncate dates to a specific time unit. T
 
     # Create a DataFrame with a range of dates
     df = daft.from_pydict({
-        "dates": pd.date_range(start="2023-07-01", end="2023-07-06", freq='D').to_list()
-    })
+             "datetime": [
+                 datetime.datetime(2021, 1, 7, 0, 1, 1),
+                 datetime.datetime(2021, 1, 8, 0, 1, 59),
+                 datetime.datetime(2021, 1, 9, 0, 2, 0),
+                 datetime.datetime(2021, 1, 10, 0, 2, 0),
+             ],
+         }
+    )
 
     # Truncate dates to the start of the week
-    df = df.with_column("truncated_dates", df["dates"].dt.truncate(freq="W-SUN"))
-    df.collect()
+    df.with_column("truncated", df["datetime"].dt.truncate("1 week")).collect()
 
 .. code:: none
-    ╭────────────────────┬────────────────────╮
-    │ dates              ┆ truncated_dates    │
-    │ ---                ┆ ---                │
-    │ datetime64[ns]     ┆ datetime64[ns]     │
-    ╞════════════════════╪════════════════════╡
-    │ 2023-07-01 00:00:00┆ 2023-06-25 00:00:00│
-    ├────────────────────┼────────────────────┤
-    │ 2023-07-02 00:00:00┆ 2023-07-02 00:00:00│
-    ├────────────────────┼────────────────────┤
-    │ 2023-07-03 00:00:00┆ 2023-07-02 00:00:00│
-    ├────────────────────┼────────────────────┤
-    │ 2023-07-04 00:00:00┆ 2023-07-02 00:00:00│
-    ├────────────────────┼────────────────────┤
-    │ 2023-07-05 00:00:00┆ 2023-07-02 00:00:00│
-    ├────────────────────┼────────────────────┤
-    │ 2023-07-06 00:00:00┆ 2023-07-02 00:00:00│
-    ╰────────────────────┴────────────────────╯
+    ╭───────────────────────────────┬───────────────────────────────╮
+    │ datetime                      ┆ truncated                     │
+    │ ---                           ┆ ---                           │
+    │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+    ╞═══════════════════════════════╪═══════════════════════════════╡
+    │ 2021-01-07 00:01:01           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-08 00:01:59           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-09 00:02:00           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-10 00:02:00           ┆ 2021-01-07 00:00:00           │
+    ╰───────────────────────────────┴───────────────────────────────╯
 
-    (Showing first 6 of 6 rows)
+    (Showing first 4 of 4 rows)
 
 Explanation:
-- The `dates` column contains dates from July 1, 2023, to July 6, 2023.
+- The `dates` column contains dates from January 7, 2021, to January 10, 2021.
 - The `truncated_dates` column shows the dates truncated to the start of the week.
-- For dates between July 1 and July 6, the start of the week is considered as the closest preceding Sunday.
+- For dates between January 7 and January 10, the start of the week is considered as the closest preceding Sunday.
 
 This example demonstrates the advantage of using the `truncate` function to group or round dates to a desired time unit, such as the start of the week, which can be particularly useful for summarizing or aggregating data by weeks.
