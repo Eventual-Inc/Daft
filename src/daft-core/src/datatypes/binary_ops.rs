@@ -92,7 +92,7 @@ impl Add for &DataType {
 
     fn add(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(
+        try_numeric_supertype(self, other).or(try_fixed_shape_numeric_supertype(self, other)).or(
             match (self, other) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
@@ -136,45 +136,6 @@ impl Add for &DataType {
                 }
                 (Boolean, other) | (other, Boolean)
                     if other.is_numeric() => Ok(other.clone()),
-                (FixedShapeTensor(ldtype, lshape), FixedShapeTensor(rdtype, rshape)) => {
-                    if lshape != rshape {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
-                        ))
-                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) && result_type.is_numeric() {
-                        Ok(FixedShapeTensor(Box::new(result_type), lshape.clone()))
-                    } else {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
-                        ))
-                    }
-                },
-                (FixedSizeList(ldtype, lsize), FixedSizeList(rdtype, rsize)) => {
-                    if lsize != rsize {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
-                        ))
-                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) {
-                        Ok(FixedSizeList(Box::new(result_type), *lsize))
-                    } else {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
-                        ))
-                    }
-                },
-                (Embedding(ldtype, lsize), Embedding(rdtype, rsize)) => {
-                    if lsize != rsize {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
-                        ))
-                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) && result_type.is_numeric() {
-                        Ok(Embedding(Box::new(result_type), *lsize))
-                    } else {
-                        Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
-                        ))
-                    }
-                },
                 _ => Err(DaftError::TypeError(
                     format!("Cannot add types: {}, {}", self, other)
                 ))
@@ -188,7 +149,7 @@ impl Sub for &DataType {
 
     fn sub(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(
+        try_numeric_supertype(self, other).or(try_fixed_shape_numeric_supertype(self, other)).or(
             match (self, other) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
@@ -240,14 +201,16 @@ impl Mul for &DataType {
 
     fn mul(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(match (self, other) {
-            #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot multiply types: {}, {}",
-                self, other
-            ))),
-        })
+        try_numeric_supertype(self, other)
+            .or(try_fixed_shape_numeric_supertype(self, other))
+            .or(match (self, other) {
+                #[cfg(feature = "python")]
+                (Python, _) | (_, Python) => Ok(Python),
+                _ => Err(DaftError::TypeError(format!(
+                    "Cannot multiply types: {}, {}",
+                    self, other
+                ))),
+            })
     }
 }
 
@@ -256,14 +219,16 @@ impl Rem for &DataType {
 
     fn rem(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(match (self, other) {
-            #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot multiply types: {}, {}",
-                self, other
-            ))),
-        })
+        try_numeric_supertype(self, other)
+            .or(try_fixed_shape_numeric_supertype(self, other))
+            .or(match (self, other) {
+                #[cfg(feature = "python")]
+                (Python, _) | (_, Python) => Ok(Python),
+                _ => Err(DaftError::TypeError(format!(
+                    "Cannot multiply types: {}, {}",
+                    self, other
+                ))),
+            })
     }
 }
 
@@ -405,4 +370,72 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             "Invalid arguments to numeric supertype: {}, {}",
             l, r
         )))
+}
+
+pub fn try_fixed_shape_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
+    // If given two fixed shape numeric data types,
+    // get the numeric type that they should both be casted to
+    // for the purpose of performing numeric operations.
+
+    fn inner(l: &DataType, r: &DataType) -> DaftResult<DataType> {
+        use DataType::*;
+
+        match (l, r) {
+            (FixedShapeTensor(ldtype, lshape), FixedShapeTensor(rdtype, rshape)) => {
+                if lshape != rshape {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {} due to shape mismatch",
+                        l, r
+                    )))
+                } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref())
+                    && result_type.is_numeric()
+                {
+                    Ok(FixedShapeTensor(Box::new(result_type), lshape.clone()))
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {}",
+                        l, r
+                    )))
+                }
+            }
+            (FixedSizeList(ldtype, lsize), FixedSizeList(rdtype, rsize)) => {
+                if lsize != rsize {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {} due to shape mismatch",
+                        l, r
+                    )))
+                } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) {
+                    Ok(FixedSizeList(Box::new(result_type), *lsize))
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {}",
+                        l, r
+                    )))
+                }
+            }
+            (Embedding(ldtype, lsize), Embedding(rdtype, rsize)) => {
+                if lsize != rsize {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {} due to shape mismatch",
+                        l, r
+                    )))
+                } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref())
+                    && result_type.is_numeric()
+                {
+                    Ok(Embedding(Box::new(result_type), *lsize))
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Cannot add types: {}, {}",
+                        l, r
+                    )))
+                }
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Invalid arguments to numeric supertype: {}, {}",
+                l, r
+            ))),
+        }
+    }
+
+    inner(l, r).or(inner(r, l))
 }

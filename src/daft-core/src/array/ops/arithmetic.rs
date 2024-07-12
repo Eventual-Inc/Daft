@@ -1,17 +1,12 @@
-use std::{
-    ops::{Add, Div, Mul, Rem, Sub},
-    sync::Arc,
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
     array::{DataArray, FixedSizeListArray},
-    datatypes::{
-        logical::FixedShapeTensorArray, DaftNumericType, Field, Float64Array, Int64Array, Utf8Array,
-    },
+    datatypes::{DaftNumericType, Field, Float64Array, Int64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
-    DataType,
+    DataType, Series,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -206,25 +201,76 @@ where
     }
 }
 
+fn fixed_sized_list_arithmetic_helper<Kernel>(
+    lhs: &FixedSizeListArray,
+    rhs: &FixedSizeListArray,
+    kernel: Kernel,
+) -> DaftResult<FixedSizeListArray>
+where
+    Kernel: Fn(&Series, &Series) -> DaftResult<Series>,
+{
+    assert_eq!(lhs.fixed_element_len(), rhs.fixed_element_len());
+
+    let lhs_child: &Series = &lhs.flat_child;
+    let rhs_child: &Series = &rhs.flat_child;
+    let lhs_len = lhs.len();
+    let rhs_len = rhs.len();
+
+    let result_child = match (lhs_len, rhs_len) {
+        (a, b) if a == b => kernel(lhs_child, rhs_child),
+        // broadcast right path
+        (_, 1) => kernel(lhs_child, &rhs_child.repeat(lhs_len)?),
+        (1, _) => kernel(&lhs_child.repeat(lhs_len)?, rhs_child),
+        (a, b) => Err(DaftError::ValueError(format!(
+            "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+        ))),
+    }?;
+    let validity = crate::utils::arrow::arrow_bitmap_and_helper(lhs.validity(), rhs.validity());
+    let result_field = Field::new(
+        lhs.name(),
+        DataType::FixedSizeList(
+            Box::new(result_child.data_type().clone()),
+            lhs.fixed_element_len(),
+        ),
+    );
+    Ok(FixedSizeListArray::new(
+        result_field,
+        result_child,
+        validity,
+    ))
+}
+
 impl Add for &FixedSizeListArray {
     type Output = DaftResult<FixedSizeListArray>;
     fn add(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.len(), rhs.len());
-        assert_eq!(self.fixed_element_len(), rhs.fixed_element_len());
-        let result_child = (&self.flat_child + &rhs.flat_child)?;
-        let validity =
-            crate::utils::arrow::arrow_bitmap_and_helper(self.validity(), rhs.validity());
-        let result_field = Field::new(
-            self.name(),
-            DataType::FixedSizeList(
-                Box::new(result_child.data_type().clone()),
-                self.fixed_element_len(),
-            ),
-        );
-        Ok(FixedSizeListArray::new(
-            result_field,
-            result_child,
-            validity,
-        ))
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a + b)
+    }
+}
+
+impl Mul for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a * b)
+    }
+}
+
+impl Sub for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a - b)
+    }
+}
+
+impl Div for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn div(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a / b)
+    }
+}
+
+impl Rem for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn rem(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a % b)
     }
 }

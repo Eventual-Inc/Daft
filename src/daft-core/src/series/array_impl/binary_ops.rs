@@ -61,37 +61,53 @@ macro_rules! cast_downcast_op_into_series {
     }};
 }
 
-fn fixed_sized_numeric_binary_op(
-    left: &Series,
-    right: &Series,
-    output_type: &DataType,
-) -> DaftResult<Series> {
-    assert!(left.data_type().is_fixed_size_numeric());
-    assert!(right.data_type().is_fixed_size_numeric());
-    // TODO need to do broadcasting
-    assert_eq!(left.len(), right.len());
+macro_rules! apply_fixed_numeric_op {
+    ($lhs:expr, $rhs:expr, $op:ident) => {{
+        $lhs.$op($rhs)?
+    }};
+}
 
-    match (left.data_type(), right.data_type()) {
-        (DataType::FixedSizeList(..), DataType::FixedSizeList(..)) => {
-            let result = (left.downcast::<FixedSizeListArray>().unwrap()
-                + right.downcast::<FixedSizeListArray>().unwrap())?;
-            Ok(result.into_series())
+macro_rules! fixed_sized_numeric_binary_op {
+    ($left:expr, $right:expr, $output_type:expr, $op:ident) => {{
+        assert!($left.data_type().is_fixed_size_numeric());
+        assert!($right.data_type().is_fixed_size_numeric());
+        // TODO need to do broadcasting
+        assert_eq!($left.len(), $right.len());
+
+        match ($left.data_type(), $right.data_type()) {
+            (DataType::FixedSizeList(..), DataType::FixedSizeList(..)) => {
+                Ok(apply_fixed_numeric_op!(
+                    $left.downcast::<FixedSizeListArray>().unwrap(),
+                    $right.downcast::<FixedSizeListArray>().unwrap(),
+                    $op
+                )
+                .into_series())
+            }
+            (DataType::Embedding(..), DataType::Embedding(..)) => {
+                let physical = apply_fixed_numeric_op!(
+                    &$left.downcast::<EmbeddingArray>().unwrap().physical,
+                    &$right.downcast::<EmbeddingArray>().unwrap().physical,
+                    $op
+                );
+                let array =
+                    EmbeddingArray::new(Field::new($left.name(), $output_type.clone()), physical);
+                Ok(array.into_series())
+            }
+            (DataType::FixedShapeTensor(..), DataType::FixedShapeTensor(..)) => {
+                let physical = apply_fixed_numeric_op!(
+                    &$left.downcast::<FixedShapeTensorArray>().unwrap().physical,
+                    &$right.downcast::<FixedShapeTensorArray>().unwrap().physical,
+                    $op
+                );
+                let array = FixedShapeTensorArray::new(
+                    Field::new($left.name(), $output_type.clone()),
+                    physical,
+                );
+                Ok(array.into_series())
+            }
+            (left, right) => unimplemented!("cannot add {left} and {right} types"),
         }
-        (DataType::Embedding(..), DataType::Embedding(..)) => {
-            let physical = (&left.downcast::<EmbeddingArray>().unwrap().physical
-                + &right.downcast::<EmbeddingArray>().unwrap().physical)?;
-            let array = EmbeddingArray::new(Field::new(left.name(), output_type.clone()), physical);
-            Ok(array.into_series())
-        }
-        (DataType::FixedShapeTensor(..), DataType::FixedShapeTensor(..)) => {
-            let physical = (&left.downcast::<FixedShapeTensorArray>().unwrap().physical
-                + &right.downcast::<FixedShapeTensorArray>().unwrap().physical)?;
-            let array =
-                FixedShapeTensorArray::new(Field::new(left.name(), output_type.clone()), physical);
-            Ok(array.into_series())
-        }
-        (left, right) => unimplemented!("cannot add {left} and {right} types"),
-    }
+    }};
 }
 
 macro_rules! binary_op_unimplemented {
@@ -126,7 +142,7 @@ macro_rules! py_numeric_binary_op {
                 })
             }
             output_type if output_type.is_fixed_size_numeric() => {
-                todo!("help I need to implement {output_type}")
+                fixed_sized_numeric_binary_op!(&lhs, $rhs, output_type, $op)
             }
             _ => binary_op_unimplemented!(lhs, $pyop, $rhs, output_type),
         }
@@ -204,7 +220,7 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
                 })
             }
             output_type if output_type.is_fixed_size_numeric() => {
-                fixed_sized_numeric_binary_op(&lhs, rhs, output_type)
+                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, add)
             }
             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
         }

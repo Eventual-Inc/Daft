@@ -31,6 +31,7 @@ pub mod minhash;
 pub mod not;
 pub mod null;
 pub mod partitioning;
+pub mod repeat;
 pub mod round;
 pub mod search_sorted;
 pub mod shift;
