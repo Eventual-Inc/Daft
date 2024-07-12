@@ -811,6 +811,7 @@ def _write_tabular_arrow_table(
     NUM_TRIES = 3
     JITTER_MS = 2_500
     MAX_BACKOFF_MS = 20_000
+    RETRY_ERRORS = ("InvalidPart", "curlCode: 28, Timeout was reached")
 
     for attempt in range(NUM_TRIES):
         try:
@@ -830,7 +831,7 @@ def _write_tabular_arrow_table(
             )
             break
         except OSError as e:
-            if "InvalidPart" not in str(e):
+            if all(err_str not in str(e) for err_str in RETRY_ERRORS):
                 raise
 
             if attempt == NUM_TRIES - 1:
