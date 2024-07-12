@@ -106,6 +106,7 @@ The data that we collect is:
 3. **For development only:** we do not buy or sell any user data
 
 Please see our `documentation <https://www.getdaft.io/projects/docs/en/latest/faq/telemetry.html>`_ for more details.
+
 .. image:: https://static.scarf.sh/a.png?x-pxid=cd444261-469e-473b-b9ba-f66ac3dc73ee
 
 Related Projects
