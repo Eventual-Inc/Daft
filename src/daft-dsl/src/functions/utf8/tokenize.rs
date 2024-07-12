@@ -3,6 +3,7 @@ use daft_core::{
     schema::Schema,
     series::Series,
 };
+use daft_tokenize::series::{tokenize_decode, tokenize_encode};
 
 use crate::functions::FunctionExpr;
 use crate::ExprRef;
@@ -45,7 +46,7 @@ impl FunctionEvaluator for TokenizeEncodeEvaluator {
                     FunctionExpr::Utf8(Utf8Expr::TokenizeEncode(tokens_path)) => tokens_path,
                     _ => panic!("Expected TokenizeEncode Expr, got {expr}"),
                 };
-                data.tokenize_encode(tokens_path)
+                tokenize_encode(data, tokens_path)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
@@ -89,7 +90,7 @@ impl FunctionEvaluator for TokenizeDecodeEvaluator {
                     FunctionExpr::Utf8(Utf8Expr::TokenizeDecode(tokens_path)) => tokens_path,
                     _ => panic!("Expected TokenizeDecode Expr, got {expr}"),
                 };
-                data.tokenize_decode(tokens_path)
+                tokenize_decode(data, tokens_path)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",

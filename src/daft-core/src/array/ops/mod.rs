@@ -51,7 +51,6 @@ mod sum;
 mod take;
 pub(crate) mod tensor;
 mod time;
-mod tokenize;
 pub mod trigonometry;
 mod truncate;
 mod utf8;

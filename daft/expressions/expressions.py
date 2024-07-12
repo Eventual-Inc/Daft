@@ -2543,7 +2543,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def tokenize_encode(self, tokens_path: str) -> Expression:
         """Encodes each string as a list of integer tokens using a tokenizer.
 
-        Uses [tiktoken](https://github.com/openai/tiktoken) for tokenization.
+        Uses https://github.com/openai/tiktoken for tokenization.
 
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
 
@@ -2558,7 +2558,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def tokenize_decode(self, tokens_path: str) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
-        Uses [tiktoken](https://github.com/openai/tiktoken) for tokenization.
+        Uses https://github.com/openai/tiktoken for tokenization.
 
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
 

@@ -5,7 +5,10 @@ use crate::{datatypes::*, with_match_integer_daft_types};
 use common_error::{DaftError, DaftResult};
 
 impl Series {
-    fn with_utf8_array(&self, f: impl Fn(&Utf8Array) -> DaftResult<Series>) -> DaftResult<Series> {
+    pub fn with_utf8_array(
+        &self,
+        f: impl Fn(&Utf8Array) -> DaftResult<Series>,
+    ) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => f(self.utf8()?),
             DataType::Null => Ok(self.clone()),
@@ -250,19 +253,5 @@ impl Series {
 
     pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
-    }
-
-    pub fn tokenize_encode(&self, tokens_path: &str) -> DaftResult<Series> {
-        self.with_utf8_array(|arr| Ok(arr.tokenize_encode(tokens_path)?.into_series()))
-    }
-
-    pub fn tokenize_decode(&self, tokens_path: &str) -> DaftResult<Series> {
-        match self.data_type() {
-            DataType::List(_) => Ok(self.list()?.tokenize_decode(tokens_path)?.into_series()),
-            dt => Err(DaftError::TypeError(format!(
-                "Tokenize decode not implemented for type {}",
-                dt
-            ))),
-        }
     }
 }

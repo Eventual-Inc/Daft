@@ -43,7 +43,6 @@ regex = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
-tiktoken-rs = "0.5.9"
 unicode-normalization = "0.1.23"
 
 [dependencies.image]

@@ -158,6 +158,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.to_date
    Expression.str.to_datetime
    Expression.str.normalize
+   Expression.str.tokenize_encode
+   Expression.str.tokenize_decode
 
 .. _api-float-expression-operations:
 

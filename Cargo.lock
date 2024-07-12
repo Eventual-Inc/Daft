@@ -1617,7 +1617,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sketches-ddsketch",
- "tiktoken-rs",
  "unicode-normalization",
  "xxhash-rust",
 ]
@@ -1669,6 +1668,10 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
+ "daft-tokenize",
+ "dashmap",
+ "erased-serde",
+ "indexmap 2.2.6",
  "itertools 0.11.0",
  "pyo3",
  "serde",
@@ -1994,6 +1997,30 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
+]
+
+[[package]]
+name = "daft-tokenize"
+version = "0.2.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "tiktoken-rs",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "804c8821570c3f8b70230c2ba75ffa5c0f9a4189b9a432b6656c536712acae28"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.3",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]

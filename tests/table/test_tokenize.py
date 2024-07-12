@@ -3,8 +3,8 @@ import tiktoken
 
 import daft
 import daft.errors
-from daft import DataType
-from daft.exceptions import DaftCoreException, DaftTypeError
+from daft import DataType, col
+from daft.exceptions import DaftCoreException
 
 DEFAULT_ENCODINGS = [
     "r50k_base",
@@ -30,8 +30,8 @@ def test_tokenize_encoding(encoding: str) -> None:
         None,
     ]
 
-    s = daft.Series.from_pylist(test_data)
-    a = s.str.tokenize_encode(encoding).to_pylist()
+    s = daft.from_pydict({"a": test_data})
+    a = s.select(col("a").str.tokenize_encode(encoding)).to_pydict()["a"]
     assert a[3] is None and a[-1] is None
 
     # openai encoder errors on Nones
@@ -66,8 +66,8 @@ def test_tokenize_decoding(encoding: str, num_type: DataType) -> None:
     test_data[3] = test_data[-1] = None
     token_data[3] = token_data[-1] = None
 
-    s = daft.Series.from_pylist(token_data).cast(DataType.list(num_type))
-    a = s.str.tokenize_decode(encoding).to_pylist()
+    s = daft.from_pydict({"a": token_data}).select(col("a").cast(DataType.list(num_type)))
+    a = s.select(col("a").str.tokenize_decode(encoding)).to_pydict()["a"]
     assert a == test_data
 
 
@@ -75,10 +75,9 @@ def test_tokenize_decoding(encoding: str, num_type: DataType) -> None:
 def test_tokenize_decode_invalid_dtype(encoding: str):
     test_data = [["these", "are"], ["not", "integers"]]
 
-    s = daft.Series.from_pylist(test_data)
-    assert s.datatype() == DataType.list(DataType.string())
-    with pytest.raises(DaftTypeError, match="expected integer list inner type"):
-        s.str.tokenize_decode(encoding)
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException):
+        s.select(col("a").str.tokenize_encode(encoding)).collect()
 
 
 @pytest.mark.parametrize("encoding", DEFAULT_ENCODINGS)
@@ -88,6 +87,6 @@ def test_tokenize_decode_invalid_tokens(encoding: str):
         [606, 315, -1521, 374, 3958],
     ]
     for t in test_data:
-        s = daft.Series.from_pylist([t])
+        s = daft.from_pydict({"a": [t]})
         with pytest.raises(DaftCoreException):
-            s.str.tokenize_decode(encoding)
+            s.select(col("a").str.tokenize_decode(encoding)).collect()

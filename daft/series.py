@@ -904,18 +904,6 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
 
-    def tokenize_encode(self, tokens_path: str) -> Series:
-        if not isinstance(tokens_path, str):
-            raise ValueError(f"expected str for tokens_path but got {type(format)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.tokenize_encode(tokens_path))
-
-    def tokenize_decode(self, tokens_path: str) -> Series:
-        if not isinstance(tokens_path, str):
-            raise ValueError(f"expected str for tokens_path but got {type(format)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.tokenize_decode(tokens_path))
-
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:
