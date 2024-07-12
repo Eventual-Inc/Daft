@@ -136,6 +136,45 @@ impl Add for &DataType {
                 }
                 (Boolean, other) | (other, Boolean)
                     if other.is_numeric() => Ok(other.clone()),
+                (FixedShapeTensor(ldtype, lshape), FixedShapeTensor(rdtype, rshape)) => {
+                    if lshape != rshape {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
+                        ))
+                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) && result_type.is_numeric() {
+                        Ok(FixedShapeTensor(Box::new(result_type), lshape.clone()))
+                    } else {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        ))
+                    }
+                },
+                (FixedSizeList(ldtype, lsize), FixedSizeList(rdtype, rsize)) => {
+                    if lsize != rsize {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
+                        ))
+                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) {
+                        Ok(FixedSizeList(Box::new(result_type), *lsize))
+                    } else {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        ))
+                    }
+                },
+                (Embedding(ldtype, lsize), Embedding(rdtype, rsize)) => {
+                    if lsize != rsize {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {} due to shape mismatch", self, other)
+                        ))
+                    } else if let Ok(result_type) = ldtype.as_ref().add(rdtype.as_ref()) && result_type.is_numeric() {
+                        Ok(Embedding(Box::new(result_type), *lsize))
+                    } else {
+                        Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        ))
+                    }
+                },
                 _ => Err(DaftError::TypeError(
                     format!("Cannot add types: {}, {}", self, other)
                 ))

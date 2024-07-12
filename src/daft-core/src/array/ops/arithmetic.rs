@@ -1,11 +1,17 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    ops::{Add, Div, Mul, Rem, Sub},
+    sync::Arc,
+};
 
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
-    array::DataArray,
-    datatypes::{DaftNumericType, Float64Array, Int64Array, Utf8Array},
+    array::{DataArray, FixedSizeListArray},
+    datatypes::{
+        logical::FixedShapeTensorArray, DaftNumericType, Field, Float64Array, Int64Array, Utf8Array,
+    },
     kernels::utf8::add_utf8_arrays,
+    DataType,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -197,5 +203,28 @@ where
                 ))),
             }
         }
+    }
+}
+
+impl Add for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.len(), rhs.len());
+        assert_eq!(self.fixed_element_len(), rhs.fixed_element_len());
+        let result_child = (&self.flat_child + &rhs.flat_child)?;
+        let validity =
+            crate::utils::arrow::arrow_bitmap_and_helper(self.validity(), rhs.validity());
+        let result_field = Field::new(
+            self.name(),
+            DataType::FixedSizeList(
+                Box::new(result_child.data_type().clone()),
+                self.fixed_element_len(),
+            ),
+        );
+        Ok(FixedSizeListArray::new(
+            result_field,
+            result_child,
+            validity,
+        ))
     }
 }
