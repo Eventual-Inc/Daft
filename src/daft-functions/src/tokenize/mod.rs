@@ -1,10 +1,10 @@
 use daft_dsl::{functions::ScalarFunction, ExprRef};
-use function::{TokenizeDecodeFunction, TokenizeEncodeFunction};
+use decode::TokenizeDecodeFunction;
+use encode::TokenizeEncodeFunction;
 
-mod array;
 mod bpe;
-mod function;
-mod series;
+mod decode;
+mod encode;
 
 pub fn tokenize_encode(data: ExprRef, tokens_path: &str) -> ExprRef {
     ScalarFunction::new(
