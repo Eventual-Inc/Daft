@@ -1668,7 +1668,6 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
- "daft-tokenize",
  "dashmap",
  "erased-serde",
  "indexmap 2.2.6",
@@ -1709,6 +1708,7 @@ dependencies = [
 name = "daft-functions"
 version = "0.2.0-dev0"
 dependencies = [
+ "arrow2",
  "bytes",
  "common-error",
  "common-io-config",
@@ -1717,8 +1717,10 @@ dependencies = [
  "daft-io",
  "futures",
  "pyo3",
+ "pyo3-log",
  "serde",
  "snafu",
+ "tiktoken-rs",
  "tokio",
  "typetag",
  "uuid 1.10.0",
@@ -1997,16 +1999,6 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
-]
-
-[[package]]
-name = "daft-tokenize"
-version = "0.2.0-dev0"
-dependencies = [
- "arrow2",
- "common-error",
- "daft-core",
- "tiktoken-rs",
 ]
 
 [[package]]

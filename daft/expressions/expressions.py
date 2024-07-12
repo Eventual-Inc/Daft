@@ -29,6 +29,8 @@ from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
+from daft.daft import tokenize_decode as _tokenize_decode
+from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.datatype import DataType, TimeUnit
@@ -2553,7 +2555,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
         """
-        return Expression._from_pyexpr(self._expr.tokenize_encode(tokens_path))
+        return Expression._from_pyexpr(_tokenize_encode(self._expr, tokens_path))
 
     def tokenize_decode(self, tokens_path: str) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
@@ -2568,7 +2570,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with decoded strings.
         """
-        return Expression._from_pyexpr(self._expr.tokenize_decode(tokens_path))
+        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path))
 
 
 class ExpressionListNamespace(ExpressionNamespace):

@@ -1,24 +1,31 @@
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::Series,
-};
-use daft_tokenize::series::{tokenize_decode, tokenize_encode};
-
-use crate::functions::FunctionExpr;
-use crate::ExprRef;
 use common_error::{DaftError, DaftResult};
+use daft_core::{datatypes::Field, schema::Schema, DataType, Series};
+use daft_dsl::{functions::ScalarUDF, ExprRef};
+use serde::Serialize;
 
-use super::{super::FunctionEvaluator, Utf8Expr};
+use super::series::{tokenize_decode, tokenize_encode};
 
-pub(super) struct TokenizeEncodeEvaluator {}
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+pub(super) struct TokenizeEncodeFunction {
+    pub(super) tokens_path: String,
+}
 
-impl FunctionEvaluator for TokenizeEncodeEvaluator {
-    fn fn_name(&self) -> &'static str {
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+pub(super) struct TokenizeDecodeFunction {
+    pub(super) tokens_path: String,
+}
+
+#[typetag::serde]
+impl ScalarUDF for TokenizeEncodeFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
         "tokenize_encode"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -33,37 +40,34 @@ impl FunctionEvaluator for TokenizeEncodeEvaluator {
                 Err(e) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => {
-                let tokens_path = match expr {
-                    FunctionExpr::Utf8(Utf8Expr::TokenizeEncode(tokens_path)) => tokens_path,
-                    _ => panic!("Expected TokenizeEncode Expr, got {expr}"),
-                };
-                tokenize_encode(data, tokens_path)
-            }
+            [data] => tokenize_encode(data, &self.tokens_path),
             _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
     }
 }
 
-pub(super) struct TokenizeDecodeEvaluator {}
+#[typetag::serde]
+impl ScalarUDF for TokenizeDecodeFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
-impl FunctionEvaluator for TokenizeDecodeEvaluator {
-    fn fn_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "tokenize_decode"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -77,21 +81,15 @@ impl FunctionEvaluator for TokenizeDecodeEvaluator {
                 Err(e) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => {
-                let tokens_path = match expr {
-                    FunctionExpr::Utf8(Utf8Expr::TokenizeDecode(tokens_path)) => tokens_path,
-                    _ => panic!("Expected TokenizeDecode Expr, got {expr}"),
-                };
-                tokenize_decode(data, tokens_path)
-            }
+            [data] => tokenize_decode(data, &self.tokens_path),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()

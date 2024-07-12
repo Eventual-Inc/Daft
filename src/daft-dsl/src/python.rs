@@ -869,16 +869,6 @@ impl PyExpr {
         );
         Ok(expr.into())
     }
-
-    pub fn tokenize_encode(&self, tokens_path: &str) -> PyResult<Self> {
-        use crate::functions::utf8::tokenize_encode;
-        Ok(tokenize_encode(self.into(), tokens_path).into())
-    }
-
-    pub fn tokenize_decode(&self, tokens_path: &str) -> PyResult<Self> {
-        use crate::functions::utf8::tokenize_decode;
-        Ok(tokenize_decode(self.into(), tokens_path).into())
-    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);

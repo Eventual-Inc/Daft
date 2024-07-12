@@ -117,8 +117,7 @@ members = [
   "src/daft-scan",
   "src/daft-scheduler",
   "src/daft-sketch",
-  "src/daft-functions",
-  "src/daft-tokenize"
+  "src/daft-functions"
 ]
 
 [workspace.dependencies]

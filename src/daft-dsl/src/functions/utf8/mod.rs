@@ -24,7 +24,6 @@ mod startswith;
 mod substr;
 mod to_date;
 mod to_datetime;
-mod tokenize;
 mod upper;
 
 use capitalize::CapitalizeEvaluator;
@@ -54,7 +53,6 @@ use startswith::StartswithEvaluator;
 use substr::SubstrEvaluator;
 use to_date::ToDateEvaluator;
 use to_datetime::ToDatetimeEvaluator;
-use tokenize::{TokenizeDecodeEvaluator, TokenizeEncodeEvaluator};
 use upper::UpperEvaluator;
 
 use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
@@ -90,8 +88,6 @@ pub enum Utf8Expr {
     ToDate(String),
     ToDatetime(String, Option<String>),
     Normalize(Utf8NormalizeOptions),
-    TokenizeEncode(String),
-    TokenizeDecode(String),
 }
 
 impl Utf8Expr {
@@ -126,8 +122,6 @@ impl Utf8Expr {
             ToDate(_) => &ToDateEvaluator {},
             ToDatetime(_, _) => &ToDatetimeEvaluator {},
             Normalize(_) => &NormalizeEvaluator {},
-            TokenizeEncode(_) => &TokenizeEncodeEvaluator {},
-            TokenizeDecode(_) => &TokenizeDecodeEvaluator {},
         }
     }
 }
@@ -346,22 +340,6 @@ pub fn to_datetime(data: ExprRef, format: &str, timezone: Option<&str>) -> ExprR
 pub fn normalize(data: ExprRef, opts: Utf8NormalizeOptions) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Normalize(opts)),
-        inputs: vec![data],
-    }
-    .into()
-}
-
-pub fn tokenize_encode(data: ExprRef, tokens_path: &str) -> ExprRef {
-    Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::TokenizeEncode(tokens_path.to_string())),
-        inputs: vec![data],
-    }
-    .into()
-}
-
-pub fn tokenize_decode(data: ExprRef, tokens_path: &str) -> ExprRef {
-    Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::TokenizeDecode(tokens_path.to_string())),
         inputs: vec![data],
     }
     .into()

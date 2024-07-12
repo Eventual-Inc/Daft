@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{DataType, IntoSeries, Series};
 
-use crate::array::{tokenize_decode_array, tokenize_encode_array};
+use super::array::{tokenize_decode_array, tokenize_encode_array};
 
 pub fn tokenize_encode(series: &Series, tokens_path: &str) -> DaftResult<Series> {
     series.with_utf8_array(|arr| Ok(tokenize_encode_array(arr, tokens_path)?.into_series()))

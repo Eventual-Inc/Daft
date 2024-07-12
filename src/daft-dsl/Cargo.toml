@@ -5,7 +5,6 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 dashmap = "6.0.1"
 erased-serde = "0.4.5"
-daft-tokenize = {path = "../daft-tokenize", default-features = false}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}

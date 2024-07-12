@@ -12,7 +12,7 @@ use daft_core::{
     DataType, Series,
 };
 
-use crate::tokenize::DaftBPE;
+use crate::tokenize::bpe::DaftBPE;
 
 fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
     if !series.data_type().is_integer() {
