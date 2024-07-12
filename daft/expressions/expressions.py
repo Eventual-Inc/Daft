@@ -18,6 +18,7 @@ from typing import (
 
 import pyarrow as pa
 
+import daft.daft as native
 from daft import context
 from daft.daft import CountMode, ImageFormat
 from daft.daft import PyExpr as _PyExpr
@@ -29,6 +30,7 @@ from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
+from daft.daft import url_download as _url_download
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -933,11 +935,11 @@ class Expression:
     def hash(self, seed: Any | None = None) -> Expression:
         """Hashes the values in the Expression"""
         if seed is None:
-            expr = self._expr.hash()
+            expr = native.hash(self._expr)
         else:
             if not isinstance(seed, Expression):
                 seed = lit(seed)
-            expr = self._expr.hash(seed._expr)
+            expr = native.hash(self._expr, seed._expr)
         return Expression._from_pyexpr(expr)
 
     def minhash(
@@ -1079,7 +1081,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
             io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
             return Expression._from_pyexpr(
-                self._expr.url_download(max_connections, raise_on_error, multi_thread, io_config)
+                _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
             )
         else:
             from daft.udf_library import url_udfs
@@ -1117,7 +1119,9 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-        return Expression._from_pyexpr(self._expr.url_upload(location, max_connections, multi_thread, io_config))
+        return Expression._from_pyexpr(
+            native.url_upload(self._expr, location, max_connections, multi_thread, io_config)
+        )
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):

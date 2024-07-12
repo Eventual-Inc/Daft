@@ -4,15 +4,16 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
-
-use crate::{Expr, ExprRef};
-
-use super::{ScalarFunction, ScalarUDF};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct HashFunction;
 
+#[typetag::serde]
 impl ScalarUDF for HashFunction {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -73,5 +74,17 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
         None => vec![input],
     };
 
-    Expr::ScalarFunction(ScalarFunction::new(HashFunction {}, inputs)).into()
+    ScalarFunction::new(HashFunction {}, inputs).into()
+}
+
+#[cfg(feature = "python")]
+pub mod python {
+    use daft_dsl::python::PyExpr;
+    use pyo3::{pyfunction, PyResult};
+
+    #[pyfunction]
+    pub fn hash(expr: PyExpr, seed: Option<PyExpr>) -> PyResult<PyExpr> {
+        use super::hash;
+        Ok(hash(expr.into(), seed.map(|s| s.into())).into())
+    }
 }

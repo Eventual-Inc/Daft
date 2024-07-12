@@ -110,13 +110,12 @@ pub fn rewrite_predicate_for_partitioning(
                 has_udf = true;
                 Ok(TreeNodeRecursion::Stop)
             }
-            Expr::Function {
-                func: FunctionExpr::Uri(..),
-                ..
-            } => {
+            Expr::ScalarFunction(_) => {
+                // TODO: can we support scalar functions here?
                 has_udf = true;
                 Ok(TreeNodeRecursion::Stop)
             }
+
             Expr::Column(col_name) => {
                 if let Some(pfield) = pfields_map.get(col_name.as_ref()) {
                     all_data_keys = false;

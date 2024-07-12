@@ -1,5 +1,4 @@
 pub mod float;
-pub mod hash;
 pub mod image;
 pub mod json;
 pub mod list;
@@ -7,12 +6,10 @@ pub mod map;
 pub mod minhash;
 pub mod numeric;
 pub mod partitioning;
-pub mod registry;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
 pub mod temporal;
-pub mod uri;
 pub mod utf8;
 
 use std::fmt::{Display, Formatter, Result};
@@ -20,6 +17,7 @@ use std::hash::Hash;
 
 use crate::ExprRef;
 
+use self::float::FloatExpr;
 use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
@@ -30,7 +28,6 @@ use self::sketch::SketchExpr;
 use self::struct_::StructExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
-use self::{float::FloatExpr, uri::UriExpr};
 pub use scalar::*;
 
 use common_error::DaftResult;
@@ -60,7 +57,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "python")]
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
-    Uri(UriExpr),
     MinHash(MinHashExpr),
 }
 
@@ -90,7 +86,6 @@ impl FunctionExpr {
             Struct(expr) => expr.get_evaluator(),
             Json(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
-            Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
             Partitioning(expr) => expr.get_evaluator(),

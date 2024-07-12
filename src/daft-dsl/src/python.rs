@@ -17,7 +17,6 @@ use daft_core::{
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
-use common_io_config::python::IOConfig as PyIOConfig;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -847,57 +846,6 @@ impl PyExpr {
     pub fn json_query(&self, _query: &str) -> PyResult<Self> {
         use crate::functions::json::query;
         Ok(query(self.into(), _query).into())
-    }
-
-    pub fn url_download(
-        &self,
-        max_connections: i64,
-        raise_error_on_failure: bool,
-        multi_thread: bool,
-        config: PyIOConfig,
-    ) -> PyResult<Self> {
-        if max_connections <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "max_connections must be positive and non_zero: {max_connections}"
-            )));
-        }
-        use crate::functions::uri::download;
-        Ok(download(
-            self.into(),
-            max_connections as usize,
-            raise_error_on_failure,
-            multi_thread,
-            Some(config.config),
-        )
-        .into())
-    }
-
-    pub fn url_upload(
-        &self,
-        folder_location: &str,
-        max_connections: i64,
-        multi_thread: bool,
-        io_config: Option<PyIOConfig>,
-    ) -> PyResult<Self> {
-        if max_connections <= 0 {
-            return Err(PyValueError::new_err(format!(
-                "max_connections must be positive and non_zero: {max_connections}"
-            )));
-        }
-        use functions::uri::upload;
-        Ok(upload(
-            self.expr.clone(),
-            folder_location,
-            max_connections as usize,
-            multi_thread,
-            io_config.map(|io_config| io_config.config),
-        )
-        .into())
-    }
-
-    pub fn hash(&self, seed: Option<PyExpr>) -> PyResult<Self> {
-        use crate::functions::hash::hash;
-        Ok(hash(self.into(), seed.map(|s| s.into())).into())
     }
 
     pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
