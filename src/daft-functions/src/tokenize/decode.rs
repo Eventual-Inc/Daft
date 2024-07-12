@@ -1,5 +1,6 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
-use std::str::FromStr;
 
 use daft_core::{
     array::{ops::as_arrow::AsArrow, ListArray},
@@ -8,6 +9,7 @@ use daft_core::{
     DataType, IntoSeries, Series,
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_io::IOConfig;
 use serde::Serialize;
 
 use crate::tokenize::bpe::DaftBPE;
@@ -24,8 +26,12 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
     bpe.decode(&tokens)
 }
 
-fn tokenize_decode_array(arr: &ListArray, tokens_path: &str) -> DaftResult<Utf8Array> {
-    let bpe = DaftBPE::from_str(tokens_path)?;
+fn tokenize_decode_array(
+    arr: &ListArray,
+    tokens_path: &str,
+    io_config: Arc<IOConfig>,
+) -> DaftResult<Utf8Array> {
+    let bpe = DaftBPE::new(tokens_path, io_config)?;
     let offsets = arr.offsets();
     let strs = (0..offsets.len() - 1)
         .map(|i| {
@@ -38,9 +44,15 @@ fn tokenize_decode_array(arr: &ListArray, tokens_path: &str) -> DaftResult<Utf8A
     Utf8Array::from_iter(arr.name(), strs.iter().map(Some)).with_validity(arr.validity().cloned())
 }
 
-fn tokenize_decode_series(series: &Series, tokens_path: &str) -> DaftResult<Series> {
+fn tokenize_decode_series(
+    series: &Series,
+    tokens_path: &str,
+    io_config: Arc<IOConfig>,
+) -> DaftResult<Series> {
     match series.data_type() {
-        DataType::List(_) => Ok(tokenize_decode_array(series.list()?, tokens_path)?.into_series()),
+        DataType::List(_) => {
+            Ok(tokenize_decode_array(series.list()?, tokens_path, io_config)?.into_series())
+        }
         dt => Err(DaftError::TypeError(format!(
             "Tokenize decode not implemented for type {}",
             dt
@@ -51,6 +63,7 @@ fn tokenize_decode_series(series: &Series, tokens_path: &str) -> DaftResult<Seri
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeDecodeFunction {
     pub(super) tokens_path: String,
+    pub(super) io_config: Arc<IOConfig>,
 }
 
 #[typetag::serde]
@@ -85,7 +98,7 @@ impl ScalarUDF for TokenizeDecodeFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => tokenize_decode_series(data, &self.tokens_path),
+            [data] => tokenize_decode_series(data, &self.tokens_path, self.io_config.clone()),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()

@@ -1709,6 +1709,7 @@ name = "daft-functions"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "base64 0.22.0",
  "bytes",
  "common-error",
  "common-io-config",

@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::sync::Arc;
 
 use arrow2::{
     array::{MutableArray, MutablePrimitiveArray, PrimitiveArray},
@@ -13,12 +13,17 @@ use daft_core::{
     DataType, IntoSeries, Series,
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_io::IOConfig;
 use serde::Serialize;
 
 use crate::tokenize::bpe::DaftBPE;
 
-pub fn tokenize_encode_array(arr: &Utf8Array, tokens_path: &str) -> DaftResult<ListArray> {
-    let bpe = DaftBPE::from_str(tokens_path)?;
+fn tokenize_encode_array(
+    arr: &Utf8Array,
+    tokens_path: &str,
+    io_config: Arc<IOConfig>,
+) -> DaftResult<ListArray> {
+    let bpe = DaftBPE::new(tokens_path, io_config)?;
 
     let mut flat_child = MutablePrimitiveArray::<u32>::new();
     let mut offsets: Vec<i64> = Vec::with_capacity(arr.len() + 1);
@@ -46,13 +51,20 @@ pub fn tokenize_encode_array(arr: &Utf8Array, tokens_path: &str) -> DaftResult<L
     ))
 }
 
-pub fn tokenize_encode_series(series: &Series, tokens_path: &str) -> DaftResult<Series> {
-    series.with_utf8_array(|arr| Ok(tokenize_encode_array(arr, tokens_path)?.into_series()))
+fn tokenize_encode_series(
+    series: &Series,
+    tokens_path: &str,
+    io_config: Arc<IOConfig>,
+) -> DaftResult<Series> {
+    series.with_utf8_array(|arr| {
+        Ok(tokenize_encode_array(arr, tokens_path, io_config.clone())?.into_series())
+    })
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeEncodeFunction {
     pub(super) tokens_path: String,
+    pub(super) io_config: Arc<IOConfig>,
 }
 
 #[typetag::serde]
@@ -88,7 +100,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => tokenize_encode_series(data, &self.tokens_path),
+            [data] => tokenize_encode_series(data, &self.tokens_path, self.io_config.clone()),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
