@@ -21,7 +21,6 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-functions = {path = "../daft-functions", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true}
@@ -36,6 +35,7 @@ terminal_size = {version = "0.3.0"}
 textwrap = {version = "0.16.1"}
 
 [dev-dependencies]
+daft-functions = {path = "../daft-functions", default-features = false}
 rstest = {workspace = true}
 
 [features]
