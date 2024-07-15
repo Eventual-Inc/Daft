@@ -372,8 +372,6 @@ mod tests {
     use std::default;
     use std::io::Write;
 
-    use common_io_config::HTTPConfig;
-
     use crate::object_io::{FileMetadata, FileType, ObjectSource};
     use crate::Result;
     use crate::{HttpSource, LocalSource};
