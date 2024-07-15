@@ -33,3 +33,23 @@ def test_math_tensors(op, ldtype, rdtype) -> None:
 
     result = df.with_column("z", op(df["x"], df["y"])).collect().to_pydict()
     assert_almost_equal(result["z"], expected)
+
+
+@pytest.mark.parametrize(
+    "op, ldtype, rdtype", itertools.product([add, mul, sub], daft_numeric_types, daft_numeric_types)
+)
+def test_math_tensors_with_literal(op, ldtype, rdtype) -> None:
+    np.random.seed(1)
+    x = np.random.randint(0, 10, (12, 10, 1)).astype(ldtype.to_arrow_dtype().to_pandas_dtype())
+    y = np.random.randint(0, 10, (10, 1)).astype(rdtype.to_arrow_dtype().to_pandas_dtype())
+    expected = op(x, y)
+
+    df = daft.from_pydict({"x": x})
+    df = df.with_column("x", df["x"].cast(daft.DataType.tensor(daft.DataType.float32(), (10, 1))))
+
+    result = (
+        df.with_column("z", op(df["x"], daft.lit(y).cast(daft.DataType.tensor(daft.DataType.float32(), (10, 1)))))
+        .collect()
+        .to_pydict()
+    )
+    assert_almost_equal(result["z"], expected)

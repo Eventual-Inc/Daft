@@ -181,3 +181,33 @@ pub fn arrow_bitmap_and_helper(
         (Some(l), Some(r)) => Some(arrow2::bitmap::and(l, r)),
     }
 }
+
+#[inline]
+pub fn arrow_bitmap_and_helper_with_broadcasting(
+    l_bitmap: Option<&arrow2::bitmap::Bitmap>,
+    r_bitmap: Option<&arrow2::bitmap::Bitmap>,
+) -> Option<arrow2::bitmap::Bitmap> {
+    match (l_bitmap, r_bitmap) {
+        (None, None) => None,
+        (Some(l), None) => Some(l.clone()),
+        (None, Some(r)) => Some(r.clone()),
+        (Some(l), Some(r)) => match (l.len(), r.len()) {
+            (l_len, r_len) if l_len == r_len => Some(arrow2::bitmap::and(l, r)),
+            (1, r_len) => {
+                if l.get_bit(0) {
+                    Some(r.clone())
+                } else {
+                    Some(arrow2::bitmap::Bitmap::new_zeroed(r_len))
+                }
+            }
+            (l_len, 1) => {
+                if r.get_bit(0) {
+                    Some(l.clone())
+                } else {
+                    Some(arrow2::bitmap::Bitmap::new_zeroed(l_len))
+                }
+            }
+            (l_len, r_len) => panic!("can not compute bitmap of len {l_len} and {r_len}"),
+        },
+    }
+}

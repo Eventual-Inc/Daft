@@ -225,7 +225,11 @@ where
             "Cannot apply operation on arrays of different lengths: {a} vs {b}"
         ))),
     }?;
-    let validity = crate::utils::arrow::arrow_bitmap_and_helper(lhs.validity(), rhs.validity());
+
+    let validity = crate::utils::arrow::arrow_bitmap_and_helper_with_broadcasting(
+        lhs.validity(),
+        rhs.validity(),
+    );
     let result_field = Field::new(
         lhs.name(),
         DataType::FixedSizeList(

@@ -71,8 +71,6 @@ macro_rules! fixed_sized_numeric_binary_op {
     ($left:expr, $right:expr, $output_type:expr, $op:ident) => {{
         assert!($left.data_type().is_fixed_size_numeric());
         assert!($right.data_type().is_fixed_size_numeric());
-        // TODO need to do broadcasting
-        assert_eq!($left.len(), $right.len());
 
         match ($left.data_type(), $right.data_type()) {
             (DataType::FixedSizeList(..), DataType::FixedSizeList(..)) => {
