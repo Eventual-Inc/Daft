@@ -1733,9 +1733,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), "Func returned an instance of type [%s], " "should have been DataFrame." % type(result)
+        assert isinstance(result, DataFrame), (
+            "Func returned an instance of type [%s], " "should have been DataFrame." % type(result)
+        )
         return result
 
     def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
