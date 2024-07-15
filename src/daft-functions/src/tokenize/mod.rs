@@ -6,18 +6,21 @@ use encode::TokenizeEncodeFunction;
 mod bpe;
 mod decode;
 mod encode;
+mod special_tokens;
 
 pub fn tokenize_encode(
     data: ExprRef,
     tokens_path: &str,
     io_config: Option<IOConfig>,
     pattern: Option<&str>,
+    special_tokens: Option<&str>,
 ) -> ExprRef {
     ScalarFunction::new(
         TokenizeEncodeFunction {
             tokens_path: tokens_path.to_string(),
             io_config: io_config.map(|x| x.into()),
             pattern: pattern.map(str::to_string),
+            special_tokens: special_tokens.map(str::to_string),
         },
         vec![data],
     )
@@ -29,12 +32,14 @@ pub fn tokenize_decode(
     tokens_path: &str,
     io_config: Option<IOConfig>,
     pattern: Option<&str>,
+    special_tokens: Option<&str>,
 ) -> ExprRef {
     ScalarFunction::new(
         TokenizeDecodeFunction {
             tokens_path: tokens_path.to_string(),
             io_config: io_config.map(|x| x.into()),
             pattern: pattern.map(str::to_string),
+            special_tokens: special_tokens.map(str::to_string),
         },
         vec![data],
     )
@@ -55,12 +60,14 @@ pub mod python {
         tokens_path: &str,
         io_config: Option<PyIOConfig>,
         pattern: Option<&str>,
+        special_tokens: Option<&str>,
     ) -> PyResult<PyExpr> {
         Ok(rust_encode(
             expr.into(),
             tokens_path,
             io_config.map(|x| x.config),
             pattern,
+            special_tokens,
         )
         .into())
     }
@@ -71,12 +78,14 @@ pub mod python {
         tokens_path: &str,
         io_config: Option<PyIOConfig>,
         pattern: Option<&str>,
+        special_tokens: Option<&str>,
     ) -> PyResult<PyExpr> {
         Ok(rust_decode(
             expr.into(),
             tokens_path,
             io_config.map(|x| x.config),
             pattern,
+            special_tokens,
         )
         .into())
     }

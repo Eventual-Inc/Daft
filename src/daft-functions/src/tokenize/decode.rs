@@ -31,8 +31,9 @@ fn tokenize_decode_array(
     tokens_path: &str,
     io_config: Option<Arc<IOConfig>>,
     pattern: Option<&str>,
+    special_tokens: Option<&str>,
 ) -> DaftResult<Utf8Array> {
-    let bpe = DaftBPE::new(tokens_path, io_config, pattern)?;
+    let bpe = DaftBPE::new(tokens_path, io_config, pattern, special_tokens)?;
     let offsets = arr.offsets();
     let strs = (0..offsets.len() - 1)
         .map(|i| {
@@ -50,14 +51,17 @@ fn tokenize_decode_series(
     tokens_path: &str,
     io_config: Option<Arc<IOConfig>>,
     pattern: Option<&str>,
+    special_tokens: Option<&str>,
 ) -> DaftResult<Series> {
     match series.data_type() {
-        DataType::List(_) => {
-            Ok(
-                tokenize_decode_array(series.list()?, tokens_path, io_config, pattern)?
-                    .into_series(),
-            )
-        }
+        DataType::List(_) => Ok(tokenize_decode_array(
+            series.list()?,
+            tokens_path,
+            io_config,
+            pattern,
+            special_tokens,
+        )?
+        .into_series()),
         dt => Err(DaftError::TypeError(format!(
             "Tokenize decode not implemented for type {}",
             dt
@@ -70,6 +74,7 @@ pub(super) struct TokenizeDecodeFunction {
     pub(super) tokens_path: String,
     pub(super) io_config: Option<Arc<IOConfig>>,
     pub(super) pattern: Option<String>,
+    pub(super) special_tokens: Option<String>,
 }
 
 #[typetag::serde]
@@ -109,6 +114,7 @@ impl ScalarUDF for TokenizeDecodeFunction {
                 &self.tokens_path,
                 self.io_config.clone(),
                 self.pattern.as_deref(),
+                self.special_tokens.as_deref(),
             ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",

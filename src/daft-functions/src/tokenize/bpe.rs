@@ -13,6 +13,8 @@ use snafu::prelude::*;
 use snafu::Snafu;
 use tiktoken_rs::CoreBPE;
 
+use super::special_tokens::get_special_tokens;
+
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Snafu)]
@@ -52,6 +54,9 @@ pub enum Error {
 
     #[snafu(display("Pattern must be provided for non-builtin token sets"))]
     MissingPattern {},
+
+    #[snafu(display("Provided special token set is not supported: {}", name))]
+    UnsupportedSpecialTokens { name: String },
 }
 
 impl From<Error> for DaftError {
@@ -67,6 +72,7 @@ impl From<Error> for DaftError {
             BadToken { .. } => DaftError::ValueError(err.to_string()),
             Decode { .. } => DaftError::ComputeError(err.to_string()),
             MissingPattern {} => DaftError::ValueError(err.to_string()),
+            UnsupportedSpecialTokens { .. } => DaftError::ValueError(err.to_string()),
         }
     }
 }
@@ -140,7 +146,12 @@ where
         .collect::<DaftResult<HashMap<Vec<u8>, usize, H>>>()
 }
 
-fn get_file_bpe(path: &str, io_config: Arc<IOConfig>, pattern: &str) -> DaftResult<DaftBPE> {
+fn get_file_bpe(
+    path: &str,
+    io_config: Arc<IOConfig>,
+    pattern: &str,
+    special_tokens: Vec<String>,
+) -> DaftResult<DaftBPE> {
     let client = get_io_client(false, io_config)?;
     let runtime = get_runtime(false)?;
     let get_future = client.single_url_get(path.to_string(), None, None);
@@ -150,15 +161,22 @@ fn get_file_bpe(path: &str, io_config: Arc<IOConfig>, pattern: &str) -> DaftResu
 
     let tokens_res = parse_tokens(file_str)?;
     let max_token = *tokens_res.values().max().ok_or(Error::EmptyTokenFile {})?;
-    // TODO: pass in pattern as an argument
-    let core_bpe = CoreBPE::new(tokens_res, HashMap::default(), pattern).map_err(|e| {
+
+    let mut special_hashmap = HashMap::default();
+    let mut special_hashset = HashSet::default();
+    for (i, token) in special_tokens.into_iter().enumerate() {
+        special_hashmap.insert(token, max_token + 1 + i);
+        special_hashset.insert((max_token + 1 + i) as u32);
+    }
+
+    let core_bpe = CoreBPE::new(tokens_res, special_hashmap, pattern).map_err(|e| {
         // e is anyhow::Error and I don't want to add an anyhow dependency
         Error::BPECreation { err: e.into() }
     })?;
     Ok(DaftBPE {
         bpe: core_bpe,
         max_token_id: max_token as u32,
-        specials: HashSet::default(),
+        specials: special_hashset,
     })
 }
 
@@ -167,13 +185,27 @@ impl DaftBPE {
         tokens_path: &str,
         io_config: Option<Arc<IOConfig>>,
         pattern: Option<&str>,
+        special_tokens: Option<&str>,
     ) -> DaftResult<Self> {
         if let Some(bpe) = get_builtin_bpe(tokens_path) {
             return Ok(bpe);
         }
 
+        let special_tokens = if let Some(special_tokens_name) = special_tokens {
+            get_special_tokens(special_tokens_name).ok_or(Error::UnsupportedSpecialTokens {
+                name: special_tokens_name.to_string(),
+            })?
+        } else {
+            Vec::new()
+        };
+
         if let Some(pattern) = pattern {
-            get_file_bpe(tokens_path, io_config.unwrap_or_default(), pattern)
+            get_file_bpe(
+                tokens_path,
+                io_config.unwrap_or_default(),
+                pattern,
+                special_tokens,
+            )
         } else {
             Err(Error::MissingPattern {}.into())
         }
@@ -181,7 +213,7 @@ impl DaftBPE {
 
     // use u32s because surely there won't be tokens > 4 billion...
     pub fn encode(&self, s: &str) -> Vec<u32> {
-        let encode_res = self.bpe.encode_ordinary(s);
+        let encode_res = self.bpe.encode_with_special_tokens(s);
         encode_res.into_iter().map(|x| x as u32).collect()
     }
 

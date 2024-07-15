@@ -131,3 +131,52 @@ def test_tokenize_missing_pattern_fail():
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Pattern must be provided for non-builtin token sets"):
         s.select(col("a").str.tokenize_encode(file_path)).collect()
+
+
+def test_tokenize_llama3_special_tokens():
+    file_path = "tests/assets/tokens/tokens_5k.tiktoken"
+    test_data = [
+        "<|begin_of_text|><|end_of_text|>",
+        "<|reserved_special_token_0|><|reserved_special_token_1|><|reserved_special_token_2|>",
+        "<|reserved_special_token_3|>",
+        "<|start_header_id|><|end_header_id|><|reserved_special_token_4|><|eot_id|>",
+        "<|reserved_special_token_255|><|reserved_special_token_256|>",
+    ]
+    s = daft.from_pydict({"a": test_data})
+    a = s.select(col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="llama3")).to_pydict()["a"]
+    expected = [
+        [5000, 5001],
+        [5002, 5003, 5004],
+        [5005],
+        [5006, 5007, 5008, 5009],
+        [
+            5260,
+            27,
+            91,
+            411,
+            712,
+            276,
+            62,
+            4125,
+            2413,
+            62,
+            83,
+            4233,
+            62,
+            1495,
+            21,
+            91,
+            29,
+        ],
+    ]
+    assert a == expected
+
+
+def test_tokenize_unsupported_special_tokens():
+    file_path = "tests/assets/tokens/tokens_5k.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Provided special token set is not supported"):
+        s.select(
+            col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="thisdoesntexist")
+        ).collect()
