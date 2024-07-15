@@ -28,18 +28,12 @@ use tokio::runtime::RuntimeFlavor;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::stream::BoxStream;
 
 use snafu::Snafu;
 use url::ParseError;
 
 use snafu::prelude::*;
-
-use daft_core::{
-    array::ops::as_arrow::AsArrow,
-    datatypes::{BinaryArray, Utf8Array},
-    DataType, IntoSeries, Series,
-};
 
 use common_error::{DaftError, DaftResult};
 use s3_like::S3LikeSource;
@@ -275,7 +269,7 @@ impl IOClient {
         source.get_size(path.as_ref(), io_stats).await
     }
 
-    async fn single_url_download(
+    pub async fn single_url_download(
         &self,
         index: usize,
         input: Option<String>,
@@ -309,7 +303,7 @@ impl IOClient {
         }
     }
 
-    async fn single_url_upload(
+    pub async fn single_url_upload(
         &self,
         index: usize,
         dest: String,
@@ -498,240 +492,4 @@ pub async fn get_io_pool_num_threads() -> Option<usize> {
     }
 }
 
-pub fn _url_download(
-    array: &Utf8Array,
-    max_connections: usize,
-    raise_error_on_failure: bool,
-    multi_thread: bool,
-    config: Arc<IOConfig>,
-    io_stats: Option<IOStatsRef>,
-) -> DaftResult<BinaryArray> {
-    let urls = array.as_arrow().iter();
-    let name = array.name();
-    ensure!(
-        max_connections > 0,
-        InvalidArgumentSnafu {
-            msg: "max_connections for url_download must be non-zero".to_owned()
-        }
-    );
-
-    let runtime_handle = get_runtime(multi_thread)?;
-    let _rt_guard = runtime_handle.enter();
-    let max_connections = match multi_thread {
-        false => max_connections,
-        true => max_connections * usize::from(std::thread::available_parallelism()?),
-    };
-    let io_client = get_io_client(multi_thread, config)?;
-
-    let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
-        let owned_url = url.map(|s| s.to_string());
-        let owned_client = io_client.clone();
-        let owned_io_stats = io_stats.clone();
-        tokio::spawn(async move {
-            (
-                i,
-                owned_client
-                    .single_url_download(i, owned_url, raise_error_on_failure, owned_io_stats)
-                    .await,
-            )
-        })
-    }))
-    .buffer_unordered(max_connections)
-    .then(async move |r| match r {
-        Ok((i, Ok(v))) => Ok((i, v)),
-        Ok((_i, Err(error))) => Err(error),
-        Err(error) => Err(Error::JoinError { source: error }),
-    });
-
-    let collect_future = fetches.try_collect::<Vec<_>>();
-    let mut results = runtime_handle.block_on(collect_future)?;
-
-    results.sort_by_key(|k| k.0);
-    let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);
-    offsets.push(0);
-    let mut valid = Vec::with_capacity(results.len());
-    valid.reserve(results.len());
-
-    let cap_needed: usize = results
-        .iter()
-        .filter_map(|f| f.1.as_ref().map(|f| f.len()))
-        .sum();
-    let mut data = Vec::with_capacity(cap_needed);
-    for (_, b) in results.into_iter() {
-        match b {
-            Some(b) => {
-                data.extend(b.as_ref());
-                offsets.push(b.len() as i64 + offsets.last().unwrap());
-                valid.push(true);
-            }
-            None => {
-                offsets.push(*offsets.last().unwrap());
-                valid.push(false);
-            }
-        }
-    }
-    Ok(BinaryArray::try_from((name, data, offsets))?
-        .with_validity_slice(valid.as_slice())
-        .unwrap())
-}
-
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-pub fn url_download(
-    series: &Series,
-    max_connections: usize,
-    raise_error_on_failure: bool,
-    multi_thread: bool,
-    config: Arc<IOConfig>,
-    io_stats: Option<IOStatsRef>,
-) -> DaftResult<Series> {
-    match series.data_type() {
-        DataType::Utf8 => Ok(_url_download(
-            series.utf8()?,
-            max_connections,
-            raise_error_on_failure,
-            multi_thread,
-            config,
-            io_stats,
-        )?
-        .into_series()),
-        dt => Err(DaftError::TypeError(format!(
-            "url download not implemented for type {dt}"
-        ))),
-    }
-}
-
-/// Uploads data from a Binary/FixedSizeBinary/Utf8 Series to the provided folder_path
-///
-/// This performs an async upload of each row, and creates in-memory copies of the data that is currently in-flight.
-/// Memory consumption should be tunable by configuring `max_connections`, which tunes the number of in-flight tokio tasks.
-pub fn url_upload(
-    series: &Series,
-    folder_path: &str,
-    max_connections: usize,
-    multi_thread: bool,
-    config: Arc<IOConfig>,
-    io_stats: Option<IOStatsRef>,
-) -> DaftResult<Series> {
-    fn _upload_bytes_to_folder(
-        folder_path: &str,
-        // TODO: We can further optimize this for larger rows by using instead an Iterator<Item = bytes::Bytes>
-        // This would allow us to iteratively copy smaller chunks of data and feed it to the AWS SDKs, instead
-        // of materializing the entire row at once as a single bytes::Bytes.
-        //
-        // Alternatively, we can find a way of creating a `bytes::Bytes` that just references the underlying
-        // arrow2 buffer, without making a copy. This would be the ideal case.
-        bytes_iter: impl Iterator<Item = Option<bytes::Bytes>>,
-        max_connections: usize,
-        multi_thread: bool,
-        config: Arc<IOConfig>,
-        io_stats: Option<IOStatsRef>,
-    ) -> DaftResult<Vec<Option<String>>> {
-        // HACK: Creates folders if running locally. This is a bit of a hack to do it here because we'd rather delegate this to
-        // the appropriate source. However, most sources such as the object stores don't have the concept of "folders".
-        let (source, folder_path) = parse_url(folder_path)?;
-        if matches!(source, SourceType::File) {
-            let local_prefixless_folder_path = match folder_path.strip_prefix("file://") {
-                Some(p) => p,
-                None => folder_path.as_ref(),
-            };
-            std::fs::create_dir_all(local_prefixless_folder_path).with_context(|_| {
-                UnableToCreateDirSnafu {
-                    path: folder_path.as_ref().to_string(),
-                }
-            })?;
-        }
-
-        let runtime_handle = get_runtime(multi_thread)?;
-        let _rt_guard = runtime_handle.enter();
-        let max_connections = match multi_thread {
-            false => max_connections,
-            true => max_connections * usize::from(std::thread::available_parallelism()?),
-        };
-        let io_client = get_io_client(multi_thread, config)?;
-        let folder_path = folder_path.as_ref().trim_end_matches('/');
-
-        let uploads = futures::stream::iter(bytes_iter.enumerate().map(|(i, data)| {
-            let owned_client = io_client.clone();
-            let owned_io_stats = io_stats.clone();
-
-            // TODO: Allow configuration of this path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
-            let path = format!("{}/{}", folder_path, uuid::Uuid::new_v4());
-
-            tokio::spawn(async move {
-                (
-                    i,
-                    owned_client
-                        .single_url_upload(i, path, data, owned_io_stats)
-                        .await,
-                )
-            })
-        }))
-        .buffer_unordered(max_connections)
-        .then(async move |r| match r {
-            Ok((i, Ok(v))) => Ok((i, v)),
-            Ok((_i, Err(error))) => Err(error),
-            Err(error) => Err(Error::JoinError { source: error }),
-        });
-
-        let collect_future = uploads.try_collect::<Vec<_>>();
-        let mut results = runtime_handle.block_on(collect_future)?;
-        results.sort_by_key(|k| k.0);
-
-        Ok(results.into_iter().map(|(_, path)| path).collect())
-    }
-
-    let results = match series.data_type() {
-        DataType::Binary => {
-            let bytes_iter = series
-                .binary()
-                .unwrap()
-                .as_arrow()
-                .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
-            _upload_bytes_to_folder(
-                folder_path,
-                bytes_iter,
-                max_connections,
-                multi_thread,
-                config,
-                io_stats,
-            )
-        }
-        DataType::FixedSizeBinary(..) => {
-            let bytes_iter = series
-                .fixed_size_binary()
-                .unwrap()
-                .as_arrow()
-                .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
-            _upload_bytes_to_folder(
-                folder_path,
-                bytes_iter,
-                max_connections,
-                multi_thread,
-                config,
-                io_stats,
-            )
-        }
-        DataType::Utf8 => {
-            let bytes_iter =
-                series.utf8().unwrap().as_arrow().iter().map(|utf8_slice| {
-                    utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec()))
-                });
-            _upload_bytes_to_folder(
-                folder_path,
-                bytes_iter,
-                max_connections,
-                multi_thread,
-                config,
-                io_stats,
-            )
-        }
-        dt => Err(DaftError::TypeError(format!(
-            "url_upload not implemented for type {dt}"
-        ))),
-    }?;
-
-    Ok(Utf8Array::from_iter(series.name(), results.into_iter()).into_series())
-}

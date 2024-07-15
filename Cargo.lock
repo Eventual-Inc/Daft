@@ -775,7 +775,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -796,7 +796,7 @@ dependencies = [
  "time",
  "tz-rs",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -818,7 +818,7 @@ dependencies = [
  "sha2",
  "time",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -838,7 +838,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -1714,15 +1714,20 @@ dependencies = [
 name = "daft-functions"
 version = "0.2.0-dev0"
 dependencies = [
+ "bytes",
  "common-error",
  "common-io-config",
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "futures",
  "pyo3",
  "pyo3-log",
  "serde",
+ "snafu",
+ "tokio",
  "typetag",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -1746,7 +1751,6 @@ dependencies = [
  "bytes",
  "common-error",
  "common-io-config",
- "daft-core",
  "futures",
  "globset",
  "google-cloud-storage",
@@ -1771,7 +1775,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -5332,9 +5336,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.9.1"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de17fd2f7da591098415cff336e12965a28061ddace43b59cb3c430179c9439"
+checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 dependencies = [
  "getrandom 0.2.10",
  "serde",
