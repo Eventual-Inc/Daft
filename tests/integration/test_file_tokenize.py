@@ -6,7 +6,7 @@ import tiktoken
 import daft
 from daft import col
 
-TOKEN_FILE = "tests/assets/tokens_5k.tiktoken"
+TOKEN_FILE = "tests/assets/tokens/tokens_5k.tiktoken"
 HTTP_TOKEN_FILE = (
     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/tiktoken_testing/p50k_base.tiktoken"
 )

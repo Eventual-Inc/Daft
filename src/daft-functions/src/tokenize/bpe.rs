@@ -1,13 +1,71 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::BuildHasher,
+    num::ParseIntError,
+    str::Utf8Error,
     sync::Arc,
 };
 
-use base64::{engine::general_purpose, Engine};
+use base64::{engine::general_purpose, DecodeError, Engine};
 use common_error::{DaftError, DaftResult};
 use daft_io::{get_io_client, get_runtime, IOConfig};
+use snafu::prelude::*;
+use snafu::Snafu;
 use tiktoken_rs::CoreBPE;
+
+type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display(
+        "Error decoding base 64 token {} with rank {}: {}",
+        token,
+        rank,
+        source
+    ))]
+    Base64Decode {
+        token: String,
+        rank: String,
+        source: DecodeError,
+    },
+
+    #[snafu(display("Error parsing rank number {}: {}", rank, source))]
+    RankNumberParse { rank: String, source: ParseIntError },
+
+    #[snafu(display("Invalid UTF-8 sequence in token file: {}", source))]
+    InvalidUtf8Sequence { source: Utf8Error },
+
+    #[snafu(display("Invalid line in token file: {}", line))]
+    InvalidTokenLine { line: String },
+
+    #[snafu(display("Token file has no tokens"))]
+    EmptyTokenFile {},
+
+    #[snafu(display("Error creating BPE: {}", err))]
+    BPECreation { err: DynError },
+
+    #[snafu(display("Input has bad token {}", token))]
+    BadToken { token: u32 },
+
+    #[snafu(display("Error decoding tokens: {}", err))]
+    Decode { err: DynError },
+}
+
+impl From<Error> for DaftError {
+    fn from(err: Error) -> Self {
+        use Error::*;
+        match err {
+            Base64Decode { .. } => DaftError::ValueError(err.to_string()),
+            RankNumberParse { .. } => DaftError::ValueError(err.to_string()),
+            InvalidUtf8Sequence { .. } => DaftError::ValueError(err.to_string()),
+            InvalidTokenLine { .. } => DaftError::ValueError(err.to_string()),
+            EmptyTokenFile {} => DaftError::ValueError(err.to_string()),
+            BPECreation { .. } => DaftError::ComputeError(err.to_string()),
+            BadToken { .. } => DaftError::ValueError(err.to_string()),
+            Decode { .. } => DaftError::ComputeError(err.to_string()),
+        }
+    }
+}
 
 // Wrapper around a tiktoken-rs CoreBPE for storing token data.
 pub struct DaftBPE {
@@ -57,20 +115,23 @@ where
     H: BuildHasher + Default,
 {
     s.lines()
-        .map(|l| match l.split(' ').collect::<Vec<&str>>()[..2] {
+        .map(|l| match l.split(' ').take(2).collect::<Vec<&str>>()[..] {
             [token, rank] => {
-                let token = general_purpose::STANDARD.decode(token).map_err(|e| {
-                    DaftError::ValueError(format!("Error decoding token {}: {}", token, e))
+                let token = general_purpose::STANDARD.decode(token).with_context(|_| {
+                    Base64DecodeSnafu {
+                        token: token.to_string(),
+                        rank: rank.to_string(),
+                    }
                 })?;
-                let rank: u32 = rank.parse().map_err(|e| {
-                    DaftError::ValueError(format!("Error parsing rank number: {}", e))
+                let rank: u32 = rank.parse().with_context(|_| RankNumberParseSnafu {
+                    rank: rank.to_string(),
                 })?;
                 Ok((token, rank as usize))
             }
-            _ => Err(DaftError::ValueError(format!(
-                "Invalid line in token file: \"{}\"",
-                l
-            ))),
+            _ => Err(Error::InvalidTokenLine {
+                line: l.to_string(),
+            }
+            .into()),
         })
         .collect::<DaftResult<HashMap<Vec<u8>, usize, H>>>()
 }
@@ -81,22 +142,20 @@ fn get_file_bpe(path: &str, io_config: Arc<IOConfig>) -> DaftResult<DaftBPE> {
     let get_future = client.single_url_get(path.to_string(), None, None);
     let get_res = runtime.block_on(get_future)?;
     let file_bytes = runtime.block_on(get_res.bytes())?;
-    let file_str = std::str::from_utf8(&file_bytes).map_err(|e| {
-        DaftError::ValueError(format!("Invalid UTF-8 sequence in token file: {}", e))
-    })?;
+    let file_str = std::str::from_utf8(&file_bytes).with_context(|_| InvalidUtf8SequenceSnafu)?;
 
     let tokens_res = parse_tokens(file_str)?;
-    let max_token = *tokens_res
-        .values()
-        .max()
-        .ok_or(DaftError::ValueError("Tokens file has no tokens".into()))?;
+    let max_token = *tokens_res.values().max().ok_or(Error::EmptyTokenFile {})?;
     // TODO: pass in pattern as an argument
     let core_bpe = CoreBPE::new(
         tokens_res,
         HashMap::default(),
         "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
     )
-    .map_err(|e| DaftError::ComputeError(format!("Error creating BPE: {}", e)))?;
+    .map_err(|e| {
+        // e is anyhow::Error and I don't want to add an anyhow dependency
+        Error::BPECreation { err: e.into() }
+    })?;
     Ok(DaftBPE {
         bpe: core_bpe,
         max_token_id: max_token as u32,
@@ -125,15 +184,12 @@ impl DaftBPE {
             .iter()
             .find(|&&x| x > self.max_token_id || self.specials.contains(&x))
         {
-            Err(DaftError::ValueError(format!(
-                "Input has token that is invalid with this tokenizer: {}",
-                bad_token
-            )))
+            Err(Error::BadToken { token: bad_token }.into())
         } else {
             let casted_tokens = tokens.iter().map(|x| *x as usize).collect::<Vec<usize>>();
             self.bpe
                 .decode(casted_tokens)
-                .map_err(|err| DaftError::ValueError(format!("Failed to decode tokens: {}", err)))
+                .map_err(|err| Error::Decode { err: err.into() }.into())
         }
     }
 }

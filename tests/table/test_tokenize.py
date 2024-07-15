@@ -88,5 +88,37 @@ def test_tokenize_decode_invalid_tokens(encoding: str):
     ]
     for t in test_data:
         s = daft.from_pydict({"a": [t]})
-        with pytest.raises(DaftCoreException):
+        with pytest.raises(DaftCoreException, match="Input has bad token"):
             s.select(col("a").str.tokenize_decode(encoding)).collect()
+
+
+def test_tokenize_base64_fail():
+    file_path = "tests/assets/tokens/bad_base64.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Error decoding base 64 token IGFyZQ= with rank 389"):
+        s.select(col("a").str.tokenize_encode(file_path)).collect()
+
+
+def test_tokenize_rank_parse_fail():
+    file_path = "tests/assets/tokens/bad_rank.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Error parsing rank number 4I5"):
+        s.select(col("a").str.tokenize_encode(file_path)).collect()
+
+
+def test_tokenize_invalid_token_fail():
+    file_path = "tests/assets/tokens/bad_token.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Invalid line in token file"):
+        s.select(col("a").str.tokenize_encode(file_path)).collect()
+
+
+def test_tokenize_empty_file_fail():
+    file_path = "tests/assets/tokens/empty.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Token file has no tokens"):
+        s.select(col("a").str.tokenize_encode(file_path)).collect()
