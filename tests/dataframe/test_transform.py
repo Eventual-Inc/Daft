@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from daft import col
+import daft
 
 
 def add_1(df):
-    return df.with_column("foo", col("foo") + 1)
+    return df.with_column("foo", daft.col("foo") + 1)
 
 
 def multiply_x(df, x):
-    return df.with_column("foo", col("foo") * x)
+    return df.with_column("foo", daft.col("foo") * x)
 
 
 def concat_dfs(df, df_2):
@@ -23,32 +23,26 @@ def invalid_function(df):
 
 def test_transform_no_args(make_df):
     df = make_df({"foo": [1, 2, 3]})
-    with pytest.raises(ValueError):
-        df.transform(add_1)
+    assert df.transform(add_1).to_pydict() == {"foo": [2, 3, 4]}
 
 
 def test_transform_args(make_df):
     df = make_df({"foo": [1, 2, 3]})
-    with pytest.raises(ValueError):
-        df.transform(multiply_x, 2)
+    assert df.transform(multiply_x, 2).to_pydict() == {"foo": [2, 4, 6]}
 
 
 def test_transform_kwargs(make_df):
     df = make_df({"foo": [1, 2, 3]})
-    with pytest.raises(ValueError):
-        df.transform(multiply_x, x=2)
+    assert df.transform(multiply_x, x=2).to_pydict() == {"foo": [2, 4, 6]}
 
 
 def test_transform_multiple_df(make_df):
     df = make_df({"foo": [1, 2, 3]})
     df_2 = make_df({"foo": [4, 5, 6]})
-    with pytest.raises(ValueError):
-        df.transform(concat_dfs, df_2)
+    assert df.transform(concat_dfs, df_2).to_pydict() == {"foo": [1, 2, 3, 4, 5, 6]}
 
 
 def test_transform_negative_case(make_df):
     df = make_df({"foo": [1, 2, 3]})
-    try:
+    with pytest.raises(AssertionError):
         df.transform(invalid_function)
-    except Exception as e:
-        assert "should have been DataFrame" in str(e)
