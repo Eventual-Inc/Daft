@@ -29,9 +29,10 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
 fn tokenize_decode_array(
     arr: &ListArray,
     tokens_path: &str,
-    io_config: Arc<IOConfig>,
+    io_config: Option<Arc<IOConfig>>,
+    pattern: Option<&str>,
 ) -> DaftResult<Utf8Array> {
-    let bpe = DaftBPE::new(tokens_path, io_config)?;
+    let bpe = DaftBPE::new(tokens_path, io_config, pattern)?;
     let offsets = arr.offsets();
     let strs = (0..offsets.len() - 1)
         .map(|i| {
@@ -47,11 +48,15 @@ fn tokenize_decode_array(
 fn tokenize_decode_series(
     series: &Series,
     tokens_path: &str,
-    io_config: Arc<IOConfig>,
+    io_config: Option<Arc<IOConfig>>,
+    pattern: Option<&str>,
 ) -> DaftResult<Series> {
     match series.data_type() {
         DataType::List(_) => {
-            Ok(tokenize_decode_array(series.list()?, tokens_path, io_config)?.into_series())
+            Ok(
+                tokenize_decode_array(series.list()?, tokens_path, io_config, pattern)?
+                    .into_series(),
+            )
         }
         dt => Err(DaftError::TypeError(format!(
             "Tokenize decode not implemented for type {}",
@@ -63,7 +68,8 @@ fn tokenize_decode_series(
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeDecodeFunction {
     pub(super) tokens_path: String,
-    pub(super) io_config: Arc<IOConfig>,
+    pub(super) io_config: Option<Arc<IOConfig>>,
+    pub(super) pattern: Option<String>,
 }
 
 #[typetag::serde]
@@ -98,7 +104,12 @@ impl ScalarUDF for TokenizeDecodeFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => tokenize_decode_series(data, &self.tokens_path, self.io_config.clone()),
+            [data] => tokenize_decode_series(
+                data,
+                &self.tokens_path,
+                self.io_config.clone(),
+                self.pattern.as_deref(),
+            ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()

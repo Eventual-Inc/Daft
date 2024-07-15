@@ -13,6 +13,7 @@ DEFAULT_ENCODINGS = [
     "cl100k_base",
     "o200k_base",
 ]
+P50K_REGEX = "'(?:[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"
 
 
 @pytest.mark.parametrize("encoding", DEFAULT_ENCODINGS)
@@ -97,7 +98,7 @@ def test_tokenize_base64_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Error decoding base 64 token IGFyZQ= with rank 389"):
-        s.select(col("a").str.tokenize_encode(file_path)).collect()
+        s.select(col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_rank_parse_fail():
@@ -105,7 +106,7 @@ def test_tokenize_rank_parse_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Error parsing rank number 4I5"):
-        s.select(col("a").str.tokenize_encode(file_path)).collect()
+        s.select(col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_invalid_token_fail():
@@ -113,7 +114,7 @@ def test_tokenize_invalid_token_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Invalid line in token file"):
-        s.select(col("a").str.tokenize_encode(file_path)).collect()
+        s.select(col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_empty_file_fail():
@@ -121,4 +122,12 @@ def test_tokenize_empty_file_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Token file has no tokens"):
+        s.select(col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
+
+
+def test_tokenize_missing_pattern_fail():
+    file_path = "tests/assets/tokens/tokens_5k.tiktoken"
+    test_data = ["this should fail"]
+    s = daft.from_pydict({"a": test_data})
+    with pytest.raises(DaftCoreException, match="Pattern must be provided for non-builtin token sets"):
         s.select(col("a").str.tokenize_encode(file_path)).collect()

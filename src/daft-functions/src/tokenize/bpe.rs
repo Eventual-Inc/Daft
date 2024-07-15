@@ -49,6 +49,9 @@ pub enum Error {
 
     #[snafu(display("Error decoding tokens: {}", err))]
     Decode { err: DynError },
+
+    #[snafu(display("Pattern must be provided for non-builtin token sets"))]
+    MissingPattern {},
 }
 
 impl From<Error> for DaftError {
@@ -63,6 +66,7 @@ impl From<Error> for DaftError {
             BPECreation { .. } => DaftError::ComputeError(err.to_string()),
             BadToken { .. } => DaftError::ValueError(err.to_string()),
             Decode { .. } => DaftError::ComputeError(err.to_string()),
+            MissingPattern {} => DaftError::ValueError(err.to_string()),
         }
     }
 }
@@ -136,7 +140,7 @@ where
         .collect::<DaftResult<HashMap<Vec<u8>, usize, H>>>()
 }
 
-fn get_file_bpe(path: &str, io_config: Arc<IOConfig>) -> DaftResult<DaftBPE> {
+fn get_file_bpe(path: &str, io_config: Arc<IOConfig>, pattern: &str) -> DaftResult<DaftBPE> {
     let client = get_io_client(false, io_config)?;
     let runtime = get_runtime(false)?;
     let get_future = client.single_url_get(path.to_string(), None, None);
@@ -147,12 +151,7 @@ fn get_file_bpe(path: &str, io_config: Arc<IOConfig>) -> DaftResult<DaftBPE> {
     let tokens_res = parse_tokens(file_str)?;
     let max_token = *tokens_res.values().max().ok_or(Error::EmptyTokenFile {})?;
     // TODO: pass in pattern as an argument
-    let core_bpe = CoreBPE::new(
-        tokens_res,
-        HashMap::default(),
-        "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
-    )
-    .map_err(|e| {
+    let core_bpe = CoreBPE::new(tokens_res, HashMap::default(), pattern).map_err(|e| {
         // e is anyhow::Error and I don't want to add an anyhow dependency
         Error::BPECreation { err: e.into() }
     })?;
@@ -164,12 +163,20 @@ fn get_file_bpe(path: &str, io_config: Arc<IOConfig>) -> DaftResult<DaftBPE> {
 }
 
 impl DaftBPE {
-    pub fn new(tokens_path: &str, io_config: Arc<IOConfig>) -> DaftResult<Self> {
+    pub fn new(
+        tokens_path: &str,
+        io_config: Option<Arc<IOConfig>>,
+        pattern: Option<&str>,
+    ) -> DaftResult<Self> {
         if let Some(bpe) = get_builtin_bpe(tokens_path) {
             return Ok(bpe);
         }
 
-        get_file_bpe(tokens_path, io_config)
+        if let Some(pattern) = pattern {
+            get_file_bpe(tokens_path, io_config.unwrap_or_default(), pattern)
+        } else {
+            Err(Error::MissingPattern {}.into())
+        }
     }
 
     // use u32s because surely there won't be tokens > 4 billion...

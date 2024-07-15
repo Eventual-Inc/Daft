@@ -21,9 +21,10 @@ use crate::tokenize::bpe::DaftBPE;
 fn tokenize_encode_array(
     arr: &Utf8Array,
     tokens_path: &str,
-    io_config: Arc<IOConfig>,
+    io_config: Option<Arc<IOConfig>>,
+    pattern: Option<&str>,
 ) -> DaftResult<ListArray> {
-    let bpe = DaftBPE::new(tokens_path, io_config)?;
+    let bpe = DaftBPE::new(tokens_path, io_config, pattern)?;
 
     let mut flat_child = MutablePrimitiveArray::<u32>::new();
     let mut offsets: Vec<i64> = Vec::with_capacity(arr.len() + 1);
@@ -54,17 +55,19 @@ fn tokenize_encode_array(
 fn tokenize_encode_series(
     series: &Series,
     tokens_path: &str,
-    io_config: Arc<IOConfig>,
+    io_config: Option<Arc<IOConfig>>,
+    pattern: Option<&str>,
 ) -> DaftResult<Series> {
     series.with_utf8_array(|arr| {
-        Ok(tokenize_encode_array(arr, tokens_path, io_config.clone())?.into_series())
+        Ok(tokenize_encode_array(arr, tokens_path, io_config.clone(), pattern)?.into_series())
     })
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeEncodeFunction {
     pub(super) tokens_path: String,
-    pub(super) io_config: Arc<IOConfig>,
+    pub(super) io_config: Option<Arc<IOConfig>>,
+    pub(super) pattern: Option<String>,
 }
 
 #[typetag::serde]
@@ -100,7 +103,12 @@ impl ScalarUDF for TokenizeEncodeFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => tokenize_encode_series(data, &self.tokens_path, self.io_config.clone()),
+            [data] => tokenize_encode_series(
+                data,
+                &self.tokens_path,
+                self.io_config.clone(),
+                self.pattern.as_deref(),
+            ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

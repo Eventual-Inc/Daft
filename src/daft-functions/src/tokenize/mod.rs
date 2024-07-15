@@ -7,22 +7,34 @@ mod bpe;
 mod decode;
 mod encode;
 
-pub fn tokenize_encode(data: ExprRef, tokens_path: &str, io_config: Option<IOConfig>) -> ExprRef {
+pub fn tokenize_encode(
+    data: ExprRef,
+    tokens_path: &str,
+    io_config: Option<IOConfig>,
+    pattern: Option<&str>,
+) -> ExprRef {
     ScalarFunction::new(
         TokenizeEncodeFunction {
             tokens_path: tokens_path.to_string(),
-            io_config: io_config.unwrap_or_default().into(),
+            io_config: io_config.map(|x| x.into()),
+            pattern: pattern.map(str::to_string),
         },
         vec![data],
     )
     .into()
 }
 
-pub fn tokenize_decode(data: ExprRef, tokens_path: &str, io_config: Option<IOConfig>) -> ExprRef {
+pub fn tokenize_decode(
+    data: ExprRef,
+    tokens_path: &str,
+    io_config: Option<IOConfig>,
+    pattern: Option<&str>,
+) -> ExprRef {
     ScalarFunction::new(
         TokenizeDecodeFunction {
             tokens_path: tokens_path.to_string(),
-            io_config: io_config.unwrap_or_default().into(),
+            io_config: io_config.map(|x| x.into()),
+            pattern: pattern.map(str::to_string),
         },
         vec![data],
     )
@@ -42,8 +54,15 @@ pub mod python {
         expr: PyExpr,
         tokens_path: &str,
         io_config: Option<PyIOConfig>,
+        pattern: Option<&str>,
     ) -> PyResult<PyExpr> {
-        Ok(rust_encode(expr.into(), tokens_path, io_config.map(|x| x.config)).into())
+        Ok(rust_encode(
+            expr.into(),
+            tokens_path,
+            io_config.map(|x| x.config),
+            pattern,
+        )
+        .into())
     }
 
     #[pyfunction]
@@ -51,7 +70,14 @@ pub mod python {
         expr: PyExpr,
         tokens_path: &str,
         io_config: Option<PyIOConfig>,
+        pattern: Option<&str>,
     ) -> PyResult<PyExpr> {
-        Ok(rust_decode(expr.into(), tokens_path, io_config.map(|x| x.config)).into())
+        Ok(rust_decode(
+            expr.into(),
+            tokens_path,
+            io_config.map(|x| x.config),
+            pattern,
+        )
+        .into())
     }
 }

@@ -2542,7 +2542,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
 
-    def tokenize_encode(self, tokens_path: str, *, io_config: IOConfig | None = None) -> Expression:
+    def tokenize_encode(
+        self,
+        tokens_path: str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: str | None = None,
+    ) -> Expression:
         """Encodes each string as a list of integer tokens using a tokenizer.
 
         Uses https://github.com/openai/tiktoken for tokenization.
@@ -2557,9 +2563,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
         """
-        return Expression._from_pyexpr(_tokenize_encode(self._expr, tokens_path, io_config))
+        return Expression._from_pyexpr(_tokenize_encode(self._expr, tokens_path, io_config, pattern))
 
-    def tokenize_decode(self, tokens_path: str, io_config: IOConfig | None = None) -> Expression:
+    def tokenize_decode(
+        self,
+        tokens_path: str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: str | None = None,
+    ) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
         Uses https://github.com/openai/tiktoken for tokenization.
@@ -2574,7 +2586,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with decoded strings.
         """
-        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config))
+        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
