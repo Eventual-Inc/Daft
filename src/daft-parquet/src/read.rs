@@ -237,7 +237,7 @@ async fn read_parquet_single_into_arrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
+) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize)> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
@@ -303,14 +303,14 @@ async fn read_parquet_single_into_arrow(
 
     let len_per_col = all_arrays
         .iter()
-        .map(|v| v.iter().map(|a| a.len()).sum())
+        .map(|v| v.iter().map(|a| a.len()).sum::<usize>())
         .collect::<Vec<_>>();
     let all_same_size = len_per_col.windows(2).all(|w| w[0] == w[1]);
     if !all_same_size {
         return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.into() }.into());
     }
 
-    let table_len = *len_per_col.first().unwrap_or(&num_rows_read);
+    let table_len = num_rows_read;
     let table_ncol = all_arrays.len();
 
     if let Some(row_groups) = &row_groups {
@@ -369,7 +369,7 @@ async fn read_parquet_single_into_arrow(
         .into());
     }
 
-    Ok((schema, all_arrays))
+    Ok((schema, all_arrays, table_len))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -405,7 +405,7 @@ pub fn read_parquet(
     })
 }
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
-pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>);
+pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,

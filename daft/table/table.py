@@ -594,7 +594,7 @@ def read_parquet_into_pyarrow(
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     file_timeout_ms: int | None = 900_000,  # 15 minutes
 ) -> pa.Table:
-    fields, metadata, columns = _read_parquet_into_pyarrow(
+    fields, metadata, columns, num_rows_read = _read_parquet_into_pyarrow(
         uri=path,
         columns=columns,
         start_offset=start_offset,
@@ -607,7 +607,12 @@ def read_parquet_into_pyarrow(
     )
     schema = pa.schema(fields, metadata=metadata)
     columns = [pa.chunked_array(c, type=f.type) for f, c in zip(schema, columns)]  # type: ignore
-    return pa.table(columns, schema=schema)
+
+    if columns:
+        return pa.table(columns, schema=schema)
+    else:
+        # If data contains no columns, we return an empty table with the appropriate size using `Table.drop`
+        return pa.table({"dummy_column": pa.array([None] * num_rows_read)}).drop("dummy_column")
 
 
 def read_parquet_into_pyarrow_bulk(

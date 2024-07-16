@@ -58,11 +58,17 @@ pub mod pylib {
     }
     type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
     type PyArrowFields = Vec<pyo3::PyObject>;
-    type PyArrowParquetType = (PyArrowFields, BTreeMap<String, String>, PyArrowChunks);
+    type PyArrowParquetType = (
+        PyArrowFields,
+        BTreeMap<String, String>,
+        PyArrowChunks,
+        usize,
+    );
     fn convert_pyarrow_parquet_read_result_into_py(
         py: Python,
         schema: arrow2::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
+        num_rows: usize,
         pyarrow: &PyModule,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
@@ -79,7 +85,7 @@ pub mod pylib {
             .map(|f| field_to_py(f, py, pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
-        Ok((fields, metadata.clone(), converted_arrays))
+        Ok((fields, metadata.clone(), converted_arrays, num_rows))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -120,9 +126,9 @@ pub mod pylib {
                 file_timeout_ms,
             )
         })?;
-        let (schema, all_arrays) = read_parquet_result;
+        let (schema, all_arrays, num_rows) = read_parquet_result;
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, pyarrow)
+        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
@@ -211,8 +217,8 @@ pub mod pylib {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         parquet_read_results
             .into_iter()
-            .map(|(s, all_arrays)| {
-                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, pyarrow)
+            .map(|(s, all_arrays, num_rows)| {
+                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows, pyarrow)
             })
             .collect::<PyResult<Vec<_>>>()
     }
