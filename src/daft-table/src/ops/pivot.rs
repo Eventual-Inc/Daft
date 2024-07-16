@@ -125,6 +125,10 @@ impl Table {
             let indices_as_series = UInt64Array::from(("", group_keys_indices)).into_series();
             groupby_table.take(&indices_as_series)?
         };
-        Self::from_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())
+
+        Self::from_columns(
+            [&group_keys_table.columns[..], &pivoted_cols[..]].concat(),
+            group_keys_table.len(),
+        )
     }
 }

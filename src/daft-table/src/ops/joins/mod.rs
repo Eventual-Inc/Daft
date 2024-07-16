@@ -38,7 +38,10 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
             )));
         }
     }
-    Ok((Table::from_columns(lseries)?, Table::from_columns(rseries)?))
+    Ok((
+        Table::from_columns(lseries, left.len())?,
+        Table::from_columns(rseries, right.len())?,
+    ))
 }
 
 pub fn infer_join_schema(

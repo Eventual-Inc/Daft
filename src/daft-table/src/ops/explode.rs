@@ -97,6 +97,6 @@ impl Table {
             }
         }
         new_series.extend_from_slice(exploded_columns.as_slice());
-        Self::from_columns(new_series)
+        Self::from_columns(new_series, capacity_expected)
     }
 }

@@ -36,25 +36,37 @@ pub struct Table {
 }
 
 impl Table {
+    /// Create a new [`Table`]
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - Expected [`Schema`] of the new [`Table`], used for validation
+    /// * `columns` - Columns to crate a table from as [`Series`] objects
+    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty and also for broadcasting and validation
     pub fn new<S: Into<SchemaRef>>(
         schema: S,
         columns: Vec<Series>,
         num_rows: usize,
     ) -> DaftResult<Self> {
+        // Validate schema
         let schema: SchemaRef = schema.into();
         if schema.fields.len() != columns.len() {
             return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
         }
-
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
             }
+        }
+
+        // Validate Series lengths against provided num_rows
+        for (field, series) in schema.fields.values().zip(columns.iter()) {
             if (series.len() != 1) && (series.len() != num_rows) {
                 return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
             }
         }
 
+        // Broadcast any unit-length Series
         let columns: DaftResult<Vec<Series>> = columns
             .into_iter()
             .map(|s| {
@@ -86,38 +98,23 @@ impl Table {
     }
 
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
-        match schema {
-            Some(schema) => {
-                let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
-                for (field_name, field) in schema.fields.iter() {
-                    let series = Series::empty(field_name, &field.dtype);
-                    columns.push(series)
-                }
-                Table::new(schema, columns, 0)
-            }
-            None => Self::new(Schema::empty(), vec![], 0),
+        let schema = schema.unwrap_or_else(|| Schema::empty().into());
+        let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
+        for (field_name, field) in schema.fields.iter() {
+            let series = Series::empty(field_name, &field.dtype);
+            columns.push(series)
         }
+        Ok(Table::new_unchecked(schema, columns, 0))
     }
 
-    pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
-        let fields = columns.iter().map(|s| s.field().clone()).collect();
-        let schema = Schema::new(fields)?;
-
-        let num_rows = if columns.is_empty() {
-            // Size of the table is 0 if no columns provided
-            0
-        } else if columns.iter().all(|s| s.len() == 1) {
-            // Size of the table is 1 if all columns have length 1
-            1
-        } else {
-            // Size of the table is the first non-len-1 column
-            columns
-                .iter()
-                .filter_map(|s| if s.len() != 1 { Some(s.len()) } else { None })
-                .next()
-                .unwrap()
-        };
-
+    /// Create a Table from a set of columns
+    ///
+    /// # Arguments
+    ///
+    /// * `columns` - Columns to crate a table from as [`Series`] objects
+    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty and also for broadcasting and validation
+    pub fn from_columns(columns: Vec<Series>, num_rows: usize) -> DaftResult<Self> {
+        let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         Table::new(schema, columns, num_rows)
     }
 
@@ -198,7 +195,8 @@ impl Table {
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
         let id_series = UInt64Array::from((column_name, ids)).into_series();
-        Self::from_columns([&[id_series], &self.columns[..]].concat())
+        let num_rows = id_series.len();
+        Self::from_columns([&[id_series], &self.columns[..]].concat(), num_rows)
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {

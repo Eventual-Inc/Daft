@@ -62,7 +62,10 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        Self::from_columns(
+            [&groupkeys_table.columns[..], &grouped_cols].concat(),
+            groupkeys_table.len(),
+        )
     }
 
     #[cfg(feature = "python")]
@@ -137,7 +140,7 @@ impl Table {
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Combine the broadcasted group keys into a Table
-                        Table::from_columns(broacasted_groupkeys)?
+                        Table::from_columns(broacasted_groupkeys, evaluated_grouped_col.len())?
                     };
 
                     Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
@@ -153,6 +156,9 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        Self::from_columns([&groupkeys_table.columns[..], &[grouped_col]].concat())
+        Self::from_columns(
+            [&groupkeys_table.columns[..], &[grouped_col]].concat(),
+            groupkeys_table.len(),
+        )
     }
 }
