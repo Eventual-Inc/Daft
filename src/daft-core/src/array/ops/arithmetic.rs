@@ -216,20 +216,32 @@ where
     let lhs_len = lhs.len();
     let rhs_len = rhs.len();
 
-    let result_child = match (lhs_len, rhs_len) {
-        (a, b) if a == b => kernel(lhs_child, rhs_child),
-        // broadcast right path
-        (_, 1) => kernel(lhs_child, &rhs_child.repeat(lhs_len)?),
-        (1, _) => kernel(&lhs_child.repeat(lhs_len)?, rhs_child),
+    let (result_child, validity) = match (lhs_len, rhs_len) {
+        (a, b) if a == b => Ok((
+            kernel(lhs_child, rhs_child)?,
+            crate::utils::arrow::arrow_bitmap_and_helper(lhs.validity(), rhs.validity()),
+        )),
+        (l, 1) => {
+            let validity = if rhs.is_valid(0) {
+                lhs.validity().cloned()
+            } else {
+                Some(arrow2::bitmap::Bitmap::new_zeroed(l))
+            };
+            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
+        }
+        (1, r) => {
+            let validity = if lhs.is_valid(0) {
+                rhs.validity().cloned()
+            } else {
+                Some(arrow2::bitmap::Bitmap::new_zeroed(r))
+            };
+            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
+        }
         (a, b) => Err(DaftError::ValueError(format!(
             "Cannot apply operation on arrays of different lengths: {a} vs {b}"
         ))),
     }?;
 
-    let validity = crate::utils::arrow::arrow_bitmap_and_helper_with_broadcasting(
-        lhs.validity(),
-        rhs.validity(),
-    );
     let result_field = Field::new(
         lhs.name(),
         DataType::FixedSizeList(
