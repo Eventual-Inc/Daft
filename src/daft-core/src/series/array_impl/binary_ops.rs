@@ -237,6 +237,9 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
             #[cfg(feature = "python")]
             Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
             Float64 => cast_downcast_op_into_series!(lhs, rhs, &Float64, Float64Array, div),
+            output_type if output_type.is_fixed_size_numeric() => {
+                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, div)
+            }
             _ => binary_op_unimplemented!(lhs, "/", rhs, output_type),
         }
     }
