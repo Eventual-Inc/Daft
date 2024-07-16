@@ -358,6 +358,7 @@ pub mod pylib {
                     metadata: None,
                     partition_spec: Some(pspec),
                     statistics,
+                    parquet_metadata: None,
                 },
                 Some(tm) => DataFileSource::CatalogDataFile {
                     path: file,
