@@ -235,12 +235,6 @@ impl ParquetReaderBuilder {
         for col_name in columns {
             if avail_names.contains(col_name.as_ref()) {
                 names_to_keep.insert(col_name.to_string());
-            } else {
-                return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
-                    path: self.uri,
-                });
             }
         }
         self.selected_columns = Some(names_to_keep);

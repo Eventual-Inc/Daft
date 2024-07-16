@@ -21,7 +21,6 @@ use rayon::iter::ParallelIterator;
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,
     columns: Option<&[String]>,
-    uri: &str,
 ) -> super::Result<arrow2::datatypes::Schema> {
     if let Some(columns) = columns {
         let avail_names = schema
@@ -33,12 +32,6 @@ fn prune_fields_from_schema(
         for col_name in columns {
             if avail_names.contains(col_name.as_str()) {
                 names_to_keep.insert(col_name.to_string());
-            } else {
-                return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
-                    path: uri.to_string(),
-                });
             }
         }
         Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
@@ -96,7 +89,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
-    let schema = prune_fields_from_schema(schema, columns, uri)?;
+    let schema = prune_fields_from_schema(schema, columns)?;
     let daft_schema =
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),

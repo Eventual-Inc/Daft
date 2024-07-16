@@ -60,3 +60,29 @@ def test_minio_parquet_ignore_marker_files(minio_io_config):
 
         read = daft.read_parquet(f"s3://{bucket_name}/**", io_config=minio_io_config)
         assert read.to_pydict() == {"x": [1, 2, 3, 4] * 3}
+
+
+@pytest.mark.integration()
+def test_minio_parquet_read_mismatched_schemas(minio_io_config):
+    # When we read files, we infer schema from the first file
+    # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
+    # that don't exist
+    bucket_name = "data-engineering-prod"
+    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+        data_0 = pa.Table.from_pydict({"x": [1, 2, 3, 4]})
+        pq.write_table(data_0, f"s3://{bucket_name}/data_0.parquet", filesystem=fs)
+        data_1 = pa.Table.from_pydict({"y": [1, 2, 3, 4]})
+        pq.write_table(data_1, f"s3://{bucket_name}/data_1.parquet", filesystem=fs)
+
+        df = daft.read_parquet(
+            [f"s3://{bucket_name}/data_0.parquet", f"s3://{bucket_name}/data_1.parquet"], io_config=minio_io_config
+        )
+        assert df.schema().column_names() == ["x"]
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+
+        df = daft.read_parquet(
+            [f"s3://{bucket_name}/data_0.parquet", f"s3://{bucket_name}/data_1.parquet"], io_config=minio_io_config
+        )
+        df = df.select("x")  # Applies column selection pushdown on each read
+        assert df.schema().column_names() == ["x"]
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
