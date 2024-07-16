@@ -20,7 +20,7 @@ impl ScalarUDF for MinHashFunction {
     }
 
     fn name(&self) -> &'static str {
-        "hash"
+        "minhash"
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
