@@ -725,15 +725,12 @@ pub fn read_parquet_statistics(
         )),
     ));
 
-    Table::from_columns(
-        vec![
-            uris.clone(),
-            row_count_series.into_series(),
-            row_group_series.into_series(),
-            version_series.into_series(),
-        ],
-        uris.len(),
-    )
+    Table::from_nonempty_columns(vec![
+        uris.clone(),
+        row_count_series.into_series(),
+        row_group_series.into_series(),
+        version_series.into_series(),
+    ])
 }
 
 #[cfg(test)]

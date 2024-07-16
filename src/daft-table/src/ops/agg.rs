@@ -62,10 +62,7 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_columns(
-            [&groupkeys_table.columns[..], &grouped_cols].concat(),
-            groupkeys_table.len(),
-        )
+        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
     #[cfg(feature = "python")]
@@ -133,14 +130,14 @@ impl Table {
                         let groupkeys_table = groupby_table.take(&groupkey_indices_as_series)?;
 
                         // Broadcast the group keys to the length of the grouped column, because output of UDF can be more than one row
-                        let broacasted_groupkeys = groupkeys_table
+                        let broadcasted_groupkeys = groupkeys_table
                             .columns
                             .iter()
                             .map(|c| c.broadcast(evaluated_grouped_col.len()))
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Combine the broadcasted group keys into a Table
-                        Table::from_columns(broacasted_groupkeys, evaluated_grouped_col.len())?
+                        Table::from_nonempty_columns(broadcasted_groupkeys)?
                     };
 
                     Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
@@ -156,10 +153,6 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        let num_rows = grouped_col.len();
-        Self::from_columns(
-            [&groupkeys_table.columns[..], &[grouped_col]].concat(),
-            num_rows,
-        )
+        Self::from_nonempty_columns([&groupkeys_table.columns[..], &[grouped_col]].concat())
     }
 }

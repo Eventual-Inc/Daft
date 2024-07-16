@@ -35,34 +35,42 @@ pub struct Table {
     num_rows: usize,
 }
 
+#[inline]
+fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
+    if schema.fields.len() != columns.len() {
+        return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
+    }
+    for (field, series) in schema.fields.values().zip(columns.iter()) {
+        if field != series.field() {
+            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
+        }
+    }
+    Ok(())
+}
+
 impl Table {
-    /// Create a new [`Table`]
+    /// Create a new [`Table`] and handle broadcasting of any unit-length columns
+    ///
+    /// Note that this function is slow. You might instead be looking for [`Table::new_with_size`] which does not perform broadcasting
+    /// or [`Table::new_unchecked`] if you've already performed your own validation logic.
     ///
     /// # Arguments
     ///
     /// * `schema` - Expected [`Schema`] of the new [`Table`], used for validation
     /// * `columns` - Columns to crate a table from as [`Series`] objects
-    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty and also for broadcasting and validation
-    pub fn new<S: Into<SchemaRef>>(
+    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty
+    pub fn new_with_broadcast<S: Into<SchemaRef>>(
         schema: S,
         columns: Vec<Series>,
         num_rows: usize,
     ) -> DaftResult<Self> {
-        // Validate schema
         let schema: SchemaRef = schema.into();
-        if schema.fields.len() != columns.len() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
-        }
-        for (field, series) in schema.fields.values().zip(columns.iter()) {
-            if field != series.field() {
-                return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
-            }
-        }
+        _validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
             }
         }
 
@@ -78,13 +86,42 @@ impl Table {
             })
             .collect();
 
-        Ok(Table {
-            schema,
-            columns: columns?,
-            num_rows,
-        })
+        Ok(Table::new_unchecked(schema, columns?, num_rows))
     }
 
+    /// Create a new [`Table`] and validate against `num_rows`
+    ///
+    /// Note that this function is slow. You might instead be looking for [`Table::new_unchecked`] if you've already performed your own validation logic.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - Expected [`Schema`] of the new [`Table`], used for validation
+    /// * `columns` - Columns to crate a table from as [`Series`] objects
+    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty
+    pub fn new_with_size<S: Into<SchemaRef>>(
+        schema: S,
+        columns: Vec<Series>,
+        num_rows: usize,
+    ) -> DaftResult<Self> {
+        let schema: SchemaRef = schema.into();
+        _validate_schema(schema.as_ref(), columns.as_slice())?;
+
+        // Validate Series lengths against provided num_rows
+        for (field, series) in schema.fields.values().zip(columns.iter()) {
+            if series.len() != num_rows {
+                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
+            }
+        }
+
+        Ok(Table::new_unchecked(schema, columns, num_rows))
+    }
+
+    /// Create a new [`Table`] without any validations
+    ///
+    /// WARNING: be sure that your data is valid, or this might cause downstream problems such as segfaults!
+    ///
+    /// This constructor is meant to be used from code that needs very fast performance (e.g. I/O code) and
+    /// already does its own validations.
     pub fn new_unchecked<S: Into<SchemaRef>>(
         schema: S,
         columns: Vec<Series>,
@@ -107,15 +144,34 @@ impl Table {
         Ok(Table::new_unchecked(schema, columns, 0))
     }
 
-    /// Create a Table from a set of columns
+    /// Create a Table from a set of columns.
+    ///
+    /// Note: `columns` cannot be empty (will panic if so.) and must all have the same length.
     ///
     /// # Arguments
     ///
     /// * `columns` - Columns to crate a table from as [`Series`] objects
-    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty and also for broadcasting and validation
-    pub fn from_columns(columns: Vec<Series>, num_rows: usize) -> DaftResult<Self> {
+    pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
+        if columns.is_empty() {
+            panic!("Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
+        }
+
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
-        Table::new(schema, columns, num_rows)
+        let schema: SchemaRef = schema.into();
+        _validate_schema(schema.as_ref(), columns.as_slice())?;
+
+        // Infer the num_rows, assume no broadcasting
+        let mut num_rows = 0;
+        for (field, series) in schema.fields.values().zip(columns.iter()) {
+            if num_rows == 0 && !series.is_empty() {
+                num_rows = series.len();
+            }
+            if series.len() != num_rows {
+                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred Table length: {}", field.name, series.len(), num_rows)));
+            }
+        }
+
+        Ok(Table::new_unchecked(schema, columns, num_rows))
     }
 
     pub fn num_columns(&self) -> usize {
@@ -138,12 +194,16 @@ impl Table {
         let new_series: DaftResult<Vec<_>> =
             self.columns.iter().map(|s| s.slice(start, end)).collect();
         let new_num_rows = self.len().min(end - start);
-        Table::new(self.schema.clone(), new_series?, new_num_rows)
+        Table::new_with_size(self.schema.clone(), new_series?, new_num_rows)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
-            return Table::new(self.schema.clone(), self.columns.clone(), self.len());
+            return Ok(Table::new_unchecked(
+                self.schema.clone(),
+                self.columns.clone(),
+                self.len(),
+            ));
         }
         self.slice(0, num)
     }
@@ -195,8 +255,7 @@ impl Table {
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
         let id_series = UInt64Array::from((column_name, ids)).into_series();
-        let num_rows = id_series.len();
-        Self::from_columns([&[id_series], &self.columns[..]].concat(), num_rows)
+        Self::from_nonempty_columns([&[id_series], &self.columns[..]].concat())
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
@@ -278,12 +337,12 @@ impl Table {
             mask.len() - num_filtered
         };
 
-        Table::new(self.schema.clone(), new_series?, num_rows)
+        Table::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Table::new(self.schema.clone(), new_series?, idx.len())
+        Table::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
 
     pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
@@ -316,7 +375,7 @@ impl Table {
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
 
-        Table::new(
+        Table::new_with_size(
             first_table.schema.clone(),
             new_series,
             tables.iter().map(|t| t.as_ref().len()).sum(),
@@ -333,7 +392,7 @@ impl Table {
             .iter()
             .map(|s| self.get_column(s).cloned())
             .collect::<DaftResult<Vec<_>>>()?;
-        Self::new(
+        Self::new_with_size(
             Schema::new(series_by_name.iter().map(|s| s.field().clone()).collect())?,
             series_by_name,
             self.len(),
@@ -510,7 +569,7 @@ impl Table {
             (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
-        Table::new(new_schema, result_series, num_rows)
+        Table::new_with_broadcast(new_schema, result_series, num_rows)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -520,7 +579,7 @@ impl Table {
             .map(|s| s.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
         let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect())?;
-        Table::new(new_schema, new_series, self.len())
+        Table::new_with_size(new_schema, new_series, self.len())
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
@@ -682,7 +741,7 @@ mod test {
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
         ])?;
-        let table = Table::new(schema, vec![a, b], 3)?;
+        let table = Table::from_nonempty_columns(vec![a, b])?;
         let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);

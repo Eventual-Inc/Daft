@@ -163,7 +163,7 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new(
+    Table::new_with_size(
         first_table.schema.clone(),
         new_series,
         tables.iter().map(|t| t.len()).sum(),

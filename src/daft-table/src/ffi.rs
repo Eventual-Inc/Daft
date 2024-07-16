@@ -50,7 +50,7 @@ pub fn record_batches_to_table(
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
             let num_rows = columns.first().map_or(0, |first_series| first_series.len());
-            tables.push(Table::from_columns(columns, num_rows)?)
+            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?)
         }
         Ok(Table::concat(tables.as_slice())?)
     })

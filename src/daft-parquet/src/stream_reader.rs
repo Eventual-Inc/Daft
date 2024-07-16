@@ -226,7 +226,7 @@ pub(crate) async fn local_parquet_read_async(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((
                 metadata,
-                Table::new(
+                Table::new_with_size(
                     Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
                     converted_arrays,
                     num_rows_read,

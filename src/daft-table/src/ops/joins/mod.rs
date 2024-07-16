@@ -39,8 +39,8 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
         }
     }
     Ok((
-        Table::from_columns(lseries, left.len())?,
-        Table::from_columns(rseries, right.len())?,
+        Table::from_nonempty_columns(lseries)?,
+        Table::from_nonempty_columns(rseries)?,
     ))
 }
 
@@ -302,6 +302,6 @@ impl Table {
         join_series =
             add_non_join_key_columns(self, right, lidx, ridx, left_on, right_on, join_series)?;
 
-        Table::new(join_schema, join_series, num_rows)
+        Table::new_with_size(join_schema, join_series, num_rows)
     }
 }

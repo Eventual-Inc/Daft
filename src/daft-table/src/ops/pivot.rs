@@ -126,9 +126,6 @@ impl Table {
             groupby_table.take(&indices_as_series)?
         };
 
-        Self::from_columns(
-            [&group_keys_table.columns[..], &pivoted_cols[..]].concat(),
-            group_keys_table.len(),
-        )
+        Self::from_nonempty_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())
     }
 }

@@ -445,7 +445,7 @@ impl PyTable {
         }
 
         Ok(PyTable {
-            table: Table::new(Schema::new(fields)?, columns, num_rows)?,
+            table: Table::new_with_broadcast(Schema::new(fields)?, columns, num_rows)?,
         })
     }
 
