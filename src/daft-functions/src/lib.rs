@@ -13,6 +13,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
+    parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine))?;
 
     Ok(())
 }

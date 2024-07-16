@@ -163,6 +163,11 @@ class Expression:
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
+    
+    @property
+    def embedding(self) -> ExpressionEmbeddingNamespace:
+        """Access methods that work on columns of embeddings"""
+        return ExpressionEmbeddingNamespace.from_expression(self)
 
     @property
     def float(self) -> ExpressionFloatNamespace:
