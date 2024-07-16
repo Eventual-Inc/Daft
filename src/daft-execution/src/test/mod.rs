@@ -20,6 +20,7 @@ pub(crate) fn mock_scan_task() -> ScanTask {
             metadata: None,
             partition_spec: None,
             statistics: None,
+            parquet_metadata: None,
         }],
         FileFormatConfig::Json(Default::default()).into(),
         Schema::empty().into(),
