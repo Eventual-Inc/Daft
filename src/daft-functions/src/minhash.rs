@@ -13,13 +13,6 @@ pub(super) struct MinHashFunction {
     seed: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct MinHashExpr {
-    num_hashes: usize,
-    ngram_size: usize,
-    seed: u32,
-}
-
 #[typetag::serde]
 impl ScalarUDF for MinHashFunction {
     fn as_any(&self) -> &dyn std::any::Any {
