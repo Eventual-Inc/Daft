@@ -208,8 +208,11 @@ async fn read_parquet_single(
         metadata_num_columns
     };
 
-    if (!field_id_mapping_provided && table.num_columns() != expected_num_columns)
+    if (!field_id_mapping_provided
+        && requested_columns.is_none()
+        && table.num_columns() != expected_num_columns)
         || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
+        || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
     {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),
@@ -354,8 +357,9 @@ async fn read_parquet_single_into_arrow(
         metadata_num_columns
     };
 
-    if (!field_id_mapping_provided && table_ncol != expected_num_columns)
+    if (!field_id_mapping_provided && columns.is_none() && table_ncol != expected_num_columns)
         || (field_id_mapping_provided && table_ncol > expected_num_columns)
+        || (columns.is_some() && table_ncol > expected_num_columns)
     {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),

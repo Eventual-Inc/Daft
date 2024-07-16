@@ -220,24 +220,8 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn parquet_schema(&self) -> &parquet2::metadata::SchemaDescriptor {
-        self.metadata().schema()
-    }
-
     pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        let avail_names = self
-            .parquet_schema()
-            .fields()
-            .iter()
-            .map(|f| f.name())
-            .collect::<HashSet<_>>();
-        let mut names_to_keep = HashSet::new();
-        for col_name in columns {
-            if avail_names.contains(col_name.as_ref()) {
-                names_to_keep.insert(col_name.to_string());
-            }
-        }
-        self.selected_columns = Some(names_to_keep);
+        self.selected_columns = Some(HashSet::from_iter(columns.iter().map(|s| s.to_string())));
         Ok(self)
     }
 
@@ -280,6 +264,7 @@ impl ParquetReaderBuilder {
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
+
         let daft_schema =
             Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
                 path: self.uri.to_string(),
