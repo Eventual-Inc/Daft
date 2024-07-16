@@ -13,7 +13,6 @@ arrow2 = {workspace = true, features = [
   "compute_concatenate",
   "io_ipc"
 ]}
-bincode = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
@@ -28,7 +27,6 @@ itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
-serde_json = {workspace = true}
 snafu = {workspace = true}
 terminal_size = {version = "0.3.0"}
 textwrap = {version = "0.16.1"}

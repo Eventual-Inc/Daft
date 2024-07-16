@@ -1,5 +1,4 @@
 [dependencies]
-bincode = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}

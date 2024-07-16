@@ -59,6 +59,9 @@ name = "daft"
 publish = false
 version = "0.2.0-dev0"
 
+[package.metadata.cargo-machete]
+ignored = ["lzma_sys"]
+
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
 parquet2 = {path = "src/parquet2"}

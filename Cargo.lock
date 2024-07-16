@@ -1216,7 +1216,6 @@ version = "0.2.0-dev0"
 dependencies = [
  "bincode",
  "common-io-config",
- "lazy_static",
  "pyo3",
  "serde",
 ]
@@ -1266,7 +1265,6 @@ name = "common-treenode"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
- "pyo3",
 ]
 
 [[package]]
@@ -1581,7 +1579,6 @@ dependencies = [
  "common-error",
  "daft-minhash",
  "daft-sketch",
- "dyn-clone",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
@@ -1600,7 +1597,6 @@ dependencies = [
  "num-traits",
  "numpy",
  "pyo3",
- "rand 0.8.5",
  "regex",
  "serde",
  "serde_json",
@@ -1617,10 +1613,6 @@ dependencies = [
  "async-compat",
  "async-compression",
  "async-stream",
- "bincode",
- "bytes",
- "chrono",
- "chrono-tz",
  "common-error",
  "csv-async",
  "daft-compression",
@@ -1630,16 +1622,12 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
- "lexical-core",
- "log",
  "pyo3",
  "rayon",
  "rstest",
  "serde",
- "simdutf8",
  "snafu",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "url",
 ]
@@ -1649,32 +1637,22 @@ name = "daft-decoding"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "async-compression",
  "atoi_simd",
  "chrono",
- "chrono-tz",
  "csv-async",
  "fast-float",
  "simdutf8",
- "tokio",
- "url",
 ]
 
 [[package]]
 name = "daft-dsl"
 version = "0.2.0-dev0"
 dependencies = [
- "bincode",
  "common-error",
- "common-io-config",
  "common-treenode",
  "daft-core",
  "daft-sketch",
- "dashmap",
- "erased-serde",
- "indexmap 2.2.6",
  "itertools 0.11.0",
- "lazy_static",
  "pyo3",
  "serde",
  "serde_json",
@@ -1737,7 +1715,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-sig-auth",
- "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-client",
  "azure_core",
@@ -1763,14 +1740,11 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "reqwest",
- "serde",
- "serde_json",
  "snafu",
  "tempfile",
  "tokio",
  "tokio-stream",
  "url",
- "uuid 1.10.0",
 ]
 
 [[package]]
@@ -1778,13 +1752,7 @@ name = "daft-json"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "async-compat",
- "async-compression",
- "async-stream",
- "bincode",
- "bytes",
  "chrono",
- "chrono-tz",
  "common-error",
  "daft-compression",
  "daft-core",
@@ -1794,8 +1762,6 @@ dependencies = [
  "daft-table",
  "futures",
  "indexmap 2.2.6",
- "lexical-core",
- "log",
  "memchr",
  "memmap2",
  "num-traits",
@@ -1805,12 +1771,10 @@ dependencies = [
  "serde",
  "serde_json",
  "simd-json",
- "simdutf8",
  "snafu",
  "tokio",
  "tokio-stream",
  "tokio-util",
- "url",
 ]
 
 [[package]]
@@ -1819,7 +1783,6 @@ version = "0.2.0-dev0"
 dependencies = [
  "async-trait",
  "common-error",
- "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-micropartition",
@@ -1852,11 +1815,8 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
- "indexmap 2.2.6",
- "log",
  "parquet2",
  "pyo3",
- "serde",
  "snafu",
  "tokio",
 ]
@@ -1907,7 +1867,6 @@ dependencies = [
  "daft-dsl",
  "daft-plan",
  "daft-scan",
- "log",
  "strum 0.26.2",
 ]
 
@@ -1916,7 +1875,6 @@ name = "daft-plan"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "bincode",
  "common-daft-config",
  "common-error",
  "common-io-config",
@@ -1933,7 +1891,6 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
- "serde_json",
  "snafu",
  "terminal_size",
  "textwrap",
@@ -1943,7 +1900,6 @@ dependencies = [
 name = "daft-scan"
 version = "0.2.0-dev0"
 dependencies = [
- "bincode",
  "common-daft-config",
  "common-error",
  "common-io-config",
@@ -1970,18 +1926,15 @@ dependencies = [
 name = "daft-scheduler"
 version = "0.2.0-dev0"
 dependencies = [
- "bincode",
  "common-daft-config",
  "common-error",
  "common-io-config",
  "daft-core",
  "daft-dsl",
  "daft-execution",
- "daft-local-execution",
  "daft-micropartition",
  "daft-plan",
  "daft-scan",
- "log",
  "pyo3",
  "rstest",
  "serde",
@@ -2008,7 +1961,6 @@ dependencies = [
  "daft-dsl",
  "daft-table",
  "indexmap 2.2.6",
- "pyo3",
  "serde",
  "snafu",
 ]
@@ -2027,20 +1979,6 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
-]
-
-[[package]]
-name = "dashmap"
-version = "6.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "804c8821570c3f8b70230c2ba75ffa5c0f9a4189b9a432b6656c536712acae28"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
- "hashbrown 0.14.3",
- "lock_api",
- "once_cell",
- "parking_lot_core",
 ]
 
 [[package]]

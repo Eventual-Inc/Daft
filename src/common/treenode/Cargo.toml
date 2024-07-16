@@ -1,6 +1,5 @@
 [dependencies]
 common-error = {path = "../error", default-features = false}
-pyo3 = {workspace = true, optional = true}
 
 [features]
 python = ["common-error/python"]
