@@ -74,30 +74,31 @@ repos:
     language: system
     types: [rust]
     args: [--]
-  - id: cargo-check
-    name: cargo check
-    description: Check the package for errors.
+
+  - id: cargo-check-default
+    name: cargo check (default)
+    description: Check the package for errors with default features.
     entry: cargo check
     language: system
     types: [rust]
     pass_filenames: false
     args: [--workspace]
 
-  - id: cargo-check-no-default
-    name: cargo check
-    description: Check the package for errors without default features.
+  - id: cargo-check-all-features
+    name: cargo check (all features)
+    description: Check the package for errors.
     entry: cargo check
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --no-default-features]
+    args: [--workspace, --all-features]
 
   - id: clippy
     name: clippy
     description: Lint rust sources
     entry: cargo clippy
     language: system
-    args: [--workspace, --, -D, warnings]
+    args: [--workspace, --all-features, --, -D, warnings]
     types: [rust]
     pass_filenames: false
 

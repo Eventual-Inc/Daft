@@ -15,7 +15,6 @@ itertools = {workspace = true}
 log = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
@@ -24,8 +23,7 @@ tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 
 [features]
-default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python"]
 
 [package]
 edition = {workspace = true}

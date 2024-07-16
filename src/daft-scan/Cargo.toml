@@ -16,14 +16,12 @@ futures = {workspace = true}
 itertools = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-stats/python", "common-io-config/python", "common-daft-config/python"]
 
 [package]

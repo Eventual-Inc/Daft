@@ -27,7 +27,6 @@ indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 serde_json = {workspace = true}
 snafu = {workspace = true}
@@ -39,7 +38,6 @@ daft-functions = {path = "../daft-functions", default-features = false}
 rstest = {workspace = true}
 
 [features]
-default = ["python"]
 python = [
   "dep:pyo3",
   "common-error/python",

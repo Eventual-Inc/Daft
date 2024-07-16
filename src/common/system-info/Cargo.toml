@@ -3,7 +3,6 @@ pyo3 = {workspace = true, optional = true}
 sysinfo = "0.30.7"
 
 [features]
-default = ["python"]
 python = ["dep:pyo3"]
 
 [package]

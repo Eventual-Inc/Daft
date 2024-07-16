@@ -15,13 +15,11 @@ indexmap = {workspace = true, features = ["serde"]}
 log = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python"]
 
 [package]

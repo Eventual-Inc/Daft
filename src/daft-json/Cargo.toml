@@ -22,7 +22,6 @@ memchr = "2.7.2"
 memmap2 = "0.9.4"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true, features = ["raw_value"]}
@@ -38,10 +37,8 @@ url = {workspace = true}
 rstest = {workspace = true}
 
 [features]
-default = ["python"]
 python = [
   "dep:pyo3",
-  "dep:pyo3-log",
   "common-error/python",
   "daft-core/python",
   "daft-io/python",
