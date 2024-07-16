@@ -103,5 +103,6 @@ def read_csv(
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        is_ray_runner=context.get_context().is_ray_runner,
     )
     return DataFrame(builder)

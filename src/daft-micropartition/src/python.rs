@@ -603,6 +603,7 @@ impl PyMicroPartition {
                 &schema_infer_options,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -644,6 +645,7 @@ impl PyMicroPartition {
                 num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
+                None,
                 None,
                 None,
             )

@@ -121,6 +121,7 @@ pub mod pylib {
             storage_config: PyStorageConfig,
             infer_schema: bool,
             schema: Option<PySchema>,
+            is_ray_runner: Option<bool>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
@@ -129,6 +130,7 @@ pub mod pylib {
                     storage_config.into(),
                     infer_schema,
                     schema.map(|s| s.schema),
+                    is_ray_runner.unwrap_or(false),
                 )?);
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),

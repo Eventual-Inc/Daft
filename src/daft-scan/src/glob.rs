@@ -3,7 +3,7 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
@@ -19,6 +19,7 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
+    is_ray_runner: bool,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -129,6 +130,7 @@ impl GlobScanOperator {
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
+        is_ray_runner: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -169,7 +171,8 @@ impl GlobScanOperator {
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
-                        daft_parquet::read::read_parquet_schema(
+
+                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
                             io_client.clone(),
                             Some(io_stats),
@@ -177,7 +180,9 @@ impl GlobScanOperator {
                                 coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                             },
                             field_id_mapping.clone(),
-                        )?
+                        )?;
+
+                        schema
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -233,12 +238,12 @@ impl GlobScanOperator {
             }
             false => schema.expect("Schema must be provided if infer_schema is false"),
         };
-
         Ok(Self {
             glob_paths: glob_paths.iter().map(|s| s.to_string()).collect(),
             file_format_config,
             schema,
             storage_config,
+            is_ray_runner,
         })
     }
 }
@@ -293,7 +298,7 @@ impl ScanOperator for GlobScanOperator {
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
-
+        let is_ray_runner = self.is_ray_runner;
         // Create one ScanTask per file
         Ok(Box::new(files.map(move |f| {
             let FileMetadata {
@@ -301,6 +306,38 @@ impl ScanOperator for GlobScanOperator {
                 size: size_bytes,
                 ..
             } = f?;
+
+            let path_clone = path.clone();
+            let io_client_clone = io_client.clone();
+            let field_id_mapping = match file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    field_id_mapping, ..
+                }) => Some(field_id_mapping.clone()),
+                _ => None,
+            };
+
+            // We skip reading parquet metadata if we are running in Ray
+            // because the metadata can be quite large
+            let parquet_metadata = if !is_ray_runner {
+                if let Some(field_id_mapping) = field_id_mapping {
+                    get_runtime(true).unwrap().block_on(async {
+                        daft_parquet::read::read_parquet_metadata(
+                            &path_clone,
+                            io_client_clone,
+                            Some(io_stats.clone()),
+                            field_id_mapping.clone(),
+                        )
+                        .await
+                        .ok()
+                        .map(Arc::new)
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
                     path: path.to_string(),
@@ -309,6 +346,7 @@ impl ScanOperator for GlobScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
+                    parquet_metadata,
                 }],
                 file_format_config.clone(),
                 schema.clone(),

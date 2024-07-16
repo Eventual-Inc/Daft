@@ -20,6 +20,7 @@ use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
 #[cfg(feature = "python")]
@@ -134,6 +135,11 @@ fn materialize_scan_task(
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
                     let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
+                    let metadatas = scan_task
+                        .sources
+                        .iter()
+                        .map(|s| s.get_parquet_metadata().cloned())
+                        .collect::<Option<Vec<_>>>();
                     daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
                         file_column_names.as_deref(),
@@ -147,6 +153,7 @@ fn materialize_scan_task(
                         runtime_handle,
                         &inference_options,
                         field_id_mapping.clone(),
+                        metadatas,
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -575,6 +582,11 @@ impl MicroPartition {
                     .columns
                     .as_ref()
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+                let parquet_metadata = scan_task
+                    .sources
+                    .iter()
+                    .map(|s| s.get_parquet_metadata().cloned())
+                    .collect::<Option<Vec<_>>>();
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                 read_parquet_into_micropartition(
@@ -597,6 +609,7 @@ impl MicroPartition {
                     },
                     Some(schema.clone()),
                     field_id_mapping.clone(),
+                    parquet_metadata,
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -932,6 +945,7 @@ fn _read_parquet_into_loaded_micropartition(
         runtime_handle,
         schema_infer_options,
         field_id_mapping,
+        None,
     )?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
@@ -979,6 +993,7 @@ pub(crate) fn read_parquet_into_micropartition(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1017,17 +1032,42 @@ pub(crate) fn read_parquet_into_micropartition(
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
     let meta_field_id_mapping = field_id_mapping.clone();
-    let metadata = runtime_handle.block_on(async move {
-        read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats, meta_field_id_mapping).await
-    })?;
-    let schemas = metadata
-        .iter()
-        .map(|m| {
-            let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-            let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
-            DaftResult::Ok(daft_schema)
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
+    let (metadata, schemas) = if let Some(metadata) = parquet_metadata {
+        let schemas = metadata
+            .iter()
+            .map(|m| {
+                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                DaftResult::Ok(Arc::new(daft_schema))
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        (metadata, schemas)
+    } else {
+        let metadata = runtime_handle
+            .block_on(async move {
+                read_parquet_metadata_bulk(
+                    uris,
+                    meta_io_client,
+                    meta_io_stats,
+                    meta_field_id_mapping,
+                )
+                .await
+            })?
+            .into_iter()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
+
+        let schemas = metadata
+            .iter()
+            .map(|m| {
+                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                DaftResult::Ok(Arc::new(daft_schema))
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        (metadata, schemas)
+    };
+
     let any_stats_avail = metadata
         .iter()
         .flat_map(|m| m.row_groups.iter())
@@ -1055,8 +1095,10 @@ pub(crate) fn read_parquet_into_micropartition(
         let scan_task_daft_schema = match catalog_provided_schema {
             Some(catalog_provided_schema) => catalog_provided_schema,
             None => {
-                let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
-                Arc::new(unioned_schema.expect("we need at least 1 schema"))
+                let unioned_schema = schemas
+                    .into_iter()
+                    .try_reduce(|l, r| l.union(&r).map(Arc::new))?;
+                unioned_schema.expect("we need at least 1 schema")
             }
         };
 
@@ -1090,17 +1132,19 @@ pub(crate) fn read_parquet_into_micropartition(
         let scan_task = ScanTask::new(
             owned_urls
                 .into_iter()
+                .zip(metadata)
                 .zip(
                     row_groups
                         .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
                 )
-                .map(|(url, rgs)| DataFileSource::AnonymousDataFile {
+                .map(|((url, metadata), rgs)| DataFileSource::AnonymousDataFile {
                     path: url,
                     chunk_spec: rgs.map(ChunkSpec::Parquet),
                     size_bytes: Some(size_bytes),
                     metadata: None,
                     partition_spec: partition_spec.cloned(),
                     statistics: None,
+                    parquet_metadata: Some(metadata),
                 })
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {

@@ -769,6 +769,7 @@ class ScanOperatorHandle:
         storage_config: StorageConfig,
         infer_schema: bool,
         schema: PySchema | None = None,
+        is_ray_runner: bool = False,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
