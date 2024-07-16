@@ -51,7 +51,7 @@ impl Table {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
             }
             if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs rest of the Table had length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
             }
         }
 
@@ -93,11 +93,7 @@ impl Table {
                     let series = Series::empty(field_name, &field.dtype);
                     columns.push(series)
                 }
-                Ok(Table {
-                    schema,
-                    columns,
-                    num_rows: 0,
-                })
+                Table::new(schema, columns, 0)
             }
             None => Self::new(Schema::empty(), vec![], 0),
         }
@@ -150,11 +146,7 @@ impl Table {
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
-            return Ok(Table {
-                schema: self.schema.clone(),
-                columns: self.columns.clone(),
-                num_rows: self.len(),
-            });
+            return Table::new(self.schema.clone(), self.columns.clone(), self.len());
         }
         self.slice(0, num)
     }
@@ -271,16 +263,29 @@ impl Table {
 
         let mask = mask.downcast::<BooleanArray>().unwrap();
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
-        Ok(Table {
-            schema: self.schema.clone(),
-            columns: new_series?,
-            num_rows: mask.len() - mask.null_count(),
-        })
+
+        let num_rows = if mask.len() == 1 {
+            // account for broadcasting of mask
+            if mask.get(0).unwrap() {
+                self.len()
+            } else {
+                0
+            }
+        } else {
+            // filtered elements are not (valid AND set)
+            let num_filtered = mask
+                .validity()
+                .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .unwrap_or(mask.as_bitmap().unset_bits());
+            mask.len() - num_filtered
+        };
+
+        Table::new(self.schema.clone(), new_series?, num_rows)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Ok(Table::new(self.schema.clone(), new_series?, idx.len()).unwrap())
+        Table::new(self.schema.clone(), new_series?, idx.len())
     }
 
     pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
@@ -313,11 +318,11 @@ impl Table {
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
 
-        Ok(Table {
-            schema: first_table.schema.clone(),
-            columns: new_series,
-            num_rows: tables.iter().map(|t| t.as_ref().len()).sum(),
-        })
+        Table::new(
+            first_table.schema.clone(),
+            new_series,
+            tables.iter().map(|t| t.as_ref().len()).sum(),
+        )
     }
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
@@ -485,9 +490,21 @@ impl Table {
         }
         let new_schema = Schema::new(fields)?;
 
-        // If any aggregation expressions were run, cardinality of the result table should be 1
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
-        let num_rows = if has_agg_expr { 1 } else { self.len() };
+        let num_rows = if has_agg_expr {
+            // If aggregation is present, then take Min of results' cardinality.
+            // Ignore self.len() because aggregations produce data even on empty tables.
+            result_series.iter().map(|s| s.len()).min().unwrap()
+        } else {
+            // Otherwise, Max[results' cardinality and self.len()] for e.g. a UDF that ran or
+            // a lit(...) in the expressions producing a single-element result.
+            result_series
+                .iter()
+                .map(|s| s.len())
+                .chain(std::iter::once(self.len()))
+                .max()
+                .unwrap()
+        };
 
         Table::new(new_schema, result_series, num_rows)
     }
