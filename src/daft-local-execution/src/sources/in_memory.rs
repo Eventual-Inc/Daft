@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use daft_micropartition::MicroPartition;
 use futures::{stream, StreamExt};
 
@@ -16,9 +15,8 @@ impl InMemorySource {
     }
 }
 
-#[async_trait]
 impl Source for InMemorySource {
-    async fn get_data(&self) -> SourceStream {
+    fn get_data(&self) -> SourceStream {
         log::debug!("InMemorySource::get_data");
         stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }

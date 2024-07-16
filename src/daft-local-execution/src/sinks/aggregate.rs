@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
-use super::sink::{Sink, SinkResultType};
+use super::sink::{SingleInputSink, SinkResultType};
 
 #[derive(Clone)]
 pub struct AggregateSink {
@@ -23,7 +23,7 @@ impl AggregateSink {
     }
 }
 
-impl Sink for AggregateSink {
+impl SingleInputSink for AggregateSink {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("AggregateSink::sink");
 
@@ -32,7 +32,7 @@ impl Sink for AggregateSink {
     }
 
     fn in_order(&self) -> bool {
-        false
+        true
     }
 
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {

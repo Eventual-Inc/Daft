@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
@@ -18,9 +17,8 @@ impl ScanTaskSource {
     }
 }
 
-#[async_trait]
 impl Source for ScanTaskSource {
-    async fn get_data(&self) -> SourceStream {
+    fn get_data(&self) -> SourceStream {
         log::debug!("ScanTaskSource::get_data");
         let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| {
             let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
