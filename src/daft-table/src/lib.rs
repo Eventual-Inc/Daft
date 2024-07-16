@@ -491,19 +491,21 @@ impl Table {
         let new_schema = Schema::new(fields)?;
 
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
-        let num_rows = if has_agg_expr {
-            // If aggregation is present, then take Min of results' cardinality.
-            // Ignore self.len() because aggregations produce data even on empty tables.
-            result_series.iter().map(|s| s.len()).min().unwrap()
-        } else {
-            // Otherwise, Max[results' cardinality and self.len()] for e.g. a UDF that ran or
-            // a lit(...) in the expressions producing a single-element result.
-            result_series
+        let num_rows = match (has_agg_expr, self.len()) {
+            // "Normal" case: the final cardinality is the max(*results_lens, self.len())
+            // This correctly accounts for broadcasting of literals, which can have unit length
+            (false, self_len) if self_len > 0 => result_series
                 .iter()
                 .map(|s| s.len())
                 .chain(std::iter::once(self.len()))
                 .max()
-                .unwrap()
+                .unwrap(),
+            // "Empty" case: when no aggregation is applied, the expected result should also be empty
+            (false, _) => 0,
+            // "Aggregation" case: the final cardinality is the max(results' lens)
+            // We discard the original self.len() because we expect aggregations to change
+            // the final cardinality. Aggregations on empty tables are expected to produce unit length results.
+            (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
         Table::new(new_schema, result_series, num_rows)
