@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+pub mod distance;
 pub mod hash;
 pub mod uri;
 
