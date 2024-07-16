@@ -678,10 +678,14 @@ jobs:
   check-unused-cargo-deps:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-    - name: Machete
-      uses: bnjbvr/cargo-machete@main
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - name: Install Machete
+      run: cargo install cargo-machete
+    - name: Run Machete
+      run: cargo machete --with-metadata
 
   doctests:
     runs-on: ubuntu-latest
