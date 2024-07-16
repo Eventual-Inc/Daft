@@ -42,6 +42,7 @@ pub(crate) fn mock_micropartition(num_rows: usize) -> MicroPartition {
                     .boxed(),
             )
             .unwrap()],
+            num_rows,
         )
         .unwrap()]),
         None,

@@ -295,9 +295,10 @@ impl Table {
         drop(ltable);
         drop(rtable);
 
+        let num_rows = lidx.len();
         join_series =
             add_non_join_key_columns(self, right, lidx, ridx, left_on, right_on, join_series)?;
 
-        Table::new(join_schema, join_series)
+        Table::new(join_schema, join_series, num_rows)
     }
 }

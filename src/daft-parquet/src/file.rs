@@ -549,7 +549,11 @@ impl ParquetFileReader {
             .collect::<DaftResult<Vec<_>>>()?;
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
 
-        Table::new(daft_schema, all_series)
+        Table::new(
+            daft_schema,
+            all_series,
+            self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
+        )
     }
 
     pub async fn read_from_ranges_into_arrow_arrays(

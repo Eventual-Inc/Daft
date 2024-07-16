@@ -173,9 +173,11 @@ impl FileInfos {
                 arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
             ))?,
         ];
+        let num_rows = columns.first().map(|s| s.len()).unwrap();
         Table::new(
             Schema::new(columns.iter().map(|s| s.field().clone()).collect())?,
             columns,
+            num_rows,
         )
     }
 }

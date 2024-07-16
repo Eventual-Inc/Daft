@@ -243,6 +243,7 @@ mod tests {
                         .boxed(),
                     )
                     .unwrap()],
+                    input_meta.num_rows.unwrap(),
                 )
                 .unwrap()]),
                 None,

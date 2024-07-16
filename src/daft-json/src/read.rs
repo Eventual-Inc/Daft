@@ -163,7 +163,11 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new(first_table.schema.clone(), new_series)
+    Table::new(
+        first_table.schema.clone(),
+        new_series,
+        tables.iter().map(|t| t.len()).sum(),
+    )
 }
 
 async fn read_json_single_into_table(
@@ -424,6 +428,7 @@ fn parse_into_column_array_chunk_stream(
         let schema = schema.clone();
         let daft_schema = daft_schema.clone();
         let daft_fields = daft_fields.clone();
+        let num_rows = records.len();
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
@@ -450,7 +455,11 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(Table::new_unchecked(daft_schema.clone(), all_series))
+                    Ok(Table::new_unchecked(
+                        daft_schema.clone(),
+                        all_series,
+                        num_rows,
+                    ))
                 })();
                 let _ = send.send(result);
             });

@@ -96,10 +96,11 @@ pub(super) fn hash_inner_join(
     drop(lkeys);
     drop(rkeys);
 
+    let num_rows = lidx.len();
     join_series =
         add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
 
-    Table::new(join_schema, join_series)
+    Table::new(join_schema, join_series, num_rows)
 }
 
 pub(super) fn hash_left_right_join(
@@ -218,10 +219,11 @@ pub(super) fn hash_left_right_join(
     drop(lkeys);
     drop(rkeys);
 
+    let num_rows = lidx.len();
     join_series =
         add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
 
-    Table::new(join_schema, join_series)
+    Table::new(join_schema, join_series, num_rows)
 }
 
 pub(super) fn hash_semi_anti_join(
@@ -449,8 +451,9 @@ pub(super) fn hash_outer_join(
     drop(lkeys);
     drop(rkeys);
 
+    let num_rows = lidx.len();
     join_series =
         add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
 
-    Table::new(join_schema, join_series)
+    Table::new(join_schema, join_series, num_rows)
 }

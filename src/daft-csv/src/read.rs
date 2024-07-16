@@ -168,7 +168,11 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new(first_table.schema.clone(), new_series)
+    Table::new(
+        first_table.schema.clone(),
+        new_series,
+        tables.iter().map(|t| t.len()).sum(),
+    )
 }
 
 async fn read_csv_single_into_table(
@@ -508,7 +512,8 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
-                    Ok(Table::new_unchecked(read_schema, chunk))
+                    let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
+                    Ok(Table::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
             });

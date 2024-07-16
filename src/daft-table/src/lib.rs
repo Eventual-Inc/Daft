@@ -32,26 +32,26 @@ pub use python::register_modules;
 pub struct Table {
     pub schema: SchemaRef,
     columns: Vec<Series>,
+    num_rows: usize,
 }
 
 impl Table {
-    pub fn new<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn new<S: Into<SchemaRef>>(
+        schema: S,
+        columns: Vec<Series>,
+        num_rows: usize,
+    ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
         if schema.fields.len() != columns.len() {
             return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
         }
-        let mut num_rows = 1;
 
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if field != series.field() {
                 return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
             }
             if (series.len() != 1) && (series.len() != num_rows) {
-                if num_rows == 1 {
-                    num_rows = series.len();
-                } else {
-                    return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs rest of the DataFrame had length: {}", field.name, series.len(), num_rows)));
-                }
+                return Err(DaftError::ValueError(format!("While building a Table, we found that the Series lengths did not match. Series named: {} had length: {} vs rest of the Table had length: {}", field.name, series.len(), num_rows)));
             }
         }
 
@@ -69,13 +69,19 @@ impl Table {
         Ok(Table {
             schema,
             columns: columns?,
+            num_rows,
         })
     }
 
-    pub fn new_unchecked<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> Self {
+    pub fn new_unchecked<S: Into<SchemaRef>>(
+        schema: S,
+        columns: Vec<Series>,
+        num_rows: usize,
+    ) -> Self {
         Table {
             schema: schema.into(),
             columns,
+            num_rows,
         }
     }
 
@@ -87,16 +93,36 @@ impl Table {
                     let series = Series::empty(field_name, &field.dtype);
                     columns.push(series)
                 }
-                Ok(Table { schema, columns })
+                Ok(Table {
+                    schema,
+                    columns,
+                    num_rows: 0,
+                })
             }
-            None => Self::new(Schema::empty(), vec![]),
+            None => Self::new(Schema::empty(), vec![], 0),
         }
     }
 
     pub fn from_columns(columns: Vec<Series>) -> DaftResult<Self> {
         let fields = columns.iter().map(|s| s.field().clone()).collect();
         let schema = Schema::new(fields)?;
-        Table::new(schema, columns)
+
+        let num_rows = if columns.is_empty() {
+            // Size of the table is 0 if no columns provided
+            0
+        } else if columns.iter().all(|s| s.len() == 1) {
+            // Size of the table is 1 if all columns have length 1
+            1
+        } else {
+            // Size of the table is the first non-len-1 column
+            columns
+                .iter()
+                .filter_map(|s| if s.len() != 1 { Some(s.len()) } else { None })
+                .next()
+                .unwrap()
+        };
+
+        Table::new(schema, columns, num_rows)
     }
 
     pub fn num_columns(&self) -> usize {
@@ -108,11 +134,7 @@ impl Table {
     }
 
     pub fn len(&self) -> usize {
-        if self.num_columns() == 0 {
-            0
-        } else {
-            self.get_column_by_index(0).unwrap().len()
-        }
+        self.num_rows
     }
 
     pub fn is_empty(&self) -> bool {
@@ -122,10 +144,8 @@ impl Table {
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> =
             self.columns.iter().map(|s| s.slice(start, end)).collect();
-        Ok(Table {
-            schema: self.schema.clone(),
-            columns: new_series?,
-        })
+        let new_num_rows = self.len().min(end - start);
+        Table::new(self.schema.clone(), new_series?, new_num_rows)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
@@ -133,6 +153,7 @@ impl Table {
             return Ok(Table {
                 schema: self.schema.clone(),
                 columns: self.columns.clone(),
+                num_rows: self.len(),
             });
         }
         self.slice(0, num)
@@ -253,12 +274,13 @@ impl Table {
         Ok(Table {
             schema: self.schema.clone(),
             columns: new_series?,
+            num_rows: mask.len() - mask.null_count(),
         })
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Ok(Table::new(self.schema.clone(), new_series?).unwrap())
+        Ok(Table::new(self.schema.clone(), new_series?, idx.len()).unwrap())
     }
 
     pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
@@ -290,9 +312,11 @@ impl Table {
                 .collect();
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
+
         Ok(Table {
             schema: first_table.schema.clone(),
             columns: new_series,
+            num_rows: tables.iter().map(|t| t.as_ref().len()).sum(),
         })
     }
 
@@ -459,12 +483,23 @@ impl Table {
             }
             seen.insert(name.clone());
         }
-        let schema = Schema::new(fields)?;
-        Table::new(schema, result_series)
+        let new_schema = Schema::new(fields)?;
+
+        // If any aggregation expressions were run, cardinality of the result table should be 1
+        let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
+        let num_rows = if has_agg_expr { 1 } else { self.len() };
+
+        Table::new(new_schema, result_series, num_rows)
     }
+
     pub fn as_physical(&self) -> DaftResult<Self> {
-        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.as_physical()).collect();
-        Table::from_columns(new_series?)
+        let new_series: Vec<Series> = self
+            .columns
+            .iter()
+            .map(|s| s.as_physical())
+            .collect::<DaftResult<Vec<_>>>()?;
+        let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect())?;
+        Table::new(new_schema, new_series, self.len())
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
@@ -626,7 +661,7 @@ mod test {
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
         ])?;
-        let table = Table::new(schema, vec![a, b])?;
+        let table = Table::new(schema, vec![a, b], 3)?;
         let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);

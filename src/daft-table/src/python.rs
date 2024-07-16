@@ -428,6 +428,8 @@ impl PyTable {
             fields.push(Field::new(name.clone(), series.data_type().clone()));
             columns.push(series.rename(name));
         }
+
+        let num_rows = columns.first().map(|s| s.len()).unwrap_or(0);
         if !columns.is_empty() {
             let first = columns.first().unwrap();
             for s in columns.iter().skip(1) {
@@ -443,7 +445,7 @@ impl PyTable {
         }
 
         Ok(PyTable {
-            table: Table::new(Schema::new(fields)?, columns)?,
+            table: Table::new(Schema::new(fields)?, columns, num_rows)?,
         })
     }
 
