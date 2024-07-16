@@ -14,6 +14,7 @@ pub fn tokenize_encode(
     io_config: Option<IOConfig>,
     pattern: Option<&str>,
     special_tokens: Option<&str>,
+    use_special_tokens: bool,
 ) -> ExprRef {
     ScalarFunction::new(
         TokenizeEncodeFunction {
@@ -21,6 +22,7 @@ pub fn tokenize_encode(
             io_config: io_config.map(|x| x.into()),
             pattern: pattern.map(str::to_string),
             special_tokens: special_tokens.map(str::to_string),
+            use_special_tokens,
         },
         vec![data],
     )
@@ -58,6 +60,7 @@ pub mod python {
     pub fn tokenize_encode(
         expr: PyExpr,
         tokens_path: &str,
+        use_special_tokens: bool,
         io_config: Option<PyIOConfig>,
         pattern: Option<&str>,
         special_tokens: Option<&str>,
@@ -68,6 +71,7 @@ pub mod python {
             io_config.map(|x| x.config),
             pattern,
             special_tokens,
+            use_special_tokens,
         )
         .into())
     }

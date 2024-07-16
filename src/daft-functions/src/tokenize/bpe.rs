@@ -212,8 +212,12 @@ impl DaftBPE {
     }
 
     // use u32s because surely there won't be tokens > 4 billion...
-    pub fn encode(&self, s: &str) -> Vec<u32> {
-        let encode_res = self.bpe.encode_with_special_tokens(s);
+    pub fn encode(&self, s: &str, use_special: bool) -> Vec<u32> {
+        let encode_res = if use_special {
+            self.bpe.encode_with_special_tokens(s)
+        } else {
+            self.bpe.encode_ordinary(s)
+        };
         encode_res.into_iter().map(|x| x as u32).collect()
     }
 

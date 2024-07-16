@@ -1192,6 +1192,7 @@ def url_upload(
 def tokenize_encode(
     expr: PyExpr,
     tokens_path: str,
+    use_special_tokens: bool,
     io_config: IOConfig | None,
     pattern: str | None,
     special_tokens: str | None,

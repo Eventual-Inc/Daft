@@ -24,6 +24,7 @@ fn tokenize_encode_array(
     io_config: Option<Arc<IOConfig>>,
     pattern: Option<&str>,
     special_tokens: Option<&str>,
+    use_special_tokens: bool,
 ) -> DaftResult<ListArray> {
     let bpe = DaftBPE::new(tokens_path, io_config, pattern, special_tokens)?;
 
@@ -33,7 +34,7 @@ fn tokenize_encode_array(
     let self_arrow = arr.as_arrow();
     for s_opt in self_arrow.iter() {
         if let Some(s) = s_opt {
-            let tokens = bpe.encode(s);
+            let tokens = bpe.encode(s, use_special_tokens);
             let tokens_iter = tokens.iter().map(|t| Some(*t));
             flat_child.extend(tokens_iter);
         }
@@ -59,12 +60,18 @@ fn tokenize_encode_series(
     io_config: Option<Arc<IOConfig>>,
     pattern: Option<&str>,
     special_tokens: Option<&str>,
+    use_special_tokens: bool,
 ) -> DaftResult<Series> {
     series.with_utf8_array(|arr| {
-        Ok(
-            tokenize_encode_array(arr, tokens_path, io_config.clone(), pattern, special_tokens)?
-                .into_series(),
-        )
+        Ok(tokenize_encode_array(
+            arr,
+            tokens_path,
+            io_config.clone(),
+            pattern,
+            special_tokens,
+            use_special_tokens,
+        )?
+        .into_series())
     })
 }
 
@@ -74,6 +81,7 @@ pub(super) struct TokenizeEncodeFunction {
     pub(super) io_config: Option<Arc<IOConfig>>,
     pub(super) pattern: Option<String>,
     pub(super) special_tokens: Option<String>,
+    pub(super) use_special_tokens: bool,
 }
 
 #[typetag::serde]
@@ -115,6 +123,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
                 self.io_config.clone(),
                 self.pattern.as_deref(),
                 self.special_tokens.as_deref(),
+                self.use_special_tokens,
             ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

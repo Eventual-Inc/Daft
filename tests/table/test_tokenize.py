@@ -14,6 +14,7 @@ DEFAULT_ENCODINGS = [
     "o200k_base",
 ]
 P50K_REGEX = "'(?:[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"
+END_TOKENS = [50256, 50256, 50256, 100257, 199999]
 
 
 @pytest.mark.parametrize("encoding", DEFAULT_ENCODINGS)
@@ -180,3 +181,36 @@ def test_tokenize_unsupported_special_tokens():
         s.select(
             col("a").str.tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="thisdoesntexist")
         ).collect()
+
+
+def test_tokenize_special_tokens_disabled():
+    file_path = "tests/assets/tokens/tokens_5k.tiktoken"
+    test_data = ["<|begin_of_text|><|end_of_text|>"]
+    s = daft.from_pydict({"a": test_data})
+    a = s.select(
+        col("a").str.tokenize_encode(
+            file_path,
+            pattern=P50K_REGEX,
+            special_tokens="llama3",
+            use_special_tokens=False,
+        )
+    ).to_pydict()["a"]
+    assert 5000 not in a[0] and 5001 not in a[0]
+
+
+@pytest.mark.parametrize(["encoding", "end_token"], zip(DEFAULT_ENCODINGS, END_TOKENS))
+def test_tokenize_builtin_tokens(encoding, end_token):
+    test_data = ["<|endoftext|>"]
+
+    s = daft.from_pydict({"a": test_data})
+    a = s.select(col("a").str.tokenize_encode(encoding, use_special_tokens=True)).to_pydict()["a"]
+    assert len(a[0]) == 1 and a[0][0] == end_token
+
+
+@pytest.mark.parametrize(["encoding", "end_token"], zip(DEFAULT_ENCODINGS, END_TOKENS))
+def test_tokenize_builtin_tokens_disabled(encoding, end_token):
+    test_data = ["<|endoftext|>"]
+
+    s = daft.from_pydict({"a": test_data})
+    a = s.select(col("a").str.tokenize_encode(encoding, use_special_tokens=False)).to_pydict()["a"]
+    assert len(a[0]) >= 1 and a[0][0] != end_token

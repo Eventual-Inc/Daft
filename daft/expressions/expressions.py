@@ -2549,6 +2549,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         io_config: IOConfig | None = None,
         pattern: str | None = None,
         special_tokens: str | None = None,
+        use_special_tokens: bool | None = None,
     ) -> Expression:
         """Encodes each string as a list of integer tokens using a tokenizer.
 
@@ -2564,7 +2565,21 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
         """
-        return Expression._from_pyexpr(_tokenize_encode(self._expr, tokens_path, io_config, pattern, special_tokens))
+
+        # if special tokens are passed in, enable using special tokens
+        if use_special_tokens is None:
+            use_special_tokens = special_tokens is not None
+
+        return Expression._from_pyexpr(
+            _tokenize_encode(
+                self._expr,
+                tokens_path,
+                use_special_tokens,
+                io_config,
+                pattern,
+                special_tokens,
+            )
+        )
 
     def tokenize_decode(
         self,
