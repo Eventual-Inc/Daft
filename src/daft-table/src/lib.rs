@@ -335,7 +335,11 @@ impl Table {
             .iter()
             .map(|s| self.get_column(s).cloned())
             .collect::<DaftResult<Vec<_>>>()?;
-        Self::from_columns(series_by_name)
+        Self::new(
+            Schema::new(series_by_name.iter().map(|s| s.field().clone()).collect())?,
+            series_by_name,
+            self.len(),
+        )
     }
 
     pub fn get_column_by_index(&self, idx: usize) -> DaftResult<&Series> {
