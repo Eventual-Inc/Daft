@@ -35,11 +35,11 @@ hooks: .venv
 
 .PHONY: build
 build: .venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && $(VENV_BIN)/maturin develop --extras=all
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Daft binary
-	@unset CONDA_PREFIX && $(VENV_BIN)/maturin develop --release
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release
 
 .PHONY: test
 test: .venv build  ## Run tests
