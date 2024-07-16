@@ -2555,12 +2555,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Uses https://github.com/openai/tiktoken for tokenization.
 
-        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
+        loading tokens from a file in tiktoken format.
+
+        .. NOTE::
+            If using this expression with Llama 3 tokens, note that Llama 3 does some extra preprocessing on
+            strings in certain edge cases. This may result in slightly different encodings in these cases.
 
         Args:
-            tokens_path: The name of a built-in tokenizer. Support for loading token files to be added.
-            io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
-                with `max_connections` that is passed in as a kwarg.
+            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
+            io_config (optional): IOConfig to use when accessing remote storage.
+            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
+            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
+            use_special_tokens (optional): Whether or not to parse special tokens included in input. Disabled by default. Automatically enabled if `special_tokens` is provided.
 
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
@@ -2593,12 +2600,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Uses https://github.com/openai/tiktoken for tokenization.
 
-        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
+        loading tokens from a file in tiktoken format.
 
         Args:
-            tokens_path: The name of a built-in tokenizer. Support for loading token files to be added.
-            io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
-                with `max_connections` that is passed in as a kwarg.
+            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
+            io_config (optional): IOConfig to use when accessing remote storage.
+            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
+            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
 
         Returns:
             Expression: An expression with decoded strings.
