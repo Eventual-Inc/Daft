@@ -1,11 +1,14 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
 use crate::{
-    create_channel, create_single_channel, MultiReceiver, MultiSender, SingleReceiver,
-    SingleSender, NUM_CPUS,
+    channel::{
+        create_channel, create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
+        SingleReceiver, SingleSender,
+    },
+    NUM_CPUS,
 };
 
 pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
@@ -16,7 +19,12 @@ pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
 dyn_clone::clone_trait_object!(IntermediateOperator);
 
 /// The number of rows that will trigger an intermediate operator to output its data.
-pub const OUTPUT_THRESHOLD: usize = 1000;
+fn get_output_threshold() -> usize {
+    env::var("OUTPUT_THRESHOLD")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse()
+        .expect("OUTPUT_THRESHOLD must be a number")
+}
 
 /// State of an operator task, used to buffer data and output it when a threshold is reached.
 pub struct OperatorTaskState {
@@ -30,15 +38,17 @@ impl OperatorTaskState {
         Self {
             buffer: vec![],
             curr_len: 0,
-            threshold: OUTPUT_THRESHOLD,
+            threshold: get_output_threshold(),
         }
     }
 
+    // Add a micro partition to the buffer.
     pub fn add(&mut self, part: Arc<MicroPartition>) {
+        self.curr_len += part.len();
         self.buffer.push(part);
-        self.curr_len += 1;
     }
 
+    // Try to clear the buffer if the threshold is reached.
     pub fn try_clear(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
         if self.curr_len >= self.threshold {
             self.clear()
@@ -47,6 +57,7 @@ impl OperatorTaskState {
         }
     }
 
+    // Clear the buffer and return the concatenated MicroPartition.
     pub fn clear(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
         if self.buffer.is_empty() {
             return None;
@@ -60,6 +71,9 @@ impl OperatorTaskState {
     }
 }
 
+/// An actor that runs an intermediate operator.
+/// The actor can run multiple tasks in parallel, depending on the buffer size of the sender.
+/// Each parallel task is mapped to a single sender.
 pub struct IntermediateOpActor {
     sender: MultiSender,
     receiver: MultiReceiver,
@@ -79,7 +93,8 @@ impl IntermediateOpActor {
         }
     }
 
-    async fn single_operator_task(
+    // Run a single instance of the operator.
+    async fn run_single(
         mut receiver: SingleReceiver,
         sender: SingleSender,
         op: Box<dyn IntermediateOperator>,
@@ -98,27 +113,29 @@ impl IntermediateOpActor {
         Ok(())
     }
 
-    pub async fn run(&mut self) -> DaftResult<()> {
+    // Create and run parallel tasks for the operator.
+    pub async fn run_parallel(&mut self) -> DaftResult<()> {
+        // Initialize senders to send data to parallel tasks.
         let mut inner_task_senders: Vec<SingleSender> =
             Vec::with_capacity(self.sender.buffer_size());
-        let mut curr_sender_idx = 0;
+        let mut curr_task_idx = 0;
 
         while let Some(morsel) = self.receiver.recv().await {
-            if let Some(s) = inner_task_senders.get(curr_sender_idx) {
+            // If the task sender already exists for the current index, send the data to it.
+            if let Some(s) = inner_task_senders.get(curr_task_idx) {
                 let _ = s.send(morsel).await;
-            } else {
-                let next_sender = self.sender.get_next_sender();
-                let (single_sender, single_receiver) = create_single_channel(1);
-
-                let op = self.op.clone();
-                tokio::spawn(async move {
-                    let _ = Self::single_operator_task(single_receiver, next_sender, op).await;
-                });
-                let _ = single_sender.send(morsel).await;
-
-                inner_task_senders.push(single_sender);
             }
-            curr_sender_idx = (curr_sender_idx + 1) % self.sender.buffer_size();
+            // Otherwise, create a new task and send the data to it.
+            else {
+                let (task_sender, task_receiver) = create_single_channel(1);
+                let op = self.op.clone();
+                let next_sender = self.sender.get_next_sender();
+                spawn_compute_task(Self::run_single(task_receiver, next_sender, op));
+                let _ = task_sender.send(morsel).await;
+
+                inner_task_senders.push(task_sender);
+            }
+            curr_task_idx = (curr_task_idx + 1) % self.sender.buffer_size();
         }
         Ok(())
     }
@@ -128,7 +145,7 @@ pub fn run_intermediate_op(op: Box<dyn IntermediateOperator>, send_to: MultiSend
     let (sender, receiver) = create_channel(*NUM_CPUS, send_to.in_order());
     let mut actor = IntermediateOpActor::new(op, receiver, send_to);
     tokio::spawn(async move {
-        let _ = actor.run().await;
+        let _ = actor.run_parallel().await;
     });
     sender
 }

@@ -3,7 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-use crate::{create_channel, MultiReceiver, MultiSender, NUM_CPUS};
+use crate::{
+    channel::{create_channel, MultiReceiver, MultiSender},
+    NUM_CPUS,
+};
 
 pub enum SinkResultType {
     NeedMoreInput,

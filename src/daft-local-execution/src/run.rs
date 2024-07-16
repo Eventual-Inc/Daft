@@ -17,7 +17,7 @@ use {
 };
 
 use crate::{
-    create_channel,
+    channel::{create_channel, MultiSender},
     intermediate_ops::{
         aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::run_intermediate_op,
         project::ProjectOperator,
@@ -29,7 +29,6 @@ use crate::{
         sink::{run_double_input_sink, run_single_input_sink},
     },
     sources::{in_memory::InMemorySource, scan_task::ScanTaskSource, source::run_source},
-    MultiSender,
 };
 
 #[cfg(feature = "python")]

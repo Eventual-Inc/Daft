@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 
-use crate::MultiSender;
+use crate::channel::MultiSender;
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
