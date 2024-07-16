@@ -156,9 +156,10 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
+        let num_rows = grouped_col.len();
         Self::from_columns(
             [&groupkeys_table.columns[..], &[grouped_col]].concat(),
-            groupkeys_table.len(),
+            num_rows,
         )
     }
 }
