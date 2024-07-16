@@ -1,0 +1,6 @@
+{
+  "rust-analyzer.check.extraEnv": {
+    "CARGO_TARGET_DIR": "target/analyzer"
+  },
+  "rust-analyzer.check.features": "all"
+}
