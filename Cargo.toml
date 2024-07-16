@@ -26,7 +26,7 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
-default = ["python"]
+# maturin will turn this on
 python = [
   "dep:pyo3",
   "dep:pyo3-log",

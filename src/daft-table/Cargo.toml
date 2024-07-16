@@ -7,12 +7,10 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 html-escape = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
 rand = {workspace = true}
 serde = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python"]
 
 [package]

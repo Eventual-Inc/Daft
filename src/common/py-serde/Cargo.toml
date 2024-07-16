@@ -3,7 +3,6 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3"]
 
 [package]

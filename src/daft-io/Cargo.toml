@@ -28,7 +28,6 @@ lazy_static = {workspace = true}
 log = {workspace = true}
 openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
 serde = {workspace = true}
@@ -49,8 +48,7 @@ md5 = "0.7.0"
 tempfile = "3.8.1"
 
 [features]
-default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "common-io-config/python"]
+python = ["dep:pyo3", "common-error/python", "common-io-config/python"]
 
 [package]
 edition = {workspace = true}
