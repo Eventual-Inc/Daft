@@ -161,9 +161,9 @@ impl Table {
         _validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Infer the num_rows, assume no broadcasting
-        let mut num_rows = 0;
+        let mut num_rows = 1;
         for (field, series) in schema.fields.values().zip(columns.iter()) {
-            if num_rows == 0 && !series.is_empty() {
+            if num_rows == 1 {
                 num_rows = series.len();
             }
             if series.len() != num_rows {
