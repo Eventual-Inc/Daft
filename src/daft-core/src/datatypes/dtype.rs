@@ -271,6 +271,16 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_fixed_size_numeric(&self) -> bool {
+        match self {
+            DataType::FixedSizeList(dtype, ..)
+            | DataType::Embedding(dtype, ..)
+            | DataType::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,

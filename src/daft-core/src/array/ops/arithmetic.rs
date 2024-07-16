@@ -3,9 +3,10 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
-    array::DataArray,
-    datatypes::{DaftNumericType, Float64Array, Int64Array, Utf8Array},
+    array::{DataArray, FixedSizeListArray},
+    datatypes::{DaftNumericType, Field, Float64Array, Int64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
+    DataType, Series,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -197,5 +198,95 @@ where
                 ))),
             }
         }
+    }
+}
+
+fn fixed_sized_list_arithmetic_helper<Kernel>(
+    lhs: &FixedSizeListArray,
+    rhs: &FixedSizeListArray,
+    kernel: Kernel,
+) -> DaftResult<FixedSizeListArray>
+where
+    Kernel: Fn(&Series, &Series) -> DaftResult<Series>,
+{
+    assert_eq!(lhs.fixed_element_len(), rhs.fixed_element_len());
+
+    let lhs_child: &Series = &lhs.flat_child;
+    let rhs_child: &Series = &rhs.flat_child;
+    let lhs_len = lhs.len();
+    let rhs_len = rhs.len();
+
+    let (result_child, validity) = match (lhs_len, rhs_len) {
+        (a, b) if a == b => Ok((
+            kernel(lhs_child, rhs_child)?,
+            crate::utils::arrow::arrow_bitmap_and_helper(lhs.validity(), rhs.validity()),
+        )),
+        (l, 1) => {
+            let validity = if rhs.is_valid(0) {
+                lhs.validity().cloned()
+            } else {
+                Some(arrow2::bitmap::Bitmap::new_zeroed(l))
+            };
+            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
+        }
+        (1, r) => {
+            let validity = if lhs.is_valid(0) {
+                rhs.validity().cloned()
+            } else {
+                Some(arrow2::bitmap::Bitmap::new_zeroed(r))
+            };
+            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
+        }
+        (a, b) => Err(DaftError::ValueError(format!(
+            "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+        ))),
+    }?;
+
+    let result_field = Field::new(
+        lhs.name(),
+        DataType::FixedSizeList(
+            Box::new(result_child.data_type().clone()),
+            lhs.fixed_element_len(),
+        ),
+    );
+    Ok(FixedSizeListArray::new(
+        result_field,
+        result_child,
+        validity,
+    ))
+}
+
+impl Add for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a + b)
+    }
+}
+
+impl Mul for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a * b)
+    }
+}
+
+impl Sub for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a - b)
+    }
+}
+
+impl Div for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn div(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a / b)
+    }
+}
+
+impl Rem for &FixedSizeListArray {
+    type Output = DaftResult<FixedSizeListArray>;
+    fn rem(self, rhs: Self) -> Self::Output {
+        fixed_sized_list_arithmetic_helper(self, rhs, |a, b| a % b)
     }
 }

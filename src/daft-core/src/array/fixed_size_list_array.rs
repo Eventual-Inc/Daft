@@ -33,8 +33,9 @@ impl FixedSizeListArray {
                     && (validity.len() * size) != flat_child.len()
                 {
                     panic!(
-                        "FixedSizeListArray::new received values with len {} but expected it to match len of validity * size: {}",
+                        "FixedSizeListArray::new received values with len {} but expected it to match len of validity {} * size: {}",
                         flat_child.len(),
+                        validity.len(),
                         (validity.len() * size),
                     )
                 }
