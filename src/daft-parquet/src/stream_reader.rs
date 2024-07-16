@@ -54,6 +54,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
+    usize,
 )> {
     const LOCAL_PROTOCOL: &str = "file://";
 
@@ -170,7 +171,12 @@ pub(crate) fn local_parquet_read_into_arrow(
             .expect("array index during scatter out of index")
             .extend(v);
     }
-    Ok((metadata, schema, all_columns))
+    Ok((
+        metadata,
+        schema,
+        all_columns,
+        row_ranges.iter().map(|rr| rr.num_rows).sum(),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -198,7 +204,7 @@ pub(crate) async fn local_parquet_read_async(
                 schema_infer_options,
                 metadata,
             );
-            let (metadata, schema, arrays) = v?;
+            let (metadata, schema, arrays, num_rows_read) = v?;
 
             let converted_arrays = arrays
                 .into_par_iter()
@@ -218,7 +224,14 @@ pub(crate) async fn local_parquet_read_async(
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok((metadata, Table::from_columns(converted_arrays)?))
+            Ok((
+                metadata,
+                Table::new(
+                    Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
+                    converted_arrays,
+                    num_rows_read,
+                )?,
+            ))
         })();
         let _ = send.send(result);
     });
@@ -240,6 +253,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
+    usize,
 )> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();

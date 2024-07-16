@@ -559,7 +559,7 @@ impl ParquetFileReader {
     pub async fn read_from_ranges_into_arrow_arrays(
         self,
         ranges: Arc<RangesContainer>,
-    ) -> DaftResult<Vec<Vec<Box<dyn arrow2::array::Array>>>> {
+    ) -> DaftResult<(Vec<Vec<Box<dyn arrow2::array::Array>>>, usize)> {
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema
@@ -706,6 +706,9 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        Ok(all_field_arrays)
+        Ok((
+            all_field_arrays,
+            self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
+        ))
     }
 }
