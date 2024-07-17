@@ -14,7 +14,7 @@ use daft_core::{
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::IOConfig;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::tokenize::bpe::DaftBPE;
 
@@ -75,7 +75,7 @@ fn tokenize_encode_series(
     })
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeEncodeFunction {
     pub(super) tokens_path: String,
     pub(super) io_config: Option<Arc<IOConfig>>,

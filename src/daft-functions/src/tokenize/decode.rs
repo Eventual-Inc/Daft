@@ -10,7 +10,7 @@ use daft_core::{
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::IOConfig;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::tokenize::bpe::DaftBPE;
 
@@ -23,8 +23,9 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
         )));
     }
     let series = series.cast(&DataType::UInt32)?;
-    let tokens: Vec<u32> = series.u32()?.as_arrow().values_iter().copied().collect();
-    bpe.decode(&tokens)
+    let data = series.u32()?.as_arrow();
+    let tokens: &[u32] = data.values().as_slice();
+    bpe.decode(tokens)
 }
 
 fn tokenize_decode_array(
@@ -70,7 +71,7 @@ fn tokenize_decode_series(
     }
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct TokenizeDecodeFunction {
     pub(super) tokens_path: String,
     pub(super) io_config: Option<Arc<IOConfig>>,
