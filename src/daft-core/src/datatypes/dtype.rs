@@ -246,6 +246,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn nested_dtype(&self) -> Option<&DataType> {
+        match self {
+            DataType::Map(dtype)
+            | DataType::List(dtype)
+            | DataType::FixedSizeList(dtype, _)
+            | DataType::FixedShapeTensor(dtype, _)
+            | DataType::Tensor(dtype) => Some(dtype),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
