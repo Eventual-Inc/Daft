@@ -89,6 +89,7 @@ pub struct DaftBPE {
     specials: HashSet<u32>,
 }
 
+// Fetch a BPE from the builtin tiktoken-rs ones
 fn get_builtin_bpe(name: &str) -> Option<DaftBPE> {
     match name {
         "cl100k_base" => Some(DaftBPE {
@@ -120,6 +121,7 @@ fn get_builtin_bpe(name: &str) -> Option<DaftBPE> {
     }
 }
 
+// This function is templated because tiktoken-rs uses a special hasher for the HashMap.
 fn parse_tokens<H>(s: &str) -> DaftResult<HashMap<Vec<u8>, usize, H>>
 where
     H: BuildHasher + Default,
@@ -152,6 +154,7 @@ fn get_file_bpe(
     pattern: &str,
     special_tokens: Vec<String>,
 ) -> DaftResult<DaftBPE> {
+    // Fetch the token file as a string
     let client = get_io_client(false, io_config)?;
     let runtime = get_runtime(false)?;
     let get_future = client.single_url_get(path.to_string(), None, None);
@@ -162,6 +165,7 @@ fn get_file_bpe(
     let tokens_res = parse_tokens(file_str)?;
     let max_token = *tokens_res.values().max().ok_or(Error::EmptyTokenFile {})?;
 
+    // Get the token->id mappings for special tokens
     let mut special_hashmap = HashMap::default();
     let mut special_hashset = HashSet::default();
     for (i, token) in special_tokens.into_iter().enumerate() {
@@ -211,7 +215,8 @@ impl DaftBPE {
         }
     }
 
-    // use u32s because surely there won't be tokens > 4 billion...
+    // use u32s because there shouldn't be tokens > 4 billion
+    // (and other libraries use u32)
     pub fn encode(&self, s: &str, use_special: bool) -> Vec<u32> {
         let encode_res = if use_special {
             self.bpe.encode_with_special_tokens(s)

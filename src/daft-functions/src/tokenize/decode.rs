@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use crate::tokenize::bpe::DaftBPE;
 
+// Helper function that operates on a single Utf8 series
 fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
     if !series.data_type().is_integer() {
         return Err(DaftError::TypeError(format!(
