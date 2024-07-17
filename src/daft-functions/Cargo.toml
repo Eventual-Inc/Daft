@@ -1,20 +1,6 @@
 [dependencies]
-arrow2 = {workspace = true, features = [
-  "chrono-tz",
-  "compute_take",
-  "compute_cast",
-  "compute_aggregate",
-  "compute_if_then_else",
-  "compute_sort",
-  "compute_filter",
-  "compute_temporal",
-  "compute_comparison",
-  "compute_arithmetics",
-  "compute_concatenate",
-  "compute_substring",
-  "io_ipc"
-]}
-base64 = "0.22.0"
+arrow2 = {workspace = true}
+base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -23,7 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
-tiktoken-rs = "0.5.9"
+tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
 typetag = "0.2.16"
 uuid = "1.10.0"

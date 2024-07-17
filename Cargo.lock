@@ -870,9 +870,9 @@ checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
 name = "base64"
-version = "0.22.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64-simd"
@@ -1586,7 +1586,7 @@ name = "daft-core"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "base64 0.22.0",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -1709,7 +1709,7 @@ name = "daft-functions"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "base64 0.22.0",
+ "base64 0.22.1",
  "bytes",
  "common-error",
  "common-io-config",
@@ -3634,7 +3634,7 @@ version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e459365e590736a54c3fa561947c84837534b8e9af6fc5bf781307e82658fae"
 dependencies = [
- "base64 0.22.0",
+ "base64 0.22.1",
  "serde",
 ]
 
