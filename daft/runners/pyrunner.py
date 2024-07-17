@@ -185,13 +185,15 @@ class PyRunner(Runner[MicroPartition]):
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
             if daft_execution_config.enable_native_executor:
-                logger.info("Using new executor")
+                logger.info("Using native executor")
                 executor = NativeExecutor.from_logical_plan_builder(builder)
                 results_gen = executor.run(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 )
                 yield from results_gen
             else:
+                logger.info("Using python executor")
+
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
