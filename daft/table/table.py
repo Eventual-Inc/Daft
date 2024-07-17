@@ -612,7 +612,7 @@ def read_parquet_into_pyarrow(
         return pa.table(columns, schema=schema)
     else:
         # If data contains no columns, we return an empty table with the appropriate size using `Table.drop`
-        return pa.table({"dummy_column": pa.array([None] * num_rows_read)}).drop("dummy_column")
+        return pa.table({"dummy_column": pa.array([None] * num_rows_read)}).drop(["dummy_column"])
 
 
 def read_parquet_into_pyarrow_bulk(
@@ -647,6 +647,6 @@ def read_parquet_into_pyarrow_bulk(
             )
         else:
             # If data contains no columns, we return an empty table with the appropriate size using `Table.drop`
-            table = pa.table({"dummy_col": [None] * num_rows_read}).drop("dummy_col")
+            table = pa.table({"dummy_col": [None] * num_rows_read}).drop(["dummy_col"])
         tables.append(table)
     return tables
