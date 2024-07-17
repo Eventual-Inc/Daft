@@ -1,5 +1,6 @@
 mod channel;
 mod intermediate_ops;
+mod pipeline;
 mod run;
 mod sinks;
 mod sources;
