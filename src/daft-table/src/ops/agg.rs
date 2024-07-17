@@ -155,7 +155,11 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        let final_len = groupkeys_table.len();
+        // Broadcast either the keys or the grouped_cols, depending on which is unit-length
+        let final_len = [groupkeys_table.len(), grouped_col.len()]
+            .into_iter()
+            .find(|&l| l != 1)
+            .unwrap_or(1);
         let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
         Self::new_with_broadcast(final_schema, final_columns, final_len)

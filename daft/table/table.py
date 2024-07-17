@@ -637,10 +637,16 @@ def read_parquet_into_pyarrow_bulk(
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
-    return [
-        pa.table(
-            [pa.chunked_array(c, type=f.type) for f, c in zip(fields, columns)],
-            schema=pa.schema(fields, metadata=metadata),
-        )  # type: ignore
-        for fields, metadata, columns in bulk_result
-    ]
+
+    tables = []
+    for fields, metadata, columns, num_rows_read in bulk_result:
+        if columns:
+            table = pa.table(
+                [pa.chunked_array(c, type=f.type) for f, c in zip(fields, columns)],
+                schema=pa.schema(fields, metadata=metadata),
+            )
+        else:
+            # If data contains no columns, we return an empty table with the appropriate size using `Table.drop`
+            table = pa.table({"dummy_col": [None] * num_rows_read}).drop("dummy_col")
+        tables.append(table)
+    return tables
