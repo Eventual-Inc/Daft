@@ -40,7 +40,7 @@ impl Sort {
         for (field, expr) in sort_by_resolved_schema.fields.values().zip(sort_by.iter()) {
             // Disallow sorting by null, binary, and boolean columns.
             // TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
-            if let dt @ (DataType::Null | DataType::Binary | DataType::Boolean) = &field.dtype {
+            if let dt @ (DataType::Null | DataType::Binary) = &field.dtype {
                 return Err(DaftError::ValueError(format!(
                     "Cannot sort on expression {expr} with type: {dt}",
                 )))
