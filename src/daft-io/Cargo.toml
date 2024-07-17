@@ -52,4 +52,4 @@ name = "daft-io"
 version = {workspace = true}
 
 [package.metadata.cargo-machete]
-ignored = ["openssl_sys"]
+ignored = ["openssl-sys"]

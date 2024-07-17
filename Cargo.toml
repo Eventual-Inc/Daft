@@ -60,7 +60,7 @@ publish = false
 version = "0.2.0-dev0"
 
 [package.metadata.cargo-machete]
-ignored = ["lzma_sys"]
+ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}

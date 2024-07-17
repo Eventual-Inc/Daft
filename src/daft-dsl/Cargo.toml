@@ -3,9 +3,6 @@ common-error = {path = "../common/error", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
-dashmap = "6.0.1"
-erased-serde = "0.4.5"
-indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
