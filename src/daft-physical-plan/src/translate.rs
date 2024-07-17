@@ -56,6 +56,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
+        LogicalPlan::Concat(concat) => {
+            let schema = concat.input.schema().clone();
+            let input = translate(&concat.input)?;
+            let other = translate(&concat.other)?;
+            Ok(LocalPhysicalPlan::concat(input, other, schema))
+        }
         _ => todo!("{} not yet implemented", plan.name()),
     }
 }

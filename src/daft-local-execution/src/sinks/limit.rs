@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-use super::sink::{Sink, SinkResultType};
+use super::sink::{SingleInputSink, SinkResultType};
 
 #[derive(Clone)]
 pub struct LimitSink {
@@ -22,7 +22,7 @@ impl LimitSink {
     }
 }
 
-impl Sink for LimitSink {
+impl SingleInputSink for LimitSink {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("LimitSink::sink");
         let input_num_rows = input.len();
@@ -45,7 +45,7 @@ impl Sink for LimitSink {
     }
 
     fn in_order(&self) -> bool {
-        true
+        false
     }
 
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {

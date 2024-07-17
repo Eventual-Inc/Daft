@@ -30,7 +30,7 @@ pub enum LocalPhysicalPlan {
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
     // Pivot(Pivot),
-    // Concat(Concat),
+    Concat(Concat),
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
@@ -142,6 +142,21 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
+
+    pub(crate) fn concat(
+        input: LocalPhysicalPlanRef,
+        other: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Concat(Concat {
+            input,
+            other,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn schema(&self) -> &SchemaRef {
         match self {
             LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
@@ -216,6 +231,16 @@ pub struct HashAggregate {
 #[derive(Debug)]
 
 pub struct HashJoin {}
+
+#[derive(Debug)]
+
+pub struct Concat {
+    pub input: LocalPhysicalPlanRef,
+    pub other: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
 #[derive(Debug)]
 
 pub struct PhysicalWrite {}
