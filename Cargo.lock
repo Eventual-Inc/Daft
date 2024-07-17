@@ -1638,7 +1638,6 @@ version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "atoi_simd",
- "bincode",
  "chrono",
  "csv-async",
  "fast-float",
