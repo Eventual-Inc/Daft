@@ -682,6 +682,8 @@ jobs:
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
+        channel: stable
+
     - name: Install Machete
       run: cargo install cargo-machete
     - name: Run Machete
