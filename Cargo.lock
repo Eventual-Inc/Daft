@@ -1795,7 +1795,6 @@ dependencies = [
  "pyo3",
  "snafu",
  "tokio",
- "tokio-stream",
 ]
 
 [[package]]

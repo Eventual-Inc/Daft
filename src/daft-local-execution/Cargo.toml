@@ -13,7 +13,6 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]
