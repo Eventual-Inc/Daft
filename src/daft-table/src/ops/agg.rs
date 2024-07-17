@@ -72,6 +72,8 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
+        use daft_core::schema::Schema;
+
         let udf = match func {
             FunctionExpr::Python(udf) => udf,
             _ => {
@@ -153,6 +155,9 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &[grouped_col]].concat())
+        let final_len = groupkeys_table.len();
+        let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
+        let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
+        Self::new_with_broadcast(final_schema, final_columns, final_len)
     }
 }
