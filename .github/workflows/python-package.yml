@@ -685,7 +685,7 @@ jobs:
         channel: stable
 
     - name: Install Machete
-      run: cargo install cargo-machete
+      run: cargo +stable install cargo-machete
     - name: Run Machete
       run: cargo machete --with-metadata
 
