@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, iter::zip};
+use std::{cmp::Ordering, collections::HashMap, iter::zip};
 
 use arrow2::{
     array::{
@@ -151,17 +151,20 @@ fn search_sorted_boolean_array(
     let mut left = 0_usize;
     let mut right = array_size;
 
-    let mut results: Vec<u64> = Vec::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    // For boolean arrays, we know there can only be three possible values: true, false, and null.s
+    // We can pre-compute the results for these three values and then reuse them to compute the results for the keys.
+    let pre_computed_keys = &[Some(true), Some(false), None];
+    let mut pre_computed_results: HashMap<Option<bool>, u64> = HashMap::new();
+    let mut last_key = pre_computed_keys.iter().next().unwrap();
+    for key_val in pre_computed_keys.iter() {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
             (Some(last_key), Some(key_val)) => {
                 if !input_reversed {
-                    last_key.lt(&key_val)
+                    last_key.lt(key_val)
                 } else {
-                    last_key.gt(&key_val)
+                    last_key.gt(key_val)
                 }
             }
             (Some(_), None) => !input_reversed,
@@ -186,7 +189,7 @@ fn search_sorted_boolean_array(
                     if !input_reversed {
                         key_val.lt(&mid_val)
                     } else {
-                        mid_val.lt(&key_val)
+                        mid_val.lt(key_val)
                     }
                 }
                 (Some(_), false) => !input_reversed,
@@ -198,9 +201,14 @@ fn search_sorted_boolean_array(
                 left = mid_idx + 1;
             }
         }
-        results.push(left.try_into().unwrap());
+        pre_computed_results.insert(*key_val, left.try_into().unwrap());
         last_key = key_val;
     }
+
+    let results = keys
+        .iter()
+        .map(|key_val| *pre_computed_results.get(&key_val).unwrap())
+        .collect::<Vec<_>>();
 
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
