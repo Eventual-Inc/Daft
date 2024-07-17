@@ -247,5 +247,8 @@ version = "0.17.4"
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]
 
+[package.metadata.cargo-machete]
+ignored = ["arrow_array", "arrow_buffer", "avro_rs", "criterion", "crossbeam_channel", "flate2", "getrandom", "rustc_version", "sample_arrow2", "sample_std", "sample_test", "tokio", "tokio_util"]
+
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = {version = "0.2", features = ["js"]}

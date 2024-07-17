@@ -3,6 +3,8 @@ pub mod display_table;
 pub mod hashable_float_wrapper;
 pub mod supertype;
 
+pub use bincode;
+
 #[macro_export]
 macro_rules! impl_binary_trait_by_reference {
     ($ty:ty, $trait:ident, $fname:ident) => {
@@ -26,7 +28,10 @@ macro_rules! impl_bincode_py_state_serialization {
                     Self::type_object(py)
                         .getattr("_from_serialized")?
                         .to_object(py),
-                    (PyBytes::new(py, &bincode::serialize(&self).unwrap()).to_object(py),)
+                    (
+                        PyBytes::new(py, &$crate::utils::bincode::serialize(&self).unwrap())
+                            .to_object(py),
+                    )
                         .to_object(py),
                 ))
             }
@@ -35,7 +40,7 @@ macro_rules! impl_bincode_py_state_serialization {
             pub fn _from_serialized(py: Python, serialized: PyObject) -> PyResult<Self> {
                 serialized
                     .extract::<&PyBytes>(py)
-                    .map(|s| bincode::deserialize(s.as_bytes()).unwrap())
+                    .map(|s| $crate::utils::bincode::deserialize(s.as_bytes()).unwrap())
             }
         }
     };

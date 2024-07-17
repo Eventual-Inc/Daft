@@ -1,22 +1,16 @@
 [dependencies]
-bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
-dashmap = "6.0.1"
-erased-serde = "0.4.5"
-indexmap = {workspace = true}
 itertools = {workspace = true}
-lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = "0.2.16"
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-io-config/python", "common-treenode/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python"]
 
 [package]
 edition = {workspace = true}
