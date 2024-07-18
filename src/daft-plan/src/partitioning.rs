@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use daft_dsl::{sort_by_hash, ExprRef};
+use daft_dsl::{sort_exprs_by_name, ExprRef};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -150,6 +150,18 @@ impl ClusteringSpec {
             Self::Hash(conf) => conf.multiline_display(),
             Self::Random(conf) => conf.multiline_display(),
             Self::Unknown(conf) => conf.multiline_display(),
+        }
+    }
+
+    pub fn is_hash_partitioned_by(&self, exprs: &[ExprRef]) -> bool {
+        match self {
+            Self::Hash(HashClusteringConfig { by, .. }) => {
+                let exprs_names: HashSet<&str> = exprs.iter().map(|x| x.name()).collect();
+                let by_names: HashSet<&str> = by.iter().map(|x| x.name()).collect();
+                exprs_names.iter().all(|x| by_names.contains(x))
+                    && by_names.iter().all(|x| exprs_names.contains(x))
+            }
+            _ => false,
         }
     }
 }
@@ -349,7 +361,7 @@ pub struct RangeClusteringConfig {
 
 impl RangeClusteringConfig {
     pub fn new(num_partitions: usize, mut by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
-        sort_by_hash(&mut by);
+        sort_exprs_by_name(&mut by);
         Self {
             num_partitions,
             by,
@@ -379,7 +391,7 @@ pub struct HashClusteringConfig {
 
 impl HashClusteringConfig {
     pub fn new(num_partitions: usize, mut by: Vec<ExprRef>) -> Self {
-        sort_by_hash(&mut by);
+        sort_exprs_by_name(&mut by);
         Self { num_partitions, by }
     }
 

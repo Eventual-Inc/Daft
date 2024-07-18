@@ -23,7 +23,7 @@ use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
     fmt::{Debug, Display, Formatter, Result},
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::Hash,
     io::{self, Write},
     sync::Arc,
 };
@@ -1254,12 +1254,8 @@ pub fn resolve_aggexprs(
     itertools::process_results(resolved_iter, |res| res.unzip())
 }
 
-pub fn sort_by_hash(exprs: &mut [ExprRef]) {
-    exprs.sort_by_cached_key(|x| {
-        let mut hasher = DefaultHasher::new();
-        x.hash(&mut hasher);
-        hasher.finish()
-    })
+pub fn sort_exprs_by_name(exprs: &mut [ExprRef]) {
+    exprs.sort_by(|a, b| a.name().cmp(b.name()))
 }
 
 #[cfg(test)]

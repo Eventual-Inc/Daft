@@ -1,4 +1,4 @@
-use daft_dsl::{sort_by_hash, ExprRef};
+use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 use crate::physical_plan::PhysicalPlanRef;
@@ -36,9 +36,8 @@ impl FanoutByHash {
     pub(crate) fn new(
         input: PhysicalPlanRef,
         num_partitions: usize,
-        mut partition_by: Vec<ExprRef>,
+        partition_by: Vec<ExprRef>,
     ) -> Self {
-        sort_by_hash(&mut partition_by);
         Self {
             input,
             num_partitions,

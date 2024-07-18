@@ -441,19 +441,9 @@ pub(super) fn translate_single_logical_node(
 
             let left_clustering_spec = left_physical.clustering_spec();
             let right_clustering_spec = right_physical.clustering_spec();
-            let num_partitions = max(
-                left_clustering_spec.num_partitions(),
-                right_clustering_spec.num_partitions(),
-            );
-            let new_left_hash_clustering_spec = Arc::new(ClusteringSpec::Hash(
-                HashClusteringConfig::new(num_partitions, left_on.clone()),
-            ));
-            let new_right_hash_clustering_spec = Arc::new(ClusteringSpec::Hash(
-                HashClusteringConfig::new(num_partitions, right_on.clone()),
-            ));
 
-            let is_left_hash_partitioned = left_clustering_spec == new_left_hash_clustering_spec;
-            let is_right_hash_partitioned = right_clustering_spec == new_right_hash_clustering_spec;
+            let is_left_hash_partitioned = left_clustering_spec.is_hash_partitioned_by(left_on);
+            let is_right_hash_partitioned = right_clustering_spec.is_hash_partitioned_by(right_on);
 
             // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
@@ -589,6 +579,11 @@ pub(super) fn translate_single_logical_node(
                         ));
                     }
 
+                    let num_partitions = max(
+                        left_clustering_spec.num_partitions(),
+                        right_clustering_spec.num_partitions(),
+                    );
+
                     let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
                         // Use the special-purpose presorting that ensures join inputs are sorted with aligned
                         // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
@@ -630,10 +625,23 @@ pub(super) fn translate_single_logical_node(
                     .arced())
                 }
                 JoinStrategy::Hash => {
-                    if (num_partitions > 1
-                        || left_clustering_spec.num_partitions() != num_partitions)
-                        && !is_left_hash_partitioned
-                    {
+                    let num_left_partitions = left_clustering_spec.num_partitions();
+                    let num_right_partitions = right_clustering_spec.num_partitions();
+
+                    let num_partitions = match (
+                        is_left_hash_partitioned,
+                        is_right_hash_partitioned,
+                        num_left_partitions,
+                        num_right_partitions,
+                    ) {
+                        (true, true, a, b) | (false, false, a, b) => max(a, b),
+                        (_, _, 1, x) | (_, _, x, 1) => x,
+                        (true, false, a, b) if (a as f32) >= (b as f32) * 0.5 => a,
+                        (false, true, a, b) if (b as f32) >= (a as f32) * 0.5 => b,
+                        (_, _, a, b) => max(a, b),
+                    };
+
+                    if num_left_partitions != num_partitions || !is_left_hash_partitioned {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             left_physical,
                             num_partitions,
@@ -642,10 +650,7 @@ pub(super) fn translate_single_logical_node(
                         left_physical =
                             PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
-                    if (num_partitions > 1
-                        || right_clustering_spec.num_partitions() != num_partitions)
-                        && !is_right_hash_partitioned
-                    {
+                    if num_right_partitions != num_partitions || !is_right_hash_partitioned {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             right_physical,
                             num_partitions,
