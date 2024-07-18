@@ -62,7 +62,7 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
     #[cfg(feature = "python")]
@@ -72,6 +72,8 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
+        use daft_core::schema::Schema;
+
         let udf = match func {
             FunctionExpr::Python(udf) => udf,
             _ => {
@@ -94,7 +96,16 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Take fast path short circuit if there is only 1 group
-        let (groupkeys_table, grouped_col) = if groupvals_indices.len() <= 1 {
+        let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
+            let empty_groupkeys_table = Table::empty(Some(groupby_table.schema.clone()))?;
+            let empty_udf_output_col = Series::empty(
+                evaluated_inputs
+                    .first()
+                    .map_or_else(|| "output", |s| s.name()),
+                &udf.return_dtype,
+            );
+            (empty_groupkeys_table, empty_udf_output_col)
+        } else if groupvals_indices.len() == 1 {
             let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
             let groupkeys_table = {
                 let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
@@ -130,14 +141,14 @@ impl Table {
                         let groupkeys_table = groupby_table.take(&groupkey_indices_as_series)?;
 
                         // Broadcast the group keys to the length of the grouped column, because output of UDF can be more than one row
-                        let broacasted_groupkeys = groupkeys_table
+                        let broadcasted_groupkeys = groupkeys_table
                             .columns
                             .iter()
                             .map(|c| c.broadcast(evaluated_grouped_col.len()))
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Combine the broadcasted group keys into a Table
-                        Table::from_columns(broacasted_groupkeys)?
+                        Table::from_nonempty_columns(broadcasted_groupkeys)?
                     };
 
                     Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
@@ -153,6 +164,10 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        Self::from_columns([&groupkeys_table.columns[..], &[grouped_col]].concat())
+        // Broadcast either the keys or the grouped_cols, depending on which is unit-length
+        let final_len = grouped_col.len();
+        let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
+        let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
+        Self::new_with_broadcast(final_schema, final_columns, final_len)
     }
 }

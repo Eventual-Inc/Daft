@@ -190,8 +190,8 @@ impl Display for TableStatistics {
             .iter()
             .map(|(s, c)| c.combined_series().unwrap().rename(s))
             .collect::<Vec<_>>();
-
-        let tab = Table::from_columns(columns).unwrap();
+        let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect()).unwrap();
+        let tab = Table::new_with_size(tbl_schema, columns, 2).unwrap();
         write!(f, "{tab}")
     }
 }
@@ -209,9 +209,10 @@ mod test {
 
     #[test]
     fn test_equal() -> crate::Result<()> {
-        let table =
-            Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
-                .unwrap();
+        let table = Table::from_nonempty_columns(vec![
+            Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
+        ])
+        .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
@@ -225,7 +226,10 @@ mod test {
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         // True case
-        let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
+        let table =
+            Table::from_nonempty_columns(
+                vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()],
+            )
             .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 

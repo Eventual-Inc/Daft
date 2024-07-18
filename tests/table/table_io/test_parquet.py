@@ -351,6 +351,24 @@ def test_read_empty_parquet_file_with_pyarrow(tmpdir):
     assert tab == read_back
 
 
+def test_read_parquet_file_missing_column_with_pyarrow(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([1, 2, 3], type=pa.int64())})
+    papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow(file_path.as_posix(), columns=["MISSING"])
+    assert tab.drop("x") == read_back  # same length, but no columns, as original table
+
+
+def test_read_parquet_file_missing_column_partial_read_with_pyarrow(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([1, 2, 3], type=pa.int64()), "y": pa.array([1, 2, 3], type=pa.int64())})
+    papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow(file_path.as_posix(), columns=["x", "MISSING"])
+    assert tab.drop("y") == read_back  # only read "x"
+
+
 def test_read_empty_parquet_file_with_pyarrow_bulk(tmpdir):
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
@@ -359,3 +377,23 @@ def test_read_empty_parquet_file_with_pyarrow_bulk(tmpdir):
     read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()])
     assert len(read_back) == 1
     assert tab == read_back[0]
+
+
+def test_read_parquet_file_missing_column_with_pyarrow_bulk(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([1, 2, 3], type=pa.int64())})
+    papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()], columns=["MISSING"])
+    assert len(read_back) == 1
+    assert tab.drop("x") == read_back[0]  # same length, but no columns, as original table
+
+
+def test_read_parquet_file_missing_column_partial_read_with_pyarrow_bulk(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([1, 2, 3], type=pa.int64()), "y": pa.array([1, 2, 3], type=pa.int64())})
+    papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()], columns=["x", "MISSING"])
+    assert len(read_back) == 1
+    assert tab.drop("y") == read_back[0]  # only read "x"

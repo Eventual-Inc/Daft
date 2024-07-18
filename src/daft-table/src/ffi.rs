@@ -23,8 +23,9 @@ pub fn record_batches_to_table(
     let names = schema.names();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
-    let mut extracted_arrow_arrays: Vec<Vec<Box<dyn arrow2::array::Array>>> =
+    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn arrow2::array::Array>>, usize)> =
         Vec::with_capacity(num_batches);
+
     for rb in batches {
         let pycolumns = rb.getattr(pyo3::intern!(rb.py(), "columns"))?;
         let columns = pycolumns
@@ -35,12 +36,12 @@ pub fn record_batches_to_table(
         if names.len() != columns.len() {
             return Err(PyValueError::new_err(format!("Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}", names.len(), columns.len())));
         }
-        extracted_arrow_arrays.push(columns);
+        extracted_arrow_arrays.push((columns, rb.len()?));
     }
     // Now do the heavy lifting (casting and concats) without the GIL.
     py.allow_threads(|| {
         let mut tables: Vec<Table> = Vec::with_capacity(num_batches);
-        for cols in extracted_arrow_arrays {
+        for (cols, num_rows) in extracted_arrow_arrays {
             let columns = cols
                 .into_iter()
                 .enumerate()
@@ -49,7 +50,7 @@ pub fn record_batches_to_table(
                     Series::try_from((names.get(i).unwrap().as_str(), c))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(Table::from_columns(columns)?)
+            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?)
         }
         Ok(Table::concat(tables.as_slice())?)
     })

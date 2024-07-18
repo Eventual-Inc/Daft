@@ -81,3 +81,19 @@ def test_sample_with_replacement(make_df, valid_data: list[dict[str, float]]) ->
     assert df.column_names == list(valid_data[0].keys())
     # Check that the two rows are the same, which should be for this seed.
     assert all(col[0] == col[1] for col in df.to_pydict().values())
+
+
+def test_sample_with_concat(make_df, valid_data: list[dict[str, float]]) -> None:
+    df1 = make_df(valid_data)
+    df2 = make_df(valid_data)
+
+    df1 = df1.sample(fraction=0.5, seed=42)
+    df2 = df2.sample(fraction=0.5, seed=42)
+
+    df = df1.concat(df2)
+    df.collect()
+
+    assert len(df) == 4
+    assert df.column_names == list(valid_data[0].keys())
+    # Check that the two rows are the same, which should be for this seed.
+    assert all(col[:2] == col[2:] for col in df.to_pydict().values())

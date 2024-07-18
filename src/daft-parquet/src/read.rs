@@ -208,8 +208,11 @@ async fn read_parquet_single(
         metadata_num_columns
     };
 
-    if (!field_id_mapping_provided && table.num_columns() != expected_num_columns)
+    if (!field_id_mapping_provided
+        && requested_columns.is_none()
+        && table.num_columns() != expected_num_columns)
         || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
+        || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
     {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),
@@ -234,11 +237,11 @@ async fn read_parquet_single_into_arrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
+) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize)> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, schema, all_arrays) = if matches!(source_type, SourceType::File) {
-        let (metadata, schema, all_arrays) =
+    let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
+        let (metadata, schema, all_arrays, num_rows_read) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
                 fixed_uri.as_ref(),
                 columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
@@ -250,7 +253,7 @@ async fn read_parquet_single_into_arrow(
                 metadata,
             )
             .await?;
-        (metadata, Arc::new(schema), all_arrays)
+        (metadata, Arc::new(schema), all_arrays, num_rows_read)
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri,
@@ -283,10 +286,10 @@ async fn read_parquet_single_into_arrow(
 
         let schema = parquet_reader.arrow_schema().clone();
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        let all_arrays = parquet_reader
+        let (all_arrays, num_rows_read) = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
             .await?;
-        (Arc::new(metadata), schema, all_arrays)
+        (Arc::new(metadata), schema, all_arrays, num_rows_read)
     };
 
     let rows_per_row_groups = metadata
@@ -300,14 +303,14 @@ async fn read_parquet_single_into_arrow(
 
     let len_per_col = all_arrays
         .iter()
-        .map(|v| v.iter().map(|a| a.len()).sum())
+        .map(|v| v.iter().map(|a| a.len()).sum::<usize>())
         .collect::<Vec<_>>();
     let all_same_size = len_per_col.windows(2).all(|w| w[0] == w[1]);
     if !all_same_size {
         return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.into() }.into());
     }
 
-    let table_len = *len_per_col.first().unwrap_or(&0);
+    let table_len = num_rows_read;
     let table_ncol = all_arrays.len();
 
     if let Some(row_groups) = &row_groups {
@@ -354,8 +357,9 @@ async fn read_parquet_single_into_arrow(
         metadata_num_columns
     };
 
-    if (!field_id_mapping_provided && table_ncol != expected_num_columns)
+    if (!field_id_mapping_provided && columns.is_none() && table_ncol != expected_num_columns)
         || (field_id_mapping_provided && table_ncol > expected_num_columns)
+        || (columns.is_some() && table_ncol > expected_num_columns)
     {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),
@@ -365,7 +369,7 @@ async fn read_parquet_single_into_arrow(
         .into());
     }
 
-    Ok((schema, all_arrays))
+    Ok((schema, all_arrays, table_len))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -401,7 +405,7 @@ pub fn read_parquet(
     })
 }
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
-pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>);
+pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -721,7 +725,7 @@ pub fn read_parquet_statistics(
         )),
     ));
 
-    Table::from_columns(vec![
+    Table::from_nonempty_columns(vec![
         uris.clone(),
         row_count_series.into_series(),
         row_group_series.into_series(),
