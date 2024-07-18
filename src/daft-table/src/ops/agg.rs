@@ -96,7 +96,16 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Take fast path short circuit if there is only 1 group
-        let (groupkeys_table, grouped_col) = if groupvals_indices.len() <= 1 {
+        let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
+            let empty_groupkeys_table = Table::empty(Some(groupby_table.schema.clone()))?;
+            let empty_udf_output_col = Series::empty(
+                evaluated_inputs
+                    .first()
+                    .map_or_else(|| "output", |s| s.name()),
+                &udf.return_dtype,
+            );
+            (empty_groupkeys_table, empty_udf_output_col)
+        } else if groupvals_indices.len() == 1 {
             let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
             let groupkeys_table = {
                 let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
@@ -156,10 +165,7 @@ impl Table {
         };
 
         // Broadcast either the keys or the grouped_cols, depending on which is unit-length
-        let final_len = [groupkeys_table.len(), grouped_col.len()]
-            .into_iter()
-            .find(|&l| l != 1)
-            .unwrap_or(1);
+        let final_len = grouped_col.len();
         let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
         Self::new_with_broadcast(final_schema, final_columns, final_len)
