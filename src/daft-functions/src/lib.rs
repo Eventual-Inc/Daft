@@ -1,7 +1,7 @@
 #![feature(async_closure)]
 pub mod hash;
-pub mod tokenize;
 pub mod minhash;
+pub mod tokenize;
 pub mod uri;
 
 use common_error::DaftError;
