@@ -37,7 +37,8 @@ def test_map_groups(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 3])
-def test_map_groups_more_than_one_output_row(make_df, repartition_nparts):
+@pytest.mark.parametrize("output_when_empty", [[], [1], [1, 2]])
+def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output_when_empty):
     daft_df = make_df(
         {
             "group": [1, 2],
@@ -50,7 +51,7 @@ def test_map_groups_more_than_one_output_row(make_df, repartition_nparts):
     def udf(a):
         a = a.to_pylist()
         if len(a) == 0:
-            return []
+            return output_when_empty
         return [a[0]] * 3
 
     daft_df = daft_df.groupby("group").map_groups(udf(daft_df["a"])).sort("group", desc=False)
