@@ -190,13 +190,13 @@ class ParquetSourceConfig:
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
-    row_groups: list[int] | list[list[int]] | None
+    row_groups: list[list[int]] | None
 
     def __init__(
         self,
         coerce_int96_timestamp_unit: PyTimeUnit | None = None,
         field_id_mapping: dict[int, PyField] | None = None,
-        row_groups: list[int] | list[list[int]] | None = None,
+        row_groups: list[list[int]] | None = None,
     ): ...
 
 class CsvSourceConfig:

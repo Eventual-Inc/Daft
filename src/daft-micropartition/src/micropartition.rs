@@ -99,6 +99,7 @@ fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(Vec<Table>, SchemaRef)> {
+    println!("materialize_scan_task");
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -130,16 +131,13 @@ fn materialize_scan_task(
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
-                    row_groups,
+                    ..
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
-                    let row_groups = if let Some(row_groups) = row_groups {
-                        Some(row_groups.clone())
-                    } else {
-                        parquet_sources_to_row_groups(scan_task.sources.as_slice())
-                    };
+
+                    let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     let metadatas = scan_task
                         .sources
                         .iter()

@@ -300,6 +300,7 @@ impl ScanOperator for GlobScanOperator {
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
         let is_ray_runner = self.is_ray_runner;
+
         let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
             row_groups: Some(row_groups),
             ..
@@ -309,6 +310,7 @@ impl ScanOperator for GlobScanOperator {
         } else {
             None
         };
+
         // Create one ScanTask per file
         Ok(Box::new(files.enumerate().map(move |(idx, f)| {
             let FileMetadata {

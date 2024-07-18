@@ -70,23 +70,21 @@ impl ScanOperator for AnonymousScanOperator {
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
+
         let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
             row_groups: Some(row_groups),
             ..
         }) = self.file_format_config.as_ref()
         {
-            Some(row_groups.clone())
+            row_groups.clone()
         } else {
-            None
+            std::iter::repeat(None).take(files.len()).collect()
         };
+
         // Create one ScanTask per file.
-        Ok(Box::new(files.into_iter().enumerate().map(
-            move |(idx, f)| {
-                let row_group = row_groups
-                    .as_ref()
-                    .and_then(|rgs| rgs.get(idx).cloned())
-                    .flatten();
-                let chunk_spec = row_group.map(ChunkSpec::Parquet);
+        Ok(Box::new(files.into_iter().zip(row_groups).map(
+            move |(f, rg)| {
+                let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Ok(ScanTask::new(
                     vec![DataFileSource::AnonymousDataFile {
                         path: f.to_string(),
