@@ -11,7 +11,7 @@ use snafu::Snafu;
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -300,8 +300,17 @@ impl ScanOperator for GlobScanOperator {
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
         let is_ray_runner = self.is_ray_runner;
+        let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
+            row_groups: Some(row_groups),
+            ..
+        }) = self.file_format_config.as_ref()
+        {
+            Some(row_groups.clone())
+        } else {
+            None
+        };
         // Create one ScanTask per file
-        Ok(Box::new(files.map(move |f| {
+        Ok(Box::new(files.enumerate().map(move |(idx, f)| {
             let FileMetadata {
                 filepath: path,
                 size: size_bytes,
@@ -338,11 +347,15 @@ impl ScanOperator for GlobScanOperator {
             } else {
                 None
             };
-
+            let row_group = row_groups
+                .as_ref()
+                .and_then(|rgs| rgs.get(idx).cloned())
+                .flatten();
+            let chunk_spec = row_group.map(ChunkSpec::Parquet);
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
                     path: path.to_string(),
-                    chunk_spec: None,
+                    chunk_spec,
                     size_bytes,
                     metadata: None,
                     partition_spec: None,

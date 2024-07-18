@@ -574,7 +574,7 @@ impl MicroPartition {
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
-                    row_groups,
+                    ..
                 }),
                 StorageConfig::Native(cfg),
             ) => {
@@ -594,11 +594,7 @@ impl MicroPartition {
                     .map(|s| s.get_parquet_metadata().cloned())
                     .collect::<Option<Vec<_>>>();
 
-                let row_groups = if let Some(rgs) = row_groups {
-                    Some(rgs.clone())
-                } else {
-                    parquet_sources_to_row_groups(scan_task.sources.as_slice())
-                };
+                let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
 
                 read_parquet_into_micropartition(
                     uris.as_slice(),
