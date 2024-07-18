@@ -23,6 +23,7 @@ use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
     fmt::{Debug, Display, Formatter, Result},
+    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     sync::Arc,
 };
@@ -1251,6 +1252,14 @@ pub fn resolve_aggexprs(
 ) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
     let resolved_iter = exprs.into_iter().map(|e| resolve_aggexpr(e, schema));
     itertools::process_results(resolved_iter, |res| res.unzip())
+}
+
+pub fn sort_by_hash(exprs: &mut [ExprRef]) {
+    exprs.sort_by_cached_key(|x| {
+        let mut hasher = DefaultHasher::new();
+        x.hash(&mut hasher);
+        hasher.finish()
+    })
 }
 
 #[cfg(test)]

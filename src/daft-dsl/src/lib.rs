@@ -14,7 +14,7 @@ mod treenode;
 pub use common_treenode;
 pub use expr::binary_op;
 pub use expr::col;
-pub use expr::{resolve_aggexpr, resolve_aggexprs, resolve_expr, resolve_exprs};
+pub use expr::{resolve_aggexpr, resolve_aggexprs, resolve_expr, resolve_exprs, sort_by_hash};
 pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator};
 pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]

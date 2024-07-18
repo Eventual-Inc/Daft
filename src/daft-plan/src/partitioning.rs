@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
+use daft_dsl::{sort_by_hash, ExprRef};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -348,7 +348,8 @@ pub struct RangeClusteringConfig {
 }
 
 impl RangeClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+    pub fn new(num_partitions: usize, mut by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+        sort_by_hash(&mut by);
         Self {
             num_partitions,
             by,
@@ -377,7 +378,8 @@ pub struct HashClusteringConfig {
 }
 
 impl HashClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>) -> Self {
+    pub fn new(num_partitions: usize, mut by: Vec<ExprRef>) -> Self {
+        sort_by_hash(&mut by);
         Self { num_partitions, by }
     }
 
