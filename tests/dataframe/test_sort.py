@@ -13,13 +13,6 @@ from daft.errors import ExpressionTypeError
 ###
 
 
-def test_disallowed_sort_bool(make_df):
-    df = make_df({"A": [True, False]})
-
-    with pytest.raises((ExpressionTypeError, ValueError)):
-        df.sort("A")
-
-
 def test_disallowed_sort_null(make_df):
     df = make_df({"A": [None, None]})
 
@@ -115,6 +108,41 @@ def test_single_string_col_sort(make_df, desc: bool, n_partitions: int):
         expected = list(reversed(expected))
 
     assert sorted_data["A"] == expected
+
+
+@pytest.mark.parametrize("desc", [True, False])
+@pytest.mark.parametrize("n_partitions", [1, 3, 4])
+def test_single_bool_col_sort(make_df, desc: bool, n_partitions: int):
+    df = make_df({"A": [True, None, False, True, False]}, repartition=n_partitions)
+    df = df.sort("A", desc=desc)
+    sorted_data = df.to_pydict()
+
+    expected = [False, False, True, True, None]
+    if desc:
+        expected = list(reversed(expected))
+
+    assert sorted_data["A"] == expected
+
+
+@pytest.mark.parametrize("n_partitions", [1, 3, 4])
+def test_multi_bool_col_sort(make_df, n_partitions: int):
+    df = make_df(
+        {
+            "A": [True, False, None, False, True],
+            "B": [None, True, False, True, None],
+        },
+        repartition=n_partitions,
+    )
+    df = df.sort(["A", "B"], desc=[True, False])
+    sorted_data = df.to_pydict()
+
+    expected = {
+        "A": [None, True, True, False, False],
+        "B": [False, None, None, True, True],
+    }
+
+    assert sorted_data["A"] == expected["A"]
+    assert sorted_data["B"] == expected["B"]
 
 
 ###
