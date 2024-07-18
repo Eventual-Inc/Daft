@@ -967,7 +967,7 @@ class Expression:
         assert isinstance(num_hashes, int)
         assert isinstance(ngram_size, int)
         assert isinstance(seed, int)
-        return Expression._from_pyexpr(self._expr.minhash(num_hashes, ngram_size, seed))
+        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed))
 
     def name(self) -> builtins.str:
         return self._expr.name()
