@@ -65,13 +65,14 @@ def read_parquet(
         coerce_int96_timestamp_unit = TimeUnit.from_str(coerce_int96_timestamp_unit)
 
     pytimeunit = coerce_int96_timestamp_unit._timeunit if coerce_int96_timestamp_unit is not None else None
-    
+
     if isinstance(path, list) and row_groups is not None and len(path) != len(row_groups):
         raise ValueError("row_groups must be the same length as the list of paths provided.")
     if isinstance(row_groups, list) and not isinstance(row_groups[0], list) and isinstance(path, list):
         raise ValueError("row_groups must match the same structure as the list of paths provided.")
-        
-    row_groups = row_groups if isinstance(row_groups, list) and isinstance(row_groups[0], list) else [row_groups]
+
+    row_groups = row_groups if isinstance(row_groups, list) and isinstance(row_groups[0], list) else [row_groups]  # type: ignore
+
     file_format_config = FileFormatConfig.from_parquet_config(
         ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups)
     )
