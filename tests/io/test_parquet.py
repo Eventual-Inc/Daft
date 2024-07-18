@@ -141,11 +141,9 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
 
 
 def test_row_groups():
-    path = "/Users/corygrinstead/Development/Daft/tests/assets/parquet-data/mvp.parquet"
-    
+    path = "tests/assets/parquet-data/mvp.parquet"
+
     df = daft.read_parquet(path).collect()
-    print(df)
     assert df.count_rows() == 100
     df = daft.read_parquet(path, row_groups=[0, 1]).collect()
     assert df.count_rows() == 20
-    
