@@ -36,13 +36,13 @@ impl ScalarUDF for MinHashFunction {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
-                Ok(data_field) => match &data_field.dtype {
+                Ok(field) => match &field.dtype {
                     DataType::Utf8 => Ok(Field::new(
-                        data_field.name,
+                        field.name,
                         DataType::FixedSizeList(Box::new(DataType::UInt32), self.num_hashes),
                     )),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects input to minhash to be utf8, but received {data_field}",
+                        "Expects input to minhash to be utf8, but received {field}",
                     ))),
                 },
                 Err(e) => Err(e),
