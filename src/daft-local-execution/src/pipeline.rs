@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Concat, Filter, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan, Project,
-    UnGroupedAggregate,
+    Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan,
+    Project, Sort, UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 
@@ -19,8 +19,10 @@ use crate::{
     sinks::{
         aggregate::AggregateSink,
         concat::ConcatSink,
+        hash_join::HashJoinSink,
         limit::LimitSink,
         sink::{run_double_input_sink, run_single_input_sink, DoubleInputSink, SingleInputSink},
+        sort::SortSink,
     },
     sources::{
         in_memory::InMemorySource,
@@ -176,6 +178,55 @@ pub fn physical_plan_to_pipeline(
             PipelineNode::IntermediateOp {
                 intermediate_op: Box::new(final_stage_project),
                 child: Box::new(sink_node),
+            }
+        }
+        LocalPhysicalPlan::HashAggregate(HashAggregate {
+            input,
+            aggregations,
+            group_by,
+            ..
+        }) => {
+            let agg_sink = AggregateSink::new(
+                aggregations
+                    .iter()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by.clone(),
+            );
+            let child_node = physical_plan_to_pipeline(input, psets);
+            PipelineNode::SingleInputSink {
+                sink: Box::new(agg_sink),
+                child: Box::new(child_node),
+            }
+        }
+        LocalPhysicalPlan::Sort(Sort {
+            input,
+            sort_by,
+            descending,
+            ..
+        }) => {
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
+            let child_node = physical_plan_to_pipeline(input, psets);
+            PipelineNode::SingleInputSink {
+                sink: Box::new(sort_sink),
+                child: Box::new(child_node),
+            }
+        }
+        LocalPhysicalPlan::HashJoin(HashJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            join_type,
+            ..
+        }) => {
+            let left_node = physical_plan_to_pipeline(left, psets);
+            let right_node = physical_plan_to_pipeline(right, psets);
+            let sink = HashJoinSink::new(left_on.clone(), right_on.clone(), *join_type);
+            PipelineNode::DoubleInputSink {
+                sink: Box::new(sink),
+                left_child: Box::new(left_node),
+                right_child: Box::new(right_node),
             }
         }
         _ => {
