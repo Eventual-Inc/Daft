@@ -289,6 +289,9 @@ class PyRunner(Runner[MicroPartition]):
                             # Register the inflight task and resources used.
                             future_to_task[future] = next_step.id()
 
+                            assert (
+                                next_step.id() not in self._inflight_tasks_resources
+                            ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
                             self._inflight_tasks[next_step.id()] = next_step
                             self._inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
