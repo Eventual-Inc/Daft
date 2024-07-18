@@ -167,6 +167,7 @@ impl GlobScanOperator {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         field_id_mapping,
+                        ..
                     }) => {
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"

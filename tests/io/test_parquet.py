@@ -138,3 +138,14 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
     ) as f:
         schema = daft.read_parquet(f, coerce_int96_timestamp_unit=coerce_to).schema()
         assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"
+
+
+def test_row_groups():
+    path = "/Users/corygrinstead/Development/Daft/tests/assets/parquet-data/mvp.parquet"
+    
+    df = daft.read_parquet(path).collect()
+    print(df)
+    assert df.count_rows() == 100
+    df = daft.read_parquet(path, row_groups=[0, 1]).collect()
+    assert df.count_rows() == 20
+    

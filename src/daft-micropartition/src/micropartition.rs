@@ -130,11 +130,16 @@ fn materialize_scan_task(
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
+                    row_groups,
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
-                    let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
+                    let row_groups = if let Some(row_groups) = row_groups {
+                        Some(row_groups.clone())
+                    } else {
+                        parquet_sources_to_row_groups(scan_task.sources.as_slice())
+                    };
                     let metadatas = scan_task
                         .sources
                         .iter()
@@ -569,6 +574,7 @@ impl MicroPartition {
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
+                    row_groups,
                 }),
                 StorageConfig::Native(cfg),
             ) => {
@@ -588,7 +594,12 @@ impl MicroPartition {
                     .map(|s| s.get_parquet_metadata().cloned())
                     .collect::<Option<Vec<_>>>();
 
-                let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
+                let row_groups = if let Some(rgs) = row_groups {
+                    Some(rgs.clone())
+                } else {
+                    parquet_sources_to_row_groups(scan_task.sources.as_slice())
+                };
+
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
@@ -1135,6 +1146,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .zip(metadata)
                 .zip(
                     row_groups
+                        .clone()
                         .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
                 )
                 .map(|((url, metadata), rgs)| DataFileSource::AnonymousDataFile {
@@ -1150,6 +1162,7 @@ pub(crate) fn read_parquet_into_micropartition(
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
                 field_id_mapping,
+                row_groups,
             })
             .into(),
             scan_task_daft_schema,

@@ -2,6 +2,7 @@ import builtins
 import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import Dict, List, Optional, Union
 
 import pyarrow
 
@@ -190,11 +191,13 @@ class ParquetSourceConfig:
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
+    row_groups: Union[List[int], List[List[int]]] | None
 
     def __init__(
         self,
         coerce_int96_timestamp_unit: PyTimeUnit | None = None,
         field_id_mapping: dict[int, PyField] | None = None,
+        row_groups: Union[List[int], List[List[int]]] | None = None,
     ): ...
 
 class CsvSourceConfig:
