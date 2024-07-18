@@ -1068,3 +1068,63 @@ def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: li
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_parquet_mismatched_schemas_no_pushdown():
+    # When we read files, we infer schema from the first file
+    # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
+    # that don't exist
+    with create_temp_filename() as f1, create_temp_filename() as f2:
+        papq.write_table(pa.Table.from_pydict({"x": [1, 2, 3, 4]}), f1)
+        papq.write_table(pa.Table.from_pydict({"y": [1, 2, 3, 4]}), f2)
+
+        df = daft.read_parquet([f1, f2])
+        assert df.schema().column_names() == ["x"]
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+
+
+def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
+    # When we read files, we infer schema from the first file
+    # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
+    # that don't exist
+    with create_temp_filename() as f1, create_temp_filename() as f2:
+        papq.write_table(
+            pa.Table.from_pydict(
+                {
+                    "x": [1, 2, 3, 4],
+                    "y": [1, 2, 3, 4],
+                    # NOTE: Need a column z here because Daft doesn't do a pushdown otherwise.
+                    "z": [1, 1, 1, 1],
+                }
+            ),
+            f1,
+        )
+        papq.write_table(pa.Table.from_pydict({"x": [5, 6, 7, 8]}), f2)
+
+        df = daft.read_parquet([f1, f2])
+        df = df.select("x", "y")  # Applies column selection pushdown on each read
+        assert df.schema().column_names() == ["x", "y"]
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, 5, 6, 7, 8], "y": [1, 2, 3, 4, None, None, None, None]}
+
+
+def test_minio_parquet_read_mismatched_schemas_with_pushdown_no_rows_read(minio_io_config):
+    # When we read files, we infer schema from the first file
+    # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
+    # that don't exist
+    with create_temp_filename() as f1, create_temp_filename() as f2:
+        papq.write_table(
+            pa.Table.from_pydict(
+                {
+                    "x": [1, 2, 3, 4],
+                    # NOTE: Need a column z here because Daft doesn't do a pushdown otherwise.
+                    "z": [1, 1, 1, 1],
+                }
+            ),
+            f1,
+        )
+        papq.write_table(pa.Table.from_pydict({"y": [1, 2, 3, 4]}), f2)
+
+        df = daft.read_parquet([f1, f2])
+        df = df.select("x")  # Applies column selection pushdown on each read
+        assert df.schema().column_names() == ["x"]
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}

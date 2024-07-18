@@ -62,7 +62,7 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
     #[cfg(feature = "python")]
@@ -72,6 +72,8 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
+        use daft_core::schema::Schema;
+
         let udf = match func {
             FunctionExpr::Python(udf) => udf,
             _ => {
@@ -130,14 +132,14 @@ impl Table {
                         let groupkeys_table = groupby_table.take(&groupkey_indices_as_series)?;
 
                         // Broadcast the group keys to the length of the grouped column, because output of UDF can be more than one row
-                        let broacasted_groupkeys = groupkeys_table
+                        let broadcasted_groupkeys = groupkeys_table
                             .columns
                             .iter()
                             .map(|c| c.broadcast(evaluated_grouped_col.len()))
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Combine the broadcasted group keys into a Table
-                        Table::from_columns(broacasted_groupkeys)?
+                        Table::from_nonempty_columns(broadcasted_groupkeys)?
                     };
 
                     Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
@@ -153,6 +155,13 @@ impl Table {
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };
 
-        Self::from_columns([&groupkeys_table.columns[..], &[grouped_col]].concat())
+        // Broadcast either the keys or the grouped_cols, depending on which is unit-length
+        let final_len = [groupkeys_table.len(), grouped_col.len()]
+            .into_iter()
+            .find(|&l| l != 1)
+            .unwrap_or(1);
+        let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
+        let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
+        Self::new_with_broadcast(final_schema, final_columns, final_len)
     }
 }

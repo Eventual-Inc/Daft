@@ -193,6 +193,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<IndexMap<_, _>>();
 
+        let mut num_rows = 0;
         for record in iter {
             let value = record.map_err(|e| super::Error::JsonDeserializationError {
                 string: e.to_string(),
@@ -221,6 +222,8 @@ impl<'a> JsonReader<'a> {
                     .into());
                 }
             }
+
+            num_rows += 1;
         }
         let columns = columns
             .into_values()
@@ -234,7 +237,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = Table::new_unchecked(self.schema.clone(), columns);
+        let tbl = Table::new_unchecked(self.schema.clone(), columns, num_rows);
 
         if let Some(pred) = &self.predicate {
             tbl.filter(&[pred.clone()])

@@ -83,28 +83,19 @@ pub enum Error {
     UnableToConvertSchemaToDaft { path: String, source: DaftError },
 
     #[snafu(display(
-        "Field: {} not found in Parquet File: {} Available Fields: {:?}",
-        field,
-        path,
-        available_fields
-    ))]
-    FieldNotFound {
-        field: String,
-        available_fields: Vec<String>,
-        path: String,
-    },
-    #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
         path,
         footer
     ))]
     InvalidParquetFile { path: String, footer: Vec<u8> },
+
     #[snafu(display(
         "File: {} is not a valid parquet file and is only {} bytes, smaller than the minimum size of 12 bytes",
         path,
         file_size
     ))]
     FileTooSmall { path: String, file_size: usize },
+
     #[snafu(display(
         "File: {} has a footer size: {} greater than the file size: {}",
         path,

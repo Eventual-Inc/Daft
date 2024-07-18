@@ -1,6 +1,6 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
-use daft_core::{impl_bincode_py_state_serialization, schema::Schema, Series};
+use daft_core::{impl_bincode_py_state_serialization, Series};
 use daft_table::Table;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -173,10 +173,7 @@ impl FileInfos {
                 arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
             ))?,
         ];
-        Table::new(
-            Schema::new(columns.iter().map(|s| s.field().clone()).collect())?,
-            columns,
-        )
+        Table::from_nonempty_columns(columns)
     }
 }
 
