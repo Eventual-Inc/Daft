@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, iter::zip};
+use std::{cmp::Ordering, iter::zip};
 
 use arrow2::{
     array::{
@@ -154,9 +154,9 @@ fn search_sorted_boolean_array(
     // For boolean arrays, we know there can only be three possible values: true, false, and null.s
     // We can pre-compute the results for these three values and then reuse them to compute the results for the keys.
     let pre_computed_keys = &[Some(true), Some(false), None];
-    let mut pre_computed_results: HashMap<Option<bool>, u64> = HashMap::new();
+    let mut pre_computed_results: [u64; 3] = [0, 0, 0];
     let mut last_key = pre_computed_keys.iter().next().unwrap();
-    for key_val in pre_computed_keys.iter() {
+    for (i, key_val) in pre_computed_keys.iter().enumerate() {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -201,13 +201,17 @@ fn search_sorted_boolean_array(
                 left = mid_idx + 1;
             }
         }
-        pre_computed_results.insert(*key_val, left.try_into().unwrap());
+        pre_computed_results[i] = left.try_into().unwrap();
         last_key = key_val;
     }
 
     let results = keys
         .iter()
-        .map(|key_val| *pre_computed_results.get(&key_val).unwrap())
+        .map(|key_val| match key_val {
+            Some(true) => pre_computed_results[0],
+            Some(false) => pre_computed_results[1],
+            None => pre_computed_results[2],
+        })
         .collect::<Vec<_>>();
 
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
