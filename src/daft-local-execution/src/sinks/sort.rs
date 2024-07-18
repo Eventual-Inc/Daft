@@ -32,7 +32,7 @@ impl SingleInputSink for SortSink {
     }
 
     fn in_order(&self) -> bool {
-        true
+        false
     }
 
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {

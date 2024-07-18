@@ -30,25 +30,25 @@ impl HashJoinSink {
 
 impl DoubleInputSink for HashJoinSink {
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("Concat::sink_left");
+        log::debug!("HashJoin::sink_left");
 
         self.result_left.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("Concat::sink_right");
+        log::debug!("HashJoin::sink_right");
 
         self.result_right.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
     fn in_order(&self) -> bool {
-        true
+        false
     }
 
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        log::debug!("Concat::finalize");
+        log::debug!("HashJoin::finalize");
         let concated_left = MicroPartition::concat(
             &self
                 .result_left
@@ -73,6 +73,6 @@ impl DoubleInputSink for HashJoinSink {
     }
 
     fn name(&self) -> &'static str {
-        "Concat"
+        "HashJoin"
     }
 }
