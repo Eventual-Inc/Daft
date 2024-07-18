@@ -1022,4 +1022,26 @@ mod tests {
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
         Ok(())
     }
+
+    /// Tests that planner drops a Repartition if both the Repartition and the upstream Aggregation have the same partition spec,
+    /// even if the columns have been reordered.
+    ///
+    /// Repartition-Aggregation -> Aggregation
+    #[test]
+    fn repartition_dropped_same_clustering_spec_agg_column_order() -> DaftResult<()> {
+        let cfg = DaftExecutionConfig::default().into();
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]))
+        .hash_repartition(Some(10), vec![col("a")])?
+        .aggregate(vec![col("a").sum()], vec![col("b"), col("c")])?
+        .hash_repartition(Some(10), vec![col("c"), col("b")])?
+        .build();
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
+        // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
+        assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
+        Ok(())
+    }
 }
