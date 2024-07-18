@@ -30,7 +30,7 @@ pub use physical_planner::{
     QueryStageOutput,
 };
 pub use resource_request::ResourceRequest;
-pub use sink_info::OutputFileInfo;
+pub use sink_info::{OutputFileInfo, SinkInfo};
 pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 
 #[cfg(feature = "python")]
