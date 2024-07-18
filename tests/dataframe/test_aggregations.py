@@ -399,3 +399,38 @@ def test_agg_deprecation():
         df.collect()
 
         assert df.to_pydict() == {"b": [True, False], "a": [4, 2]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_any_value(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "values": [1, 5, 2, 3, 6, 4],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.groupby("group").agg(col("values").any_value().alias("any_value"))
+
+    daft_df.collect()
+    res = daft_df.to_pydict()
+    vals = [[], [1, 5, 2], [3, 6, 4]]
+    assert res["any_value"][0] in vals[res["group"][0]]
+    assert res["any_value"][1] in vals[res["group"][1]]
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_any_value_ignore_nulls(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "values": [None, None, 2, None, None, 4, None, None, None],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.groupby("group").agg(col("values").any_value(True).alias("any_value"))
+
+    daft_df.collect()
+    res = daft_df.to_pydict()
+    mapping = {res["group"][i]: res["any_value"][i] for i in range(len(res["group"]))}
+    assert mapping == {1: 2, 2: 4, 3: None}

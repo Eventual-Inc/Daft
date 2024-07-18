@@ -851,6 +851,7 @@ pub fn populate_aggregation_stages(
                         col(any_id.clone()).alias(any_of_any_id.clone()),
                         *ignore_nulls,
                     ));
+                final_exprs.push(col(any_of_any_id.clone()).alias(output_name));
             }
             List(e) => {
                 let list_id = agg_expr.semantic_id(schema).id;
