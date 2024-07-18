@@ -99,7 +99,6 @@ fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(Vec<Table>, SchemaRef)> {
-    println!("materialize_scan_task");
     let pushdown_columns = scan_task
         .pushdowns
         .columns
