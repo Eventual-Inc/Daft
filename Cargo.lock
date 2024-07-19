@@ -1697,7 +1697,6 @@ dependencies = [
  "daft-io",
  "futures",
  "pyo3",
- "pyo3-log",
  "serde",
  "simsimd",
  "snafu",

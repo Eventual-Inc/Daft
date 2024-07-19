@@ -6,7 +6,6 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 simsimd = "4.4.0"
 tokio = {workspace = true}
 typetag = "0.2.16"
