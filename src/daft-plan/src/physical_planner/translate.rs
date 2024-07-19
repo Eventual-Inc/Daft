@@ -636,8 +636,16 @@ pub(super) fn translate_single_logical_node(
                     ) {
                         (true, true, a, b) | (false, false, a, b) => max(a, b),
                         (_, _, 1, x) | (_, _, x, 1) => x,
-                        (true, false, a, b) if (a as f32) >= (b as f32) * 0.5 => a,
-                        (false, true, a, b) if (b as f32) >= (a as f32) * 0.5 => b,
+                        (true, false, a, b)
+                            if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency =>
+                        {
+                            a
+                        }
+                        (false, true, a, b)
+                            if (b as f64) >= (a as f64) * cfg.hash_join_partition_size_leniency =>
+                        {
+                            b
+                        }
                         (_, _, a, b) => max(a, b),
                     };
 
