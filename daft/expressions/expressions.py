@@ -2884,6 +2884,55 @@ class ExpressionImageNamespace(ExpressionNamespace):
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
 
+    def width(self) -> Expression:
+        """
+        Gets the width of each image as a new int32 column
+
+        Returns:
+            Expression: An Int32 expression representing the width of the image
+        """
+        return Expression._from_pyexpr(self._expr.image_width())
+
+    def height(self) -> Expression:
+        """
+        Gets the height of each image as a new int32 column
+
+        Returns:
+            Expression: An Int32 expression representing the height of the image
+        """
+        return Expression._from_pyexpr(self._expr.image_height())
+
+    def channels(self) -> Expression:
+        """
+        Gets the channels of each image as a new int32 column
+
+        Returns:
+            Expression: An Int32 expression representing the channels of the image
+        """
+        return Expression._from_pyexpr(self._expr.image_channels())
+
+    def mode(self) -> Expression:
+        """
+        Gets the mode of each image as a new string column.
+
+        Possible values are:
+
+        * L: 8-bit grayscale
+        * LA: 8-bit grayscale + alpha
+        * RGB: 8-bit RGB
+        * RGBA: 8-bit RGB + alpha
+        * L16: 16-bit grayscale
+        * LA16: 16-bit grayscale + alpha
+        * RGB16: 16-bit RGB
+        * RGBA16: 16-bit RGB + alpha
+        * RGB32F: 32-bit floating RGB
+        * RGBA32F: 32-bit floating RGB + alpha
+
+        Returns:
+            Expression: A string expression representing the mode of the image
+        """
+        return Expression._from_pyexpr(self._expr.image_mode())
+
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     def days(self) -> Expression:
