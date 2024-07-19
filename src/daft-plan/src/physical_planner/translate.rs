@@ -946,6 +946,9 @@ mod tests {
     use crate::physical_plan::PhysicalPlan;
     use crate::physical_planner::logical_to_physical;
     use crate::test::{dummy_scan_node, dummy_scan_operator};
+    use crate::{LogicalPlanBuilder, PhysicalPlanRef};
+
+    use super::HashJoin;
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
     ///
@@ -1055,6 +1058,168 @@ mod tests {
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Project(_));
+        Ok(())
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum RepartitionOptions {
+        Good(usize),
+        Bad(usize),
+        Reversed(usize),
+    }
+
+    impl RepartitionOptions {
+        pub fn scale_by(&self, x: usize) -> Self {
+            match self {
+                Self::Good(v) => Self::Good(v * x),
+                Self::Bad(v) => Self::Bad(v * x),
+                Self::Reversed(v) => Self::Reversed(v * x),
+            }
+        }
+    }
+
+    fn force_repartition(
+        node: LogicalPlanBuilder,
+        opts: RepartitionOptions,
+    ) -> DaftResult<LogicalPlanBuilder> {
+        match opts {
+            RepartitionOptions::Good(x) => node.hash_repartition(Some(x), vec![col("a"), col("b")]),
+            RepartitionOptions::Bad(x) => node.hash_repartition(Some(x), vec![col("a"), col("c")]),
+            RepartitionOptions::Reversed(x) => {
+                node.hash_repartition(Some(x), vec![col("b"), col("a")])
+            }
+        }
+    }
+
+    /// Helper function to get plan for join repartition tests.
+    fn get_hash_join_plan(
+        cfg: Arc<DaftExecutionConfig>,
+        left_partitions: RepartitionOptions,
+        right_partitions: RepartitionOptions,
+    ) -> DaftResult<Arc<PhysicalPlan>> {
+        let join_node = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]));
+        let join_node = force_repartition(join_node, right_partitions)?.select(vec![
+            col("a"),
+            col("b"),
+            col("c").alias("dataR"),
+        ])?;
+
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]));
+        let logical_plan = force_repartition(logical_plan, left_partitions)?
+            .select(vec![col("a"), col("b"), col("c").alias("dataL")])?
+            .join(
+                &join_node,
+                vec![col("a"), col("b")],
+                vec![col("a"), col("b")],
+                daft_core::JoinType::Inner,
+                Some(daft_core::JoinStrategy::Hash),
+            )?
+            .build();
+        logical_to_physical(logical_plan, cfg)
+    }
+
+    fn check_physical_matches(
+        plan: PhysicalPlanRef,
+        left_repartitions: bool,
+        right_repartitions: bool,
+    ) -> bool {
+        match plan.as_ref() {
+            PhysicalPlan::HashJoin(HashJoin { left, right, .. }) => {
+                let left_works = match (left.as_ref(), left_repartitions) {
+                    (PhysicalPlan::ReduceMerge(_), true) => true,
+                    (PhysicalPlan::Project(_), false) => true,
+                    _ => false,
+                };
+                let right_works = match (right.as_ref(), right_repartitions) {
+                    (PhysicalPlan::ReduceMerge(_), true) => true,
+                    (PhysicalPlan::Project(_), false) => true,
+                    _ => false,
+                };
+                left_works && right_works
+            }
+            _ => false,
+        }
+    }
+
+    /// Tests a variety of settings regarding hash join repartitioning.
+    #[test]
+    fn repartition_hash_join_tests() -> DaftResult<()> {
+        use RepartitionOptions::*;
+        let cases = vec![
+            (Good(30), Good(30), false, false),
+            (Good(30), Good(40), true, false),
+            (Good(30), Bad(30), false, true),
+            (Good(30), Bad(60), false, true),
+            (Good(30), Bad(70), true, true),
+            (Reversed(30), Good(30), false, false),
+            (Reversed(30), Good(40), true, false),
+            (Reversed(30), Bad(30), false, true),
+            (Reversed(30), Bad(60), false, true),
+            (Reversed(30), Bad(70), true, true),
+            (Reversed(30), Reversed(30), false, false),
+            (Reversed(30), Reversed(40), true, false),
+        ];
+        let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
+        for (l_opts, r_opts, l_exp, r_exp) in cases {
+            for mult in [1, 10] {
+                let plan =
+                    get_hash_join_plan(cfg.clone(), l_opts.scale_by(mult), r_opts.scale_by(mult))?;
+                if !check_physical_matches(plan, l_exp, r_exp) {
+                    panic!(
+                        "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
+                        l_opts, r_opts, l_exp, r_exp, mult
+                    );
+                }
+
+                // reversed direction
+                let plan =
+                    get_hash_join_plan(cfg.clone(), r_opts.scale_by(mult), l_opts.scale_by(mult))?;
+                if !check_physical_matches(plan, r_exp, l_exp) {
+                    panic!(
+                        "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
+                        r_opts, l_opts, r_exp, l_exp, mult
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Tests configuration option for hash join repartition leniency.
+    #[test]
+    fn repartition_dropped_hash_join_leniency() -> DaftResult<()> {
+        let mut cfg = DaftExecutionConfig::default();
+        cfg.hash_join_partition_size_leniency = 0.8;
+        let cfg = Arc::new(cfg);
+
+        let physical_plan = get_hash_join_plan(
+            cfg.clone(),
+            RepartitionOptions::Good(20),
+            RepartitionOptions::Bad(40),
+        )?;
+        assert!(check_physical_matches(physical_plan, true, true));
+
+        let physical_plan = get_hash_join_plan(
+            cfg.clone(),
+            RepartitionOptions::Good(20),
+            RepartitionOptions::Bad(25),
+        )?;
+        assert!(check_physical_matches(physical_plan, false, true));
+
+        let physical_plan = get_hash_join_plan(
+            cfg.clone(),
+            RepartitionOptions::Good(20),
+            RepartitionOptions::Bad(26),
+        )?;
+        assert!(check_physical_matches(physical_plan, true, true));
         Ok(())
     }
 }
