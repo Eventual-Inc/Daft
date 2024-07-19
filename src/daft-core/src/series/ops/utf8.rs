@@ -5,7 +5,10 @@ use crate::{datatypes::*, with_match_integer_daft_types};
 use common_error::{DaftError, DaftResult};
 
 impl Series {
-    fn with_utf8_array(&self, f: impl Fn(&Utf8Array) -> DaftResult<Series>) -> DaftResult<Series> {
+    pub fn with_utf8_array(
+        &self,
+        f: impl Fn(&Utf8Array) -> DaftResult<Series>,
+    ) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => f(self.utf8()?),
             DataType::Null => Ok(self.clone()),

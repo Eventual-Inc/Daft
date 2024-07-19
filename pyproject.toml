@@ -55,7 +55,7 @@ check-hidden = true
 ignore-words-list = "crate,arithmetics,ser"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
-skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb"
+skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken"
 
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
