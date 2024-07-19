@@ -4,8 +4,9 @@ use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 
 use crate::{
-    file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
-    Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    file_format::{FileFormatConfig, ParquetSourceConfig},
+    storage_config::StorageConfig,
+    ChunkSpec, DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -70,24 +71,37 @@ impl ScanOperator for AnonymousScanOperator {
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
+        let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
+            row_groups: Some(row_groups),
+            ..
+        }) = self.file_format_config.as_ref()
+        {
+            row_groups.clone()
+        } else {
+            std::iter::repeat(None).take(files.len()).collect()
+        };
+
         // Create one ScanTask per file.
-        Ok(Box::new(files.into_iter().map(move |f| {
-            Ok(ScanTask::new(
-                vec![DataFileSource::AnonymousDataFile {
-                    path: f.to_string(),
-                    chunk_spec: None,
-                    size_bytes: None,
-                    metadata: None,
-                    partition_spec: None,
-                    statistics: None,
-                    parquet_metadata: None,
-                }],
-                file_format_config.clone(),
-                schema.clone(),
-                storage_config.clone(),
-                pushdowns.clone(),
-            )
-            .into())
-        })))
+        Ok(Box::new(files.into_iter().zip(row_groups).map(
+            move |(f, rg)| {
+                let chunk_spec = rg.map(ChunkSpec::Parquet);
+                Ok(ScanTask::new(
+                    vec![DataFileSource::AnonymousDataFile {
+                        path: f.to_string(),
+                        chunk_spec,
+                        size_bytes: None,
+                        metadata: None,
+                        partition_spec: None,
+                        statistics: None,
+                        parquet_metadata: None,
+                    }],
+                    file_format_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                )
+                .into())
+            },
+        )))
     }
 }
