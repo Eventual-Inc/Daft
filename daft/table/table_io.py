@@ -778,6 +778,41 @@ def write_lance(mp: MicroPartition, base_path: str, mode: str, io_config: IOConf
     return mp
 
 
+def _retry_with_backoff(
+    func: Callable[[], Any],
+    path: str,
+    retry_error: Callable[[Exception], bool] | None = None,
+    num_tries: int = 3,
+    jitter_ms: int = 2500,
+    max_backoff_ms: int = 20000,
+) -> Any:
+    if retry_error is None:
+
+        def retry_error(_) -> bool:
+            return True
+
+    for attempt in range(num_tries):
+        try:
+            return func()
+        except Exception as e:
+            if retry_error(e):
+                if attempt == num_tries - 1:
+                    raise OSError(f"Failed to retry write to {path}") from e
+                else:
+                    jitter = random.randint(0, (2**attempt) * jitter_ms)
+                    backoff = min(max_backoff_ms, jitter)
+                    time.sleep(backoff / 1000)
+            else:
+                raise
+
+
+def _generate_basename_template(ext: str, version: int | None = None) -> str:
+    if version is not None:
+        return f"{version}-{uuid4()}-{{i}}.{ext}"
+    else:
+        return f"{uuid4()}-{{i}}.{ext}"
+
+
 def _write_tabular_arrow_table(
     arrow_table: pa.Table,
     schema: pa.Schema | None,
@@ -803,40 +838,67 @@ def _write_tabular_arrow_table(
     if ARROW_VERSION >= (8, 0, 0) and not create_dir:
         kwargs["create_dir"] = False
 
-    if version is not None:
-        basename_template = f"{version}-{uuid4()}-{{i}}.{format.default_extname}"
-    else:
-        basename_template = f"{uuid4()}-{{i}}.{format.default_extname}"
+    basename_template = _generate_basename_template(format.default_extname, version)
 
-    NUM_TRIES = 3
-    JITTER_MS = 2_500
-    MAX_BACKOFF_MS = 20_000
-    RETRY_ERRORS = ("InvalidPart", "curlCode: 28, Timeout was reached")
+    def write_dataset():
+        pads.write_dataset(
+            arrow_table,
+            schema=schema,
+            base_dir=full_path,
+            basename_template=basename_template,
+            format=format,
+            partitioning=None,
+            file_options=opts,
+            file_visitor=file_visitor,
+            use_threads=True,
+            existing_data_behavior="overwrite_or_ignore",
+            filesystem=fs,
+            **kwargs,
+        )
 
-    for attempt in range(NUM_TRIES):
-        try:
-            pads.write_dataset(
-                arrow_table,
-                schema=schema,
-                base_dir=full_path,
-                basename_template=basename_template,
-                format=format,
-                partitioning=None,
-                file_options=opts,
-                file_visitor=file_visitor,
-                use_threads=True,
-                existing_data_behavior="overwrite_or_ignore",
+    def retry_error(e: Exception) -> bool:
+        ERROR_MSGS = ("InvalidPart", "curlCode: 28, Timeout was reached")
+        return isinstance(e, OSError) and any(err_str in str(e) for err_str in ERROR_MSGS)
+
+    _retry_with_backoff(
+        write_dataset,
+        full_path,
+        retry_error=retry_error,
+    )
+
+
+def write_empty_tabular(
+    path: str | pathlib.Path,
+    file_format: FileFormat,
+    schema: Schema,
+    compression: str | None = None,
+    io_config: IOConfig | None = None,
+) -> str:
+    if file_format != FileFormat.Parquet and file_format != FileFormat.Csv:
+        raise ValueError(f"Unsupported file format {file_format}")
+
+    table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
+
+    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+    basename_template = _generate_basename_template("parquet" if file_format == FileFormat.Parquet else "csv")
+    file_path = f"{resolved_path}/{basename_template.format(i=0)}"
+
+    def write_table():
+        if file_format == FileFormat.Parquet:
+            papq.write_table(
+                table,
+                file_path,
+                compression=compression,
+                use_compliant_nested_type=False,
                 filesystem=fs,
-                **kwargs,
             )
-            break
-        except OSError as e:
-            if all(err_str not in str(e) for err_str in RETRY_ERRORS):
-                raise
+        else:
+            pacsv.write_csv(table, file_path)
 
-            if attempt == NUM_TRIES - 1:
-                raise OSError(f"Failed to retry write to {full_path}") from e
-            else:
-                jitter = random.randint(0, (2**attempt) * JITTER_MS)
-                backoff = min(MAX_BACKOFF_MS, jitter)
-                time.sleep(backoff / 1000)
+    def retry_error(e: Exception) -> bool:
+        ERROR_MSGS = ("curlCode: 28, Timeout was reached",)
+        return isinstance(e, OSError) and any(err_str in str(e) for err_str in ERROR_MSGS)
+
+    _retry_with_backoff(write_table, file_path, retry_error=retry_error)
+
+    return file_path
