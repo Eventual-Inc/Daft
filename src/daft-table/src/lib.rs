@@ -323,7 +323,7 @@ impl Table {
 
         let num_rows = if mask.len() == 1 {
             // account for broadcasting of mask
-            if mask.get(0).unwrap() {
+            if mask.get(0).is_some_and(|b| b) {
                 self.len()
             } else {
                 0
