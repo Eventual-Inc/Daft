@@ -4,14 +4,11 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true, features = ["serde"]}
-pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 
 [features]
-default = ["python"]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python"]
+python = ["common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python"]
 
 [package]
 edition = {workspace = true}

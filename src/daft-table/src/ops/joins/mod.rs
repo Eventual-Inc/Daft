@@ -38,7 +38,10 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
             )));
         }
     }
-    Ok((Table::from_columns(lseries)?, Table::from_columns(rseries)?))
+    Ok((
+        Table::from_nonempty_columns(lseries)?,
+        Table::from_nonempty_columns(rseries)?,
+    ))
 }
 
 pub fn infer_join_schema(
@@ -295,9 +298,10 @@ impl Table {
         drop(ltable);
         drop(rtable);
 
+        let num_rows = lidx.len();
         join_series =
             add_non_join_key_columns(self, right, lidx, ridx, left_on, right_on, join_series)?;
 
-        Table::new(join_schema, join_series)
+        Table::new_with_size(join_schema, join_series, num_rows)
     }
 }

@@ -675,6 +675,20 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
 
+  check-unused-cargo-deps:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+        channel: stable
+
+    - name: Install Machete
+      run: cargo +stable install cargo-machete
+    - name: Run Machete
+      run: cargo machete --with-metadata
+
   doctests:
     runs-on: ubuntu-latest
     continue-on-error: true

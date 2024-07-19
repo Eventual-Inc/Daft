@@ -21,7 +21,6 @@ use rayon::iter::ParallelIterator;
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,
     columns: Option<&[String]>,
-    uri: &str,
 ) -> super::Result<arrow2::datatypes::Schema> {
     if let Some(columns) = columns {
         let avail_names = schema
@@ -33,12 +32,6 @@ fn prune_fields_from_schema(
         for col_name in columns {
             if avail_names.contains(col_name.as_str()) {
                 names_to_keep.insert(col_name.to_string());
-            } else {
-                return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
-                    path: uri.to_string(),
-                });
             }
         }
         Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
@@ -61,6 +54,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
+    usize,
 )> {
     const LOCAL_PROTOCOL: &str = "file://";
 
@@ -96,7 +90,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
-    let schema = prune_fields_from_schema(schema, columns, uri)?;
+    let schema = prune_fields_from_schema(schema, columns)?;
     let daft_schema =
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
@@ -177,7 +171,12 @@ pub(crate) fn local_parquet_read_into_arrow(
             .expect("array index during scatter out of index")
             .extend(v);
     }
-    Ok((metadata, schema, all_columns))
+    Ok((
+        metadata,
+        schema,
+        all_columns,
+        row_ranges.iter().map(|rr| rr.num_rows).sum(),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -205,7 +204,7 @@ pub(crate) async fn local_parquet_read_async(
                 schema_infer_options,
                 metadata,
             );
-            let (metadata, schema, arrays) = v?;
+            let (metadata, schema, arrays, num_rows_read) = v?;
 
             let converted_arrays = arrays
                 .into_par_iter()
@@ -225,7 +224,14 @@ pub(crate) async fn local_parquet_read_async(
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok((metadata, Table::from_columns(converted_arrays)?))
+            Ok((
+                metadata,
+                Table::new_with_size(
+                    Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
+                    converted_arrays,
+                    num_rows_read,
+                )?,
+            ))
         })();
         let _ = send.send(result);
     });
@@ -247,6 +253,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
     Vec<ArrowChunk>,
+    usize,
 )> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();

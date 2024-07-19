@@ -3,7 +3,7 @@ use std::{cmp::Ordering, iter::zip};
 use arrow2::{
     array::{
         ord::{build_compare, DynComparator},
-        Array, BinaryArray, FixedSizeBinaryArray, PrimitiveArray, Utf8Array,
+        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray, Utf8Array,
     },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
@@ -138,6 +138,81 @@ fn search_sorted_utf_array<O: Offset>(
         results.push(left.try_into().unwrap());
         last_key = key_val;
     }
+
+    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+}
+
+fn search_sorted_boolean_array(
+    sorted_array: &BooleanArray,
+    keys: &BooleanArray,
+    input_reversed: bool,
+) -> PrimitiveArray<u64> {
+    let array_size = sorted_array.len();
+    let mut left = 0_usize;
+    let mut right = array_size;
+
+    // For boolean arrays, we know there can only be three possible values: true, false, and null.s
+    // We can pre-compute the results for these three values and then reuse them to compute the results for the keys.
+    let pre_computed_keys = &[Some(true), Some(false), None];
+    let mut pre_computed_results: [u64; 3] = [0, 0, 0];
+    let mut last_key = pre_computed_keys.iter().next().unwrap();
+    for (i, key_val) in pre_computed_keys.iter().enumerate() {
+        let is_last_key_lt = match (last_key, key_val) {
+            (None, None) => false,
+            (None, Some(_)) => input_reversed,
+            (Some(last_key), Some(key_val)) => {
+                if !input_reversed {
+                    last_key.lt(key_val)
+                } else {
+                    last_key.gt(key_val)
+                }
+            }
+            (Some(_), None) => !input_reversed,
+        };
+        if is_last_key_lt {
+            right = array_size;
+        } else {
+            left = 0;
+            right = if right < array_size {
+                right + 1
+            } else {
+                array_size
+            };
+        }
+        while left < right {
+            let mid_idx = left + ((right - left) >> 1);
+            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
+            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
+                (None, false) => false,
+                (None, true) => input_reversed,
+                (Some(key_val), true) => {
+                    if !input_reversed {
+                        key_val.lt(&mid_val)
+                    } else {
+                        mid_val.lt(key_val)
+                    }
+                }
+                (Some(_), false) => !input_reversed,
+            };
+
+            if is_key_val_lt {
+                right = mid_idx;
+            } else {
+                left = mid_idx + 1;
+            }
+        }
+        pre_computed_results[i] = left.try_into().unwrap();
+        last_key = key_val;
+    }
+
+    let results = keys
+        .iter()
+        .map(|key_val| match key_val {
+            Some(true) => pre_computed_results[0],
+            Some(false) => pre_computed_results[1],
+            None => pre_computed_results[2],
+        })
+        .collect::<Vec<_>>();
 
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
@@ -531,6 +606,11 @@ pub fn search_sorted(
             input_reversed,
         ),
         FixedSizeBinary => search_sorted_fixed_size_binary_array(
+            sorted_array.as_any().downcast_ref().unwrap(),
+            keys.as_any().downcast_ref().unwrap(),
+            input_reversed,
+        ),
+        Boolean => search_sorted_boolean_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,

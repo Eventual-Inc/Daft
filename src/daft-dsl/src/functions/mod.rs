@@ -3,7 +3,6 @@ pub mod image;
 pub mod json;
 pub mod list;
 pub mod map;
-pub mod minhash;
 pub mod numeric;
 pub mod partitioning;
 pub mod scalar;
@@ -34,7 +33,6 @@ use common_error::DaftResult;
 use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
-use minhash::{MinHashEvaluator, MinHashExpr};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -57,7 +55,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "python")]
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
-    MinHash(MinHashExpr),
 }
 
 pub trait FunctionEvaluator {
@@ -89,7 +86,6 @@ impl FunctionExpr {
             #[cfg(feature = "python")]
             Python(expr) => expr,
             Partitioning(expr) => expr.get_evaluator(),
-            MinHash(_) => &MinHashEvaluator {},
         }
     }
 }

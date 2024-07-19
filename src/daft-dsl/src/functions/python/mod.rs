@@ -11,7 +11,7 @@ use crate::{Expr, ExprRef};
 pub struct PythonUDF {
     func: partial_udf::PartialUDF,
     num_expressions: usize,
-    return_dtype: DataType,
+    pub return_dtype: DataType,
 }
 
 pub fn udf(

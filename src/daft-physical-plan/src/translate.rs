@@ -1,4 +1,6 @@
 use common_error::DaftResult;
+use daft_core::JoinStrategy;
+use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -55,6 +57,50 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     aggregate.output_schema.clone(),
                 ))
             }
+        }
+        LogicalPlan::Sort(sort) => {
+            let input = translate(&sort.input)?;
+            Ok(LocalPhysicalPlan::sort(
+                input,
+                sort.sort_by.clone(),
+                sort.descending.clone(),
+            ))
+        }
+        LogicalPlan::Join(join) => {
+            if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+                todo!("Only hash join is supported for now")
+            }
+            let left = translate(&join.left)?;
+            let right = translate(&join.right)?;
+            Ok(LocalPhysicalPlan::hash_join(
+                left,
+                right,
+                join.left_on.clone(),
+                join.right_on.clone(),
+                join.join_type,
+                join.output_schema.clone(),
+            ))
+        }
+        LogicalPlan::Distinct(distinct) => {
+            let schema = distinct.input.schema().clone();
+            let input = translate(&distinct.input)?;
+            let col_exprs = input
+                .schema()
+                .names()
+                .iter()
+                .map(|name| daft_dsl::col(name.clone()))
+                .collect::<Vec<ExprRef>>();
+            Ok(LocalPhysicalPlan::hash_aggregate(
+                input,
+                vec![],
+                col_exprs,
+                schema,
+            ))
+        }
+        LogicalPlan::Concat(concat) => {
+            let input = translate(&concat.input)?;
+            let other = translate(&concat.other)?;
+            Ok(LocalPhysicalPlan::concat(input, other))
         }
         _ => todo!("{} not yet implemented", plan.name()),
     }

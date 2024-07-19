@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 pub mod distance;
 pub mod hash;
+pub mod minhash;
 pub mod uri;
 
 use common_error::DaftError;
@@ -14,6 +15,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
     parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine))?;
+    parent.add_wrapped(wrap_pyfunction!(minhash::python::minhash))?;
 
     Ok(())
 }

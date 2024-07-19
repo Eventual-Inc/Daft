@@ -9,7 +9,7 @@ use crate::{
     },
     datatypes::{
         logical::{Decimal128Array, MapArray},
-        FixedSizeBinaryArray, Int128Array,
+        Field, FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
@@ -61,6 +61,53 @@ macro_rules! cast_downcast_op_into_series {
     }};
 }
 
+macro_rules! apply_fixed_numeric_op {
+    ($lhs:expr, $rhs:expr, $op:ident) => {{
+        $lhs.$op($rhs)?
+    }};
+}
+
+macro_rules! fixed_sized_numeric_binary_op {
+    ($left:expr, $right:expr, $output_type:expr, $op:ident) => {{
+        assert!($left.data_type().is_fixed_size_numeric());
+        assert!($right.data_type().is_fixed_size_numeric());
+
+        match ($left.data_type(), $right.data_type()) {
+            (DataType::FixedSizeList(..), DataType::FixedSizeList(..)) => {
+                Ok(apply_fixed_numeric_op!(
+                    $left.downcast::<FixedSizeListArray>().unwrap(),
+                    $right.downcast::<FixedSizeListArray>().unwrap(),
+                    $op
+                )
+                .into_series())
+            }
+            (DataType::Embedding(..), DataType::Embedding(..)) => {
+                let physical = apply_fixed_numeric_op!(
+                    &$left.downcast::<EmbeddingArray>().unwrap().physical,
+                    &$right.downcast::<EmbeddingArray>().unwrap().physical,
+                    $op
+                );
+                let array =
+                    EmbeddingArray::new(Field::new($left.name(), $output_type.clone()), physical);
+                Ok(array.into_series())
+            }
+            (DataType::FixedShapeTensor(..), DataType::FixedShapeTensor(..)) => {
+                let physical = apply_fixed_numeric_op!(
+                    &$left.downcast::<FixedShapeTensorArray>().unwrap().physical,
+                    &$right.downcast::<FixedShapeTensorArray>().unwrap().physical,
+                    $op
+                );
+                let array = FixedShapeTensorArray::new(
+                    Field::new($left.name(), $output_type.clone()),
+                    physical,
+                );
+                Ok(array.into_series())
+            }
+            (left, right) => unimplemented!("cannot add {left} and {right} types"),
+        }
+    }};
+}
+
 macro_rules! binary_op_unimplemented {
     ($lhs:expr, $op:expr, $rhs:expr, $output_ty:expr) => {
         unimplemented!(
@@ -91,6 +138,9 @@ macro_rules! py_numeric_binary_op {
                         $op
                     )
                 })
+            }
+            output_type if output_type.is_fixed_size_numeric() => {
+                fixed_sized_numeric_binary_op!(&lhs, $rhs, output_type, $op)
             }
             _ => binary_op_unimplemented!(lhs, $pyop, $rhs, output_type),
         }
@@ -167,6 +217,9 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
                     cast_downcast_op_into_series!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)
                 })
             }
+            output_type if output_type.is_fixed_size_numeric() => {
+                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, add)
+            }
             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
         }
     }
@@ -184,6 +237,9 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
             #[cfg(feature = "python")]
             Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
             Float64 => cast_downcast_op_into_series!(lhs, rhs, &Float64, Float64Array, div),
+            output_type if output_type.is_fixed_size_numeric() => {
+                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, div)
+            }
             _ => binary_op_unimplemented!(lhs, "/", rhs, output_type),
         }
     }

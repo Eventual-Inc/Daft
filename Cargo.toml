@@ -26,7 +26,7 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
-default = ["python"]
+# maturin will turn this on
 python = [
   "dep:pyo3",
   "dep:pyo3-log",
@@ -58,6 +58,9 @@ edition = "2021"
 name = "daft"
 publish = false
 version = "0.2.0-dev0"
+
+[package.metadata.cargo-machete]
+ignored = ["lzma_sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}

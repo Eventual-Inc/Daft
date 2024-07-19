@@ -190,11 +190,13 @@ class ParquetSourceConfig:
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
+    row_groups: list[list[int]] | None
 
     def __init__(
         self,
         coerce_int96_timestamp_unit: PyTimeUnit | None = None,
         field_id_mapping: dict[int, PyField] | None = None,
+        row_groups: list[list[int]] | None = None,
     ): ...
 
 class CsvSourceConfig:
@@ -1054,12 +1056,6 @@ class PyExpr:
     def mean(self) -> PyExpr: ...
     def min(self) -> PyExpr: ...
     def max(self) -> PyExpr: ...
-    def minhash(
-        self,
-        num_hashes: int,
-        ngram_size: int,
-        seed: int = 1,
-    ) -> PyExpr: ...
     def any_value(self, ignore_nulls: bool) -> PyExpr: ...
     def agg_list(self) -> PyExpr: ...
     def agg_concat(self) -> PyExpr: ...
@@ -1189,6 +1185,12 @@ def url_upload(
     max_connections: int,
     multi_thread: bool,
     io_config: IOConfig | None,
+) -> PyExpr: ...
+def minhash(
+    expr: PyExpr,
+    num_hashes: int,
+    ngram_size: int,
+    seed: int = 1,
 ) -> PyExpr: ...
 
 class PySeries:

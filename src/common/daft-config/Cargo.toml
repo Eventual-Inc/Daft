@@ -1,12 +1,10 @@
 [dependencies]
 bincode = {workspace = true}
 common-io-config = {path = "../io-config", default-features = false}
-lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-io-config/python"]
 
 [package]

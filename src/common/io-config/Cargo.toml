@@ -9,7 +9,6 @@ serde_json = {workspace = true}
 typetag = "0.2.16"
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
 
 [package]

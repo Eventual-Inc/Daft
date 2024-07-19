@@ -23,7 +23,6 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
-dyn-clone = "1.0.17"
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
@@ -40,8 +39,6 @@ ndarray = "0.15.6"
 num-derive = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true}
-rand = {workspace = true}
 regex = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
@@ -62,7 +59,6 @@ features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "dep:numpy", "common-error/python"]
 
 [package]

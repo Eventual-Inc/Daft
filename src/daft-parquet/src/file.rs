@@ -220,30 +220,8 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn parquet_schema(&self) -> &parquet2::metadata::SchemaDescriptor {
-        self.metadata().schema()
-    }
-
     pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        let avail_names = self
-            .parquet_schema()
-            .fields()
-            .iter()
-            .map(|f| f.name())
-            .collect::<HashSet<_>>();
-        let mut names_to_keep = HashSet::new();
-        for col_name in columns {
-            if avail_names.contains(col_name.as_ref()) {
-                names_to_keep.insert(col_name.to_string());
-            } else {
-                return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
-                    path: self.uri,
-                });
-            }
-        }
-        self.selected_columns = Some(names_to_keep);
+        self.selected_columns = Some(HashSet::from_iter(columns.iter().map(|s| s.to_string())));
         Ok(self)
     }
 
@@ -286,6 +264,7 @@ impl ParquetReaderBuilder {
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
+
         let daft_schema =
             Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
                 path: self.uri.to_string(),
@@ -570,13 +549,17 @@ impl ParquetFileReader {
             .collect::<DaftResult<Vec<_>>>()?;
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
 
-        Table::new(daft_schema, all_series)
+        Table::new_with_size(
+            daft_schema,
+            all_series,
+            self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
+        )
     }
 
     pub async fn read_from_ranges_into_arrow_arrays(
         self,
         ranges: Arc<RangesContainer>,
-    ) -> DaftResult<Vec<Vec<Box<dyn arrow2::array::Array>>>> {
+    ) -> DaftResult<(Vec<Vec<Box<dyn arrow2::array::Array>>>, usize)> {
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema
@@ -723,6 +706,9 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        Ok(all_field_arrays)
+        Ok((
+            all_field_arrays,
+            self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
+        ))
     }
 }

@@ -4,7 +4,6 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
-log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}
 
 [package]

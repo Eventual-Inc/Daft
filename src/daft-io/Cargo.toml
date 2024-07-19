@@ -6,7 +6,6 @@ aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
 aws-sig-auth = "0.55.3"
-aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
 aws-smithy-client = "0.55.3"
 azure_core = "0.17.0"
@@ -28,16 +27,12 @@ lazy_static = {workspace = true}
 log = {workspace = true}
 openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
-serde = {workspace = true}
-serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 url = {workspace = true}
-uuid = "1.9.1"
 
 [dependencies.reqwest]
 default-features = false
@@ -49,10 +44,12 @@ md5 = "0.7.0"
 tempfile = "3.8.1"
 
 [features]
-default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "common-io-config/python"]
+python = ["dep:pyo3", "common-error/python", "common-io-config/python"]
 
 [package]
 edition = {workspace = true}
 name = "daft-io"
 version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = ["openssl_sys"]

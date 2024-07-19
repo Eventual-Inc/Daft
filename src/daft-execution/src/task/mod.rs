@@ -231,9 +231,8 @@ mod tests {
             let schema = Arc::new(Schema::new(vec![field.clone()]).unwrap());
             let data = MicroPartition::new_loaded(
                 schema.clone(),
-                Arc::new(vec![Table::new(
-                    schema.clone(),
-                    vec![Series::from_arrow(
+                Arc::new(vec![Table::from_nonempty_columns(vec![
+                    Series::from_arrow(
                         field.into(),
                         arrow2::array::Int64Array::from_vec(
                             (0..input_meta.num_rows.unwrap())
@@ -242,8 +241,8 @@ mod tests {
                         )
                         .boxed(),
                     )
-                    .unwrap()],
-                )
+                    .unwrap(),
+                ])
                 .unwrap()]),
                 None,
             );

@@ -23,7 +23,6 @@ daft-table = {path = "../daft-table", default-features = false}
 rstest = {workspace = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]
 
 [package]

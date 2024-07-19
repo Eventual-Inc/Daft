@@ -1,22 +1,17 @@
-mod create_pipeline;
+mod channel;
 mod intermediate_ops;
 mod pipeline;
 mod run;
 mod sinks;
 mod sources;
 
-use std::sync::Arc;
-
-use common_error::{DaftError, DaftResult};
-use daft_micropartition::MicroPartition;
+use common_error::DaftError;
 pub use run::NativeExecutor;
 use snafu::Snafu;
 
-type Sender = tokio::sync::mpsc::Sender<DaftResult<Arc<MicroPartition>>>;
-type Receiver = tokio::sync::mpsc::Receiver<DaftResult<Arc<MicroPartition>>>;
-
-pub fn create_channel() -> (Sender, Receiver) {
-    tokio::sync::mpsc::channel(1)
+use lazy_static::lazy_static;
+lazy_static! {
+    pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
 #[cfg(feature = "python")]

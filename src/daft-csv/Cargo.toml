@@ -3,10 +3,6 @@ arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 async-compat = {workspace = true}
 async-compression = {workspace = true}
 async-stream = {workspace = true}
-bincode = {workspace = true}
-bytes = {workspace = true}
-chrono = {workspace = true}
-chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 csv-async = "1.3.0"
 daft-compression = {path = "../daft-compression", default-features = false}
@@ -16,16 +12,11 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
-lexical-core = {version = "0.8"}
-log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
-simdutf8 = "0.1.3"
 snafu = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 url = {workspace = true}
 
@@ -33,8 +24,7 @@ url = {workspace = true}
 rstest = {workspace = true}
 
 [features]
-default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
 
 [package]
 edition = {workspace = true}

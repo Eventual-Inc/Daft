@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
-use futures::StreamExt;
 
 #[cfg(feature = "python")]
 use {
@@ -12,7 +11,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{create_pipeline::physical_plan_to_pipeline, sources::source::Source};
+use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -87,8 +86,13 @@ pub fn run_local(
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let res = runtime.block_on(async {
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);
-        let stream = pipeline.get_data().await;
-        stream.collect::<Vec<_>>().await
+        let (sender, mut receiver) = create_channel(1, true);
+        pipeline.start(sender);
+        let mut result = vec![];
+        while let Some(val) = receiver.recv().await {
+            result.push(val);
+        }
+        result.into_iter()
     });
-    Ok(Box::new(res.into_iter()))
+    Ok(Box::new(res))
 }

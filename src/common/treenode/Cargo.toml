@@ -1,9 +1,7 @@
 [dependencies]
 common-error = {path = "../error", default-features = false}
-pyo3 = {workspace = true, optional = true}
 
 [features]
-default = ["python"]
 python = ["common-error/python"]
 
 [package]
