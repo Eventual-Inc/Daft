@@ -4,7 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import col, lit
+from daft import DataType, col, lit
 from daft.table import MicroPartition
 
 
@@ -68,7 +68,22 @@ def test_table_filter_none_pass() -> None:
     assert result["a"] == []
     assert result["b"] == []
 
-    exprs = [col("a") < col("b"), lit(False), lit(None)]
+    exprs = [col("a") < col("b"), lit(False)]
+    new_table = daft_table.filter(exprs)
+    assert len(new_table) == 0
+    assert new_table.column_names() == ["a", "b"]
+    result = new_table.to_pydict()
+    assert result["a"] == []
+    assert result["b"] == []
+
+
+def test_table_filter_with_null_filter() -> None:
+    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    daft_table = MicroPartition.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    exprs = [lit(None).cast(DataType.bool())]
     new_table = daft_table.filter(exprs)
     assert len(new_table) == 0
     assert new_table.column_names() == ["a", "b"]
