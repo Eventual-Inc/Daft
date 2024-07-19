@@ -97,13 +97,13 @@ impl ScalarUDF for TokenizeEncodeFunction {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
-                Ok(data_field) => match &data_field.dtype {
+                Ok(field) => match &field.dtype {
                     DataType::Utf8 => Ok(Field::new(
-                        data_field.name,
+                        field.name,
                         DataType::List(Box::new(DataType::UInt32)),
                     )),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects input to tokenize_encode to be utf8, but received {data_field}",
+                        "Expects input to tokenize_encode to be utf8, but received {field}",
                     ))),
                 },
                 Err(e) => Err(e),
