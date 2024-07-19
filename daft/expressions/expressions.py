@@ -163,7 +163,7 @@ class Expression:
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
-    
+
     @property
     def embedding(self) -> ExpressionEmbeddingNamespace:
         """Access methods that work on columns of embeddings"""
@@ -2983,8 +2983,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.json_query(jq_query))
 
 
-class ExpressionEmbeddingNamespace(ExpressionNamespace): 
-    
+class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine(self, other: Expression) -> Expression:
         """Compute the cosine similarity between two embeddings"""
         return Expression._from_pyexpr(native.cosine(self._expr, other._expr))

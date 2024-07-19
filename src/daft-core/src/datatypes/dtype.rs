@@ -293,6 +293,15 @@ impl DataType {
     }
 
     #[inline]
+    pub fn fixed_size(&self) -> Option<usize> {
+        match self {
+            DataType::FixedSizeList(_, size) => Some(*size),
+            DataType::Embedding(_, size) => Some(*size),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,

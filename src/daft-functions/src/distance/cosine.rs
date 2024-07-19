@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{Field, Float32Array},
+    datatypes::{Field, Float64Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -9,9 +9,26 @@ use daft_dsl::{
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
+use simsimd::SpatialSimilarity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CosineFunction {}
+
+macro_rules! compute_cosine {
+    ($source:expr, $query:expr, $type:ident) => {{
+        let query = &$query.fixed_size_list()?.flat_child;
+        let query = query.$type()?.as_slice();
+        $source
+            .into_iter()
+            .map(|list_opt| {
+                let list = list_opt?;
+                let list = list.$type().unwrap().as_slice();
+                let cosine = $type::cosine(&list, &query);
+                cosine
+            })
+            .collect::<Vec<_>>()
+    }};
+}
 
 #[typetag::serde]
 impl ScalarUDF for CosineFunction {
@@ -32,21 +49,34 @@ impl ScalarUDF for CosineFunction {
                         "Expected query to be a single value".to_string(),
                     ));
                 }
-                let query = &query.fixed_size_list()?.flat_child;
-                let query = query.f32()?.as_slice();
+
                 let source = source.fixed_size_list()?;
 
-                let iter = source
-                    .into_iter()
-                    .map(|list_opt| {
-                        let list = list_opt?;
-                        let list = list.f32().unwrap().as_slice();
-                        let cosine = cosine_impl(list, query);
-                        Some(cosine)
-                    })
-                    .collect::<Vec<_>>(); // is it possible to avoid this 'collect'?
+                let res = match query.data_type() {
+                    DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
+                        DataType::Int8 => {
+                            compute_cosine!(source, query, i8)
+                        }
+                        DataType::Float32 => {
+                            compute_cosine!(source, query, f32)
+                        }
+                        DataType::Float64 => {
+                            compute_cosine!(source, query, f64)
+                        }
+                        _ => {
+                            return Err(DaftError::ValueError(
+                                "Cosine only supports Int8|Float32|Float32 datatypes".to_string(),
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(DaftError::ValueError(
+                            "Expected query to be a nested list".to_string(),
+                        ));
+                    }
+                };
 
-                let output = Float32Array::from_iter(source_name, iter.into_iter());
+                let output = Float64Array::from_iter(source_name, res.into_iter());
 
                 Ok(output.into_series())
             }
@@ -62,8 +92,26 @@ impl ScalarUDF for CosineFunction {
                 let source_is_numeric = source.dtype.is_fixed_size_numeric();
                 let query_is_numeric = query.dtype.is_fixed_size_numeric();
 
+                if let Some((source_size, query_size)) = source
+                    .dtype
+                    .fixed_size()
+                    .and_then(|source| query.dtype.fixed_size().map(|q| (source, q)))
+                {
+                    if source_size != query_size {
+                        return Err(DaftError::ValueError(format!(
+                            "Expected source and query to have the same size, instead got {} and {}",
+                            source_size, query_size
+                        )));
+                    }
+                } else {
+                    return Err(DaftError::ValueError(format!(
+                        "Expected source and query to be fixed size, instead got {} and {}",
+                        source.dtype, query.dtype
+                    )));
+                }
+
                 if source_is_numeric && query_is_numeric {
-                    Ok(Field::new(source.name, DataType::Float32))
+                    Ok(Field::new(source.name, DataType::Float64))
                 } else {
                     Err(DaftError::ValueError(format!(
                         "Expected nested list for source and numeric list for query, instead got {} and {}",
@@ -74,18 +122,6 @@ impl ScalarUDF for CosineFunction {
             _ => Err(DaftError::ValueError("Expected 2 input arg".to_string())),
         }
     }
-}
-
-// TODO: this is a placeholder implementation
-fn cosine_impl(x: &[f32], y: &[f32]) -> f32 {
-    let xy = x
-        .iter()
-        .zip(y.iter())
-        .map(|(&xi, &yi)| xi * yi)
-        .sum::<f32>();
-    let x_sq = x.iter().map(|&xi| xi * xi).sum::<f32>().sqrt();
-    let y_sq = y.iter().map(|&yi| yi * yi).sum::<f32>().sqrt();
-    1.0 - xy / x_sq / y_sq
 }
 
 pub fn cosine(a: ExprRef, b: ExprRef) -> ExprRef {
