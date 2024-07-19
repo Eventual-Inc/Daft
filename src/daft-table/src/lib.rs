@@ -321,6 +321,7 @@ impl Table {
         let mask = mask.downcast::<BooleanArray>().unwrap();
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
 
+        // The number of rows post-filter should be the number of 'true' values in the mask
         let num_rows = if mask.len() == 1 {
             // account for broadcasting of mask
             if mask.get(0).is_some_and(|b| b) {
@@ -329,7 +330,7 @@ impl Table {
                 0
             }
         } else {
-            // filtered elements are not (valid AND set)
+            // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())

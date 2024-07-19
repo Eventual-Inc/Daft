@@ -68,7 +68,7 @@ def test_table_filter_none_pass() -> None:
     assert result["a"] == []
     assert result["b"] == []
 
-    exprs = [col("a") < col("b"), lit(False)]
+    exprs = [col("a") < col("b"), lit(False), lit(None)]
     new_table = daft_table.filter(exprs)
     assert len(new_table) == 0
     assert new_table.column_names() == ["a", "b"]
