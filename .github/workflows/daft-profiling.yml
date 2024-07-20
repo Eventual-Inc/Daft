@@ -62,13 +62,13 @@ jobs:
       env:
         DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
-        py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+        py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 
     - name: Run GIL Profiling on TPCH Benchmark
       env:
         DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
-        py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+        py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 
 
     - name: Upload Profile
