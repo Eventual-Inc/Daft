@@ -122,7 +122,7 @@ members = [
 
 [workspace.dependencies]
 async-compat = "0.2.3"
-async-compression = {version = "0.4.10", features = [
+async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
