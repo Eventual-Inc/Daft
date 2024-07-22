@@ -10,6 +10,8 @@ pub struct TestRule {}
 
 impl PhysicalOptimizerRule for TestRule {
     fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>> {
+        let mut cur_num = 1234;
+
         plan.transform_up(|p| match p.as_ref() {
             PhysicalPlan::Limit(_) => Ok(Transformed {
                 data: p,
@@ -19,10 +21,11 @@ impl PhysicalOptimizerRule for TestRule {
             _ => {
                 let limit = PhysicalPlan::Limit(Limit {
                     input: p,
-                    limit: 1234,
+                    limit: cur_num,
                     eager: false,
                     num_partitions: 1,
                 });
+                cur_num += 1;
                 Ok(Transformed {
                     data: limit.arced(),
                     transformed: true,

@@ -3,7 +3,7 @@ use common_treenode::Transformed;
 
 use crate::PhysicalPlanRef;
 
-use super::rules::test_rule::TestRule;
+use super::rules::{reorder_partition_keys::ReorderPartitionKeys, test_rule::TestRule};
 
 pub trait PhysicalOptimizerRule {
     fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>>;
@@ -16,7 +16,7 @@ pub struct PhysicalOptimizer {
 impl PhysicalOptimizer {
     pub fn new() -> Self {
         PhysicalOptimizer {
-            rules: vec![Box::new(TestRule {})],
+            rules: vec![Box::new(TestRule {}), Box::new(ReorderPartitionKeys {})],
         }
     }
 
