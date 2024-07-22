@@ -1186,6 +1186,21 @@ def url_upload(
     multi_thread: bool,
     io_config: IOConfig | None,
 ) -> PyExpr: ...
+def tokenize_encode(
+    expr: PyExpr,
+    tokens_path: str,
+    use_special_tokens: bool,
+    io_config: IOConfig | None,
+    pattern: str | None,
+    special_tokens: str | None,
+) -> PyExpr: ...
+def tokenize_decode(
+    expr: PyExpr,
+    tokens_path: str,
+    io_config: IOConfig | None,
+    pattern: str | None,
+    special_tokens: str | None,
+) -> PyExpr: ...
 def minhash(
     expr: PyExpr,
     num_hashes: int,

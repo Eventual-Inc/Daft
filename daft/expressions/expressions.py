@@ -29,6 +29,8 @@ from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
+from daft.daft import tokenize_decode as _tokenize_decode
+from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.datatype import DataType, TimeUnit
@@ -2544,6 +2546,78 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is normalized.
         """
         return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+
+    def tokenize_encode(
+        self,
+        tokens_path: str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: str | None = None,
+        special_tokens: str | None = None,
+        use_special_tokens: bool | None = None,
+    ) -> Expression:
+        """Encodes each string as a list of integer tokens using a tokenizer.
+
+        Uses https://github.com/openai/tiktoken for tokenization.
+
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
+        loading tokens from a file in tiktoken format.
+
+        .. NOTE::
+            If using this expression with Llama 3 tokens, note that Llama 3 does some extra preprocessing on
+            strings in certain edge cases. This may result in slightly different encodings in these cases.
+
+        Args:
+            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
+            io_config (optional): IOConfig to use when accessing remote storage.
+            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
+            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
+            use_special_tokens (optional): Whether or not to parse special tokens included in input. Disabled by default. Automatically enabled if `special_tokens` is provided.
+
+        Returns:
+            Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
+        """
+
+        # if special tokens are passed in, enable using special tokens
+        if use_special_tokens is None:
+            use_special_tokens = special_tokens is not None
+
+        return Expression._from_pyexpr(
+            _tokenize_encode(
+                self._expr,
+                tokens_path,
+                use_special_tokens,
+                io_config,
+                pattern,
+                special_tokens,
+            )
+        )
+
+    def tokenize_decode(
+        self,
+        tokens_path: str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: str | None = None,
+        special_tokens: str | None = None,
+    ) -> Expression:
+        """Decodes each list of integer tokens into a string using a tokenizer.
+
+        Uses https://github.com/openai/tiktoken for tokenization.
+
+        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
+        loading tokens from a file in tiktoken format.
+
+        Args:
+            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
+            io_config (optional): IOConfig to use when accessing remote storage.
+            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
+            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
+
+        Returns:
+            Expression: An expression with decoded strings.
+        """
+        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
