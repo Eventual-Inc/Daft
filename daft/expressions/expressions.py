@@ -3058,6 +3058,6 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
-    def cosine(self, other: Expression) -> Expression:
-        """Compute the cosine similarity between two embeddings"""
-        return Expression._from_pyexpr(native.cosine(self._expr, other._expr))
+    def cosine_distance(self, other: Expression) -> Expression:
+        """Compute the cosine distance between two embeddings"""
+        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))

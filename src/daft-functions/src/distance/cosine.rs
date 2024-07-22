@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use simsimd::SpatialSimilarity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CosineFunction {}
+pub struct CosineDistanceFunction {}
 
-macro_rules! compute_cosine {
+macro_rules! compute_cosine_distance {
     ($source:expr, $query:expr, $type:ident) => {{
         let query = &$query.fixed_size_list()?.flat_child;
         let query = query.$type()?.as_slice();
@@ -31,13 +31,13 @@ macro_rules! compute_cosine {
 }
 
 #[typetag::serde]
-impl ScalarUDF for CosineFunction {
+impl ScalarUDF for CosineDistanceFunction {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn name(&self) -> &'static str {
-        "cosine"
+        "cosine_distance"
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
@@ -55,13 +55,13 @@ impl ScalarUDF for CosineFunction {
                 let res = match query.data_type() {
                     DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
                         DataType::Int8 => {
-                            compute_cosine!(source, query, i8)
+                            compute_cosine_distance!(source, query, i8)
                         }
                         DataType::Float32 => {
-                            compute_cosine!(source, query, f32)
+                            compute_cosine_distance!(source, query, f32)
                         }
                         DataType::Float64 => {
-                            compute_cosine!(source, query, f64)
+                            compute_cosine_distance!(source, query, f64)
                         }
                         _ => {
                             return Err(DaftError::ValueError(
@@ -124,8 +124,8 @@ impl ScalarUDF for CosineFunction {
     }
 }
 
-pub fn cosine(a: ExprRef, b: ExprRef) -> ExprRef {
-    ScalarFunction::new(CosineFunction {}, vec![a, b]).into()
+pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
+    ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
 }
 
 #[cfg(feature = "python")]
@@ -134,7 +134,7 @@ pub mod python {
     use pyo3::{pyfunction, PyResult};
 
     #[pyfunction]
-    pub fn cosine(a: PyExpr, b: PyExpr) -> PyResult<PyExpr> {
-        Ok(super::cosine(a.into(), b.into()).into())
+    pub fn cosine_distance(a: PyExpr, b: PyExpr) -> PyResult<PyExpr> {
+        Ok(super::cosine_distance(a.into(), b.into()).into())
     }
 }

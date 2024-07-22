@@ -10,9 +10,9 @@ from daft.expressions import col, lit
 def test_repr_cosine():
     a = col("a")
     b = col("b")
-    y = a.embedding.cosine(b)
+    y = a.embedding.cosine_distance(b)
     repr_out = repr(y)
-    assert repr_out == "cosine(col(a), col(b))"
+    assert repr_out == "cosine_distance(col(a), col(b))"
 
 
 def test_cosine():
@@ -23,7 +23,7 @@ def test_cosine():
     query = [1.0, 1.11, 1.01]
     dtype = DataType.fixed_size_list(dtype=DataType.float64(), size=3)
 
-    res = df.select(col("a").cast(dtype).embedding.cosine(lit(query).cast(dtype))).collect()
+    res = df.select(col("a").cast(dtype).embedding.cosine_distance(lit(query).cast(dtype))).collect()
     res = res.to_pydict()
 
     def cosine_dist_brute_force(x, y):
@@ -39,4 +39,4 @@ def test_cosine():
     # check if they are approximately equal
     for a, b in zip(res["a"], expected):
         print("a:", a, "b:", b)
-        assert pytest.approx(b) == pytest.approx(a, abs=1e-2)
+        assert pytest.approx(b) == pytest.approx(a, abs=1e-5)
