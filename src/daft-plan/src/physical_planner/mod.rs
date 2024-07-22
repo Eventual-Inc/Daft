@@ -3,8 +3,8 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
-use crate::physical_plan::PhysicalPlanRef;
 use crate::LogicalPlan;
+use crate::{physical_optimization::optimizer::PhysicalOptimizer, physical_plan::PhysicalPlanRef};
 
 use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;
@@ -32,5 +32,7 @@ pub fn logical_to_physical(
         .physical_children
         .pop()
         .expect("should have exactly 1 parent");
+    let optimizer = PhysicalOptimizer::new();
+    let pplan = optimizer.optimize(pplan)?;
     Ok(pplan)
 }
