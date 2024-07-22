@@ -1785,6 +1785,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
+ "async-stream",
  "common-error",
  "common-tracing",
  "daft-dsl",
@@ -1818,6 +1819,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "futures",
  "parquet2",
  "pyo3",
  "snafu",

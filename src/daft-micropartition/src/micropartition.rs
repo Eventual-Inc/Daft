@@ -20,6 +20,7 @@ use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use futures::{Stream, StreamExt};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
@@ -476,6 +477,136 @@ fn materialize_scan_task(
     Ok((table_values, cast_to_schema))
 }
 
+fn stream_scan_task(
+    scan_task: Arc<ScanTask>,
+    io_stats: Option<IOStatsRef>,
+) -> crate::Result<(impl Stream<Item = DaftResult<Table>> + Send)> {
+    let pushdown_columns = scan_task
+        .pushdowns
+        .columns
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+    let file_column_names =
+        _get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
+
+    let urls = scan_task.sources.iter().map(|s| s.get_path().to_string());
+
+    let table_values = match scan_task.storage_config.as_ref() {
+        StorageConfig::Native(native_storage_config) => {
+            let io_config = Arc::new(
+                native_storage_config
+                    .io_config
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            let multi_threaded_io = native_storage_config.multithreaded_io;
+            let io_client = std::thread::spawn(move || {
+                daft_io::get_io_client(multi_threaded_io, io_config).unwrap()
+            })
+            .join()
+            .unwrap();
+
+            match scan_task.file_format_config.as_ref() {
+                // ********************
+                // Native Parquet Reads
+                // ********************
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: _,
+                    field_id_mapping: _,
+                    ..
+                }) => {
+                    todo!()
+                }
+
+                // ****************
+                // Native CSV Reads
+                // ****************
+                FileFormatConfig::Csv(cfg) => {
+                    let schema_of_file = scan_task.schema.clone();
+                    let col_names = if !cfg.has_headers {
+                        Some(
+                            schema_of_file
+                                .fields
+                                .values()
+                                .map(|f| f.name.as_str())
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    };
+                    let convert_options = CsvConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        file_column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        col_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        Some(schema_of_file),
+                        scan_task.pushdowns.filters.clone(),
+                    );
+                    let parse_options = CsvParseOptions::new_with_defaults(
+                        cfg.has_headers,
+                        cfg.delimiter,
+                        cfg.double_quote,
+                        cfg.quote,
+                        cfg.allow_variable_columns,
+                        cfg.escape_char,
+                        cfg.comment,
+                    )
+                    .context(DaftCSVSnafu)?;
+                    let read_options =
+                        CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+                    let uris = urls.collect::<Vec<_>>();
+                    daft_csv::stream_csv_bulk(
+                        uris,
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        None,
+                        8,
+                    )
+                }
+
+                // ****************
+                // Native JSON Reads
+                // ****************
+                FileFormatConfig::Json(_cfg) => {
+                    todo!()
+                }
+                #[cfg(feature = "python")]
+                FileFormatConfig::Database(_) => todo!(),
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction => todo!(),
+            }
+        }
+        #[cfg(feature = "python")]
+        StorageConfig::Python(_) => match scan_task.file_format_config.as_ref() {
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit: _,
+                ..
+            }) => todo!(),
+            FileFormatConfig::Csv(CsvSourceConfig {
+                has_headers: _,
+                delimiter: _,
+                double_quote: _,
+                ..
+            }) => todo!(),
+            FileFormatConfig::Json(_) => todo!(),
+            FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                sql: _,
+                conn: _,
+            }) => todo!(),
+            FileFormatConfig::PythonFunction => todo!(),
+        },
+    };
+
+    Ok(table_values)
+}
+
 impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
@@ -624,6 +755,60 @@ impl MicroPartition {
                 let statistics = scan_task.statistics.clone();
                 let (tables, schema) = materialize_scan_task(scan_task, Some(io_stats))?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
+            }
+        }
+    }
+
+    pub fn from_scan_task_streaming(
+        scan_task: Arc<ScanTask>,
+        io_stats: IOStatsRef,
+    ) -> crate::Result<impl Stream<Item = DaftResult<Arc<Self>>> + Send> {
+        let schema = scan_task.materialized_schema();
+        match (
+            &scan_task.metadata,
+            &scan_task.statistics,
+            scan_task.file_format_config.as_ref(),
+            scan_task.storage_config.as_ref(),
+        ) {
+            // CASE: ScanTask provides all required metadata.
+            // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
+            (Some(_metadata), Some(_statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+                todo!()
+            }
+
+            // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
+            // We can perform an eager **metadata** read to create an unloaded MicroPartition
+            (
+                _,
+                _,
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: _,
+                    field_id_mapping: _,
+                    ..
+                }),
+                StorageConfig::Native(_cfg),
+            ) => {
+                todo!()
+            }
+
+            // CASE: Last resort fallback option
+            // Perform an eager **data** read
+            _ => {
+                let statistics = scan_task.statistics.clone();
+                let stream = stream_scan_task(scan_task.clone(), Some(io_stats))?;
+                Ok(stream.map(move |result| match result {
+                    Ok(table) => {
+                        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+                        let casted_table =
+                            table.cast_to_schema_with_fill(schema.as_ref(), fill_map.as_ref())?;
+                        Ok(Arc::new(Self::new_loaded(
+                            schema.clone(),
+                            Arc::new(vec![casted_table]),
+                            statistics.clone(),
+                        )))
+                    }
+                    Err(e) => Err(e),
+                }))
             }
         }
     }

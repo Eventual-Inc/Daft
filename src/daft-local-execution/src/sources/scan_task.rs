@@ -3,10 +3,7 @@ use std::sync::Arc;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
-use futures::{stream, StreamExt};
-use snafu::ResultExt;
-
-use crate::JoinSnafu;
+use futures::{pin_mut, StreamExt};
 
 use super::source::{Source, SourceStream};
 
