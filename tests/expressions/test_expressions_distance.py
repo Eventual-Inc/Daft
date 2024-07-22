@@ -15,6 +15,14 @@ def test_repr_cosine():
     assert repr_out == "cosine_distance(col(a), col(b))"
 
 
+def test_repr_dot():
+    a = col("a")
+    b = col("b")
+    y = a.embedding.dot_distance(b)
+    repr_out = repr(y)
+    assert repr_out == "dot_distance(col(a), col(b))"
+
+
 def test_cosine():
     data = {
         "a": [[1.0, 1.11, 1.01], [2, 2, 2], [3, 3, 3]],
@@ -38,5 +46,25 @@ def test_cosine():
 
     # check if they are approximately equal
     for a, b in zip(res["a"], expected):
-        print("a:", a, "b:", b)
+        assert pytest.approx(b) == pytest.approx(a, abs=1e-5)
+
+
+def test_dot():
+    data = {
+        "a": [[1.0, 1.11, 1.01], [2, 2, 2], [3, 3, 3]],
+    }
+    df = daft.from_pydict(data)
+    query = [1.0, 1.11, 1.01]
+    dtype = DataType.fixed_size_list(dtype=DataType.float64(), size=3)
+
+    res = df.select(col("a").cast(dtype).embedding.dot_distance(lit(query).cast(dtype))).collect()
+    res = res.to_pydict()
+
+    def dot_brute_force(x, y):
+        return sum(xi * yi for xi, yi in zip(x, y))
+
+    expected = [dot_brute_force(query, x) for x in data["a"]]
+
+    # check if they are approximately equal
+    for a, b in zip(res["a"], expected):
         assert pytest.approx(b) == pytest.approx(a, abs=1e-5)

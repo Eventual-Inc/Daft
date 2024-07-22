@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use simsimd::SpatialSimilarity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CosineDistanceFunction {}
+pub struct DotDistanceFunction {}
 
-macro_rules! compute_cosine_distance {
+macro_rules! compute_dot_distance {
     ($source:expr, $query:expr, $type:ident) => {{
         let query = &$query.fixed_size_list()?.flat_child;
         let query = query.$type()?.as_slice();
@@ -23,7 +23,7 @@ macro_rules! compute_cosine_distance {
             .map(|list_opt| {
                 let list = list_opt?;
                 let list = list.$type().unwrap().as_slice();
-                let cosine = $type::cosine(&list, &query);
+                let cosine = $type::dot(&list, &query);
                 cosine
             })
             .collect::<Vec<_>>()
@@ -31,13 +31,13 @@ macro_rules! compute_cosine_distance {
 }
 
 #[typetag::serde]
-impl ScalarUDF for CosineDistanceFunction {
+impl ScalarUDF for DotDistanceFunction {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn name(&self) -> &'static str {
-        "cosine_distance"
+        "dot_distance"
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
@@ -55,17 +55,17 @@ impl ScalarUDF for CosineDistanceFunction {
                 let res = match query.data_type() {
                     DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
                         DataType::Int8 => {
-                            compute_cosine_distance!(source, query, i8)
+                            compute_dot_distance!(source, query, i8)
                         }
                         DataType::Float32 => {
-                            compute_cosine_distance!(source, query, f32)
+                            compute_dot_distance!(source, query, f32)
                         }
                         DataType::Float64 => {
-                            compute_cosine_distance!(source, query, f64)
+                            compute_dot_distance!(source, query, f64)
                         }
                         _ => {
                             return Err(DaftError::ValueError(
-                                "Cosine only supports Int8|Float32|Float32 datatypes".to_string(),
+                                "Dot only supports Int8|Float32|Float32 datatypes".to_string(),
                             ));
                         }
                     },
@@ -124,6 +124,6 @@ impl ScalarUDF for CosineDistanceFunction {
     }
 }
 
-pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
-    ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
+pub fn dot_distance(a: ExprRef, b: ExprRef) -> ExprRef {
+    ScalarFunction::new(DotDistanceFunction {}, vec![a, b]).into()
 }

@@ -3061,3 +3061,7 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings"""
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+
+    def dot_distance(self, other: Expression) -> Expression:
+        """Compute the dot product between two embeddings"""
+        return Expression._from_pyexpr(native.dot_distance(self._expr, other._expr))
