@@ -172,16 +172,10 @@ impl PhysicalPlan {
             Self::ReduceMerge(ReduceMerge { input }) => input.clustering_spec(),
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
                 let input_clustering_spec = input.clustering_spec();
-                if input_clustering_spec.num_partitions() == 1 {
-                    input_clustering_spec
-                } else if groupby.is_empty() {
+                if groupby.is_empty() {
                     ClusteringSpec::Unknown(Default::default()).into()
                 } else {
-                    ClusteringSpec::Hash(HashClusteringConfig::new(
-                        input.clustering_spec().num_partitions(),
-                        groupby.clone(),
-                    ))
-                    .into()
+                    input_clustering_spec
                 }
             }
             Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
@@ -469,6 +463,7 @@ impl PhysicalPlan {
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
+                Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
                 Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Sort(Sort { sort_by, descending, num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(), *num_partitions)),
                 Self::Split(Split { input_num_partitions, output_num_partitions, .. }) => Self::Split(Split::new(input.clone(), *input_num_partitions, *output_num_partitions)),
@@ -482,6 +477,7 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(input.clone(), column_name)),
                 #[cfg(feature = "python")]
                 Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
