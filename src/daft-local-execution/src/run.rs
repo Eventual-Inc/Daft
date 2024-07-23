@@ -104,6 +104,15 @@ pub fn run_local(
         } else {
             let (chrome_layer, _guard) = ChromeLayerBuilder::new()
                 .trace_style(tracing_chrome::TraceStyle::Threaded)
+                .name_fn(Box::new(|event_or_span| {
+                    match event_or_span {
+                        tracing_chrome::EventOrSpan::Event(ev) => ev.metadata().name().into(),
+                        tracing_chrome::EventOrSpan::Span(s) => {
+                            // TODO: this is where we should extract out fields (such as node id to show the different pipelines)
+                            s.name().into()
+                        }
+                    }
+                }))
                 .build();
             tracing::subscriber::set_global_default(
                 tracing_subscriber::registry().with(chrome_layer),
