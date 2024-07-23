@@ -869,6 +869,11 @@ impl PyExpr {
         );
         Ok(expr.into())
     }
+
+    pub fn dot(&self, other: &PyExpr) -> PyResult<Self> {
+        use crate::functions::numeric::dot;
+        Ok(dot(self.into(), other.into()).into())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);

@@ -428,6 +428,16 @@ class Expression:
         expr = self._expr.ceil()
         return Expression._from_pyexpr(expr)
 
+    def dot(self, other: Expression) -> Expression:
+        """The dot product of two numeric expressions (``expr.dot(other)``)
+
+        Args:
+            other: The other numeric expression
+        """
+        assert isinstance(other, Expression)
+        expr = self._expr.dot(other._expr)
+        return Expression._from_pyexpr(expr)
+
     def floor(self) -> Expression:
         """The floor of a numeric expression (``expr.floor()``)"""
         expr = self._expr.floor()

@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import pytest
 import pytz
 
+import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
@@ -481,3 +482,17 @@ def test_repr_series_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
     assert output == "lit([1, 2, 3])"
+
+
+def test_repr_dot():
+    e = col("a").dot(col("b"))
+    output = repr(e)
+    assert output == "dot(col(a), col(b))"
+
+
+def test_dot():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+    actual = df.select(col("a").dot(col("b")).alias("dot")).collect().to_pydict()
+    actual = actual["dot"]
+    expected = [32]
+    assert actual == expected

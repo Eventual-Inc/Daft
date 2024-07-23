@@ -1,5 +1,6 @@
 mod abs;
 mod ceil;
+mod dot;
 mod exp;
 mod floor;
 mod log;
@@ -10,6 +11,7 @@ mod trigonometry;
 
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
+use dot::DotEvaluator;
 use floor::FloorEvaluator;
 use log::LogEvaluator;
 use round::RoundEvaluator;
@@ -52,6 +54,7 @@ pub enum NumericExpr {
     ArcTanh,
     ArcCosh,
     ArcSinh,
+    Dot,
 }
 
 impl NumericExpr {
@@ -83,6 +86,7 @@ impl NumericExpr {
             ArcTanh => &TrigonometryEvaluator(TrigonometricFunction::ArcTanh),
             ArcCosh => &TrigonometryEvaluator(TrigonometricFunction::ArcCosh),
             ArcSinh => &TrigonometryEvaluator(TrigonometricFunction::ArcSinh),
+            Dot => &DotEvaluator {},
         }
     }
 }
@@ -275,6 +279,14 @@ pub fn exp(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Exp),
         inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn dot(input: ExprRef, other: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Dot),
+        inputs: vec![input, other],
     }
     .into()
 }
