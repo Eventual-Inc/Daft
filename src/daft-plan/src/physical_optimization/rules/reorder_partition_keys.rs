@@ -13,6 +13,13 @@ pub struct ReorderPartitionKeys {}
 
 type PartitionContext = PlanContext<Vec<ExprRef>>;
 
+// Reorders columns in partitions so that they can be removed later.
+// This works by maintaining a "canonical" ordering of the columns as we walk
+// down the plan tree.
+// For instance, if we see a hash partition by [col("b"), col("a")], then if
+// we see something that partitions by [col("a"), col("b")], we reorder it
+// to also partition by [col("b"), col("a")].
+// This allows us to remove redundant repartitions, which is done in another rule.
 impl PhysicalOptimizerRule for ReorderPartitionKeys {
     fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>> {
         let plan_context = PartitionContext::new_default(plan);
