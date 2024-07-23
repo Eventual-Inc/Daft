@@ -4,53 +4,59 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{SingleInputSink, SinkResultType};
+use super::{
+    sink::{SingleInputSink, SinkResultType},
+    state::SinkTaskState,
+};
 
 #[derive(Clone)]
 pub struct LimitSink {
     limit: usize,
-    num_rows_taken: usize,
-    result: Vec<Arc<MicroPartition>>,
 }
 
 impl LimitSink {
     pub fn new(limit: usize) -> Self {
-        Self {
-            limit,
-            num_rows_taken: 0,
-            result: Vec::new(),
-        }
+        Self { limit }
     }
 }
 
 impl SingleInputSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        let input_num_rows = input.len();
+    fn sink(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
 
-        if self.num_rows_taken == self.limit {
-            return Ok(SinkResultType::Finished);
-        }
-
-        if self.num_rows_taken + input_num_rows <= self.limit {
-            self.num_rows_taken += input_num_rows;
-            self.result.push(input.clone());
-            Ok(SinkResultType::NeedMoreInput)
-        } else {
-            let num_rows_to_take = self.limit - self.num_rows_taken;
-            let taken = input.head(num_rows_to_take)?;
-            self.num_rows_taken = self.limit;
-            self.result.push(Arc::new(taken));
+        if state.curr_len >= self.limit {
             Ok(SinkResultType::Finished)
+        } else {
+            let num_rows_to_take = self.limit - state.curr_len;
+            if input.len() <= num_rows_to_take {
+                state.add(input.clone());
+                if state.curr_len == self.limit {
+                    Ok(SinkResultType::Finished)
+                } else {
+                    Ok(SinkResultType::NeedMoreInput)
+                }
+            } else {
+                let taken = input.head(num_rows_to_take)?;
+                state.add(Arc::new(taken));
+                Ok(SinkResultType::Finished)
+            }
         }
     }
 
     fn in_order(&self) -> bool {
+        true
+    }
+
+    fn can_parallelize(&self) -> bool {
         false
     }
 
     #[instrument(skip_all, name = "LimitSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        Ok(self.result.clone())
+    fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        Ok(vec![input.clone()])
     }
 }

@@ -6,12 +6,13 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use tracing::instrument;
 
-use super::sink::{DoubleInputSink, SinkResultType};
+use super::{
+    sink::{DoubleInputSink, SinkResultType},
+    state::SinkTaskState,
+};
 
 #[derive(Clone)]
 pub struct HashJoinSink {
-    result_left: Vec<Arc<MicroPartition>>,
-    result_right: Vec<Arc<MicroPartition>>,
     left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
     join_type: JoinType,
@@ -20,8 +21,6 @@ pub struct HashJoinSink {
 impl HashJoinSink {
     pub fn new(left_on: Vec<ExprRef>, right_on: Vec<ExprRef>, join_type: JoinType) -> Self {
         Self {
-            result_left: Vec::new(),
-            result_right: Vec::new(),
             left_on,
             right_on,
             join_type,
@@ -31,14 +30,22 @@ impl HashJoinSink {
 
 impl DoubleInputSink for HashJoinSink {
     #[instrument(skip_all, name = "HashJoin::sink")]
-    fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        self.result_left.push(input.clone());
+    fn sink_left(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
+        state.add(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
     #[instrument(skip_all, name = "HashJoin::sink")]
-    fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        self.result_right.push(input.clone());
+    fn sink_right(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
+        state.add(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
@@ -47,27 +54,13 @@ impl DoubleInputSink for HashJoinSink {
     }
 
     #[instrument(skip_all, name = "HashJoin::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        let concated_left = MicroPartition::concat(
-            &self
-                .result_left
-                .iter()
-                .map(|x| x.as_ref())
-                .collect::<Vec<_>>(),
-        )?;
-        let concated_right = MicroPartition::concat(
-            &self
-                .result_right
-                .iter()
-                .map(|x| x.as_ref())
-                .collect::<Vec<_>>(),
-        )?;
-        let joined = concated_left.hash_join(
-            &concated_right,
-            &self.left_on,
-            &self.right_on,
-            self.join_type,
-        )?;
+    fn finalize(
+        &self,
+        input_left: &Arc<MicroPartition>,
+        input_right: &Arc<MicroPartition>,
+    ) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        let joined =
+            input_left.hash_join(input_right, &self.left_on, &self.right_on, self.join_type)?;
         Ok(vec![Arc::new(joined)])
     }
 

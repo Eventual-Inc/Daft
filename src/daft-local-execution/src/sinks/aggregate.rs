@@ -5,41 +5,62 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{SingleInputSink, SinkResultType};
+use super::{
+    sink::{SingleInputSink, SinkResultType},
+    state::SinkTaskState,
+};
 
 #[derive(Clone)]
 pub struct AggregateSink {
-    agg_exprs: Vec<ExprRef>,
-    group_by: Vec<ExprRef>,
-    parts: Vec<Arc<MicroPartition>>,
+    sink_agg_exprs: Vec<ExprRef>,
+    sink_group_by: Vec<ExprRef>,
+    final_agg_exprs: Vec<ExprRef>,
+    final_group_by: Vec<ExprRef>,
+    final_project_exprs: Vec<ExprRef>,
 }
 
 impl AggregateSink {
-    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>) -> Self {
+    pub fn new(
+        sink_agg_exprs: Vec<ExprRef>,
+        sink_group_by: Vec<ExprRef>,
+        final_agg_exprs: Vec<ExprRef>,
+        final_group_by: Vec<ExprRef>,
+        final_project_exprs: Vec<ExprRef>,
+    ) -> Self {
         Self {
-            agg_exprs,
-            group_by,
-            parts: Vec::new(),
+            sink_agg_exprs,
+            sink_group_by,
+            final_agg_exprs,
+            final_group_by,
+            final_project_exprs,
         }
     }
 }
 
 impl SingleInputSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        self.parts.push(input.clone());
+    fn sink(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
+        let agged = input.agg(&self.sink_agg_exprs, &self.sink_group_by)?;
+        state.add(Arc::new(agged));
         Ok(SinkResultType::NeedMoreInput)
     }
 
     fn in_order(&self) -> bool {
+        false
+    }
+
+    fn can_parallelize(&self) -> bool {
         true
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        let concated =
-            MicroPartition::concat(&self.parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-        let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
-        Ok(vec![Arc::new(agged)])
+    fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        let agged = input.agg(&self.final_agg_exprs, &self.final_group_by)?;
+        let projected = agged.eval_expression_list(&self.final_project_exprs)?;
+        Ok(vec![Arc::new(projected)])
     }
 }

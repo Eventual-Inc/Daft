@@ -4,33 +4,38 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{DoubleInputSink, SinkResultType};
+use super::{
+    sink::{DoubleInputSink, SinkResultType},
+    state::SinkTaskState,
+};
 
 #[derive(Clone)]
-pub struct ConcatSink {
-    result_left: Vec<Arc<MicroPartition>>,
-    result_right: Vec<Arc<MicroPartition>>,
-}
+pub struct ConcatSink {}
 
 impl ConcatSink {
     pub fn new() -> Self {
-        Self {
-            result_left: Vec::new(),
-            result_right: Vec::new(),
-        }
+        Self {}
     }
 }
 
 impl DoubleInputSink for ConcatSink {
     #[instrument(skip_all, name = "ConcatSink::sink")]
-    fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        self.result_left.push(input.clone());
+    fn sink_left(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
+        state.add(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
     #[instrument(skip_all, name = "ConcatSink::sink")]
-    fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        self.result_right.push(input.clone());
+    fn sink_right(
+        &self,
+        input: &Arc<MicroPartition>,
+        state: &mut SinkTaskState,
+    ) -> DaftResult<SinkResultType> {
+        state.add(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
@@ -39,13 +44,12 @@ impl DoubleInputSink for ConcatSink {
     }
 
     #[instrument(skip_all, name = "ConcatSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        Ok(self
-            .result_left
-            .clone()
-            .into_iter()
-            .chain(self.result_right.clone())
-            .collect())
+    fn finalize(
+        &self,
+        input_left: &Arc<MicroPartition>,
+        input_right: &Arc<MicroPartition>,
+    ) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        Ok(vec![input_left.clone(), input_right.clone()])
     }
 
     fn name(&self) -> &'static str {

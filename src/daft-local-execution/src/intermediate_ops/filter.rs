@@ -20,9 +20,8 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     #[instrument(skip_all, name = "FilterOperator::execute")]
-    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        let out = input.filter(&[self.predicate.clone()])?;
-        Ok(Arc::new(out))
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<MicroPartition> {
+        input.filter(&[self.predicate.clone()])
     }
 
     fn name(&self) -> &'static str {
