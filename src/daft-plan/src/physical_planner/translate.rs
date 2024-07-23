@@ -103,12 +103,10 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            let clustering_spec = input_physical.clustering_spec().clone();
             Ok(PhysicalPlan::Project(Project::try_new(
                 input_physical,
                 projection.clone(),
                 resource_request.clone(),
-                clustering_spec,
             )?)
             .arced())
         }
@@ -327,12 +325,10 @@ pub(super) fn translate_single_logical_node(
                         groupby.clone(),
                     ));
 
-                    let clustering_spec = second_stage_agg.clustering_spec().clone();
                     PhysicalPlan::Project(Project::try_new(
                         second_stage_agg.into(),
                         final_exprs,
                         Default::default(),
-                        clustering_spec,
                     )?)
                 }
             };
@@ -404,12 +400,10 @@ pub(super) fn translate_single_logical_node(
                         group_by_with_pivot,
                     ));
 
-                    let clustering_spec = second_stage_agg.clustering_spec().clone();
                     PhysicalPlan::Project(Project::try_new(
                         second_stage_agg.into(),
                         final_exprs,
                         Default::default(),
-                        clustering_spec,
                     )?)
                 }
             };

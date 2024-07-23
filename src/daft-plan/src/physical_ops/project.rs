@@ -20,13 +20,28 @@ pub struct Project {
 }
 
 impl Project {
+    // uses input to create output clustering spec
     pub(crate) fn try_new(
+        input: PhysicalPlanRef,
+        projection: Vec<ExprRef>,
+        resource_request: ResourceRequest,
+    ) -> DaftResult<Self> {
+        let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
+        Ok(Self {
+            input,
+            projection,
+            resource_request,
+            clustering_spec,
+        })
+    }
+
+    // does not re-create clustering spec, unlike try_new
+    pub(crate) fn new_with_clustering_spec(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
         resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
-        let clustering_spec = translate_clustering_spec(clustering_spec, &projection);
         Ok(Self {
             input,
             projection,

@@ -57,6 +57,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                         // we are hash partitioned, just by something different
                         return Ok(Transformed::no(c.with_context(by.clone()).propagate()));
                     }
+                    // otherwise we need to reorder the columns
                 }
                 _ => return Ok(Transformed::no(c)),
             };
@@ -70,7 +71,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
             match c.plan.as_ref() {
                 // these store their clustering spec inside
                 PhysicalPlan::Project(Project { input, projection, resource_request, .. }) => {
-                    let new_plan = PhysicalPlan::Project(Project::try_new(
+                    let new_plan = PhysicalPlan::Project(Project::new_with_clustering_spec(
                         input.clone(),
                         projection.clone(),
                         resource_request.clone(),

@@ -456,7 +456,8 @@ impl PhysicalPlan {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::Project(Project { projection, resource_request, clustering_spec, .. }) => Self::Project(Project::try_new(
+                Self::Project(Project { projection, resource_request, clustering_spec, .. }) =>
+                    Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(),
                 ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
