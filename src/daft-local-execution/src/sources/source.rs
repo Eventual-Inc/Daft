@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
-use tracing::{event, info_span, instrument, Instrument};
+use tracing::{instrument, Instrument};
 
 use crate::channel::MultiSender;
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::{info_span, instrument};
+use tracing::instrument;
 
 use super::intermediate_op::IntermediateOperator;
 

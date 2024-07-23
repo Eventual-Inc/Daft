@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex,
     },
 };
 
@@ -10,9 +10,6 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
 use lazy_static::lazy_static;
-use tracing::{event, instrument::WithSubscriber};
-use tracing_chrome::{EventOrSpan, FlushGuard};
-use tracing_subscriber::util::SubscriberInitExt;
 
 #[cfg(feature = "python")]
 use {
@@ -98,7 +95,7 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     use tracing_chrome::ChromeLayerBuilder;
-    use tracing_subscriber::{prelude::*, registry::Registry};
+    use tracing_subscriber::prelude::*;
 
     {
         let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
