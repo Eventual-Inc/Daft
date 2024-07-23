@@ -32,7 +32,7 @@ pub fn logical_to_physical(
         .physical_children
         .pop()
         .expect("should have exactly 1 parent");
-    let optimizer = PhysicalOptimizer::new();
+    let optimizer = PhysicalOptimizer::default();
     let pplan = optimizer.optimize(pplan)?;
     Ok(pplan)
 }
