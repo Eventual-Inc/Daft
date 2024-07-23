@@ -302,6 +302,34 @@ fn physical_plan_to_partition_tasks(
                 .call1((upstream_iter, projection_pyexprs, resource_request.clone()))?;
             Ok(py_iter.into())
         }
+
+        PhysicalPlan::ActorPoolProject(ActorPoolProject {
+            project:
+                Project {
+                    input,
+                    projection,
+                    resource_request,
+                    ..
+                },
+            num_actors,
+        }) => {
+            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let projection_pyexprs: Vec<PyExpr> = projection
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "actor_pool_project"))?
+                .call1((
+                    upstream_iter,
+                    projection_pyexprs,
+                    resource_request.clone(),
+                    *num_actors,
+                ))?;
+            Ok(py_iter.into())
+        }
+
         PhysicalPlan::Filter(Filter { input, predicate }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;

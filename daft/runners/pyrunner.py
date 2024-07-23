@@ -24,7 +24,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
-from daft.runners.runner import Runner
+from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,16 @@ class PyRunnerIO(runner_io.RunnerIO):
             file_infos.extend(path_file_infos)
 
         return file_infos
+
+
+class PyActorPool(ActorPool[MicroPartition]):
+    def __enter__(self):
+        # TODO: initialize any threads or processes
+        return self
+
+    def __exit__(type, value, tb):
+        # TODO: tear down any created threads or processes
+        pass
 
 
 class PyRunner(Runner[MicroPartition]):
@@ -209,6 +219,10 @@ class PyRunner(Runner[MicroPartition]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+    def get_actor_pool(self, resource_request: ResourceRequest, num_actors: int) -> PyActorPool:
+        # TODO: reserve inflight_task_resources for the actor pool
+        return PyActorPool()
 
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]

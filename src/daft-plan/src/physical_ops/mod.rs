@@ -6,6 +6,7 @@ mod csv;
 #[cfg(feature = "python")]
 mod deltalake_write;
 
+mod actor_pool_project;
 mod empty_scan;
 mod explode;
 mod fanout;
@@ -31,6 +32,7 @@ mod sort_merge_join;
 mod split;
 mod unpivot;
 
+pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;
 pub use coalesce::Coalesce;

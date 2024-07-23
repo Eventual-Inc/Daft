@@ -53,7 +53,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.runners.runner import Runner
+from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -731,6 +731,16 @@ def _build_partitions(
     return partitions
 
 
+class RayActorPool(ActorPool[ray.ObjectRef]):
+    def __enter__(self):
+        # TODO: start a ray.Actor pool
+        return self
+
+    def __exit__(type, value, tb):
+        # TODO: teardown the ray.Actor pool
+        pass
+
+
 class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
@@ -892,6 +902,9 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()
+
+    def get_actor_pool(self, resource_request: ResourceRequest, num_actors: int) -> RayActorPool:
+        return RayActorPool()
 
 
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
