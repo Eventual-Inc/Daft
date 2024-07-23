@@ -1,0 +1,11 @@
+[package]
+name = "daft-sql"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+common-error = { version = "0.2.0-dev0", path = "../common/error" }
+daft-core = { version = "0.2.0-dev0", path = "../daft-core" }
+daft-dsl = { version = "0.2.0-dev0", path = "../daft-dsl" }
+daft-plan = { version = "0.2.0-dev0", path = "../daft-plan" }
+sqlparser = "0.49.0"
