@@ -1921,7 +1921,6 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
- "daft-micropartition",
  "daft-plan",
  "daft-scan",
  "pyo3",
