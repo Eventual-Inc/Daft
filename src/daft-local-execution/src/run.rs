@@ -1,8 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard}};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
+use lazy_static::lazy_static;
+use tracing::{event, instrument::WithSubscriber};
+use tracing_chrome::{EventOrSpan, FlushGuard};
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[cfg(feature = "python")]
 use {
@@ -79,11 +83,47 @@ impl NativeExecutor {
     }
 }
 
+
+lazy_static! {
+    static ref CHROME_GUARD_HANDLE: Mutex<Option<tracing_chrome::FlushGuard>> = Mutex::new(None);
+}
+
+
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+
+
+    use tracing_chrome::ChromeLayerBuilder;
+    use tracing_subscriber::{registry::Registry, prelude::*};
+    
+
+
+    {
+        let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
+        if let Some(fg) = mg.as_mut() {
+            fg.start_new(None);
+        } else {
+            let (chrome_layer, _guard) = ChromeLayerBuilder::new().trace_style(tracing_chrome::TraceStyle::Threaded).build();
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::registry().with(chrome_layer),
+              ).unwrap();
+            *mg =  Some(_guard);
+        }
+    };
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(10)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("Executor-Worker-{}", id)
+         }).build()
+        .expect("Failed to create tokio runtime");
+
+
     let res = runtime.block_on(async {
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);
         let (sender, mut receiver) = create_channel(1, true);

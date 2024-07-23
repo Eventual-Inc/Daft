@@ -20,4 +20,7 @@ impl Source for InMemorySource {
         log::debug!("InMemorySource::get_data");
         stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
+    fn name(&self) -> &'static str {
+        "InMemorySource"
+    }
 }

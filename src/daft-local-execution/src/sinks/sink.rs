@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, MultiReceiver, MultiSender},
@@ -42,7 +43,12 @@ impl SingleInputSinkActor {
 
     pub async fn run(&mut self) -> DaftResult<()> {
         while let Some(val) = self.receiver.recv().await {
-            let sink_result = self.sink.sink(&val?)?;
+
+            let sink_span = info_span!("Sink::sink");
+            
+            let sink_result = sink_span.in_scope(|| {
+                self.sink.sink(&val?)
+            })?;
             match sink_result {
                 SinkResultType::NeedMoreInput => {
                     continue;
@@ -52,8 +58,11 @@ impl SingleInputSinkActor {
                 }
             }
         }
+        let final_span = info_span!("Sink::finalize");
 
-        let finalized_values = self.sink.finalize()?;
+        let finalized_values = final_span.in_scope(|| {
+            self.sink.finalize()
+        })?;
         for val in finalized_values {
             let _ = self.sender.get_next_sender().send(Ok(val)).await;
         }

@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+use tracing::instrument;
 
 use super::sink::{DoubleInputSink, SinkResultType};
 
@@ -29,6 +30,8 @@ impl HashJoinSink {
 }
 
 impl DoubleInputSink for HashJoinSink {
+    
+    #[instrument(skip_all, name="HashJoin::sink")]
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("HashJoin::sink_left");
 
@@ -36,6 +39,7 @@ impl DoubleInputSink for HashJoinSink {
         Ok(SinkResultType::NeedMoreInput)
     }
 
+    #[instrument(skip_all, name="HashJoin::sink")]
     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("HashJoin::sink_right");
 
@@ -47,6 +51,7 @@ impl DoubleInputSink for HashJoinSink {
         false
     }
 
+    #[instrument(skip_all, name="HashJoin::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
         log::debug!("HashJoin::finalize");
         let concated_left = MicroPartition::concat(

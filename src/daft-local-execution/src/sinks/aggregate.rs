@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use tracing::{info_span, instrument};
 
 use super::sink::{SingleInputSink, SinkResultType};
 
@@ -24,6 +25,7 @@ impl AggregateSink {
 }
 
 impl SingleInputSink for AggregateSink {
+    #[instrument(skip_all, name="AggregateSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("AggregateSink::sink");
 
@@ -35,6 +37,7 @@ impl SingleInputSink for AggregateSink {
         true
     }
 
+    #[instrument(skip_all, name="AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
         log::debug!("AggregateSink::finalize");
 

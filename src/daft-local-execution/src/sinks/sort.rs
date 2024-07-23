@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
 use super::sink::{SingleInputSink, SinkResultType};
 
@@ -24,6 +25,7 @@ impl SortSink {
 }
 
 impl SingleInputSink for SortSink {
+    #[instrument(skip_all, name="SortSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         log::debug!("SortSink::sink");
 
@@ -35,6 +37,7 @@ impl SingleInputSink for SortSink {
         false
     }
 
+    #[instrument(skip_all, name="SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
         log::debug!("SortSink::finalize");
 

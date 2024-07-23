@@ -2,6 +2,7 @@ use std::{env, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use tracing::info_span;
 
 use crate::{
     channel::{
@@ -100,8 +101,12 @@ impl IntermediateOpActor {
         op: Box<dyn IntermediateOperator>,
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
+        let span = info_span!("IntermediateOp::execute");
+
         while let Some(morsel) = receiver.recv().await {
-            let result = op.execute(&morsel?)?;
+            // let span = info_span!("IntermediateOp::execute");
+            let result = span.in_scope(|| {op.execute(&morsel?)})?;
+        
             state.add(result);
             if let Some(part) = state.try_clear() {
                 let _ = sender.send(part).await;
