@@ -132,7 +132,9 @@ mod tests {
     }
 
     // rule that increments Limit's limit by 1 per pass
-    struct CountingRule {}
+    struct CountingRule {
+        pub cutoff: i64,
+    }
 
     impl PhysicalOptimizerRule for CountingRule {
         fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>> {
@@ -143,19 +145,24 @@ mod tests {
                     eager,
                     num_partitions,
                 }) => {
-                    let new_plan = PhysicalPlan::Limit(Limit::new(
-                        input.clone(),
-                        limit + 1,
-                        *eager,
-                        *num_partitions,
-                    ));
-                    Ok(Transformed::yes(new_plan.arced()))
+                    if *limit >= self.cutoff {
+                        Ok(Transformed::no(plan))
+                    } else {
+                        let new_plan = PhysicalPlan::Limit(Limit::new(
+                            input.clone(),
+                            limit + 1,
+                            *eager,
+                            *num_partitions,
+                        ));
+                        Ok(Transformed::yes(new_plan.arced()))
+                    }
                 }
                 _ => panic!("expected Limit"),
             }
         }
     }
 
+    // test that Once rule batches only execute once
     #[test]
     fn test_rule_batch_once() -> DaftResult<()> {
         let plan = create_dummy_plan(
@@ -169,13 +176,109 @@ mod tests {
         let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
-                vec![Box::new(CountingRule {})],
+                vec![Box::new(CountingRule { cutoff: 100 })],
                 super::PhysicalRuleExecutionStrategy::Once,
             )],
             5,
         );
         let plan = optimizer.optimize(plan.arced())?;
         assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 1, .. }));
+        Ok(())
+    }
+
+    // make sure that fixed point cuts off when not transformed
+    #[test]
+    fn test_rule_batch_fixed_point() -> DaftResult<()> {
+        let plan = create_dummy_plan(
+            Arc::new(Schema::new(vec![Field::new(
+                "a",
+                daft_core::DataType::Int32,
+            )])?),
+            1,
+        );
+
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let optimizer = PhysicalOptimizer::new(
+            vec![PhysicalOptimizerRuleBatch::new(
+                vec![Box::new(CountingRule { cutoff: 2 })],
+                super::PhysicalRuleExecutionStrategy::FixedPoint(Some(4)),
+            )],
+            5,
+        );
+        let plan = optimizer.optimize(plan.arced())?;
+        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 2, .. }));
+        Ok(())
+    }
+
+    // make sure that fixed point stops at maximum
+    #[test]
+    fn test_rule_batch_fixed_point_max() -> DaftResult<()> {
+        let plan = create_dummy_plan(
+            Arc::new(Schema::new(vec![Field::new(
+                "a",
+                daft_core::DataType::Int32,
+            )])?),
+            1,
+        );
+
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let optimizer = PhysicalOptimizer::new(
+            vec![PhysicalOptimizerRuleBatch::new(
+                vec![Box::new(CountingRule { cutoff: 100 })],
+                super::PhysicalRuleExecutionStrategy::FixedPoint(Some(4)),
+            )],
+            5,
+        );
+        let plan = optimizer.optimize(plan.arced())?;
+        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 4, .. }));
+        Ok(())
+    }
+
+    // make sure that fixed point stops at max_passes
+    #[test]
+    fn test_rule_batch_fixed_point_max_passes() -> DaftResult<()> {
+        let plan = create_dummy_plan(
+            Arc::new(Schema::new(vec![Field::new(
+                "a",
+                daft_core::DataType::Int32,
+            )])?),
+            1,
+        );
+
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let optimizer = PhysicalOptimizer::new(
+            vec![PhysicalOptimizerRuleBatch::new(
+                vec![Box::new(CountingRule { cutoff: 100 })],
+                super::PhysicalRuleExecutionStrategy::FixedPoint(Some(7)),
+            )],
+            5,
+        );
+        let plan = optimizer.optimize(plan.arced())?;
+        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 5, .. }));
+        Ok(())
+    }
+
+    // make sure that fixed point stops at max_passes without a limit
+    #[test]
+    fn test_rule_batch_fixed_point_no_limit() -> DaftResult<()> {
+        let plan = create_dummy_plan(
+            Arc::new(Schema::new(vec![Field::new(
+                "a",
+                daft_core::DataType::Int32,
+            )])?),
+            1,
+        );
+
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let optimizer = PhysicalOptimizer::new(
+            vec![PhysicalOptimizerRuleBatch::new(
+                vec![Box::new(CountingRule { cutoff: 100 })],
+                super::PhysicalRuleExecutionStrategy::FixedPoint(None),
+            )],
+            5,
+        );
+        let plan = optimizer.optimize(plan.arced())?;
+        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 5, .. }));
         Ok(())
     }
 }
