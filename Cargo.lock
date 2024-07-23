@@ -1819,7 +1819,6 @@ dependencies = [
  "daft-physical-plan",
  "daft-plan",
  "daft-scan",
- "dyn-clone",
  "futures",
  "lazy_static",
  "pyo3",

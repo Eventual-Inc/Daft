@@ -15,7 +15,7 @@ use crate::{
 use super::state::OperatorTaskState;
 
 pub trait IntermediateOperator: Send + Sync {
-    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<MicroPartition>;
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     fn name(&self) -> &'static str;
 }
 
@@ -53,7 +53,7 @@ impl IntermediateOpRunner {
         while let Some(morsel) = receiver.recv().await {
             let result = span.in_scope(|| op.execute(&morsel))?;
 
-            state.add(Arc::new(result));
+            state.push(result);
             if let Some(part) = state.try_clear() {
                 let _ = sender.send(part?).await;
             }

@@ -32,7 +32,7 @@ impl SingleInputSink for SortSink {
         input: &Arc<MicroPartition>,
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType> {
-        state.add(input.clone());
+        state.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 

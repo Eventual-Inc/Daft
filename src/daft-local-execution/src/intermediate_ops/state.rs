@@ -33,8 +33,8 @@ impl OperatorTaskState {
         }
     }
 
-    // Add a micro partition to the buffer.
-    pub fn add(&mut self, part: Arc<MicroPartition>) {
+    // Push a micro partition to the buffer.
+    pub fn push(&mut self, part: Arc<MicroPartition>) {
         self.curr_len += part.len();
         self.buffer.push(part);
     }

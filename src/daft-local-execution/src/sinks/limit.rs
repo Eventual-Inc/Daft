@@ -33,7 +33,7 @@ impl SingleInputSink for LimitSink {
         } else {
             let num_rows_to_take = self.limit - state.curr_len;
             if input.len() <= num_rows_to_take {
-                state.add(input.clone());
+                state.push(input.clone());
                 if state.curr_len == self.limit {
                     Ok(SinkResultType::Finished)
                 } else {
@@ -41,7 +41,7 @@ impl SingleInputSink for LimitSink {
                 }
             } else {
                 let taken = input.head(num_rows_to_take)?;
-                state.add(Arc::new(taken));
+                state.push(Arc::new(taken));
                 Ok(SinkResultType::Finished)
             }
         }

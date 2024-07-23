@@ -45,7 +45,7 @@ impl SingleInputSink for AggregateSink {
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType> {
         let agged = input.agg(&self.sink_agg_exprs, &self.sink_group_by)?;
-        state.add(Arc::new(agged));
+        state.push(Arc::new(agged));
         Ok(SinkResultType::NeedMoreInput)
     }
 

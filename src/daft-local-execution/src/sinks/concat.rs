@@ -25,7 +25,7 @@ impl DoubleInputSink for ConcatSink {
         input: &Arc<MicroPartition>,
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType> {
-        state.add(input.clone());
+        state.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
@@ -35,7 +35,7 @@ impl DoubleInputSink for ConcatSink {
         input: &Arc<MicroPartition>,
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType> {
-        state.add(input.clone());
+        state.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
