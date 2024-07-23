@@ -483,6 +483,9 @@ impl PhysicalPlan {
                 Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
+                #[cfg(feature = "python")]
+                Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
+                // we should really remove this catch-all
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
