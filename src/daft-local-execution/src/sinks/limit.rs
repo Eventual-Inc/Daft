@@ -51,10 +51,6 @@ impl SingleInputSink for LimitSink {
         true
     }
 
-    fn can_parallelize(&self) -> bool {
-        false
-    }
-
     #[instrument(skip_all, name = "LimitSink::finalize")]
     fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>> {
         Ok(vec![input.clone()])

@@ -27,7 +27,6 @@ pub trait SingleInputSink: Send + Sync {
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType>;
     fn in_order(&self) -> bool;
-    fn can_parallelize(&self) -> bool;
     fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>>;
 }
 
@@ -81,7 +80,7 @@ impl SingleInputSinkRunner {
         // Initialize a task set and sendesr to send data to parallel tasks.
         let mut inner_task_set = TaskSet::<Option<Arc<MicroPartition>>>::new();
         let mut inner_task_senders: Vec<SingleSender> =
-            Vec::with_capacity(self.sink.can_parallelize().then(|| *NUM_CPUS).unwrap_or(1));
+            Vec::with_capacity(if self.sink.in_order() { 1 } else { *NUM_CPUS });
         let mut curr_task_idx = 0;
 
         // Receive data and send it to parallel tasks.

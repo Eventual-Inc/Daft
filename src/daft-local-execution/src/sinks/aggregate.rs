@@ -53,10 +53,6 @@ impl SingleInputSink for AggregateSink {
         false
     }
 
-    fn can_parallelize(&self) -> bool {
-        true
-    }
-
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let agged = input.agg(&self.final_agg_exprs, &self.final_group_by)?;

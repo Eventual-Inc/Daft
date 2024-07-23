@@ -41,10 +41,6 @@ impl SingleInputSink for SortSink {
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn can_parallelize(&self) -> bool {
-        true
-    }
-
     fn finalize(&self, input: &Arc<MicroPartition>) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let sorted = input.sort(&self.sort_by, &self.descending)?;
         Ok(vec![Arc::new(sorted)])
