@@ -10,7 +10,7 @@ use crate::JoinSnafu;
 
 use super::source::{Source, SourceStream};
 
-use tracing::{instrument, Instrument};
+use tracing::{instrument, Instrument, Span};
 
 #[derive(Debug)]
 pub struct ScanTaskSource {
@@ -24,32 +24,22 @@ impl ScanTaskSource {
 }
 
 impl Source for ScanTaskSource {
-    // #[instrument]
+    #[instrument(name = "ScanTaskSource::get_data", level = "info", skip(self))]
     fn get_data(&self) -> SourceStream {
-        
-        let _span = tracing::info_span!("ScanTaskSource::get_data").entered();
-
-        log::debug!("ScanTaskSource::get_data");
         let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| async {
-            let child_span = tracing::info_span!("ScanTaskSource::Stream::next");
             tokio::task::spawn_blocking(move || {
-                let _span = tracing::info_span!("ScanTaskSource::from_scan_task").entered();
+                let child_span = tracing::info_span!("ScanTaskSource::from_scan_task");
+                let _span = child_span.follows_from(Span::current());
+                let _eg = _span.enter();
                 let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
-                // span.in_scope(|| {
-                    MicroPartition::from_scan_task(scan_task, io_stats)
+                MicroPartition::from_scan_task(scan_task, io_stats)
                     .map(Arc::new)
                     .map_err(Into::into)
-                // })
             })
-            .instrument(child_span)
+            .in_current_span()
             .await
             .context(JoinSnafu {})?
-            // TODO: Implement dynamic splitting / merging of MicroPartition from scan task
         }));
         stream.buffered(self.scan_tasks.len()).boxed()
-    }
-
-    fn name(&self) -> &'static str {
-        "ScanTaskSource"
     }
 }

@@ -25,10 +25,8 @@ impl AggregateSink {
 }
 
 impl SingleInputSink for AggregateSink {
-    #[instrument(skip_all, name="AggregateSink::sink")]
+    #[instrument(skip_all, name = "AggregateSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("AggregateSink::sink");
-
         self.parts.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
@@ -37,10 +35,8 @@ impl SingleInputSink for AggregateSink {
         true
     }
 
-    #[instrument(skip_all, name="AggregateSink::finalize")]
+    #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        log::debug!("AggregateSink::finalize");
-
         let concated =
             MicroPartition::concat(&self.parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
         let agged = concated.agg(&self.agg_exprs, &self.group_by)?;

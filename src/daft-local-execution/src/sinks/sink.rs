@@ -41,14 +41,12 @@ impl SingleInputSinkActor {
         }
     }
 
+    #[instrument(level = "info", skip(self), name = "SingleInputSinkActor::run")]
     pub async fn run(&mut self) -> DaftResult<()> {
         while let Some(val) = self.receiver.recv().await {
+            let _sink_span = info_span!("Sink::sink").entered();
 
-            let sink_span = info_span!("Sink::sink");
-            
-            let sink_result = sink_span.in_scope(|| {
-                self.sink.sink(&val?)
-            })?;
+            let sink_result = self.sink.sink(&val?)?;
             match sink_result {
                 SinkResultType::NeedMoreInput => {
                     continue;
@@ -60,9 +58,7 @@ impl SingleInputSinkActor {
         }
         let final_span = info_span!("Sink::finalize");
 
-        let finalized_values = final_span.in_scope(|| {
-            self.sink.finalize()
-        })?;
+        let finalized_values = final_span.in_scope(|| self.sink.finalize())?;
         for val in finalized_values {
             let _ = self.sender.get_next_sender().send(Ok(val)).await;
         }
@@ -111,8 +107,10 @@ impl DoubleInputSinkActor {
         }
     }
 
+    #[instrument(level = "info", skip(self), name = "DoubleInputSinkActor::run")]
     pub async fn run(&mut self) -> DaftResult<()> {
         while let Some(val) = self.left_receiver.recv().await {
+            let _sink_span = info_span!("Sink::sink").entered();
             let sink_result = self.sink.sink_left(&val?)?;
             match sink_result {
                 SinkResultType::NeedMoreInput => {
@@ -125,6 +123,7 @@ impl DoubleInputSinkActor {
         }
 
         while let Some(val) = self.right_receiver.recv().await {
+            let _sink_span = info_span!("Sink::sink").entered();
             let sink_result = self.sink.sink_right(&val?)?;
             match sink_result {
                 SinkResultType::NeedMoreInput => {
@@ -136,7 +135,9 @@ impl DoubleInputSinkActor {
             }
         }
 
-        let finalized_values = self.sink.finalize()?;
+        let final_span = info_span!("Sink::finalize");
+
+        let finalized_values = final_span.in_scope(|| self.sink.finalize())?;
         for val in finalized_values {
             let _ = self.sender.get_next_sender().send(Ok(val)).await;
         }

@@ -25,10 +25,8 @@ impl SortSink {
 }
 
 impl SingleInputSink for SortSink {
-    #[instrument(skip_all, name="SortSink::sink")]
+    #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("SortSink::sink");
-
         self.parts.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
@@ -37,10 +35,8 @@ impl SingleInputSink for SortSink {
         false
     }
 
-    #[instrument(skip_all, name="SortSink::finalize")]
+    #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        log::debug!("SortSink::finalize");
-
         let concated =
             MicroPartition::concat(&self.parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
         let sorted = concated.sort(&self.sort_by, &self.descending)?;

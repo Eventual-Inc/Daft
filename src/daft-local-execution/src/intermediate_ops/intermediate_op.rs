@@ -2,7 +2,7 @@ use std::{env, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use tracing::info_span;
+use tracing::{info_span, instrument};
 
 use crate::{
     channel::{
@@ -95,6 +95,7 @@ impl IntermediateOpActor {
     }
 
     // Run a single instance of the operator.
+    #[instrument(level = "info", skip_all, name = "IntermediateOpActor::run_single")]
     async fn run_single(
         mut receiver: SingleReceiver,
         sender: SingleSender,
@@ -104,9 +105,8 @@ impl IntermediateOpActor {
         let span = info_span!("IntermediateOp::execute");
 
         while let Some(morsel) = receiver.recv().await {
-            // let span = info_span!("IntermediateOp::execute");
-            let result = span.in_scope(|| {op.execute(&morsel?)})?;
-        
+            let result = span.in_scope(|| op.execute(&morsel?))?;
+
             state.add(result);
             if let Some(part) = state.try_clear() {
                 let _ = sender.send(part).await;
@@ -119,6 +119,7 @@ impl IntermediateOpActor {
     }
 
     // Create and run parallel tasks for the operator.
+    #[instrument(level = "info", skip_all, name = "IntermediateOpActor::run_parallel")]
     pub async fn run_parallel(&mut self) -> DaftResult<()> {
         // Initialize senders to send data to parallel tasks.
         let mut inner_task_senders: Vec<SingleSender> =

@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard}};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard,
+    },
+};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -83,33 +89,30 @@ impl NativeExecutor {
     }
 }
 
-
 lazy_static! {
     static ref CHROME_GUARD_HANDLE: Mutex<Option<tracing_chrome::FlushGuard>> = Mutex::new(None);
 }
-
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-
-
     use tracing_chrome::ChromeLayerBuilder;
-    use tracing_subscriber::{registry::Registry, prelude::*};
-    
-
+    use tracing_subscriber::{prelude::*, registry::Registry};
 
     {
         let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
         if let Some(fg) = mg.as_mut() {
             fg.start_new(None);
         } else {
-            let (chrome_layer, _guard) = ChromeLayerBuilder::new().trace_style(tracing_chrome::TraceStyle::Threaded).build();
+            let (chrome_layer, _guard) = ChromeLayerBuilder::new()
+                .trace_style(tracing_chrome::TraceStyle::Threaded)
+                .build();
             tracing::subscriber::set_global_default(
                 tracing_subscriber::registry().with(chrome_layer),
-              ).unwrap();
-            *mg =  Some(_guard);
+            )
+            .unwrap();
+            *mg = Some(_guard);
         }
     };
 
@@ -120,9 +123,9 @@ pub fn run_local(
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("Executor-Worker-{}", id)
-         }).build()
+        })
+        .build()
         .expect("Failed to create tokio runtime");
-
 
     let res = runtime.block_on(async {
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);

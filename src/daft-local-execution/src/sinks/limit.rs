@@ -24,10 +24,8 @@ impl LimitSink {
 }
 
 impl SingleInputSink for LimitSink {
-
-    #[instrument(skip_all, name="LimitSink::sink")]
+    #[instrument(skip_all, name = "LimitSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("LimitSink::sink");
         let input_num_rows = input.len();
 
         if self.num_rows_taken == self.limit {
@@ -51,9 +49,8 @@ impl SingleInputSink for LimitSink {
         false
     }
 
-    #[instrument(skip_all, name="LimitSink::finalize")]
+    #[instrument(skip_all, name = "LimitSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        log::debug!("LimitSink::finalize");
         Ok(self.result.clone())
     }
 }

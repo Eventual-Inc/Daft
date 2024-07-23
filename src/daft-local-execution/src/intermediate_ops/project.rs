@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
 use super::intermediate_op::IntermediateOperator;
 
@@ -18,8 +19,8 @@ impl ProjectOperator {
 }
 
 impl IntermediateOperator for ProjectOperator {
+    #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        log::debug!("ProjectOperator::execute");
         let out = input.eval_expression_list(&self.projection)?;
         Ok(Arc::new(out))
     }
