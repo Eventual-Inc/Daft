@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -6,11 +6,15 @@ use daft_core::{
     schema::Schema,
     DataType,
 };
-use daft_dsl::{col, lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
-use daft_plan::{logical_plan::Source, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
+use daft_dsl::{
+    col,
+    functions::numeric::{ceil, floor},
+    lit, null_lit, Expr, ExprRef, LiteralValue, Operator,
+};
+use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, ExactNumberInfo, Ident, ObjectName, Query, SelectItem, StructField,
+        ArrayElemTypeDef, CastKind, ExactNumberInfo, GroupByExpr, Query, SelectItem, StructField,
         TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
@@ -66,11 +70,13 @@ impl SQLPlanner {
     }
 
     pub fn plan_sql(&self, sql: &str) -> DaftResult<LogicalPlanRef> {
-        let ast = sqlparser::parser::Parser::parse_sql(&GenericDialect {}, &sql)
-            .expect("Failed to parse SQL");
+        let ast = sqlparser::parser::Parser::parse_sql(&GenericDialect {}, &sql).map_err(|e| {
+            DaftError::ValueError(format!("failed to parse sql, reason: {}", e.to_string()))
+        })?;
+
         match ast.as_slice() {
             [sqlparser::ast::Statement::Query(query)] => Ok(self.plan_query(query)?.build()),
-            _ => todo!(),
+            other => sql_error!("Unsupported SQL: '{}'", other[0]),
         }
     }
 
@@ -80,10 +86,60 @@ impl SQLPlanner {
     }
 
     fn plan_select(&self, selection: &sqlparser::ast::Select) -> DaftResult<LogicalPlanBuilder> {
+        if selection.top.is_some() {
+            return sql_error!("TOP not (yet) supported");
+        }
+        if selection.distinct.is_some() {
+            return sql_error!("DISTINCT not (yet) supported");
+        }
+        if selection.into.is_some() {
+            return sql_error!("INTO not (yet) supported");
+        }
+        if !selection.lateral_views.is_empty() {
+            return sql_error!("LATERAL not (yet) supported");
+        }
+        if selection.prewhere.is_some() {
+            return sql_error!("PREWHERE not supported");
+        }
+        if !selection.cluster_by.is_empty() {
+            return sql_error!("CLUSTER BY not (yet) supported");
+        }
+        if !selection.distribute_by.is_empty() {
+            return sql_error!("DISTRIBUTE BY not (yet) supported");
+        }
+        if !selection.sort_by.is_empty() {
+            return sql_error!("SORT BY not (yet) supported");
+        }
+        if selection.having.is_some() {
+            return sql_error!("HAVING not (yet) supported");
+        }
+        if !selection.named_window.is_empty() {
+            return sql_error!("WINDOW not (yet) supported");
+        }
+        if selection.qualify.is_some() {
+            return sql_error!("QUALIFY not (yet) supported");
+        }
+        if selection.connect_by.is_some() {
+            return sql_error!("CONNECT BY not (yet) supported");
+        }
+
+        match &selection.group_by {
+            GroupByExpr::All(s) => {
+                if !s.is_empty() {
+                    return sql_error!("GROUP BY not supported");
+                }
+            }
+            GroupByExpr::Expressions(expressions, _) => {
+                if !expressions.is_empty() {
+                    return sql_error!("GROUP BY not supported");
+                }
+            }
+        }
+
         let from = selection.clone().from;
         if from.len() != 1 {
             return Err(DaftError::ComputeError(
-                "Only one table is supported".to_string(),
+                "Only exactly one table is supported".to_string(),
             ));
         }
         let mut builder = self.plan_from(&from[0])?;
@@ -115,22 +171,13 @@ impl SQLPlanner {
         let table_factor = from.relation.clone();
         match table_factor {
             ref tbl @ sqlparser::ast::TableFactor::Table { .. } => self.plan_table(tbl),
-            _ => todo!(),
+            other => todo!("Unsupported table factor: {other}"),
         }
     }
 
     fn plan_table(&self, table: &sqlparser::ast::TableFactor) -> DaftResult<LogicalPlanBuilder> {
-        let sqlparser::ast::TableFactor::Table {
-            name,
-            alias,
-            args,
-            with_hints,
-            version,
-            with_ordinality,
-            partitions,
-        } = table
-        else {
-            unreachable!()
+        let sqlparser::ast::TableFactor::Table { name, .. } = table else {
+            unreachable!("this should never happen, we already checked for TableFactor::Table")
         };
         let table_name = name.to_string();
         let plan = self.context.get_table(&table_name)?;
@@ -201,7 +248,13 @@ impl SQLPlanner {
     fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> DaftResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
-            SQLExpr::Identifier(ident) => Ok(col(ident.to_string())),
+            SQLExpr::Identifier(ident) => {
+                if let Some('"') = ident.quote_style {
+                    Ok(col(ident.value.to_string()))
+                } else {
+                    Ok(col(ident.to_string()))
+                }
+            }
             SQLExpr::Value(Value::SingleQuotedString(s)) => Ok(lit(s.as_str())),
             SQLExpr::Value(Value::Number(n, _)) => {
                 let n = n.parse::<i64>().expect("Failed to parse number");
@@ -210,29 +263,38 @@ impl SQLPlanner {
             SQLExpr::Value(Value::Boolean(b)) => Ok(lit(*b)),
             SQLExpr::Value(Value::Null) => Ok(null_lit()),
             SQLExpr::Value(other) => todo!("literal value {other} not yet supported"),
-
             SQLExpr::BinaryOp { left, op, right } => {
                 let left = self.plan_expr(left)?;
                 let right = self.plan_expr(right)?;
                 let op = self.sql_operator_to_operator(op)?;
                 Ok(Expr::BinaryOp { left, op, right }.arced())
             }
-            SQLExpr::CompoundIdentifier(_) => todo!("compound identifier not yet supported"),
-            SQLExpr::JsonAccess { value, path } => todo!(),
-            SQLExpr::CompositeAccess { expr, key } => todo!(),
+            SQLExpr::Cast {
+                kind: CastKind::Cast | CastKind::DoubleColon,
+                expr,
+                data_type,
+                format: None,
+            } => {
+                let dtype = self.sql_dtype_to_dtype(data_type)?;
+                let expr = self.plan_expr(expr)?;
+                Ok(expr.cast(&dtype))
+            }
             SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq(lit(false))),
             SQLExpr::IsNotFalse(_) => Ok(self.plan_expr(expr)?.eq(lit(false)).not()),
             SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true))),
             SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true)).not()),
             SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr)?.is_null()),
             SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
+            SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
+            SQLExpr::CompoundIdentifier(_) => todo!("compound identifier not yet supported"),
+            SQLExpr::JsonAccess { .. } => todo!("json access not yet supported"),
+            SQLExpr::CompositeAccess { .. } => todo!("composite access not yet supported"),
             SQLExpr::IsUnknown(_) => todo!("IS UNKNOWN not yet supported"),
             SQLExpr::IsNotUnknown(_) => todo!("IS NOT UNKNOWN not yet supported"),
             SQLExpr::IsDistinctFrom(_, _) => todo!("IS DISTINCT FROM not yet supported"),
             SQLExpr::IsNotDistinctFrom(_, _) => todo!("IS NOT DISTINCT FROM not yet supported"),
             SQLExpr::InList { .. } => todo!("IN list not yet supported"),
             SQLExpr::InSubquery { .. } => todo!("IN subquery not yet supported"),
-
             SQLExpr::InUnnest { .. } => todo!("IN unnest not yet supported"),
             SQLExpr::Between { .. } => todo!("BETWEEN not yet supported"),
             SQLExpr::Like { .. } => todo!("LIKE not yet supported"),
@@ -241,76 +303,42 @@ impl SQLPlanner {
             SQLExpr::RLike { .. } => todo!("RLIKE not yet supported"),
             SQLExpr::AnyOp { .. } => todo!("ANY not yet supported"),
             SQLExpr::AllOp { .. } => todo!("ALL not yet supported"),
-            SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
             SQLExpr::Convert { .. } => todo!("CONVERT not yet supported"),
-            SQLExpr::Cast {
-                kind,
-                expr,
-                data_type,
-                format,
-            } => todo!(),
-            SQLExpr::AtTimeZone {
-                timestamp,
-                time_zone,
-            } => todo!(),
-            SQLExpr::Extract { field, expr } => todo!(),
-            SQLExpr::Ceil { expr, field } => todo!(),
-            SQLExpr::Floor { expr, field } => todo!(),
-            SQLExpr::Position { expr, r#in } => todo!(),
-            SQLExpr::Substring {
-                expr,
-                substring_from,
-                substring_for,
-                special,
-            } => todo!(),
-            SQLExpr::Trim {
-                expr,
-                trim_where,
-                trim_what,
-                trim_characters,
-            } => todo!(),
-            SQLExpr::Overlay {
-                expr,
-                overlay_what,
-                overlay_from,
-                overlay_for,
-            } => todo!(),
-            SQLExpr::Collate { expr, collation } => todo!(),
-            SQLExpr::Nested(_) => todo!(),
-            SQLExpr::IntroducedString { introducer, value } => todo!(),
-            SQLExpr::TypedString { data_type, value } => todo!(),
-            SQLExpr::MapAccess { column, keys } => todo!(),
-            SQLExpr::Function(_) => todo!(),
-            SQLExpr::Case {
-                operand,
-                conditions,
-                results,
-                else_result,
-            } => todo!(),
-            SQLExpr::Exists { subquery, negated } => todo!(),
-            SQLExpr::Subquery(_) => todo!(),
-            SQLExpr::GroupingSets(_) => todo!(),
-            SQLExpr::Cube(_) => todo!(),
-            SQLExpr::Rollup(_) => todo!(),
-            SQLExpr::Tuple(_) => todo!(),
-            SQLExpr::Struct { values, fields } => todo!(),
-            SQLExpr::Named { expr, name } => todo!(),
-            SQLExpr::Dictionary(_) => todo!(),
-            SQLExpr::Map(_) => todo!(),
-            SQLExpr::Subscript { expr, subscript } => todo!(),
-            SQLExpr::Array(_) => todo!(),
-            SQLExpr::Interval(_) => todo!(),
-            SQLExpr::MatchAgainst {
-                columns,
-                match_value,
-                opt_search_modifier,
-            } => todo!(),
-            SQLExpr::Wildcard => todo!(),
-            SQLExpr::QualifiedWildcard(_) => todo!(),
-            SQLExpr::OuterJoin(_) => todo!(),
-            SQLExpr::Prior(_) => todo!(),
-            SQLExpr::Lambda(_) => todo!(),
-            // other => todo!("expr: {other:?} is not supported yet"),
+            SQLExpr::Cast { .. } => todo!("CAST not yet supported"),
+            SQLExpr::AtTimeZone { .. } => todo!("AT TIME ZONE not yet supported"),
+            SQLExpr::Extract { .. } => todo!("EXTRACT not yet supported"),
+            SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
+            SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
+            SQLExpr::Position { .. } => todo!("POSITION not yet supported"),
+            SQLExpr::Substring { .. } => todo!("SUBSTRING not yet supported"),
+            SQLExpr::Trim { .. } => todo!("TRIM not yet supported"),
+            SQLExpr::Overlay { .. } => todo!("OVERLAY not yet supported"),
+            SQLExpr::Collate { .. } => todo!("COLLATE not yet supported"),
+            SQLExpr::Nested(_) => todo!("NESTED not yet supported"),
+            SQLExpr::IntroducedString { .. } => todo!("INTRODUCED STRING not yet supported"),
+            SQLExpr::TypedString { .. } => todo!("TYPED STRING not yet supported"),
+            SQLExpr::MapAccess { .. } => todo!("MAP ACCESS not yet supported"),
+            SQLExpr::Function(_) => todo!("FUNCTION not yet supported"),
+            SQLExpr::Case { .. } => todo!("CASE not yet supported"),
+            SQLExpr::Exists { .. } => todo!("EXISTS not yet supported"),
+            SQLExpr::Subquery(_) => todo!("SUBQUERY not yet supported"),
+            SQLExpr::GroupingSets(_) => todo!("GROUPING SETS not yet supported"),
+            SQLExpr::Cube(_) => todo!("CUBE not yet supported"),
+            SQLExpr::Rollup(_) => todo!("ROLLUP not yet supported"),
+            SQLExpr::Tuple(_) => todo!("TUPLE not yet supported"),
+            SQLExpr::Struct { .. } => todo!("STRUCT not yet supported"),
+            SQLExpr::Named { .. } => todo!("NAMED not yet supported"),
+            SQLExpr::Dictionary(_) => todo!("DICTIONARY not yet supported"),
+            SQLExpr::Map(_) => todo!("MAP not yet supported"),
+            SQLExpr::Subscript { .. } => todo!("SUBSCRIPT not yet supported"),
+            SQLExpr::Array(_) => todo!("ARRAY not yet supported"),
+            SQLExpr::Interval(_) => todo!("INTERVAL not yet supported"),
+            SQLExpr::MatchAgainst { .. } => todo!("MATCH AGAINST not yet supported"),
+            SQLExpr::Wildcard => todo!("WILDCARD not yet supported"),
+            SQLExpr::QualifiedWildcard(_) => todo!("QUALIFIED WILDCARD not yet supported"),
+            SQLExpr::OuterJoin(_) => todo!("OUTER JOIN not yet supported"),
+            SQLExpr::Prior(_) => todo!("PRIOR not yet supported"),
+            SQLExpr::Lambda(_) => todo!("LAMBDA not yet supported"),
         }
     }
 
@@ -325,49 +353,14 @@ impl SQLPlanner {
             sqlparser::ast::BinaryOperator::Divide => Ok(Operator::TrueDivide),
             sqlparser::ast::BinaryOperator::Eq => Ok(Operator::Eq),
             sqlparser::ast::BinaryOperator::Modulo => Ok(Operator::Modulus),
-            sqlparser::ast::BinaryOperator::StringConcat => todo!(),
             sqlparser::ast::BinaryOperator::Gt => Ok(Operator::Gt),
             sqlparser::ast::BinaryOperator::Lt => Ok(Operator::Lt),
             sqlparser::ast::BinaryOperator::GtEq => Ok(Operator::GtEq),
             sqlparser::ast::BinaryOperator::LtEq => Ok(Operator::LtEq),
-            sqlparser::ast::BinaryOperator::Spaceship => todo!(),
             sqlparser::ast::BinaryOperator::NotEq => Ok(Operator::NotEq),
             sqlparser::ast::BinaryOperator::And => Ok(Operator::And),
             sqlparser::ast::BinaryOperator::Or => Ok(Operator::Or),
-            sqlparser::ast::BinaryOperator::Xor => todo!(),
-            sqlparser::ast::BinaryOperator::BitwiseOr => todo!(),
-            sqlparser::ast::BinaryOperator::BitwiseAnd => todo!(),
-            sqlparser::ast::BinaryOperator::BitwiseXor => todo!(),
-            sqlparser::ast::BinaryOperator::DuckIntegerDivide => todo!(),
-            sqlparser::ast::BinaryOperator::MyIntegerDivide => todo!(),
-            sqlparser::ast::BinaryOperator::Custom(_) => todo!(),
-            sqlparser::ast::BinaryOperator::PGBitwiseXor => todo!(),
-            sqlparser::ast::BinaryOperator::PGBitwiseShiftLeft => todo!(),
-            sqlparser::ast::BinaryOperator::PGBitwiseShiftRight => todo!(),
-            sqlparser::ast::BinaryOperator::PGExp => todo!(),
-            sqlparser::ast::BinaryOperator::PGOverlap => todo!(),
-            sqlparser::ast::BinaryOperator::PGRegexMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGRegexIMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGRegexNotMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGRegexNotIMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGLikeMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGILikeMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGNotLikeMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGNotILikeMatch => todo!(),
-            sqlparser::ast::BinaryOperator::PGStartsWith => todo!(),
-            sqlparser::ast::BinaryOperator::Arrow => todo!(),
-            sqlparser::ast::BinaryOperator::LongArrow => todo!(),
-            sqlparser::ast::BinaryOperator::HashArrow => todo!(),
-            sqlparser::ast::BinaryOperator::HashLongArrow => todo!(),
-            sqlparser::ast::BinaryOperator::AtAt => todo!(),
-            sqlparser::ast::BinaryOperator::AtArrow => todo!(),
-            sqlparser::ast::BinaryOperator::ArrowAt => todo!(),
-            sqlparser::ast::BinaryOperator::HashMinus => todo!(),
-            sqlparser::ast::BinaryOperator::AtQuestion => todo!(),
-            sqlparser::ast::BinaryOperator::Question => todo!(),
-            sqlparser::ast::BinaryOperator::QuestionAnd => todo!(),
-            sqlparser::ast::BinaryOperator::QuestionPipe => todo!(),
-            sqlparser::ast::BinaryOperator::PGCustomBinaryOperator(_) => todo!(),
+            other => return sql_error!("Unsupported operator: '{other}'"),
         }
     }
     fn sql_dtype_to_dtype(&self, dtype: &sqlparser::ast::DataType) -> DaftResult<DataType> {
@@ -410,14 +403,13 @@ impl SQLPlanner {
             SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
             SQLDataType::TinyInt(_) => DataType::Int8,
             // ---------------------------------
-            // unsigned integer: the following do not map to PostgreSQL types/syntax, but
-            // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
+            // unsigned integer
             // ---------------------------------
             SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
             SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
             SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
             SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-            SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
+            SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
             // ---------------------------------
             // float
             // ---------------------------------
@@ -549,10 +541,12 @@ impl SQLPlanner {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
-    use daft_plan::{source_info::PlaceHolderInfo, ClusteringSpec, SourceInfo};
+    use std::sync::Arc;
 
+    use super::*;
+    use daft_plan::{
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, SourceInfo,
+    };
     fn make_source() -> LogicalPlanRef {
         let schema = Arc::new(
             Schema::new(vec![
@@ -580,12 +574,16 @@ mod tests {
         .arced()
     }
 
-    #[test]
-    fn test_parse_sql() {
+    fn setup() -> SQLPlanner {
         let mut ctx = SQLContext::new();
 
         ctx.register_table("tbl", make_source());
-        let planner = SQLPlanner::new(ctx);
+        SQLPlanner::new(ctx)
+    }
+
+    #[test]
+    fn test_parse_sql() {
+        let planner = setup();
         let sql = "select test as a from tbl";
         let plan = planner.plan_sql(sql).unwrap();
 
@@ -598,10 +596,7 @@ mod tests {
 
     #[test]
     fn test_where_clause() -> DaftResult<()> {
-        let mut ctx = SQLContext::new();
-
-        ctx.register_table("tbl", make_source());
-        let planner = SQLPlanner::new(ctx);
+        let planner = setup();
         let sql = "select test as a from tbl where test = 'a'";
         let plan = planner.plan_sql(sql)?;
 
@@ -616,10 +611,8 @@ mod tests {
 
     #[test]
     fn test_compiles() -> DaftResult<()> {
-        let mut ctx = SQLContext::new();
-        ctx.register_table("tbl", make_source());
+        let planner = setup();
 
-        let planner = SQLPlanner::new(ctx);
         let queries = vec![
             "select * from tbl",
             "select * exclude utf8 from tbl",
@@ -632,11 +625,45 @@ mod tests {
             "select bool from tbl",
             "select date from tbl",
             "select list_utf8 as a, utf8 as b, utf8 as c from tbl",
+            "select list_utf8::text[] from tbl",
         ];
         for query in queries {
             let plan = planner.plan_sql(query);
             assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_cast() -> DaftResult<()> {
+        let planner = setup();
+        let builder = LogicalPlanBuilder::new(make_source());
+        let cases = vec![
+            (
+                "select bool::text from tbl",
+                vec![col("bool").cast(&DataType::Utf8)],
+            ),
+            (
+                "select utf8::bytes from tbl",
+                vec![col("utf8").cast(&DataType::Binary)],
+            ),
+            (
+                r#"select CAST("bool" as text) from tbl"#,
+                vec![col("bool").cast(&DataType::Utf8)],
+            ),
+        ];
+        for (sql, expected) in cases {
+            let actual = planner.plan_sql(sql)?;
+            let expected = builder.clone().select(expected)?.build();
+            assert_eq!(
+                actual,
+                expected,
+                "query: {}\n expected:{}",
+                sql,
+                expected.repr_ascii(false)
+            );
+        }
+
         Ok(())
     }
 }
