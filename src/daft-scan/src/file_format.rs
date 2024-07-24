@@ -27,6 +27,20 @@ pub enum FileFormat {
     Python,
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
+impl FileFormat {
+    fn ext(&self) -> &'static str {
+        match self {
+            Self::Parquet => "parquet",
+            Self::Csv => "csv",
+            Self::Json => "json",
+            Self::Database => "db",
+            Self::Python => "py",
+        }
+    }
+}
+
 impl FromStr for FileFormat {
     type Err = DaftError;
 

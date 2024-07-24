@@ -874,13 +874,10 @@ def write_empty_tabular(
     compression: str | None = None,
     io_config: IOConfig | None = None,
 ) -> str:
-    if file_format != FileFormat.Parquet and file_format != FileFormat.Csv:
-        raise ValueError(f"Unsupported file format {file_format}")
-
     table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
 
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    basename_template = _generate_basename_template("parquet" if file_format == FileFormat.Parquet else "csv")
+    basename_template = _generate_basename_template(file_format.ext())
     file_path = f"{resolved_path}/{basename_template.format(i=0)}"
 
     def write_table():
@@ -892,8 +889,10 @@ def write_empty_tabular(
                 use_compliant_nested_type=False,
                 filesystem=fs,
             )
-        else:
+        elif file_format == FileFormat.Csv:
             pacsv.write_csv(table, file_path)
+        else:
+            raise ValueError(f"Unsupported file format {file_format}")
 
     def retry_error(e: Exception) -> bool:
         ERROR_MSGS = ("curlCode: 28, Timeout was reached",)
