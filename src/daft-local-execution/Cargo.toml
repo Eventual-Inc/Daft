@@ -1,5 +1,6 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
+common-tracing = {path = "../common/tracing", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
@@ -14,8 +15,6 @@ pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tracing = "0.1"
-tracing-chrome = "0.7.2"
-tracing-subscriber = "0.3"
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]

@@ -1261,6 +1261,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-tracing"
+version = "0.2.0-dev0"
+dependencies = [
+ "lazy_static",
+ "log",
+ "tracing",
+ "tracing-chrome",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "common-treenode"
 version = "0.2.0-dev0"
 dependencies = [
@@ -1529,6 +1540,7 @@ version = "0.2.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-system-info",
+ "common-tracing",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -1782,6 +1794,7 @@ name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "common-tracing",
  "daft-dsl",
  "daft-io",
  "daft-micropartition",
@@ -1796,8 +1809,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tracing",
- "tracing-chrome",
- "tracing-subscriber",
 ]
 
 [[package]]

@@ -86,42 +86,10 @@ impl NativeExecutor {
     }
 }
 
-lazy_static! {
-    static ref CHROME_GUARD_HANDLE: Mutex<Option<tracing_chrome::FlushGuard>> = Mutex::new(None);
-}
-
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-    use tracing_chrome::ChromeLayerBuilder;
-    use tracing_subscriber::prelude::*;
-
-    {
-        let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
-        if let Some(fg) = mg.as_mut() {
-            fg.start_new(None);
-        } else {
-            let (chrome_layer, _guard) = ChromeLayerBuilder::new()
-                .trace_style(tracing_chrome::TraceStyle::Threaded)
-                .name_fn(Box::new(|event_or_span| {
-                    match event_or_span {
-                        tracing_chrome::EventOrSpan::Event(ev) => ev.metadata().name().into(),
-                        tracing_chrome::EventOrSpan::Span(s) => {
-                            // TODO: this is where we should extract out fields (such as node id to show the different pipelines)
-                            s.name().into()
-                        }
-                    }
-                }))
-                .build();
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(chrome_layer),
-            )
-            .unwrap();
-            *mg = Some(_guard);
-        }
-    };
-
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .max_blocking_threads(10)
