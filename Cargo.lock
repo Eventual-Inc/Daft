@@ -1803,7 +1803,6 @@ dependencies = [
  "dyn-clone",
  "futures",
  "lazy_static",
- "log",
  "pyo3",
  "snafu",
  "tokio",
