@@ -99,6 +99,7 @@ impl PhysicalPlan {
     }
 
     pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
+        // TODO: add cache or something to avoid excessive recalculation
         match self {
             Self::InMemoryScan(InMemoryScan {
                 clustering_spec, ..

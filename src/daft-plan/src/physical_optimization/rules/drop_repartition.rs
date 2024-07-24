@@ -37,7 +37,6 @@ impl PhysicalOptimizerRule for DropRepartitionPhysical {
                     }
                 }
                 // remove extra reducemerge
-                // should this be its own rule?
                 PhysicalPlan::ReduceMerge(..) => match child.as_ref() {
                     PhysicalPlan::FanoutByHash(..)
                     | PhysicalPlan::FanoutByRange(..)

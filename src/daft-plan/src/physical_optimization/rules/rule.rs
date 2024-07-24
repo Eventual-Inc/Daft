@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::{Transformed, TransformedResult};
 
-use crate::PhysicalPlanRef;
+use crate::{physical_optimization::optimizer::PhysicalOptimizerConfig, PhysicalPlanRef};
 
 pub trait PhysicalOptimizerRule {
     fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>>;
@@ -23,6 +23,8 @@ pub struct PhysicalOptimizerRuleBatch {
     strategy: PhysicalRuleExecutionStrategy,
 }
 
+// A batch of PhysicalOptimizerRules, which are run in order until
+// the condition specified by the PhysicalRuleExecutionStrategy is satisfied.
 impl PhysicalOptimizerRuleBatch {
     pub fn new(
         rules: Vec<Box<dyn PhysicalOptimizerRule>>,
@@ -42,12 +44,13 @@ impl PhysicalOptimizerRuleBatch {
     pub fn optimize(
         &self,
         plan: PhysicalPlanRef,
-        max_passes: usize,
+        config: &PhysicalOptimizerConfig,
     ) -> DaftResult<PhysicalPlanRef> {
         match self.strategy {
             PhysicalRuleExecutionStrategy::Once => self.optimize_once(plan).data(),
             PhysicalRuleExecutionStrategy::FixedPoint(passes) => {
-                let passes = passes.map_or(max_passes, |x| std::cmp::min(max_passes, x));
+                let passes =
+                    passes.map_or(config.max_passes, |x| std::cmp::min(config.max_passes, x));
                 let mut plan = plan;
                 for _ in 0..passes {
                     let transformed_plan = self.optimize_once(plan.clone())?;

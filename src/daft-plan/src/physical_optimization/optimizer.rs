@@ -8,7 +8,10 @@ use super::rules::{
 };
 
 pub struct PhysicalOptimizerConfig {
-    max_passes: usize,
+    // The upper bound on the number of passes a rule batch can run.
+    // Depending on its configuration a rule batch may run fewer passes.
+    // Default is 5
+    pub max_passes: usize,
 }
 
 impl PhysicalOptimizerConfig {
@@ -43,7 +46,7 @@ impl PhysicalOptimizer {
 
     pub fn optimize(&self, mut plan: PhysicalPlanRef) -> DaftResult<PhysicalPlanRef> {
         for batch in self.rule_batches.iter() {
-            plan = batch.optimize(plan, self.config.max_passes)?;
+            plan = batch.optimize(plan, &self.config)?;
         }
         Ok(plan)
     }
