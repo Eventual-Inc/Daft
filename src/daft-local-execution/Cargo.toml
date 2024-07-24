@@ -13,7 +13,7 @@ lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
-tracing = "0.1"
+tracing = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]

@@ -164,6 +164,7 @@ tokio = {version = "1.37.0", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
+tracing = "0.1"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
