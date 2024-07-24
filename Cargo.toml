@@ -1,6 +1,7 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
+common-tracing = {path = "src/common/tracing", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -169,6 +170,7 @@ tokio = {version = "1.37.0", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
+tracing = "0.1"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]

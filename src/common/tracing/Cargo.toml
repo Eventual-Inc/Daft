@@ -1,0 +1,10 @@
+[dependencies]
+lazy_static = {workspace = true}
+tracing = {workspace = true}
+tracing-chrome = "0.7.2"
+tracing-subscriber = "0.3"
+
+[package]
+edition = {workspace = true}
+name = "common-tracing"
+version = {workspace = true}
