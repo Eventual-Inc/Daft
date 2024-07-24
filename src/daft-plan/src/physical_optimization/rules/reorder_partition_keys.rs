@@ -137,7 +137,22 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::TabularWriteParquet(..) => Ok(Transformed::no(c.propagate())),
 
                 // the rest should have been dealt with earlier
-                _ => unreachable!("Catch-all in match for ReorderPartitionKeys physical optimizer rule should not be reachable")
+                PhysicalPlan::Sort(..) |
+                PhysicalPlan::InMemoryScan(..) |
+                PhysicalPlan::TabularScan(..) |
+                PhysicalPlan::EmptyScan(..) |
+                PhysicalPlan::Split(..) |
+                PhysicalPlan::Coalesce(..) |
+                PhysicalPlan::FanoutRandom(..) |
+                PhysicalPlan::FanoutByRange(..) |
+                PhysicalPlan::Concat(..) |
+                PhysicalPlan::HashJoin(..) |
+                PhysicalPlan::SortMergeJoin(..) |
+                PhysicalPlan::BroadcastJoin(..) => unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable"),
+                #[cfg(feature = "python")]
+                PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) => {
+                    unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable")
+                }
             }
         })?;
         res_transformed.map_data(|c| Ok(c.plan))
