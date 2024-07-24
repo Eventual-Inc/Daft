@@ -1,89 +1,49 @@
 use common_error::DaftResult;
-use common_treenode::{Transformed, TransformedResult};
 
 use crate::PhysicalPlanRef;
 
 use super::rules::{
     drop_repartition::DropRepartitionPhysical, reorder_partition_keys::ReorderPartitionKeys,
+    PhysicalOptimizerRuleBatch, PhysicalRuleExecutionStrategy,
 };
 
-pub trait PhysicalOptimizerRule {
-    fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>>;
+pub struct PhysicalOptimizerConfig {
+    max_passes: usize,
 }
 
-pub enum PhysicalRuleExecutionStrategy {
-    // Apply the batch of rules only once.
-    Once,
-    // Apply the batch of rules multiple times, to a fixed-point or until the max
-    // passes is hit.
-    // If parametrized by Some(n), the batch of rules will be run a maximum
-    // of n passes; if None, the number of passes is capped by the max passes argument.
-    #[allow(dead_code)]
-    FixedPoint(Option<usize>),
-}
-
-pub struct PhysicalOptimizerRuleBatch {
-    rules: Vec<Box<dyn PhysicalOptimizerRule>>,
-    strategy: PhysicalRuleExecutionStrategy,
-}
-
-impl PhysicalOptimizerRuleBatch {
-    pub fn new(
-        rules: Vec<Box<dyn PhysicalOptimizerRule>>,
-        strategy: PhysicalRuleExecutionStrategy,
-    ) -> Self {
-        PhysicalOptimizerRuleBatch { rules, strategy }
+impl PhysicalOptimizerConfig {
+    #[allow(dead_code)] // used in test
+    pub fn new(max_passes: usize) -> Self {
+        PhysicalOptimizerConfig { max_passes }
     }
+}
 
-    fn optimize_once(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>> {
-        self.rules
-            .iter()
-            .try_fold(Transformed::no(plan), |plan, rule| {
-                plan.transform_data(|p| rule.rewrite(p))
-            })
-    }
-
-    pub fn optimize(
-        &self,
-        plan: PhysicalPlanRef,
-        max_passes: usize,
-    ) -> DaftResult<PhysicalPlanRef> {
-        match self.strategy {
-            PhysicalRuleExecutionStrategy::Once => self.optimize_once(plan).data(),
-            PhysicalRuleExecutionStrategy::FixedPoint(passes) => {
-                let passes = passes.unwrap_or(max_passes);
-                let passes = std::cmp::min(passes, max_passes);
-                let mut plan = plan;
-                for _ in 0..passes {
-                    let transformed_plan = self.optimize_once(plan.clone())?;
-                    if !transformed_plan.transformed {
-                        break;
-                    }
-                    plan = transformed_plan.data;
-                }
-                Ok(plan)
-            }
-        }
+impl Default for PhysicalOptimizerConfig {
+    fn default() -> Self {
+        PhysicalOptimizerConfig { max_passes: 5 }
     }
 }
 
 pub struct PhysicalOptimizer {
     rule_batches: Vec<PhysicalOptimizerRuleBatch>,
-    max_passes: usize,
+    config: PhysicalOptimizerConfig,
 }
 
 impl PhysicalOptimizer {
     #[allow(dead_code)] // used in test
-    pub fn new(rule_batches: Vec<PhysicalOptimizerRuleBatch>, max_passes: usize) -> Self {
+    pub fn new(
+        rule_batches: Vec<PhysicalOptimizerRuleBatch>,
+        config: PhysicalOptimizerConfig,
+    ) -> Self {
         PhysicalOptimizer {
             rule_batches,
-            max_passes,
+            config,
         }
     }
 
     pub fn optimize(&self, mut plan: PhysicalPlanRef) -> DaftResult<PhysicalPlanRef> {
         for batch in self.rule_batches.iter() {
-            plan = batch.optimize(plan, self.max_passes)?;
+            plan = batch.optimize(plan, self.config.max_passes)?;
         }
         Ok(plan)
     }
@@ -99,7 +59,7 @@ impl Default for PhysicalOptimizer {
                 ],
                 PhysicalRuleExecutionStrategy::Once,
             )],
-            max_passes: 5,
+            config: PhysicalOptimizerConfig::default(),
         }
     }
 }
@@ -118,10 +78,11 @@ mod tests {
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, Limit},
+        physical_optimization::{optimizer::PhysicalOptimizerConfig, rules::PhysicalOptimizerRule},
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
 
-    use super::{PhysicalOptimizer, PhysicalOptimizerRule, PhysicalOptimizerRuleBatch};
+    use super::{PhysicalOptimizer, PhysicalOptimizerRuleBatch};
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {
         PhysicalPlan::EmptyScan(EmptyScan::new(
@@ -179,7 +140,7 @@ mod tests {
                 vec![Box::new(CountingRule { cutoff: 100 })],
                 super::PhysicalRuleExecutionStrategy::Once,
             )],
-            5,
+            PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
         assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 1, .. }));
@@ -203,7 +164,7 @@ mod tests {
                 vec![Box::new(CountingRule { cutoff: 2 })],
                 super::PhysicalRuleExecutionStrategy::FixedPoint(Some(4)),
             )],
-            5,
+            PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
         assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 2, .. }));
@@ -227,7 +188,7 @@ mod tests {
                 vec![Box::new(CountingRule { cutoff: 100 })],
                 super::PhysicalRuleExecutionStrategy::FixedPoint(Some(4)),
             )],
-            5,
+            PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
         assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 4, .. }));
@@ -251,7 +212,7 @@ mod tests {
                 vec![Box::new(CountingRule { cutoff: 100 })],
                 super::PhysicalRuleExecutionStrategy::FixedPoint(Some(7)),
             )],
-            5,
+            PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
         assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 5, .. }));
@@ -275,10 +236,10 @@ mod tests {
                 vec![Box::new(CountingRule { cutoff: 100 })],
                 super::PhysicalRuleExecutionStrategy::FixedPoint(None),
             )],
-            5,
+            PhysicalOptimizerConfig::new(7),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 5, .. }));
+        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 7, .. }));
         Ok(())
     }
 }

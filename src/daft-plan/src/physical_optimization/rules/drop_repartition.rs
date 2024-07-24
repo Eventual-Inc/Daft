@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 
 use crate::{
-    physical_ops::FanoutByHash, physical_optimization::optimizer::PhysicalOptimizerRule,
+    physical_ops::FanoutByHash, physical_optimization::rules::PhysicalOptimizerRule,
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
 
@@ -65,7 +65,7 @@ mod tests {
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, ReduceMerge},
-        physical_optimization::optimizer::PhysicalOptimizerRule,
+        physical_optimization::rules::PhysicalOptimizerRule,
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
 

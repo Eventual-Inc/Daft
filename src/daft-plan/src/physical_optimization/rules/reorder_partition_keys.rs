@@ -5,7 +5,7 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 use crate::{
     partitioning::HashClusteringConfig,
     physical_ops::{Aggregate, Explode, FanoutByHash, HashJoin, Project, Unpivot},
-    physical_optimization::{optimizer::PhysicalOptimizerRule, plan_context::PlanContext},
+    physical_optimization::{plan_context::PlanContext, rules::PhysicalOptimizerRule},
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
 
@@ -160,7 +160,7 @@ mod tests {
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, HashJoin, ReduceMerge},
         physical_optimization::{
-            optimizer::PhysicalOptimizerRule, rules::reorder_partition_keys::ReorderPartitionKeys,
+            rules::reorder_partition_keys::ReorderPartitionKeys, rules::PhysicalOptimizerRule,
         },
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };

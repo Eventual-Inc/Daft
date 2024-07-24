@@ -647,7 +647,9 @@ pub(super) fn translate_single_logical_node(
                         (_, _, a, b) => max(a, b),
                     };
 
-                    if num_left_partitions != num_partitions || !is_left_hash_partitioned {
+                    if num_left_partitions != num_partitions
+                        || (num_partitions > 1 && !is_left_hash_partitioned)
+                    {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             left_physical,
                             num_partitions,
@@ -656,7 +658,9 @@ pub(super) fn translate_single_logical_node(
                         left_physical =
                             PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
                     }
-                    if num_right_partitions != num_partitions || !is_right_hash_partitioned {
+                    if num_right_partitions != num_partitions
+                        || (num_partitions > 1 && !is_right_hash_partitioned)
+                    {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             right_physical,
                             num_partitions,
@@ -1196,6 +1200,39 @@ mod tests {
             RepartitionOptions::Bad(26),
         )?;
         assert!(check_physical_matches(physical_plan, true, true));
+        Ok(())
+    }
+
+    /// Tests that single partitions don't repartition.
+    #[test]
+    fn hash_join_single_partition_tests() -> DaftResult<()> {
+        use RepartitionOptions::*;
+        let cases = vec![
+            (Good(1), Good(1), false, false),
+            (Good(1), Bad(1), false, false),
+            (Good(1), Reversed(1), false, false),
+            (Bad(1), Bad(1), false, false),
+            (Bad(1), Reversed(1), false, false),
+        ];
+        let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
+        for (l_opts, r_opts, l_exp, r_exp) in cases {
+            let plan = get_hash_join_plan(cfg.clone(), l_opts, r_opts)?;
+            if !check_physical_matches(plan, l_exp, r_exp) {
+                panic!(
+                    "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
+                    l_opts, r_opts, l_exp, r_exp
+                );
+            }
+
+            // reversed direction
+            let plan = get_hash_join_plan(cfg.clone(), r_opts, l_opts)?;
+            if !check_physical_matches(plan, r_exp, l_exp) {
+                panic!(
+                    "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
+                    r_opts, l_opts, r_exp, l_exp
+                );
+            }
+        }
         Ok(())
     }
 }
