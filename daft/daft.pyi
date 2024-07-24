@@ -1206,6 +1206,7 @@ def minhash(
     ngram_size: int,
     seed: int = 1,
 ) -> PyExpr: ...
+def sql(sql: str) -> str: ...
 
 class PySeries:
     @staticmethod

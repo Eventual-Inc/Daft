@@ -1,0 +1,12 @@
+[dependencies]
+arrow2 = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+sqlparser = {workspace = true}
+
+[features]
+python = ["dep:pyo3"]
+
+[package]
+name = "daft-sql"
+edition.workspace = true
+version.workspace = true
