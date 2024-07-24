@@ -10,6 +10,9 @@ use crate::{array::*, types::NativeType};
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
 
+/// Compare the values at two arbitrary indices in two arbitrary arrays.
+pub type DynArrayComparator = Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
+
 /// implements comparison using IEEE 754 total ordering for f32
 // Original implementation from https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
 // TODO to change to use std when it becomes stable
