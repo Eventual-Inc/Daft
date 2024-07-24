@@ -1,5 +1,4 @@
 #![feature(let_chains)]
-use std::env;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;

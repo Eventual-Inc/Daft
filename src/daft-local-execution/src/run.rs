@@ -2,14 +2,13 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
-use lazy_static::lazy_static;
 
 #[cfg(feature = "python")]
 use {
