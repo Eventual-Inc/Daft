@@ -36,6 +36,9 @@ class PartialUDF:
     # Arguments that UDF was called with, potentially symbolic (i.e. containing Expressions)
     bound_args: inspect.BoundArguments
 
+    def is_stateful(self) -> bool:
+        return inspect.isclass(self.udf.func)
+
     def expressions(self) -> dict[str, Expression]:
         parsed_expressions = {}
         signature = self.bound_args.signature
@@ -158,7 +161,7 @@ class UDF:
         partial_udf = PartialUDF(self, bound_args)
         expressions = list(partial_udf.expressions().values())
         return Expression.udf(
-            func=partial_udf,
+            partial_udf=partial_udf,
             expressions=expressions,
             return_dtype=self.return_dtype,
         )

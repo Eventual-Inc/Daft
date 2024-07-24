@@ -146,12 +146,14 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 // * `func` - a Python function that takes as input an ordered list of Python Series to execute the user's UDF.
 // * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
 // * `return_dtype` - returned column's DataType
+// * `stateful` - whether or not this is a stateful UDF
 #[pyfunction]
 pub fn udf(
     py: Python,
     func: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    stateful: bool,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -160,7 +162,7 @@ pub fn udf(
     let func = func.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: udf(func, &expressions_map, return_dtype.dtype)?.into(),
+        expr: udf(func, &expressions_map, return_dtype.dtype, stateful)?.into(),
     })
 }
 
