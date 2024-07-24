@@ -1265,7 +1265,6 @@ name = "common-tracing"
 version = "0.2.0-dev0"
 dependencies = [
  "lazy_static",
- "log",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
