@@ -152,7 +152,7 @@ impl ClusteringSpec {
             Self::Unknown(conf) => conf.multiline_display(),
         }
     }
-    
+
     pub fn unknown() -> Self {
         Self::Unknown(UnknownClusteringConfig::new(0))
     }

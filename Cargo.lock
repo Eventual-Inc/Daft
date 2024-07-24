@@ -1977,6 +1977,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-plan",
+ "rstest",
  "sqlparser",
 ]
 

@@ -117,8 +117,9 @@ members = [
   "src/daft-scan",
   "src/daft-scheduler",
   "src/daft-sketch",
-  "src/daft-functions"
-, "src/daft-sql"]
+  "src/daft-functions",
+  "src/daft-sql"
+]
 
 [workspace.dependencies]
 async-compat = "0.2.3"
