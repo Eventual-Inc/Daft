@@ -18,8 +18,8 @@ from daft.table import MicroPartition
 
 class ActorPool(Generic[PartitionT]):
     @abstractmethod
-    def __enter__(self) -> ActorPool:
-        """Create the actor pool and reserve resources"""
+    def __enter__(self) -> str:
+        """Create the actor pool and reserve resources, returning a string identifier"""
         ...
 
     @abstractmethod
@@ -71,10 +71,11 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def get_actor_pool(self, resource_request: ResourceRequest, num_actors: int) -> ActorPool:
+    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> ActorPool:
         """Creates a pool of actors which can execute work
 
         Args:
+            name: Name of the actor pool for debugging/observability
             resource_request: Requested amount of resources for each actor
             num_actors: Number of actors to spin up
         """

@@ -903,7 +903,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()
 
-    def get_actor_pool(self, resource_request: ResourceRequest, num_actors: int) -> RayActorPool:
+    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> RayActorPool:
         return RayActorPool()
 
 

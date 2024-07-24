@@ -213,6 +213,9 @@ def actor_pool_project(
     plan to the runner in-order, and on completion of those plans it then yields new tasks to the runner to be run on the acquired
     actor_pool.
     """
+    # TODO: Passthrough the name of the UDF as the name of the actor pool
+    name = "TODO_NAME"
+
     stage_id = next(stage_id_counter)
 
     # Keep track of materializations of the children tasks
@@ -222,8 +225,7 @@ def actor_pool_project(
     # Keep track of materializations of the actor_pool tasks
     actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
-    # TODO: somehow request an actor pool from the currently active runner
-    with get_context().runner().get_actor_pool(resource_request, num_actors) as _actor_pool:
+    with get_context().runner().get_actor_pool(name, resource_request, num_actors) as actor_pool_id:
         child_plan_exhausted = False
 
         # Loop until the child plan is exhausted and there is no more work in the pipeline
@@ -236,9 +238,7 @@ def actor_pool_project(
                         inputs=[next_ready_child.partition()],
                         partial_metadatas=[next_ready_child.partition_metadata()],
                         resource_request=resource_request,
-                        # TODO: allow for adding context to the partition task so that we know where to run this on
-                        # By default, this would be None so the runner knows to run it on the default behavior
-                        # executor=actor_pool,
+                        executor_id=actor_pool_id,
                     )
                     .add_instruction(
                         instruction=execution_step.Project(projection=projection),

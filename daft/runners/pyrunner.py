@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
@@ -114,13 +114,42 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyActorPool(ActorPool[MicroPartition]):
-    def __enter__(self):
-        # TODO: initialize any threads or processes
-        return self
+    def __init__(
+        self,
+        pool_id: str,
+        num_actors: int,
+        resource_request: ResourceRequest,
+        allocate_resources: Callable[[str, ResourceRequest, int], None],
+        release_resources: Callable[[str], None],
+    ):
+        self._pool_id = pool_id
+        self._num_actors = num_actors
+        self._resource_request = resource_request
+        self._executor: futures.ProcessPoolExecutor | None = None
 
-    def __exit__(type, value, tb):
-        # TODO: tear down any created threads or processes
-        pass
+        # Hooks for reserving/releasing resources
+        self._allocate_resources = allocate_resources
+        self._release_resources = release_resources
+
+    def submit(
+        self, f: Callable[..., list[MaterializedResult[MicroPartition]]], *args
+    ) -> futures.Future[list[MaterializedResult[MicroPartition]]]:
+        assert self._executor is not None, "Cannot submit to uninitialized PyActorPool"
+        return self._executor.submit(f, *args)
+
+    def __enter__(self) -> str:
+        self._allocate_resources(self._pool_id, self._resource_request, self._num_actors)
+        self._executor = futures.ProcessPoolExecutor(self._num_actors)
+        return self._pool_id
+
+    def __exit__(self, type, value, tb):
+        # Shut down the executor
+        assert self._executor is not None, "Should have an executor when exiting context"
+        self._executor.shutdown()
+        self._executor = None
+
+        # Release resources
+        self._release_resources(self._pool_id)
 
 
 class PyRunner(Runner[MicroPartition]):
@@ -129,6 +158,9 @@ class PyRunner(Runner[MicroPartition]):
 
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
         self._thread_pool = futures.ThreadPoolExecutor()
+
+        # Registry of active ActorPools
+        self._actor_pools: dict[str, PyActorPool] = {}
 
         # Global accounting of tasks and resources
         self._inflight_tasks_resources: dict[str, ResourceRequest] = dict()
@@ -220,9 +252,20 @@ class PyRunner(Runner[MicroPartition]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
-    def get_actor_pool(self, resource_request: ResourceRequest, num_actors: int) -> PyActorPool:
+    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> PyActorPool:
         # TODO: reserve inflight_task_resources for the actor pool
-        return PyActorPool()
+        def allocate_resources(pool_id: str, resource_request: ResourceRequest, num_actors: int):
+            print(f"Should be allocating resources for pool `{pool_id}`: {resource_request} * {num_actors}")
+            pass
+
+        def deallocate_resources(pool_id: str):
+            print(f"Should be deallocating resources for pool `{pool_id}`")
+            pass
+
+        actor_pool_id = f"py_actor_pool-{name}"
+        actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, allocate_resources, deallocate_resources)
+        self._actor_pools[actor_pool_id] = actor_pool
+        return self._actor_pools[actor_pool_id]
 
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
@@ -290,12 +333,25 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            future = self._thread_pool.submit(
-                                self.build_partitions,
-                                next_step.instructions,
-                                next_step.inputs,
-                                next_step.partial_metadatas,
-                            )
+                            if next_step.executor_id is None:
+                                future = self._thread_pool.submit(
+                                    self.build_partitions,
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
+                                )
+                            else:
+                                actor_pool = self._actor_pools.get(next_step.executor_id)
+                                assert (
+                                    actor_pool is not None
+                                ), f"PyActorPool={next_step.executor_id} must outlive the tasks that need to be run on it."
+                                future = actor_pool.submit(
+                                    self.build_partitions,
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
+                                )
+
                             # Register the inflight task and resources used.
                             future_to_task[future] = next_step.id()
 
