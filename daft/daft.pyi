@@ -183,6 +183,8 @@ class FileFormat(Enum):
     Csv: int
     Json: int
 
+    def ext(self): ...
+
 class ParquetSourceConfig:
     """
     Configuration of a Parquet data source.
