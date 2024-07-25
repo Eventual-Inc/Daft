@@ -1571,6 +1571,7 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "daft-scheduler",
+ "daft-sql",
  "daft-stats",
  "daft-table",
  "lazy_static",
@@ -1979,6 +1980,16 @@ dependencies = [
  "serde_arrow",
  "sketches-ddsketch",
  "snafu",
+]
+
+[[package]]
+name = "daft-sql"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-plan",
+ "pyo3",
+ "sqlparser",
 ]
 
 [[package]]
@@ -4688,6 +4699,15 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a404d0e14905361b918cb8afdb73605e25c1d5029312bd9785142dcb3aa49e"
+dependencies = [
+ "log",
 ]
 
 [[package]]
