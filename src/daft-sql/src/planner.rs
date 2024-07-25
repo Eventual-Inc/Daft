@@ -375,9 +375,6 @@ impl SQLPlanner {
                 if opt_ilike.is_some() {
                     unsupported_sql_err!("ILIKE");
                 }
-                if opt_exclude.is_some() {
-                    unsupported_sql_err!("EXCLUDE");
-                }
                 if opt_except.is_some() {
                     unsupported_sql_err!("EXCEPT");
                 }
