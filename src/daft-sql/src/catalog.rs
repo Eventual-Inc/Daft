@@ -1,33 +1,33 @@
 use std::{collections::HashMap, sync::Arc};
 
-use daft_plan::LogicalPlan;
+use daft_plan::{LogicalPlan, LogicalPlanRef};
 
 /// A simple map of table names to logical plans
 #[derive(Debug, Clone)]
-pub struct Catalog {
+pub struct SQLCatalog {
     tables: HashMap<String, Arc<LogicalPlan>>,
 }
 
-impl Catalog {
+impl SQLCatalog {
     /// Create an empty catalog
     pub fn new() -> Self {
-        Catalog {
+        SQLCatalog {
             tables: HashMap::new(),
         }
     }
 
-    /// Associate a table name (string) with its logical plan.
-    pub fn put_table(&mut self, name: &str, plan: Arc<LogicalPlan>) {
+    /// Register a table with the catalog
+    pub fn register_table(&mut self, name: &str, plan: LogicalPlanRef) {
         self.tables.insert(name.to_string(), plan);
     }
 
-    /// Return a logical plan associated with a table name.
-    pub fn get_table(&self, name: &str) -> Option<Arc<LogicalPlan>> {
+    /// Get a table from the catalog
+    pub fn get_table(&self, name: &str) -> Option<LogicalPlanRef> {
         self.tables.get(name).cloned()
     }
 }
 
-impl Default for Catalog {
+impl Default for SQLCatalog {
     fn default() -> Self {
         Self::new()
     }

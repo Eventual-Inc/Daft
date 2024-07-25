@@ -36,11 +36,10 @@ def load_tpch_query(filename):
 all_tpch_queries = load_tpch_queries()
 
 
-@pytest.mark.skip(reason="Skip the sanity check, enable for manual verification")
 def test_sanity():
     catalog = SQLCatalog({"test": daft.from_pydict({"a": [1, 2, 3]})})
     df = daft.sql("SELECT * FROM test", catalog=catalog)
-    print(df.collect())
+    assert isinstance(df, daft.DataFrame)
 
 
 @pytest.mark.skip(reason="This test is a placeholder used to check that we can parse the TPC-H queries")
