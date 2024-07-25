@@ -8,7 +8,7 @@ use daft_parquet::read::read_parquet_metadata;
 use crate::{
     file_format::{FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    ChunkSpec, DataFileSource, ScanTask, ScanTaskRef,
+    ChunkSpec, DataSource, ScanTask, ScanTaskRef,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
@@ -160,7 +160,7 @@ pub fn split_by_row_groups(
                         t.file_format_config.as_ref(),
                         t.storage_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(DataFileSource::get_chunk_spec),
+                        t.sources.first().map(DataSource::get_chunk_spec),
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
@@ -196,41 +196,24 @@ pub fn split_by_row_groups(
                             if curr_size_bytes >= min_size_bytes || i == file.row_groups.len() - 1 {
                                 let mut new_source = source.clone();
 
-                                match &mut new_source {
-                                    DataFileSource::AnonymousDataFile {
-                                        chunk_spec,
-                                        size_bytes,
-                                        ..
-                                    }
-                                    | DataFileSource::CatalogDataFile {
-                                        chunk_spec,
-                                        size_bytes,
-                                        ..
-                                    }
-                                    | DataFileSource::DatabaseDataSource {
-                                        chunk_spec,
-                                        size_bytes,
-                                        ..
-                                    } => {
-                                        *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
-                                        *size_bytes = Some(curr_size_bytes as u64);
-                                    }
-                                    #[cfg(feature = "python")]
-                                    DataFileSource::PythonFactoryFunction { .. } => unreachable!("DataFileSource::PythonFactoryFunction should never return Parquet formats"),
-                                };
-                                match &mut new_source {
-                                    DataFileSource::AnonymousDataFile {
-                                        metadata: Some(metadata),
-                                        ..
-                                    }
-                                    | DataFileSource::CatalogDataFile { metadata, .. }
-                                    | DataFileSource::DatabaseDataSource {
-                                        metadata: Some(metadata),
-                                        ..
-                                    } => {
-                                        metadata.length = curr_num_rows;
-                                    }
-                                    _ => (),
+                                if let DataSource::File {
+                                    chunk_spec,
+                                    size_bytes,
+                                    ..
+                                } = &mut new_source
+                                {
+                                    *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
+                                    *size_bytes = Some(curr_size_bytes as u64);
+                                } else {
+                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                }
+
+                                if let DataSource::File {
+                                    metadata: Some(metadata),
+                                    ..
+                                } = &mut new_source
+                                {
+                                    metadata.length = curr_num_rows;
                                 }
 
                                 // Reset accumulators

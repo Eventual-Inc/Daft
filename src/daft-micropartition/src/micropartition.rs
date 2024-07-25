@@ -17,7 +17,7 @@ use daft_parquet::read::{
 };
 use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
+use daft_scan::{ChunkSpec, DataSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
 use parquet2::metadata::FileMetaData;
@@ -366,7 +366,7 @@ fn materialize_scan_task(
                     let table_iterators = scan_task.sources.iter().map(|source| {
                         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
                         match source {
-                            DataFileSource::PythonFactoryFunction {
+                            DataSource::PythonFactoryFunction {
                                 module,
                                 func_name,
                                 func_args,
@@ -777,7 +777,7 @@ fn prune_fields_from_schema(
     }
 }
 
-fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Option<Vec<i64>>>> {
+fn parquet_sources_to_row_groups(sources: &[DataSource]) -> Option<Vec<Option<Vec<i64>>>> {
     let row_groups = sources
         .iter()
         .map(|s| {
@@ -1142,7 +1142,7 @@ pub(crate) fn read_parquet_into_micropartition(
                         .clone()
                         .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
                 )
-                .map(|((url, metadata), rgs)| DataFileSource::AnonymousDataFile {
+                .map(|((url, metadata), rgs)| DataSource::File {
                     path: url,
                     chunk_spec: rgs.map(ChunkSpec::Parquet),
                     size_bytes: Some(size_bytes),

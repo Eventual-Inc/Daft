@@ -325,7 +325,7 @@ mod tests {
     use daft_core::schema::Schema;
     use daft_plan::ResourceRequest;
     use daft_scan::{
-        file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, ScanTask,
+        file_format::FileFormatConfig, storage_config::StorageConfig, DataSource, ScanTask,
     };
     use rstest::rstest;
     use std::{

@@ -5,7 +5,7 @@ use daft_core::{datatypes::Field, schema::Schema, DataType, Series};
 use daft_micropartition::MicroPartition;
 use daft_plan::ResourceRequest;
 use daft_scan::{
-    file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, ScanTask,
+    file_format::FileFormatConfig, storage_config::StorageConfig, DataSource, ScanTask,
 };
 use daft_table::Table;
 
@@ -13,7 +13,7 @@ use crate::ops::PartitionTaskOp;
 
 pub(crate) fn mock_scan_task() -> ScanTask {
     ScanTask::new(
-        vec![DataFileSource::AnonymousDataFile {
+        vec![DataSource::File {
             path: "foo".to_string(),
             chunk_spec: None,
             size_bytes: None,

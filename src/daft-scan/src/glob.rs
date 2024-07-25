@@ -11,7 +11,7 @@ use snafu::Snafu;
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    ChunkSpec, DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -355,7 +355,7 @@ impl ScanOperator for GlobScanOperator {
                 .flatten();
             let chunk_spec = row_group.map(ChunkSpec::Parquet);
             Ok(ScanTask::new(
-                vec![DataFileSource::AnonymousDataFile {
+                vec![DataSource::File {
                     path: path.to_string(),
                     chunk_spec,
                     size_bytes,

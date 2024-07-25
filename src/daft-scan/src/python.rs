@@ -66,7 +66,7 @@ pub mod pylib {
     use crate::anonymous::AnonymousScanOperator;
     use crate::file_format::FileFormatConfig;
     use crate::storage_config::PythonStorageConfig;
-    use crate::DataFileSource;
+    use crate::DataSource;
     use crate::PartitionField;
     use crate::Pushdowns;
     use crate::ScanOperator;
@@ -348,26 +348,16 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
 
-            let table_metadata = num_rows.map(|n| TableMetadata { length: n as usize });
+            let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
 
-            let data_source = match table_metadata {
-                None => DataFileSource::AnonymousDataFile {
-                    path: file,
-                    chunk_spec: None,
-                    size_bytes,
-                    metadata: None,
-                    partition_spec: Some(pspec),
-                    statistics,
-                    parquet_metadata: None,
-                },
-                Some(tm) => DataFileSource::CatalogDataFile {
-                    path: file,
-                    chunk_spec: None,
-                    size_bytes,
-                    metadata: tm,
-                    partition_spec: pspec,
-                    statistics,
-                },
+            let data_source = DataSource::File {
+                path: file,
+                chunk_spec: None,
+                size_bytes,
+                metadata,
+                partition_spec: Some(pspec),
+                statistics,
+                parquet_metadata: None,
             };
 
             let scan_task = ScanTask::new(
@@ -395,12 +385,10 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
-            let data_source = DataFileSource::DatabaseDataSource {
+            let data_source = DataSource::Database {
                 path: url,
-                chunk_spec: None,
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
-                partition_spec: None,
                 statistics,
             };
 
@@ -430,7 +418,7 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
-            let data_source = DataFileSource::PythonFactoryFunction {
+            let data_source = DataSource::PythonFactoryFunction {
                 module,
                 func_name,
                 func_args: PythonTablesFactoryArgs::new(
