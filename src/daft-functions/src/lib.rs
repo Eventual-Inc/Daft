@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+pub mod count_matches;
 pub mod hash;
 pub mod minhash;
 pub mod tokenize;

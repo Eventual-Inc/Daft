@@ -1,4 +1,5 @@
 [dependencies]
+aho-corasick = "1.1.3"
 arrow2 = {workspace = true, features = [
   "chrono-tz",
   "compute_take",

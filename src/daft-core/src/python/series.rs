@@ -546,6 +546,18 @@ impl PySeries {
         Ok(self.series.utf8_normalize(opts)?.into())
     }
 
+    pub fn utf8_count_matches(
+        &self,
+        patterns: &Self,
+        whole_word: bool,
+        case_sensitive: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .series
+            .utf8_count_matches(&patterns.series, whole_word, case_sensitive)?
+            .into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

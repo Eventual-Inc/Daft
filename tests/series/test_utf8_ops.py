@@ -1544,3 +1544,35 @@ def test_series_utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space
     ).to_pylist()
     b = [manual_normalize(t, remove_punct, lowercase, nfd_unicode, white_space) for t in NORMALIZE_TEST_DATA]
     assert a == b
+
+
+def test_series_utf8_count_matches():
+    s = Series.from_pylist(
+        [
+            "the quick brown fox jumped over the lazy dog",
+            "the quick brown foe jumped o'er the lazy dot",
+            "the fox fox fox jumped over over dog lazy dog",
+            "the quick brown foxes hovered above the lazy dogs",
+            "the quick brown-fox jumped over the 'lazy dog'",
+            "thequickbrownfoxjumpedoverthelazydog",
+            "THE QUICK BROWN FOX JUMPED over THE Lazy DOG",
+            "    fox     dog        over    ",
+        ]
+    )
+    p = Series.from_pylist(
+        [
+            "fox",
+            "over",
+            "lazy dog",
+            "dog",
+        ]
+    )
+
+    res = s.str.count_matches(p, False, False).to_pylist()
+    assert res == [3, 0, 7, 3, 3, 3, 3, 3]
+    res = s.str.count_matches(p, True, False).to_pylist()
+    assert res == [3, 0, 7, 0, 3, 0, 3, 3]
+    res = s.str.count_matches(p, False, True).to_pylist()
+    assert res == [3, 0, 7, 3, 3, 3, 1, 3]
+    res = s.str.count_matches(p, True, True).to_pylist()
+    assert res == [3, 0, 7, 0, 3, 0, 1, 3]
