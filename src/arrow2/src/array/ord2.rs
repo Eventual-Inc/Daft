@@ -2,7 +2,6 @@ use ord::total_cmp;
 
 use crate::datatypes::DataType;
 
-
 use std::cmp::Ordering;
 
 use crate::datatypes::*;
@@ -11,41 +10,25 @@ use crate::offset::Offset;
 use crate::{array::*, types::NativeType};
 
 /// Compare the values at two arbitrary indices in two arbitrary arrays.
-pub type DynArrayComparator = Box<dyn  Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
-
-
+pub type DynArrayComparator =
+    Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
 
 fn compare_dyn_primitives<T: NativeType + Ord>() -> DynArrayComparator {
     Box::new(move |left, right, i, j| {
-        let left = left
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap();
-        let right = right
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap();
+        let left = left.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+        let right = right.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
         total_cmp(&left.value(i), &right.value(j))
-    } )
+    })
 }
-
 
 fn compare_dyn_string<O: Offset>() -> DynArrayComparator {
     Box::new(move |left, right, i, j| {
-        let left = left
-            .as_any()
-            .downcast_ref::<Utf8Array<O>>()
-            .unwrap();
-        let right = right
-            .as_any()
-            .downcast_ref::<Utf8Array<O>>()
-            .unwrap();
+        let left = left.as_any().downcast_ref::<Utf8Array<O>>().unwrap();
+        let right = right.as_any().downcast_ref::<Utf8Array<O>>().unwrap();
 
-            left.value(i).cmp(right.value(j))
-    } )
+        left.value(i).cmp(right.value(j))
+    })
 }
-
-
 
 pub fn build_array_compare2(left: &DataType, right: &DataType) -> Result<DynArrayComparator> {
     use DataType::*;
