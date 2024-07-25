@@ -14,3 +14,4 @@ API Documentation
    udf
    series
    configs
+   misc
