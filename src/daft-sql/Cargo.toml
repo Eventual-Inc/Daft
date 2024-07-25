@@ -1,5 +1,6 @@
 [dependencies]
 pyo3 = {workspace = true, optional = true}
+sqlparser = {workspace = true}
 
 [features]
 python = ["dep:pyo3"]
