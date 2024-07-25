@@ -19,11 +19,21 @@ use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ImageExpr {
-    Decode { raise_error_on_failure: bool },
-    Encode { image_format: ImageFormat },
-    Resize { w: u32, h: u32 },
+    Decode {
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    },
+    Encode {
+        image_format: ImageFormat,
+    },
+    Resize {
+        w: u32,
+        h: u32,
+    },
     Crop(),
-    ToMode { mode: ImageMode },
+    ToMode {
+        mode: ImageMode,
+    },
 }
 
 impl ImageExpr {
@@ -41,10 +51,11 @@ impl ImageExpr {
     }
 }
 
-pub fn decode(input: ExprRef, raise_error_on_failure: bool) -> ExprRef {
+pub fn decode(input: ExprRef, raise_error_on_failure: bool, mode: Option<ImageMode>) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Decode {
             raise_error_on_failure,
+            mode,
         }),
         inputs: vec![input],
     }

@@ -649,8 +649,15 @@ impl PySeries {
         Ok(self.series.map_get(&key.series)?.into())
     }
 
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
-        Ok(self.series.image_decode(raise_error_on_failure)?.into())
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .series
+            .image_decode(raise_error_on_failure, mode)?
+            .into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

@@ -728,9 +728,13 @@ impl PyExpr {
         Ok(normalize(self.into(), opts).into())
     }
 
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> PyResult<Self> {
         use crate::functions::image::decode;
-        Ok(decode(self.into(), raise_error_on_failure).into())
+        Ok(decode(self.into(), raise_error_on_failure, mode).into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

@@ -259,12 +259,6 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn into_mode(self, mode: ImageMode) -> Self {
-        if !matches!(
-            mode,
-            ImageMode::L | ImageMode::LA | ImageMode::RGB | ImageMode::RGBA
-        ) {
-            unimplemented!("Image mode {:?} not yet supported", mode);
-        }
         let img: DynamicImage = self.into();
         // I couldn't find a method from the image crate to do this
         let img: DynamicImage = match mode {
@@ -862,7 +856,11 @@ where
 }
 
 impl BinaryArray {
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> DaftResult<ImageArray> {
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> DaftResult<ImageArray> {
         let arrow_array = self
             .data()
             .as_any()
@@ -873,7 +871,7 @@ impl BinaryArray {
         // Load images from binary buffers.
         // Confirm that all images have the same value dtype.
         for (index, row) in arrow_array.iter().enumerate() {
-            let img_buf = match row.map(DaftImageBuffer::decode).transpose() {
+            let mut img_buf = match row.map(DaftImageBuffer::decode).transpose() {
                 Ok(val) => val,
                 Err(err) => {
                     if raise_error_on_failure {
@@ -887,6 +885,9 @@ impl BinaryArray {
                     }
                 }
             };
+            if let Some(mode) = mode {
+                img_buf = img_buf.map(|buf| buf.into_mode(mode));
+            }
             let dtype = img_buf.as_ref().map(|im| im.mode().get_dtype());
             match (dtype.as_ref(), cached_dtype.as_ref()) {
                 (Some(t1), Some(t2)) => {
@@ -904,7 +905,7 @@ impl BinaryArray {
         // Fall back to UInt8 dtype if series is all nulls.
         let cached_dtype = cached_dtype.unwrap_or(DataType::UInt8);
         match cached_dtype {
-            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &None)?),
+            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &mode)?),
             _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
         }
     }

@@ -295,22 +295,25 @@ def test_image_encode_pil(fixed_shape, mode, file_format):
         np.testing.assert_equal(pil_decoded_imgs, arrs)
 
 
+PIL_DECODE_MODES = [
+    ("L", "png"),
+    ("L", "tiff"),
+    ("LA", "png"),
+    # Image crate doesn't support 2 samples per pixel.
+    # ("LA", "tiff"),
+    ("RGB", "png"),
+    ("RGB", "tiff"),
+    ("RGB", "bmp"),
+    ("RGBA", "png"),
+    ("RGBA", "tiff"),
+    # Not supported by Daft or PIL.
+    # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
+]
+
+
 @pytest.mark.parametrize(
     ["mode", "file_format"],
-    [
-        ("L", "png"),
-        ("L", "tiff"),
-        ("LA", "png"),
-        # Image crate doesn't support 2 samples per pixel.
-        # ("LA", "tiff"),
-        ("RGB", "png"),
-        ("RGB", "tiff"),
-        ("RGB", "bmp"),
-        ("RGBA", "png"),
-        ("RGBA", "tiff"),
-        # Not supported by Daft or PIL.
-        # "L16", "LA16", "RGB16", "RGBA16", "RGB32F", "RGBA32F"
-    ],
+    PIL_DECODE_MODES,
 )
 def test_image_decode_pil(mode, file_format):
     np_dtype = MODE_TO_NP_DTYPE[mode]
@@ -333,6 +336,31 @@ def test_image_decode_pil(mode, file_format):
     if num_channels == 1:
         expected_arrs = [np.expand_dims(arr, -1) for arr in expected_arrs]
     np.testing.assert_equal(out, expected_arrs)
+
+
+@pytest.mark.parametrize("output_mode", ["L", "LA", "RGB", "RGBA"])
+def test_image_decode_pil_multi_mode(output_mode):
+    imgs = []
+    for mode, file_format in PIL_DECODE_MODES:
+        np_dtype = MODE_TO_NP_DTYPE[mode]
+        num_channels = MODE_TO_NUM_CHANNELS[mode]
+        shape = (4, 4)
+        if num_channels > 1:
+            shape += (num_channels,)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        img = Image.fromarray(arr, mode=mode)
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, file_format)
+        img_bytes = img_bytes.getvalue()
+        imgs.append(img_bytes)
+
+    arrow_arr = pa.array(imgs, type=pa.binary())
+    s = Series.from_arrow(arrow_arr)
+    t = s.image.decode(mode=output_mode)
+    assert t.datatype() == DataType.image(output_mode)
+    out = t.cast(DataType.python()).to_pylist()
+    for o in out:
+        assert o.shape == (4, 4, MODE_TO_NUM_CHANNELS[output_mode])
 
 
 @pytest.mark.parametrize(
@@ -503,6 +531,53 @@ def test_image_decode_opencv(mode, file_format):
     out = t.cast(DataType.python()).to_pylist()
     expected_arrs = [arr, arr, arr]
     np.testing.assert_equal(out, expected_arrs)
+
+
+# check support for decoding even from unsupported types
+@pytest.mark.parametrize("output_mode", ["L", "LA", "RGB", "RGBA"])
+def test_image_decode_opencv_multi_modes(output_mode):
+    INPUT_MODES = [
+        ("L", "png"),
+        ("L", "tiff"),
+        # OpenCV doesn't support 2-channel images.
+        # ("LA", "png"),
+        ("RGB", "png"),
+        ("RGB", "tiff"),
+        ("RGB", "bmp"),
+        ("RGBA", "png"),
+        ("RGBA", "tiff"),
+        ("RGBA", "webp"),
+        ("L16", "png"),
+        # OpenCV doesn't support 2-channel images.
+        # ("LA16", "png"),
+        ("RGB16", "png"),
+        ("RGB16", "tiff"),
+        ("RGBA16", "png"),
+        ("RGBA16", "tiff"),
+        # Image crate doesn't support LogLuv HDR encoding.
+        # ("RGB32F", "tiff"),
+        # ("RGBA32F", "tiff"),
+    ]
+    imgs = []
+    for mode, file_format in INPUT_MODES:
+        np_dtype = MODE_TO_NP_DTYPE[mode]
+        num_channels = MODE_TO_NUM_CHANNELS[mode]
+        shape = (4, 4, num_channels)
+        arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
+        cv2_arr = arr
+        color_conv = MODE_TO_OPENCV_COLOR_CONVERSION.get(mode)
+        if color_conv is not None:
+            cv2_arr = cv2.cvtColor(arr, color_conv)
+        encoded_arr = cv2.imencode(f".{file_format}", cv2_arr)[1]
+        img_bytes = encoded_arr.tobytes()
+        imgs.append(img_bytes)
+    arrow_arr = pa.array(imgs, type=pa.binary())
+    s = Series.from_arrow(arrow_arr)
+    t = s.image.decode(mode=output_mode)
+    assert t.datatype() == DataType.image(output_mode)
+    out = t.to_pylist()
+    for o in out:
+        assert o.shape == (4, 4, MODE_TO_NUM_CHANNELS[output_mode])
 
 
 @pytest.mark.parametrize(
