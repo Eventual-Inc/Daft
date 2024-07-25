@@ -118,9 +118,9 @@ pub(super) fn translate_single_logical_node(
                     expr.exists(|e| match e.as_ref() {
                         #[cfg(feature = "python")]
                         Expr::Function {
-                            func: FunctionExpr::Python(PythonUDF { stateful, .. }),
+                            func: FunctionExpr::Python(PythonUDF::Stateful(_)),
                             ..
-                        } => *stateful,
+                        } => true,
                         _ => false,
                     })
                 });
