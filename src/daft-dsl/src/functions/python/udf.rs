@@ -9,7 +9,7 @@ use common_error::{DaftError, DaftResult};
 use super::super::FunctionEvaluator;
 use super::{StatefulPythonUDF, StatelessPythonUDF};
 use crate::functions::FunctionExpr;
-use daft_core::python::PySeries;
+use daft_core::python::{PyDataType, PySeries};
 
 impl FunctionEvaluator for StatelessPythonUDF {
     fn fn_name(&self) -> &'static str {
@@ -81,9 +81,10 @@ impl StatelessPythonUDF {
             let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf"))?;
             let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
             let result = run_udf_func.call1((
-                func,       // Function to run
-                bound_args, // Arguments bound to the function
-                pyseries,   // evaluated_expressions
+                func,                                        // Function to run
+                bound_args,                                  // Arguments bound to the function
+                pyseries,                                    // evaluated_expressions
+                PyDataType::from(self.return_dtype.clone()), // Returned datatype
             ));
 
             match result {
