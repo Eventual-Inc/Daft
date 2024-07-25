@@ -1,3 +1,4 @@
+pub mod analyzer;
 pub mod catalog;
 pub mod parser;
 #[cfg(feature = "python")]

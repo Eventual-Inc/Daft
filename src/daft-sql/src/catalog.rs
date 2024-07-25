@@ -9,9 +9,11 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    /// Create a new catalog
+    /// Create an empty catalog
     pub fn new() -> Self {
-        Catalog { tables: HashMap::new() }
+        Catalog {
+            tables: HashMap::new(),
+        }
     }
 
     /// Associate a table name (string) with its logical plan.
@@ -19,8 +21,14 @@ impl Catalog {
         self.tables.insert(name.to_string(), plan);
     }
 
-    // Return a logical plan associated with a table name.
-    // pub fn get_table(&self, name: &str) -> Option<Arc<LogicalPlan>> {
-    //     self.tables.get(name)
-    // }
+    /// Return a logical plan associated with a table name.
+    pub fn get_table(&self, name: &str) -> Option<Arc<LogicalPlan>> {
+        self.tables.get(name).cloned()
+    }
+}
+
+impl Default for Catalog {
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -1986,6 +1986,7 @@ dependencies = [
 name = "daft-sql"
 version = "0.2.0-dev0"
 dependencies = [
+ "common-error",
  "daft-plan",
  "pyo3",
  "sqlparser",
