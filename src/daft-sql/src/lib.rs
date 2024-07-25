@@ -113,6 +113,7 @@ mod tests {
 
     #[rstest]
     #[case("select * from tbl1")]
+    #[case("select * from tbl1 limit 1")]
     #[case("select * exclude utf8 from tbl1")]
     #[case("select * exclude (utf8, i32) from tbl1")]
     #[case("select utf8 from tbl1")]
@@ -142,6 +143,10 @@ mod tests {
     )]
     #[case("select round(i32, 1) from tbl1")]
     #[case::groupby("select max(i32) from tbl1 group by utf8")]
+    #[case::orderby("select * from tbl1 order by i32")]
+    #[case::orderby("select * from tbl1 order by i32 desc")]
+    #[case::orderby("select * from tbl1 order by i32 asc")]
+    #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     fn test_compiles(#[case] query: &str) -> SQLPlannerResult<()> {
         let planner = setup();
 
@@ -173,6 +178,35 @@ mod tests {
         let expected = LogicalPlanBuilder::new(tbl_1())
             .filter(col("test").eq(lit("a")))?
             .select(vec![col("test").alias("a")])?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+    #[test]
+    fn test_limit() -> SQLPlannerResult<()> {
+        let planner = setup();
+        let sql = "select test as a from tbl1 limit 10";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_1())
+            .select(vec![col("test").alias("a")])?
+            .limit(10, true)?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_orderby() -> SQLPlannerResult<()> {
+        let planner = setup();
+        let sql = "select utf8 from tbl1 order by utf8 desc";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_1())
+            .select(vec![col("utf8")])?
+            .sort(vec![col("utf8")], vec![true])?
             .build();
 
         assert_eq!(plan, expected);

@@ -2,7 +2,7 @@ use crate::{
     catalog::SQLCatalog,
     column_not_found_err,
     error::{PlannerError, SQLPlannerResult},
-    table_not_found_err, unsupported_sql_err,
+    invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
 use daft_core::{
     datatypes::{Field, TimeUnit},
@@ -74,6 +74,31 @@ impl SQLPlanner {
     }
 
     fn plan_query(&self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
+        if let Some(with) = &query.with {
+            unsupported_sql_err!("WITH: {with}")
+        }
+        if !query.limit_by.is_empty() {
+            unsupported_sql_err!("LIMIT BY");
+        }
+        if query.offset.is_some() {
+            unsupported_sql_err!("OFFSET");
+        }
+        if query.fetch.is_some() {
+            unsupported_sql_err!("FETCH");
+        }
+        if !query.locks.is_empty() {
+            unsupported_sql_err!("LOCKS");
+        }
+        if let Some(for_clause) = &query.for_clause {
+            unsupported_sql_err!("{for_clause}");
+        }
+        if query.settings.is_some() {
+            unsupported_sql_err!("SETTINGS");
+        }
+        if let Some(format_clause) = &query.format_clause {
+            unsupported_sql_err!("{format_clause}");
+        }
+
         let selection = query.body.as_select().ok_or_else(|| {
             PlannerError::invalid_operation(format!(
                 "Only SELECT queries are supported, got: '{}'",
@@ -81,13 +106,54 @@ impl SQLPlanner {
             ))
         })?;
 
-        self.plan_select(selection)
+        let mut rel = self.plan_select(selection)?;
+
+        if let Some(limit) = &query.limit {
+            let limit = self.plan_expr(limit, &rel)?;
+            if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
+                rel.inner = rel.inner.limit(*limit, true)?; // TODO: Should this be eager or not?
+            } else {
+                invalid_operation_err!(
+                    "LIMIT <n> must be a constant integer, instead got: {limit}"
+                );
+            }
+        }
+
+        if let Some(order_by) = &query.order_by {
+            if order_by.interpolate.is_some() {
+                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+            }
+            // TODO: if ordering by a column not in the projection, this will fail.
+            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice(), &rel)?;
+            rel.inner = rel.inner.sort(exprs, descending)?;
+        }
+
+        Ok(rel.inner)
     }
 
-    fn plan_select(
+    fn plan_order_by_exprs(
         &self,
-        selection: &sqlparser::ast::Select,
-    ) -> SQLPlannerResult<LogicalPlanBuilder> {
+        expr: &[sqlparser::ast::OrderByExpr],
+        rel: &Relation,
+    ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>)> {
+        let mut exprs = Vec::with_capacity(expr.len());
+        let mut desc = Vec::with_capacity(expr.len());
+        for order_by_expr in expr {
+            if order_by_expr.nulls_first.is_some() {
+                unsupported_sql_err!("NULLS FIRST");
+            }
+            if order_by_expr.with_fill.is_some() {
+                unsupported_sql_err!("WITH FILL");
+            }
+            let expr = self.plan_expr(&order_by_expr.expr, rel)?;
+            desc.push(!order_by_expr.asc.unwrap_or(true));
+
+            exprs.push(expr);
+        }
+        Ok((exprs, desc))
+    }
+
+    fn plan_select(&self, selection: &sqlparser::ast::Select) -> SQLPlannerResult<Relation> {
         if selection.top.is_some() {
             unsupported_sql_err!("TOP");
         }
@@ -130,12 +196,12 @@ impl SQLPlanner {
         if from.len() != 1 {
             unsupported_sql_err!("Only exactly one table is supported");
         }
-        let mut builder = self.plan_from(&from[0])?;
+        let mut relation = self.plan_from(&from[0])?;
 
         // WHERE
         if let Some(selection) = &selection.selection {
-            let filter = self.plan_expr(selection, &builder)?;
-            builder.inner = builder.inner.filter(filter)?;
+            let filter = self.plan_expr(selection, &relation)?;
+            relation.inner = relation.inner.filter(filter)?;
         }
 
         // GROUP BY
@@ -150,7 +216,7 @@ impl SQLPlanner {
             GroupByExpr::Expressions(expressions, _) => {
                 groupby_exprs = expressions
                     .iter()
-                    .map(|expr| self.plan_expr(expr, &builder))
+                    .map(|expr| self.plan_expr(expr, &relation))
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
             }
         }
@@ -158,19 +224,19 @@ impl SQLPlanner {
         let to_select = selection
             .projection
             .iter()
-            .map(|expr| self.select_item_to_expr(expr, &builder))
+            .map(|expr| self.select_item_to_expr(expr, &relation))
             .collect::<SQLPlannerResult<Vec<_>>>()?
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
 
         if !groupby_exprs.is_empty() {
-            builder.inner = builder.inner.aggregate(to_select, groupby_exprs)?;
+            relation.inner = relation.inner.aggregate(to_select, groupby_exprs)?;
         } else if !to_select.is_empty() {
-            builder.inner = builder.inner.select(to_select)?;
+            relation.inner = relation.inner.select(to_select)?;
         }
 
-        Ok(builder.inner)
+        Ok(relation)
     }
 
     fn plan_from(&self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
@@ -194,6 +260,7 @@ impl SQLPlanner {
                 unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
             }
         }
+
         fn process_join_on(
             expression: &sqlparser::ast::Expr,
             left_name: &str,
