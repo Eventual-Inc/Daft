@@ -2310,13 +2310,13 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
-        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray
+        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray
 
         .. NOTE::
             This function can only work if Daft is running using the RayRunner
 
         Returns:
-            ray.data.dataset.DataSet: `Ray dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__
+            ray.data.dataset.DataSet: `Ray dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__
         """
         from daft.runners.ray_runner import RayPartitionSet
 
@@ -2329,7 +2329,7 @@ class DataFrame:
 
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
-        """Creates a DataFrame from a `Ray Dataset <https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html#ray.data.Dataset>`__."""
+        """Creates a DataFrame from a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__."""
         from ray.exceptions import RayTaskError
 
         context = get_context()
