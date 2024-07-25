@@ -108,11 +108,12 @@ def read_sql(
 def sql(sql: str) -> DataFrame:
     """Create a DataFrame from an SQL query.
 
+    EXPERIMENTAL: This features is early in development and will change.
+
     Args:
         sql (str): SQL query to execute
 
     Returns:
         DataFrame: Dataframe containing the results of the query
     """
-    print("Executing SQL query: ", sql)
     return from_pydict({})

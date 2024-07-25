@@ -8,7 +8,11 @@ from daft.logical.builder import LogicalPlanBuilder
 
 
 class SQLCatalog:
-    """SQLCatalog is a simple map from table names to dataframes used in query planning."""
+    """
+    SQLCatalog is a simple map from table names to dataframes used in query planning.
+
+    EXPERIMENTAL: This features is early in development and will change.
+    """
 
     _catalog: _PyCatalog = None  # type: ignore
 
