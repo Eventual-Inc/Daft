@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
 use super::sink::{DoubleInputSink, SinkResultType};
 
@@ -21,16 +22,14 @@ impl ConcatSink {
 }
 
 impl DoubleInputSink for ConcatSink {
+    #[instrument(skip_all, name = "ConcatSink::sink")]
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("Concat::sink_left");
-
         self.result_left.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
+    #[instrument(skip_all, name = "ConcatSink::sink")]
     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        log::debug!("Concat::sink_right");
-
         self.result_right.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
@@ -39,8 +38,8 @@ impl DoubleInputSink for ConcatSink {
         true
     }
 
+    #[instrument(skip_all, name = "ConcatSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        log::debug!("Concat::finalize");
         Ok(self
             .result_left
             .clone()

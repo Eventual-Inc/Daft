@@ -110,3 +110,16 @@ impl From<PlannerError> for DaftError {
 }
 
 pub type SQLPlannerResult<T> = Result<T, PlannerError>;
+
+#[cfg(feature = "python")]
+use pyo3::{create_exception, exceptions::PyException, PyErr};
+
+#[cfg(feature = "python")]
+create_exception!(daft.exceptions, InvalidSQLException, PyException);
+
+#[cfg(feature = "python")]
+impl From<PlannerError> for PyErr {
+    fn from(value: PlannerError) -> Self {
+        InvalidSQLException::new_err(value.to_string())
+    }
+}

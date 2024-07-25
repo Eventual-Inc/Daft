@@ -1,6 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use common_error::DaftResult;
+use common_tracing::refresh_chrome_trace;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
 
@@ -83,7 +90,18 @@ pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    refresh_chrome_trace();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(10)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("Executor-Worker-{}", id)
+        })
+        .build()
+        .expect("Failed to create tokio runtime");
+
     let res = runtime.block_on(async {
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);
         let (sender, mut receiver) = create_channel(1, true);

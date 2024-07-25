@@ -5,7 +5,9 @@ use sqlparser::ast::{Function, FunctionArg, FunctionArgExpr};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    invalid_operation_err, unsupported_sql_err, Relation, SQLPlanner,
+    invalid_operation_err,
+    planner::{Relation, SQLPlanner},
+    unsupported_sql_err,
 };
 
 // TODO: expand this to support more functions
@@ -35,7 +37,7 @@ impl FromStr for SQLFunctions {
 }
 
 impl SQLPlanner {
-    pub(super) fn plan_function(
+    pub(crate) fn plan_function(
         &self,
         func: &Function,
         current_rel: &Relation,

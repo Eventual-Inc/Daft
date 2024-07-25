@@ -34,50 +34,6 @@ MODE_TO_NUM_CHANNELS = {
 }
 
 
-@pytest.fixture(scope="session", params=MODES)
-def fixed_shape_data_fixture(request):
-    mode = request.param
-    np_dtype = MODE_TO_NP_DTYPE[mode]
-    num_channels = MODE_TO_NUM_CHANNELS[mode]
-
-    height = 3
-    width = 4
-    dtype = daft.DataType.image(mode, height, width)
-    shape = (height, width, num_channels)
-    arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
-    arrs = [arr, arr, None]
-
-    if mode in ("LA", "RGBA"):
-        for arr in arrs:
-            if arr is not None:
-                arr[..., -1] = 255
-
-    s = daft.Series.from_pylist(arrs, pyobj="force")
-    return s.cast(dtype)
-
-
-@pytest.fixture(scope="session", params=MODES)
-def mixed_shape_data_fixture(request):
-    mode = request.param
-    np_dtype = MODE_TO_NP_DTYPE[mode]
-    num_channels = MODE_TO_NUM_CHANNELS[mode]
-
-    dtype = daft.DataType.image(mode)
-    shape1 = (2, 3, num_channels)
-    shape2 = (3, 4, num_channels)
-    arr1 = np.arange(np.prod(shape1)).reshape(shape1).astype(np_dtype)
-    arr2 = np.arange(np.prod(shape1), np.prod(shape1) + np.prod(shape2)).reshape(shape2).astype(np_dtype)
-    arrs = [arr1, arr2, None]
-
-    if mode in ("LA", "RGBA"):
-        for arr in arrs:
-            if arr is not None:
-                arr[..., -1] = 255
-
-    s = daft.Series.from_pylist(arrs, pyobj="force")
-    return s.cast(dtype)
-
-
 def test_image_crop_mixed_shape_same_mode(mixed_shape_data_fixture):
     table = MicroPartition.from_pydict({"images": mixed_shape_data_fixture})
     result = table.eval_expression_list([daft.col("images").image.crop((1, 1, 1, 1))])
