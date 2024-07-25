@@ -20,7 +20,7 @@ import pyarrow as pa
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat
+from daft.daft import CountMode, ImageFormat, ImageMode
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -2957,6 +2957,13 @@ class ExpressionImageNamespace(ExpressionNamespace):
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
+
+    def to_mode(self, mode: str | ImageMode) -> Expression:
+        if isinstance(mode, str):
+            mode = ImageMode.from_mode_string(mode.upper())
+        if not isinstance(mode, ImageMode):
+            raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
+        return Expression._from_pyexpr(self._expr.image_to_mode(mode))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
