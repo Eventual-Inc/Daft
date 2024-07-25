@@ -34,8 +34,8 @@ WORKING_SHOW_COLLECT = [
     "test_partitioned_by_months",
     "test_partitioned_by_truncate",
     "test_partitioned_by_years",
-    # "test_positional_mor_deletes", # Need Merge on Read
-    # "test_positional_mor_double_deletes", # Need Merge on Read
+    "test_positional_mor_deletes",
+    "test_positional_mor_double_deletes",
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
