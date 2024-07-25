@@ -108,6 +108,15 @@ impl SQLPlanner {
 
         let mut rel = self.plan_select(selection)?;
 
+        if let Some(order_by) = &query.order_by {
+            if order_by.interpolate.is_some() {
+                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+            }
+            // TODO: if ordering by a column not in the projection, this will fail.
+            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice(), &rel)?;
+            rel.inner = rel.inner.sort(exprs, descending)?;
+        }
+
         if let Some(limit) = &query.limit {
             let limit = self.plan_expr(limit, &rel)?;
             if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
@@ -118,16 +127,6 @@ impl SQLPlanner {
                 );
             }
         }
-
-        if let Some(order_by) = &query.order_by {
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            }
-            // TODO: if ordering by a column not in the projection, this will fail.
-            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice(), &rel)?;
-            rel.inner = rel.inner.sort(exprs, descending)?;
-        }
-
         Ok(rel.inner)
     }
 
