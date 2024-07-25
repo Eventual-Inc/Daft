@@ -316,19 +316,13 @@ impl SQLPlanner {
                 }
                 CrossJoin => unsupported_sql_err!("CROSS JOIN"),
                 LeftSemi(_) => unsupported_sql_err!("LEFT SEMI JOIN"),
-                RightSemi(_) => {
-                    unsupported_sql_err!("RIGHT SEMI JOIN")
-                }
+                RightSemi(_) => unsupported_sql_err!("RIGHT SEMI JOIN"),
                 LeftAnti(_) => unsupported_sql_err!("LEFT ANTI JOIN"),
-                RightAnti(_) => {
-                    unsupported_sql_err!("RIGHT ANTI JOIN")
-                }
+                RightAnti(_) => unsupported_sql_err!("RIGHT ANTI JOIN"),
                 CrossApply => unsupported_sql_err!("CROSS APPLY"),
                 OuterApply => unsupported_sql_err!("OUTER APPLY"),
                 AsOf { .. } => unsupported_sql_err!("AS OF"),
-                join_type => {
-                    unsupported_sql_err!("join type: {join_type:?}");
-                }
+                join_type => unsupported_sql_err!("join type: {join_type:?}"),
             };
         }
 
@@ -396,6 +390,18 @@ impl SQLPlanner {
                 if opt_ilike.is_some() {
                     unsupported_sql_err!("ILIKE");
                 }
+                if opt_exclude.is_some() {
+                    unsupported_sql_err!("EXCLUDE");
+                }
+                if opt_except.is_some() {
+                    unsupported_sql_err!("EXCEPT");
+                }
+                if opt_replace.is_some() {
+                    unsupported_sql_err!("REPLACE");
+                }
+                if opt_rename.is_some() {
+                    unsupported_sql_err!("RENAME");
+                }
                 if let Some(exclude) = opt_exclude {
                     use sqlparser::ast::ExcludeSelectItem::*;
                     return match exclude {
@@ -419,18 +425,7 @@ impl SQLPlanner {
                     })
                     .map_err(|e| e.into());
                 }
-                if opt_exclude.is_some() {
-                    unsupported_sql_err!("EXCLUDE");
-                }
-                if opt_except.is_some() {
-                    unsupported_sql_err!("EXCEPT");
-                }
-                if opt_replace.is_some() {
-                    unsupported_sql_err!("REPLACE");
-                }
-                if opt_rename.is_some() {
-                    unsupported_sql_err!("RENAME");
-                }
+
                 Ok(vec![])
             }
             _ => todo!(),
