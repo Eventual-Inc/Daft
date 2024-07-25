@@ -1,4 +1,5 @@
 [dependencies]
+daft-plan = {path = "../daft-plan", default-features = false}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 
