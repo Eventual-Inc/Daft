@@ -359,6 +359,7 @@ impl ScanOperator for GlobScanOperator {
                     path: path.to_string(),
                     chunk_spec,
                     size_bytes,
+                    iceberg_delete_files: None,
                     metadata: None,
                     partition_spec: None,
                     statistics: None,

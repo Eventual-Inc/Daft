@@ -1,10 +1,14 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+    time::Duration,
+};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 
 use daft_core::{
-    datatypes::{Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
+    datatypes::{BooleanArray, Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -70,6 +74,7 @@ async fn read_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
+    delete_rows: Option<Vec<i64>>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let original_columns = columns;
@@ -154,6 +159,17 @@ async fn read_parquet_single(
 
     let metadata_num_rows = metadata.num_rows;
     let metadata_num_columns = metadata.schema().fields().len();
+
+    if let Some(delete_rows) = delete_rows {
+        let mut selection_mask = vec![true; table.len()];
+        for row in delete_rows {
+            selection_mask[row as usize] = false;
+        }
+
+        let selection_mask: BooleanArray = ("selection_mask", selection_mask.as_slice()).into();
+
+        table = table.mask_filter(&selection_mask.into_series())?;
+    }
 
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concatenating, rather than after
@@ -400,6 +416,7 @@ pub fn read_parquet(
             schema_infer_options,
             None,
             metadata,
+            None,
         )
         .await
     })
@@ -463,6 +480,7 @@ pub fn read_parquet_bulk(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Vec<Arc<FileMetaData>>>,
+    delete_map: Option<HashMap<String, Vec<i64>>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -488,6 +506,7 @@ pub fn read_parquet_bulk(
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
                 let owned_field_id_mapping = field_id_mapping.clone();
+                let delete_rows = delete_map.as_ref().and_then(|m| m.get(&uri).cloned());
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -506,6 +525,7 @@ pub fn read_parquet_bulk(
                             schema_infer_options,
                             owned_field_id_mapping,
                             metadata,
+                            delete_rows,
                         )
                         .await?,
                     ))

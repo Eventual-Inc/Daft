@@ -17,6 +17,7 @@ pub(crate) fn mock_scan_task() -> ScanTask {
             path: "foo".to_string(),
             chunk_spec: None,
             size_bytes: None,
+            iceberg_delete_files: None,
             metadata: None,
             partition_spec: None,
             statistics: None,

@@ -90,6 +90,7 @@ impl ScanOperator for AnonymousScanOperator {
                         path: f.to_string(),
                         chunk_spec,
                         size_bytes: None,
+                        iceberg_delete_files: None,
                         metadata: None,
                         partition_spec: None,
                         statistics: None,

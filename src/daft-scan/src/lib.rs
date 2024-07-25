@@ -122,6 +122,7 @@ pub enum DataSource {
         path: String,
         chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
+        iceberg_delete_files: Option<Vec<String>>,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
@@ -207,6 +208,16 @@ impl DataSource {
         }
     }
 
+    pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
+        match self {
+            Self::File {
+                iceberg_delete_files,
+                ..
+            } => iceberg_delete_files.as_ref(),
+            _ => None,
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
@@ -214,6 +225,7 @@ impl DataSource {
                 path,
                 chunk_spec,
                 size_bytes,
+                iceberg_delete_files,
                 metadata,
                 partition_spec,
                 statistics,
@@ -228,6 +240,9 @@ impl DataSource {
                 }
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {}", size_bytes));
+                }
+                if let Some(iceberg_delete_files) = iceberg_delete_files {
+                    res.push(format!("Iceberg delete files = {:?}", iceberg_delete_files));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
