@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.udf import PartialStatefulUDF
+
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
@@ -201,7 +203,7 @@ def pipeline_instruction(
 
 def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    projection: ExpressionsProjection,
+    partial_stateful_udf: PartialStatefulUDF,
     resource_request: execution_step.ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -225,7 +227,9 @@ def actor_pool_project(
     # Keep track of materializations of the actor_pool tasks
     actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
-    with get_context().runner().get_actor_pool(name, resource_request, num_actors) as actor_pool_id:
+    with get_context().runner().get_actor_pool(
+        name, resource_request, num_actors, partial_stateful_udf
+    ) as actor_pool_id:
         child_plan_exhausted = False
 
         # Loop until the child plan is exhausted and there is no more work in the pipeline
@@ -241,7 +245,7 @@ def actor_pool_project(
                         executor_id=actor_pool_id,
                     )
                     .add_instruction(
-                        instruction=execution_step.Project(projection=projection),
+                        instruction=execution_step.StatefulUDFProject(),
                     )
                     .finalize_partition_task_single_output(
                         stage_id=stage_id,

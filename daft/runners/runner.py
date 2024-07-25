@@ -14,6 +14,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.runner_io import RunnerIO
 from daft.table import MicroPartition
+from daft.udf import PartialStatefulUDF
 
 
 class ActorPool(Generic[PartitionT]):
@@ -71,12 +72,15 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> ActorPool:
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> ActorPool:
         """Creates a pool of actors which can execute work
 
         Args:
             name: Name of the actor pool for debugging/observability
             resource_request: Requested amount of resources for each actor
             num_actors: Number of actors to spin up
+            partial_stateful_udf: A stateful UDF that has been "bound" to its arguments, so each actor can run it
         """
         ...

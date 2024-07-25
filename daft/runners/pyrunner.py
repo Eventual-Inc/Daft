@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Callable, Iterator
+from typing import Callable, Iterator, cast
 
+from daft import pickle as daft_pickle
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, PartitionTask
 from daft.execution.native_executor import NativeExecutor
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
@@ -26,6 +28,7 @@ from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
+from daft.udf import PartialStatefulUDF
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +124,7 @@ class PyActorPool(ActorPool[MicroPartition]):
         resource_request: ResourceRequest,
         allocate_resources: Callable[[str, PyActorPool], None],
         release_resources: Callable[[str], None],
+        partial_stateful_udf: PartialStatefulUDF,
     ):
         self._pool_id = pool_id
         self._num_actors = num_actors
@@ -131,11 +135,80 @@ class PyActorPool(ActorPool[MicroPartition]):
         self._allocate_resources = allocate_resources
         self._release_resources = release_resources
 
+        # Initialization arguments for the UDF
+        self._partial_stateful_udf = partial_stateful_udf
+
+    @staticmethod
+    def build_partitions_with_stateful_project(
+        # This is a pickled PartialStatefulUDF, unpickle it with daft_pickle.loads
+        # We do this because the default pickler struggles with things such as classes defined on __main__
+        # but these are often used as UDFs when working in an interactive notebook.
+        partial_stateful_udf_pickled: bytes,
+        instruction_stack: list[Instruction],
+        partitions: list[MicroPartition],
+        final_metadata: list[PartialPartitionMetadata],
+    ) -> list[MaterializedResult[MicroPartition]]:
+        # Manually unpickle the partial_stateful_udf
+        partial_stateful_udf: PartialStatefulUDF = cast(
+            PartialStatefulUDF, daft_pickle.loads(partial_stateful_udf_pickled)
+        )
+
+        # If process-level singleton is not initialized, perform initializations on the first partition run
+        global initialized_stateful_udf_func
+        if "initialized_stateful_udf_func" not in globals():
+            initialized_stateful_udf_func = partial_stateful_udf.func_cls()  # type: ignore [name-defined]
+
+        from daft.execution import execution_step
+        from daft.udf import run_udf
+
+        assert (
+            len(instruction_stack) == 1
+        ), f"Stateful Actor can only run a single UDF instruction, but received: {instruction_stack}"
+        instr = instruction_stack[0]
+        assert isinstance(
+            instr, execution_step.StatefulUDFProject
+        ), f"Stateful Actor can only run StatefulUDFProject, but received: {instr}"
+
+        assert len(partitions) == 1
+        assert len(final_metadata) == 1
+        part = partitions[0]
+        partial = final_metadata[0]
+
+        evaluated_expressions_mp = part.eval_expression_list(
+            ExpressionsProjection(list(partial_stateful_udf.bound_args.expressions().values()))
+        )
+        evaluated_expressions_series = [
+            evaluated_expressions_mp.get_column(cname) for cname in evaluated_expressions_mp.column_names()
+        ]
+        processed_series = run_udf(
+            initialized_stateful_udf_func,  # type: ignore [name-defined]
+            partial_stateful_udf.bound_args,
+            evaluated_expressions_series,
+            partial_stateful_udf.return_dtype._dtype,
+        )
+
+        new_part = MicroPartition.from_pydict(
+            {
+                processed_series.name(): processed_series,
+                **{cname: part.get_column(cname) for cname in part.column_names()},
+            }
+        )
+        return [PyMaterializedResult(new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial))]
+
     def submit(
-        self, f: Callable[..., list[MaterializedResult[MicroPartition]]], *args
+        self,
+        instruction_stack: list[Instruction],
+        partitions: list[MicroPartition],
+        final_metadata: list[PartialPartitionMetadata],
     ) -> futures.Future[list[MaterializedResult[MicroPartition]]]:
         assert self._executor is not None, "Cannot submit to uninitialized PyActorPool"
-        return self._executor.submit(f, *args)
+        return self._executor.submit(
+            PyActorPool.build_partitions_with_stateful_project,
+            daft_pickle.dumps(self._partial_stateful_udf),
+            instruction_stack,
+            partitions,
+            final_metadata,
+        )
 
     def __enter__(self) -> str:
         self._allocate_resources(self._pool_id, self)
@@ -252,7 +325,9 @@ class PyRunner(Runner[MicroPartition]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
-    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> PyActorPool:
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> PyActorPool:
         # TODO: reserve inflight_task_resources for the actor pool
         def allocate_resources(pool_id: str, actor_pool: PyActorPool):
             self._actor_pools[pool_id] = actor_pool
@@ -267,7 +342,9 @@ class PyRunner(Runner[MicroPartition]):
             pass
 
         actor_pool_id = f"py_actor_pool-{name}"
-        actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, allocate_resources, deallocate_resources)
+        actor_pool = PyActorPool(
+            actor_pool_id, num_actors, resource_request, allocate_resources, deallocate_resources, partial_stateful_udf
+        )
         return actor_pool
 
     def _physical_plan_to_partitions(
@@ -349,7 +426,6 @@ class PyRunner(Runner[MicroPartition]):
                                     actor_pool is not None
                                 ), f"PyActorPool={next_step.executor_id} must outlive the tasks that need to be run on it."
                                 future = actor_pool.submit(
-                                    self.build_partitions,
                                     next_step.instructions,
                                     next_step.inputs,
                                     next_step.partial_metadatas,

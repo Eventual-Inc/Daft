@@ -34,7 +34,7 @@ pub struct StatelessPythonUDF {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StatefulPythonUDF {
-    stateful_partial_func: partial_udf::PyPartialUDF,
+    pub stateful_partial_func: partial_udf::PyPartialUDF,
     num_expressions: usize,
     pub return_dtype: DataType,
 }

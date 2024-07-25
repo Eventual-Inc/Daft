@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.udf import PartialStatefulUDF
+
 
 def scan_with_tasks(
     scan_tasks: list[ScanTask],
@@ -75,14 +77,13 @@ def project(
 
 def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    projection: list[PyExpr],
+    partial_stateful_udf: PartialStatefulUDF,
     resource_request: ResourceRequest,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
     return physical_plan.actor_pool_project(
         child_plan=input,
-        projection=expr_projection,
+        partial_stateful_udf=partial_stateful_udf,
         resource_request=resource_request,
         num_actors=num_actors,
     )

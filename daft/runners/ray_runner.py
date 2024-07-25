@@ -62,6 +62,8 @@ if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
 
+    from daft.udf import PartialStatefulUDF
+
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:
     from ray.data import from_arrow_refs
@@ -1001,7 +1003,9 @@ class RayRunner(Runner[ray.ObjectRef]):
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()
 
-    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> RayRoundRobinActorPool:
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> RayRoundRobinActorPool:
         if self.ray_client_mode:
             # TODO: I'm guessing that this is probably not going to work. Setups/teardowns are going to be really
             # tricky to get correct here. We might need to change some abstractions.

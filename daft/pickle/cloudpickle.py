@@ -1,3 +1,4 @@
+# type: ignore
 """
 Taken from: https://github.com/cloudpipe/cloudpickle/blob/master/cloudpickle/cloudpickle.py
 

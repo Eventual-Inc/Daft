@@ -536,6 +536,17 @@ class Project(SingleOutputInstruction):
         ]
 
 
+dataclass(frozen=True)
+
+
+class StatefulUDFProject(SingleOutputInstruction):
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        raise NotImplementedError("UDFProject instruction does not have run_partial_metadata. Please file an issue.")
+
+
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
     """
     If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary

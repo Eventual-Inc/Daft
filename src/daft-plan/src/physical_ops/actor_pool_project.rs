@@ -1,12 +1,15 @@
-use itertools::Itertools;
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
-use super::Project;
+use crate::{ClusteringSpec, PhysicalPlanRef, ResourceRequest};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActorPoolProject {
-    // Internal representation of the projection as a non-actor pool projection
-    pub project: Project,
+    pub input: PhysicalPlanRef,
+    pub stateful_python_udf: daft_dsl::functions::python::StatefulPythonUDF,
+    pub resource_request: ResourceRequest,
+    pub clustering_spec: Arc<ClusteringSpec>,
     pub num_actors: u32,
 }
 
@@ -15,18 +18,15 @@ impl ActorPoolProject {
         let mut res = vec![];
         res.push(format!(
             "ActorPoolProject: {}",
-            self.project
-                .projection
-                .iter()
-                .map(|e| e.to_string())
-                .join(", ")
+            // TODO: propagate name of UDF
+            "TODO",
         ));
         res.push(format!("Num actors = {}", self.num_actors,));
         res.push(format!(
             "Clustering spec = {{ {} }}",
-            self.project.clustering_spec.multiline_display().join(", ")
+            self.clustering_spec.multiline_display().join(", ")
         ));
-        let resource_request = self.project.resource_request.multiline_display();
+        let resource_request = self.resource_request.multiline_display();
         if !resource_request.is_empty() {
             res.push(format!(
                 "Resource request = {{ {} }}",
