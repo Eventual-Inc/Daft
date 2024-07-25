@@ -143,28 +143,34 @@ impl SQLPlanner {
             unsupported_sql_err!("CONNECT BY");
         }
 
-        match &selection.group_by {
-            GroupByExpr::All(s) => {
-                if !s.is_empty() {
-                    unsupported_sql_err!("GROUP BY");
-                }
-            }
-            GroupByExpr::Expressions(expressions, _) => {
-                if !expressions.is_empty() {
-                    unsupported_sql_err!("GROUP BY");
-                }
-            }
-        }
-
+        // FROM/JOIN
         let from = selection.clone().from;
         if from.len() != 1 {
             unsupported_sql_err!("Only exactly one table is supported");
         }
         let mut builder = self.plan_from(&from[0])?;
 
+        // WHERE
         if let Some(selection) = &selection.selection {
             let filter = self.plan_expr(selection, &builder)?;
             builder.inner = builder.inner.filter(filter)?;
+        }
+
+        // GROUP BY
+        let mut groupby_exprs = Vec::new();
+
+        match &selection.group_by {
+            GroupByExpr::All(s) => {
+                if !s.is_empty() {
+                    unsupported_sql_err!("GROUP BY ALL");
+                }
+            }
+            GroupByExpr::Expressions(expressions, _) => {
+                groupby_exprs = expressions
+                    .iter()
+                    .map(|expr| self.plan_expr(expr, &builder))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+            }
         }
 
         let to_select = selection
@@ -176,7 +182,9 @@ impl SQLPlanner {
             .flatten()
             .collect::<Vec<_>>();
 
-        if !to_select.is_empty() {
+        if !groupby_exprs.is_empty() {
+            builder.inner = builder.inner.aggregate(to_select, groupby_exprs)?;
+        } else if !to_select.is_empty() {
             builder.inner = builder.inner.select(to_select)?;
         }
 
@@ -891,6 +899,7 @@ mod tests {
     from tbl1"#
     )]
     #[case("select round(i32, 1) from tbl1")]
+    #[case::groupby("select max(i32) from tbl1 group by utf8")]
     fn test_compiles(#[case] query: &str) -> SQLPlannerResult<()> {
         let planner = setup();
 

@@ -16,6 +16,8 @@ pub enum SQLFunctions {
     Sign,
     /// SQL `round(<n>)` function
     Round,
+    /// SQL `max` function
+    Max,
 }
 
 impl FromStr for SQLFunctions {
@@ -26,6 +28,7 @@ impl FromStr for SQLFunctions {
             "abs" => Ok(SQLFunctions::Abs),
             "sign" => Ok(SQLFunctions::Sign),
             "round" => Ok(SQLFunctions::Round),
+            "max" => Ok(SQLFunctions::Max),
             _ => unsupported_sql_err!("unknown function: '{value}'"),
         }
     }
@@ -100,6 +103,12 @@ impl SQLPlanner {
                     args[0].clone(),
                     precision,
                 ))
+            }
+            SQLFunctions::Max => {
+                if args.len() != 1 {
+                    invalid_operation_err!("max takes exactly one argument");
+                }
+                Ok(args[0].clone().max())
             }
         }
     }
