@@ -119,7 +119,7 @@ class PyActorPool(ActorPool[MicroPartition]):
         pool_id: str,
         num_actors: int,
         resource_request: ResourceRequest,
-        allocate_resources: Callable[[str, ResourceRequest, int], None],
+        allocate_resources: Callable[[str, PyActorPool], None],
         release_resources: Callable[[str], None],
     ):
         self._pool_id = pool_id
@@ -138,7 +138,7 @@ class PyActorPool(ActorPool[MicroPartition]):
         return self._executor.submit(f, *args)
 
     def __enter__(self) -> str:
-        self._allocate_resources(self._pool_id, self._resource_request, self._num_actors)
+        self._allocate_resources(self._pool_id, self)
         self._executor = futures.ProcessPoolExecutor(self._num_actors)
         return self._pool_id
 
@@ -254,18 +254,21 @@ class PyRunner(Runner[MicroPartition]):
 
     def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> PyActorPool:
         # TODO: reserve inflight_task_resources for the actor pool
-        def allocate_resources(pool_id: str, resource_request: ResourceRequest, num_actors: int):
-            print(f"Should be allocating resources for pool `{pool_id}`: {resource_request} * {num_actors}")
+        def allocate_resources(pool_id: str, actor_pool: PyActorPool):
+            self._actor_pools[pool_id] = actor_pool
+            print(
+                f"TODO: Should be allocating resources for pool `{pool_id}`: {actor_pool._resource_request} * {actor_pool._num_actors}"
+            )
             pass
 
         def deallocate_resources(pool_id: str):
-            print(f"Should be deallocating resources for pool `{pool_id}`")
+            del self._actor_pools[pool_id]
+            print(f"TODO: Should be deallocating resources for pool `{pool_id}`")
             pass
 
         actor_pool_id = f"py_actor_pool-{name}"
         actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, allocate_resources, deallocate_resources)
-        self._actor_pools[actor_pool_id] = actor_pool
-        return self._actor_pools[actor_pool_id]
+        return actor_pool
 
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
