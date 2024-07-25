@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
+use crate::array::ops::from_arrow::FromArrow;
 use crate::datatypes::logical::{FixedShapeImageArray, ImageArray};
-use crate::datatypes::{DataType, ImageFormat};
+use crate::datatypes::{
+    DataType, Field, ImageFormat, ImageMode, UInt16Array, UInt32Array, Utf8Array,
+};
 
 use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
+use num_traits::FromPrimitive;
 
 impl Series {
     pub fn image_decode(&self, raise_error_on_failure: bool) -> DaftResult<Series> {
@@ -73,6 +79,109 @@ impl Series {
                 .map(|arr| arr.into_series()),
             dt => Err(DaftError::ValueError(format!(
                 "Expected input to crop to be an Image type, but received: {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn image_width(&self) -> DaftResult<Series> {
+        match &self.data_type() {
+            DataType::Image(_) => Ok(UInt32Array::from_arrow(
+                Arc::new(Field::new(self.name(), DataType::UInt32)),
+                self.downcast::<ImageArray>()?.width_array().clone().boxed(),
+            )?
+            .into_series()),
+            DataType::FixedShapeImage(_mode, _height, width) => Ok(UInt32Array::from((
+                self.name(),
+                std::iter::repeat(*width)
+                    .take(self.len())
+                    .collect::<Vec<u32>>(),
+            ))
+            .with_validity(self.validity().cloned())?
+            .into_series()),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to width to be an Image type, but received: {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn image_height(&self) -> DaftResult<Series> {
+        match &self.data_type() {
+            DataType::Image(_) => Ok(UInt32Array::from_arrow(
+                Arc::new(Field::new(self.name(), DataType::UInt32)),
+                self.downcast::<ImageArray>()?
+                    .height_array()
+                    .clone()
+                    .boxed(),
+            )?
+            .into_series()),
+            DataType::FixedShapeImage(_mode, height, _width) => Ok(UInt32Array::from((
+                self.name(),
+                std::iter::repeat(*height)
+                    .take(self.len())
+                    .collect::<Vec<u32>>(),
+            ))
+            .with_validity(self.validity().cloned())?
+            .into_series()),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to height to be an Image type, but received: {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn image_channels(&self) -> DaftResult<Series> {
+        match &self.data_type() {
+            DataType::Image(_) => Ok(UInt16Array::from_arrow(
+                Arc::new(Field::new(self.name(), DataType::UInt16)),
+                self.downcast::<ImageArray>()?
+                    .channel_array()
+                    .clone()
+                    .boxed(),
+            )?
+            .into_series()),
+            DataType::FixedShapeImage(mode, _height, _width) => Ok(UInt32Array::from((
+                self.name(),
+                std::iter::repeat(mode.num_channels() as u32)
+                    .take(self.len())
+                    .collect::<Vec<u32>>(),
+            ))
+            .with_validity(self.validity().cloned())?
+            .into_series()),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to mode to be an Image type, but received: {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn image_mode(&self) -> DaftResult<Series> {
+        match &self.data_type() {
+            DataType::Image(_) => Ok(Utf8Array::from((
+                self.name(),
+                self.downcast::<ImageArray>()?
+                    .mode_array()
+                    .values_iter()
+                    .map(|m| {
+                        FromPrimitive::from_u8(*m)
+                            .map_or("".to_string(), |m: ImageMode| m.to_string())
+                    })
+                    .collect::<Vec<String>>()
+                    .as_slice(),
+            ))
+            .with_validity(self.validity().cloned())?
+            .into_series()),
+            DataType::FixedShapeImage(mode, _height, _width) => {
+                let mode_string_vec = std::iter::repeat(mode.to_string())
+                    .take(self.len())
+                    .collect::<Vec<_>>();
+                Ok(Utf8Array::from((self.name(), mode_string_vec.as_slice()))
+                    .with_validity(self.validity().cloned())?
+                    .into_series())
+            }
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to mode to be an Image type, but received: {}",
                 dt
             ))),
         }

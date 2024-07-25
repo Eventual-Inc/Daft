@@ -758,6 +758,26 @@ impl PyExpr {
         Ok(crop(self.into(), bbox.into()).into())
     }
 
+    pub fn image_width(&self) -> PyResult<Self> {
+        use crate::functions::image::width;
+        Ok(width(self.into()).into())
+    }
+
+    pub fn image_height(&self) -> PyResult<Self> {
+        use crate::functions::image::height;
+        Ok(height(self.into()).into())
+    }
+
+    pub fn image_channels(&self) -> PyResult<Self> {
+        use crate::functions::image::channels;
+        Ok(channels(self.into()).into())
+    }
+
+    pub fn image_mode(&self) -> PyResult<Self> {
+        use crate::functions::image::mode;
+        Ok(mode(self.into()).into())
+    }
+
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
         use crate::functions::list::join;
         Ok(join(self.into(), delimiter.into()).into())
