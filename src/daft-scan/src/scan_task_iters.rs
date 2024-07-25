@@ -147,6 +147,7 @@ pub fn split_by_row_groups(
                         - use native storage config
                         - have no specified chunk spec or number of rows
                         - have size past split threshold
+                        - no iceberg delete files
                     */
                     if let (
                         FileFormatConfig::Parquet(ParquetSourceConfig {
@@ -165,6 +166,9 @@ pub fn split_by_row_groups(
                     ) && source
                         .get_size_bytes()
                         .map_or(true, |s| s > max_size_bytes as u64)
+                      && source
+                        .get_iceberg_delete_files()
+                        .map_or(true, |f| f.is_empty())
                     {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;

@@ -160,18 +160,33 @@ async fn read_parquet_single(
     let metadata_num_rows = metadata.num_rows;
     let metadata_num_columns = metadata.schema().fields().len();
 
-    let num_deleted_rows = delete_rows.as_ref().map_or(0, |r| r.len());
+    let num_deleted_rows = if let Some(delete_rows) = delete_rows {
+        assert!(
+            row_groups.is_none(),
+            "Row group splitting is not supported with Iceberg deletion files."
+        );
 
-    if let Some(delete_rows) = delete_rows {
         let mut selection_mask = vec![true; table.len()];
-        for row in delete_rows {
-            selection_mask[row as usize] = false;
+
+        let mut num_deleted_rows = 0;
+        let start_offset = start_offset.unwrap_or(0);
+
+        for row in delete_rows.into_iter().map(|r| r as usize) {
+            if row >= start_offset && num_rows.map_or(true, |n| row < start_offset + n) {
+                num_deleted_rows += 1;
+
+                selection_mask[row - start_offset] = false;
+            }
         }
 
         let selection_mask: BooleanArray = ("selection_mask", selection_mask.as_slice()).into();
 
         table = table.mask_filter(&selection_mask.into_series())?;
-    }
+
+        num_deleted_rows
+    } else {
+        0
+    };
 
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concatenating, rather than after
