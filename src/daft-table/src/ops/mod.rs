@@ -1,7 +1,7 @@
 mod agg;
 mod explode;
 mod groups;
-mod hash;
+pub(crate) mod hash;
 mod joins;
 mod partition;
 mod pivot;

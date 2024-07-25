@@ -73,6 +73,10 @@ impl Schema {
         self.fields.keys().cloned().collect()
     }
 
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
     pub fn union(&self, other: &Schema) -> DaftResult<Schema> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());

@@ -21,7 +21,7 @@ use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, Li
 #[cfg(feature = "python")]
 pub mod ffi;
 mod ops;
-
+mod probe_table;
 pub use ops::infer_join_schema;
 #[cfg(feature = "python")]
 pub mod python;

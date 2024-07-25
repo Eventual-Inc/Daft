@@ -2,6 +2,7 @@ use ord::total_cmp;
 
 use crate::datatypes::DataType;
 
+
 use std::cmp::Ordering;
 
 use crate::datatypes::*;
@@ -10,29 +11,41 @@ use crate::offset::Offset;
 use crate::{array::*, types::NativeType};
 
 /// Compare the values at two arbitrary indices in two arbitrary arrays.
-// pub type DynArrayComparator = Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
+pub type DynArrayComparator = Box<dyn  Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
 
-pub type DynArrayComparator = &'static dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering;
 
-fn compare_dyn_primitives<T: NativeType + Ord>(
-    left: &dyn Array,
-    right: &dyn Array,
-    i: usize,
-    j: usize,
-) -> Ordering {
-    let left = left
-        .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap()
-        .clone();
-    let right = right
-        .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap()
-        .clone();
 
-    total_cmp(&left.value(i), &right.value(j))
+fn compare_dyn_primitives<T: NativeType + Ord>() -> DynArrayComparator {
+    Box::new(move |left, right, i, j| {
+        let left = left
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        let right = right
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        total_cmp(&left.value(i), &right.value(j))
+    } )
 }
+
+
+fn compare_dyn_string<O: Offset>() -> DynArrayComparator {
+    Box::new(move |left, right, i, j| {
+        let left = left
+            .as_any()
+            .downcast_ref::<Utf8Array<O>>()
+            .unwrap();
+        let right = right
+            .as_any()
+            .downcast_ref::<Utf8Array<O>>()
+            .unwrap();
+
+            left.value(i).cmp(right.value(j))
+    } )
+}
+
+
 
 pub fn build_array_compare2(left: &DataType, right: &DataType) -> Result<DynArrayComparator> {
     use DataType::*;
@@ -45,17 +58,17 @@ pub fn build_array_compare2(left: &DataType, right: &DataType) -> Result<DynArra
             ));
         }
         // (Boolean, Boolean) => compare_boolean(left, right),
-        (UInt8, UInt8) => &compare_dyn_primitives::<u8>,
-        (UInt16, UInt16) => &compare_dyn_primitives::<u16>,
-        (UInt32, UInt32) => &compare_dyn_primitives::<u32>,
-        (UInt64, UInt64) => &compare_dyn_primitives::<u64>,
-        (Int8, Int8) => &compare_dyn_primitives::<i8>,
-        (Int16, Int16) => &compare_dyn_primitives::<i16>,
+        (UInt8, UInt8) => compare_dyn_primitives::<u8>(),
+        (UInt16, UInt16) => compare_dyn_primitives::<u16>(),
+        (UInt32, UInt32) => compare_dyn_primitives::<u32>(),
+        (UInt64, UInt64) => compare_dyn_primitives::<u64>(),
+        (Int8, Int8) => compare_dyn_primitives::<i8>(),
+        (Int16, Int16) => compare_dyn_primitives::<i16>(),
         (Int32, Int32)
         | (Date32, Date32)
         | (Time32(Second), Time32(Second))
         | (Time32(Millisecond), Time32(Millisecond))
-        | (Interval(YearMonth), Interval(YearMonth)) => &compare_dyn_primitives::<i32>,
+        | (Interval(YearMonth), Interval(YearMonth)) => compare_dyn_primitives::<i32>(),
         (Int64, Int64)
         | (Date64, Date64)
         | (Time64(Microsecond), Time64(Microsecond))
@@ -67,12 +80,12 @@ pub fn build_array_compare2(left: &DataType, right: &DataType) -> Result<DynArra
         | (Duration(Second), Duration(Second))
         | (Duration(Millisecond), Duration(Millisecond))
         | (Duration(Microsecond), Duration(Microsecond))
-        | (Duration(Nanosecond), Duration(Nanosecond)) => &compare_dyn_primitives::<i64>,
+        | (Duration(Nanosecond), Duration(Nanosecond)) => compare_dyn_primitives::<i64>(),
         // (Float32, Float32) => compare_f32(left, right),
         // (Float64, Float64) => compare_f64(left, right),
         // (Decimal(_, _), Decimal(_, _)) => compare_primitives::<i128>(left, right),
-        // (Utf8, Utf8) => compare_string::<i32>(left, right),
-        // (LargeUtf8, LargeUtf8) => compare_string::<i64>(left, right),
+        (Utf8, Utf8) => compare_dyn_string::<i32>(),
+        (LargeUtf8, LargeUtf8) => compare_dyn_string::<i64>(),
         // (Binary, Binary) => compare_binary::<i32>(left, right),
         // (LargeBinary, LargeBinary) => compare_binary::<i64>(left, right),
         // (Dictionary(key_type_lhs, ..), Dictionary(key_type_rhs, ..)) => {
