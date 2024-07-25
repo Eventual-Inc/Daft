@@ -672,6 +672,10 @@ impl PySeries {
         Ok(self.series.image_resize(w as u32, h as u32)?.into())
     }
 
+    pub fn image_to_mode(&self, mode: &ImageMode) -> PyResult<Self> {
+        Ok(self.series.image_to_mode(*mode)?.into())
+    }
+
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series

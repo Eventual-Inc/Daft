@@ -1,5 +1,5 @@
 use crate::datatypes::logical::{FixedShapeImageArray, ImageArray};
-use crate::datatypes::{DataType, ImageFormat};
+use crate::datatypes::{DataType, ImageFormat, ImageMode};
 
 use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
@@ -70,6 +70,23 @@ impl Series {
             DataType::FixedShapeImage(..) => self
                 .fixed_size_image()?
                 .crop(bbox)
+                .map(|arr| arr.into_series()),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to crop to be an Image type, but received: {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn image_to_mode(&self, mode: ImageMode) -> DaftResult<Series> {
+        match &self.data_type() {
+            DataType::Image(_) => self
+                .downcast::<ImageArray>()?
+                .to_mode(mode)
+                .map(|arr| arr.into_series()),
+            DataType::FixedShapeImage(..) => self
+                .fixed_size_image()?
+                .to_mode(mode)
                 .map(|arr| arr.into_series()),
             dt => Err(DaftError::ValueError(format!(
                 "Expected input to crop to be an Image type, but received: {}",

@@ -721,3 +721,42 @@ def test_on_error_image_decode():
         s.image.decode(on_error="raise")
 
     s.image.decode(on_error="null").to_pylist() == [None]
+
+
+mode_cast_modes = ["L", "LA", "RGB", "RGBA"]
+
+
+@pytest.mark.parametrize(
+    ["input_mode", "output_mode"],
+    [(a, b) for a in mode_cast_modes for b in mode_cast_modes],
+)
+def test_image_to_mode(input_mode, output_mode):
+    channels = MODE_TO_NUM_CHANNELS[input_mode]
+    data = [
+        np.arange(4 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        np.arange(4 * channels, 13 * channels, dtype=np.uint8).reshape((3, 3, channels)),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    s = s.cast(DataType.image(input_mode)).image.to_mode(output_mode)
+    assert s.datatype() == DataType.image(output_mode)
+    assert s.to_pylist()[0].shape[2] == MODE_TO_NUM_CHANNELS[output_mode]
+
+
+@pytest.mark.parametrize(
+    ["input_mode", "output_mode"],
+    [(a, b) for a in mode_cast_modes for b in mode_cast_modes],
+)
+def test_image_to_mode_fixed_size(input_mode, output_mode):
+    channels = MODE_TO_NUM_CHANNELS[input_mode]
+    data = [
+        np.arange(4 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        np.arange(4 * channels, 8 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    s = s.cast(DataType.image(input_mode, 2, 2)).image.to_mode(output_mode)
+    assert s.datatype() == DataType.image(output_mode, 2, 2)
+    assert s.to_pylist()[0].shape[2] == MODE_TO_NUM_CHANNELS[output_mode]
