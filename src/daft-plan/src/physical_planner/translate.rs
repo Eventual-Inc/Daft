@@ -118,7 +118,7 @@ pub(super) fn translate_single_logical_node(
             let non_actor_projections: Vec<&Arc<Expr>> = projection
                 .iter()
                 .filter(|expr| {
-                    expr.exists(|e| match e.as_ref() {
+                    !expr.exists(|e| match e.as_ref() {
                         #[cfg(feature = "python")]
                         Expr::Function {
                             func: FunctionExpr::Python(PythonUDF::Stateful(stateful_python_udf)),
@@ -127,9 +127,9 @@ pub(super) fn translate_single_logical_node(
                             // HACK: Figure out a better way of extracting this. We also need a way of layering more stuff on top of this (e.g. aliases)
                             // This will currently break if there are any more operations on top of it.
                             stateful_python_udfs.push(stateful_python_udf.clone());
-                            false
+                            true
                         }
-                        _ => true,
+                        _ => false,
                     })
                 })
                 .collect();

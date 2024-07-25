@@ -681,7 +681,9 @@ class Scheduler:
 
         pbar.close()
 
-    def get_actor_pool(self, name: str, resource_request: ResourceRequest, num_actors: int) -> RayRoundRobinActorPool:
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> RayRoundRobinActorPool:
         def setup(pool_id: str, actor_pool: RayRoundRobinActorPool):
             self._actor_pools[pool_id] = actor_pool
 
@@ -694,7 +696,9 @@ class Scheduler:
         # instead of naively taking it from the current context
         execution_config = get_context().daft_execution_config
 
-        return RayRoundRobinActorPool(actor_pool_id, resource_request, num_actors, execution_config, setup, teardown)
+        return RayRoundRobinActorPool(
+            actor_pool_id, resource_request, num_actors, execution_config, setup, teardown, partial_stateful_udf
+        )
 
 
 SCHEDULER_ACTOR_NAME = "scheduler"
@@ -778,15 +782,57 @@ def _build_partitions(
 
 @ray.remote
 class DaftRayActor:
-    def __init__(self, daft_execution_config: PyDaftExecutionConfig):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig, partial_stateful_udf: PartialStatefulUDF):
         set_execution_config(daft_execution_config)
+
+        self.initialized_stateful_udf = partial_stateful_udf.func_cls()
+        self.partial_stateful_udf = partial_stateful_udf
 
     @ray.method(num_returns=2)
     def run(
         self, instruction_stack: list[Instruction], partial_metadatas: list[PartitionMetadata], *inputs: MicroPartition
     ) -> list[list[PartitionMetadata] | MicroPartition]:
-        # TODO: maybe generalize to fanouts which have more returns? Probably not necessary though.
-        return build_partitions(instruction_stack, partial_metadatas, *inputs)
+        from daft.execution import execution_step
+        from daft.expressions import ExpressionsProjection
+        from daft.udf import run_udf
+
+        assert (
+            len(instruction_stack) == 1
+        ), f"Stateful Actor can only run a single UDF instruction, but received: {instruction_stack}"
+        instr = instruction_stack[0]
+        assert isinstance(
+            instr, execution_step.StatefulUDFProject
+        ), f"Stateful Actor can only run StatefulUDFProject, but received: {instr}"
+
+        assert len(inputs) == 1
+        assert len(partial_metadatas) == 1
+        part = inputs[0]
+        partial = partial_metadatas[0]
+
+        evaluated_expressions_mp = part.eval_expression_list(
+            ExpressionsProjection(list(self.partial_stateful_udf.bound_args.expressions().values()))
+        )
+        evaluated_expressions_series = [
+            evaluated_expressions_mp.get_column(cname) for cname in evaluated_expressions_mp.column_names()
+        ]
+        processed_series = run_udf(
+            self.initialized_stateful_udf,
+            self.partial_stateful_udf.bound_args,
+            evaluated_expressions_series,
+            self.partial_stateful_udf.return_dtype._dtype,
+        )
+
+        new_part = MicroPartition.from_pydict(
+            {
+                processed_series.name(): processed_series,
+                **{cname: part.get_column(cname) for cname in part.column_names()},
+            }
+        )
+
+        return [
+            [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+            new_part,
+        ]
 
 
 class RayRoundRobinActorPool(ActorPool[ray.ObjectRef]):
@@ -800,6 +846,7 @@ class RayRoundRobinActorPool(ActorPool[ray.ObjectRef]):
         execution_config: PyDaftExecutionConfig,
         setup: Callable[[str, RayRoundRobinActorPool], None],
         teardown: Callable[[str], None],
+        partial_stateful_udf: PartialStatefulUDF,
     ):
         self._actors: list[DaftRayActor] | None = None
         self._task_idx = 0
@@ -812,9 +859,11 @@ class RayRoundRobinActorPool(ActorPool[ray.ObjectRef]):
         self._setup_callback = setup
         self._teardown_callback = teardown
 
+        self._partial_stateful_udf = partial_stateful_udf
+
     def __enter__(self) -> str:
         self._actors = [
-            DaftRayActor.remote(self._execution_config)  # type: ignore
+            DaftRayActor.remote(self._execution_config, self._partial_stateful_udf)  # type: ignore
             for _ in range(self._num_actors)
         ]
         self._setup_callback(self._id, self)
@@ -1009,9 +1058,11 @@ class RayRunner(Runner[ray.ObjectRef]):
         if self.ray_client_mode:
             # TODO: I'm guessing that this is probably not going to work. Setups/teardowns are going to be really
             # tricky to get correct here. We might need to change some abstractions.
-            return ray.get(self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors))
+            return ray.get(
+                self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors, partial_stateful_udf)
+            )
         else:
-            return self.scheduler.get_actor_pool(name, resource_request, num_actors)
+            return self.scheduler.get_actor_pool(name, resource_request, num_actors, partial_stateful_udf)
 
 
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):

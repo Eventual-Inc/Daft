@@ -544,7 +544,13 @@ class StatefulUDFProject(SingleOutputInstruction):
         raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        raise NotImplementedError("UDFProject instruction does not have run_partial_metadata. Please file an issue.")
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # UDFs can potentially change cardinality
+                size_bytes=None,
+                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
+            )
+        ]
 
 
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
