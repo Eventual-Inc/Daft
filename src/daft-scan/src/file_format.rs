@@ -27,6 +27,20 @@ pub enum FileFormat {
     Python,
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
+impl FileFormat {
+    fn ext(&self) -> &'static str {
+        match self {
+            Self::Parquet => "parquet",
+            Self::Csv => "csv",
+            Self::Json => "json",
+            Self::Database => "db",
+            Self::Python => "py",
+        }
+    }
+}
+
 impl FromStr for FileFormat {
     type Err = DaftError;
 
@@ -121,6 +135,7 @@ pub struct ParquetSourceConfig {
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub row_groups: Option<Vec<Option<Vec<i64>>>>,
 }
 
 impl ParquetSourceConfig {
@@ -140,6 +155,25 @@ impl ParquetSourceConfig {
                     .join(",")
             ));
         }
+        if let Some(row_groups) = &self.row_groups {
+            res.push(format!(
+                "Row Groups = {{{}}}",
+                row_groups
+                    .iter()
+                    .map(|rg| {
+                        rg.as_ref()
+                            .map(|rg| {
+                                rg.iter()
+                                    .map(|i| i.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(",")
+                            })
+                            .unwrap_or_else(|| "None".to_string())
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ));
+        }
         res
     }
 }
@@ -152,6 +186,7 @@ impl ParquetSourceConfig {
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
+        row_groups: Option<Vec<Option<Vec<i64>>>>,
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
@@ -162,6 +197,7 @@ impl ParquetSourceConfig {
                     map.into_iter().map(|(k, v)| (k, v.field)),
                 ))
             }),
+            row_groups,
         }
     }
 

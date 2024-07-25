@@ -332,6 +332,24 @@ def test_repr_functions_minhash_2() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_tokenize_encode() -> None:
+    a = col("a")
+    y = a.str.tokenize_encode("cl100k_base")
+    repr_out = repr(y)
+    assert repr_out == "tokenize_encode(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_tokenize_decode() -> None:
+    a = col("a")
+    y = a.str.tokenize_decode("cl100k_base")
+    repr_out = repr(y)
+    assert repr_out == "tokenize_decode(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_expr_structurally_equal() -> None:
     e1 = (col("a").max() == col("b").alias("moo") - 3).is_null()
     e2 = (col("a").max() == col("b").alias("moo") - 3).is_null()

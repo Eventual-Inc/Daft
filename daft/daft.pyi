@@ -183,6 +183,8 @@ class FileFormat(Enum):
     Csv: int
     Json: int
 
+    def ext(self): ...
+
 class ParquetSourceConfig:
     """
     Configuration of a Parquet data source.
@@ -190,11 +192,13 @@ class ParquetSourceConfig:
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
+    row_groups: list[list[int]] | None
 
     def __init__(
         self,
         coerce_int96_timestamp_unit: PyTimeUnit | None = None,
         field_id_mapping: dict[int, PyField] | None = None,
+        row_groups: list[list[int]] | None = None,
     ): ...
 
 class CsvSourceConfig:
@@ -1182,6 +1186,21 @@ def url_upload(
     max_connections: int,
     multi_thread: bool,
     io_config: IOConfig | None,
+) -> PyExpr: ...
+def tokenize_encode(
+    expr: PyExpr,
+    tokens_path: str,
+    use_special_tokens: bool,
+    io_config: IOConfig | None,
+    pattern: str | None,
+    special_tokens: str | None,
+) -> PyExpr: ...
+def tokenize_decode(
+    expr: PyExpr,
+    tokens_path: str,
+    io_config: IOConfig | None,
+    pattern: str | None,
+    special_tokens: str | None,
 ) -> PyExpr: ...
 def minhash(
     expr: PyExpr,

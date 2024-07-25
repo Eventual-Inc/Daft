@@ -1,6 +1,7 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
+common-tracing = {path = "src/common/tracing", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -122,12 +123,13 @@ members = [
 
 [workspace.dependencies]
 async-compat = "0.2.3"
-async-compression = {version = "0.4.10", features = [
+async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
 async-stream = "0.3.5"
 async-trait = "0.1.79"
+base64 = "0.22.1"
 bytes = "1.6.0"
 chrono = "0.4.38"
 chrono-tz = "0.8.4"
@@ -151,6 +153,7 @@ serde_json = "1.0.116"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 sysinfo = "0.30.12"
+tiktoken-rs = "0.5.9"
 tokio = {version = "1.37.0", features = [
   "net",
   "time",
@@ -163,6 +166,7 @@ tokio = {version = "1.37.0", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
+tracing = "0.1"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
