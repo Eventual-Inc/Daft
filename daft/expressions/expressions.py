@@ -2893,6 +2893,8 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
         Args:
             on_error: Whether to raise when encountering an error, or log a warning and return a null
+            mode: What mode to convert the images into before storing it in the column. This may prevent
+                errors relating to unsupported types.
 
         Returns:
             Expression: An Image expression represnting an image column.
