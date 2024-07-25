@@ -78,7 +78,6 @@ impl ProbeTableBuilder {
                     } else {
                         let j_table = self.tables.get(j_table_idx as usize).unwrap();
 
-                        // WE SHOULDN'T BE CALLING TO_ARROW EVERY ITERATION: DO NOT MERGE
                         let array_refs = j_table.0.as_slice();
 
                         (self.compare_fn)(&current_array_refs, &array_refs, i, j_row_idx as usize)
