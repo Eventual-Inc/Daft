@@ -51,8 +51,4 @@ impl DoubleInputSink for ConcatSink {
     ) -> DaftResult<Vec<Arc<MicroPartition>>> {
         Ok(vec![input_left.clone(), input_right.clone()])
     }
-
-    fn name(&self) -> &'static str {
-        "Concat"
-    }
 }

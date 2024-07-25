@@ -16,7 +16,6 @@ use super::state::OperatorTaskState;
 
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
-    fn name(&self) -> &'static str;
 }
 
 /// An IntermediateOpRunner runs an intermediate operator in parallel.
@@ -67,7 +66,6 @@ impl IntermediateOpRunner {
     // Create and run parallel tasks for the operator.
     #[instrument(level = "info", skip_all, name = "IntermediateOpActor::run_parallel")]
     pub async fn run_parallel(&mut self) -> DaftResult<()> {
-        log::debug!("Running IntermediateOpRunner for {}", self.op.name());
         // Initialize senders to send data to parallel tasks.
         let mut inner_task_senders: Vec<SingleSender> =
             Vec::with_capacity(self.sender.buffer_size());

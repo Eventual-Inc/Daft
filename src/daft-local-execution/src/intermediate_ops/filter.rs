@@ -23,8 +23,4 @@ impl IntermediateOperator for FilterOperator {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         input.filter(&[self.predicate.clone()]).map(Arc::new)
     }
-
-    fn name(&self) -> &'static str {
-        "FilterOperator"
-    }
 }

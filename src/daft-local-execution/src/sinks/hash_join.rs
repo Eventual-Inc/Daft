@@ -63,8 +63,4 @@ impl DoubleInputSink for HashJoinSink {
             input_left.hash_join(input_right, &self.left_on, &self.right_on, self.join_type)?;
         Ok(vec![Arc::new(joined)])
     }
-
-    fn name(&self) -> &'static str {
-        "HashJoin"
-    }
 }

@@ -27,7 +27,6 @@ impl SingleInputSink for LimitSink {
         input: &Arc<MicroPartition>,
         state: &mut SinkTaskState,
     ) -> DaftResult<SinkResultType> {
-
         if state.curr_len >= self.limit {
             Ok(SinkResultType::Finished)
         } else {

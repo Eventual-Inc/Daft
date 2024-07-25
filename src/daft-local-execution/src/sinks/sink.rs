@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use tracing::{info_span, instrument};
 use snafu::ResultExt;
+use tracing::{info_span, instrument};
 
 use crate::{
     channel::{
@@ -52,7 +52,7 @@ impl SingleInputSinkRunner {
         }
     }
 
-    #[instrument(level = "info", skip(self), name = "SingleInputSinkActor::run")]
+    #[instrument(level = "info", skip_all, name = "SingleInputSinkRunner::run_single")]
     // Run a single instance of the sink.
     pub async fn run_single_sinker(
         mut receiver: SingleReceiver,
@@ -61,7 +61,6 @@ impl SingleInputSinkRunner {
         let mut state = SinkTaskState::new();
         while let Some(morsel) = receiver.recv().await {
             let _sink_span = info_span!("Sink::sink").entered();
-
             let result = sink.sink(&morsel, &mut state)?;
             match result {
                 SinkResultType::NeedMoreInput => {
@@ -75,6 +74,11 @@ impl SingleInputSinkRunner {
         state.clear()
     }
 
+    #[instrument(
+        level = "info",
+        skip(self),
+        name = "SingleInputSinkRunner::run_parallel"
+    )]
     // Create and run parallel tasks for the sink.
     pub async fn run_parallel(&mut self) -> DaftResult<()> {
         // Initialize a task set and sendesr to send data to parallel tasks.
@@ -111,11 +115,12 @@ impl SingleInputSinkRunner {
             }
         }
 
+        let final_span = info_span!("Sink::finalize");
         // Finalize the results and send them.
         if !buffer.is_empty() {
             let concated =
                 MicroPartition::concat(&buffer.iter().map(|p| p.as_ref()).collect::<Vec<_>>())?;
-            let finalized = self.sink.finalize(&Arc::new(concated))?;
+            let finalized = final_span.in_scope(|| self.sink.finalize(&Arc::new(concated)))?;
             for val in finalized {
                 let _ = self.sender.get_next_sender().send(val).await;
             }
@@ -152,7 +157,6 @@ pub trait DoubleInputSink: Send + Sync {
         input_left: &Arc<MicroPartition>,
         input_right: &Arc<MicroPartition>,
     ) -> DaftResult<Vec<Arc<MicroPartition>>>;
-    fn name(&self) -> &'static str;
 }
 
 // A DoubleInputSinkRunner runs a double input sink in parallel.
@@ -183,7 +187,6 @@ impl DoubleInputSinkRunner {
     #[instrument(level = "info", skip(self), name = "DoubleInputSinkActor::run")]
     // TODO: Implement parallelization for double input sink.
     pub async fn run(&mut self) -> DaftResult<()> {
-        log::debug!("Running DoubleInputSinkRunner for : {}", self.sink.name());
         let mut left_state = SinkTaskState::new();
         while let Some(val) = self.left_receiver.recv().await {
             let _sink_span = info_span!("Sink::sink").entered();
@@ -218,7 +221,8 @@ impl DoubleInputSinkRunner {
         if let Some(left_part) = left_part {
             let right_part = right_state.clear()?;
             if let Some(right_part) = right_part {
-                let finalized = final_span.in_scope(|| self.sink.finalize()&left_part, &right_part)?;
+                let finalized =
+                    final_span.in_scope(|| self.sink.finalize(&left_part, &right_part))?;
                 for val in finalized {
                     let _ = self.sender.get_next_sender().send(val).await;
                 }
