@@ -43,7 +43,7 @@ use crate::datatypes::PythonArray;
 /// * `capacity` - Helps pre-allocate memory to the [`Growable`] by providing a capacity up-front. Note that variable-length types
 ///     such as [`ListArray`] only understands this as the "top-level" capacity, but the capacity of nested children arrays cannot be specified
 ///     through this [`make_growable`] API. Instead, you may wish to instantiate and use the [`nested_growable::ListGrowable`] directly if
-///     this is important to your use0-case.
+///     this is important to your use-case.
 pub fn make_growable<'a>(
     name: &str,
     dtype: &DataType,

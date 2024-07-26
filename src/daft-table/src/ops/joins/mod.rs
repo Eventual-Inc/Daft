@@ -5,6 +5,7 @@ use std::{
 
 use daft_core::{
     array::growable::make_growable,
+    datatypes::Field,
     schema::{Schema, SchemaRef},
     utils::supertype::try_get_supertype,
     JoinType, Series,
@@ -119,6 +120,111 @@ pub fn infer_join_schema(
     }
     let schema = Schema::new(join_fields)?;
     Ok(Arc::new(schema))
+}
+
+pub struct JoinOutputColumn {
+    pub is_right: bool,
+    pub index: usize,
+    pub field: Field,
+}
+
+pub fn infer_join_schema_mapping(
+    left: &SchemaRef,
+    right: &SchemaRef,
+    left_on: &[ExprRef],
+    right_on: &[ExprRef],
+    how: JoinType,
+) -> DaftResult<Vec<JoinOutputColumn>> {
+    if left_on.len() != right_on.len() {
+        return Err(DaftError::ValueError(format!(
+            "Length of left_on does not match length of right_on for Join {} vs {}",
+            left_on.len(),
+            right_on.len()
+        )));
+    }
+    if matches!(how, JoinType::Anti | JoinType::Semi) {
+        return Ok(left
+            .fields
+            .values()
+            .into_iter()
+            .enumerate()
+            .map(|(i, f)| JoinOutputColumn {
+                is_right: false,
+                index: i,
+                field: f.clone(),
+            })
+            .collect());
+    }
+    let mut result = vec![];
+    let mut names_so_far = HashSet::new();
+
+    let lfields = left_on
+        .iter()
+        .map(|e| e.to_field(left))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let rfields = right_on
+        .iter()
+        .map(|e| e.to_field(right))
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    for lf in lfields.iter() {
+        let name = &lf.name;
+        let index = left.get_index(name)?;
+        let field = left.get_field(name)?.clone();
+        result.push(JoinOutputColumn {
+            is_right: false,
+            index,
+            field,
+        });
+        names_so_far.insert(name.clone());
+    }
+
+    let left_names = lfields.iter().map(|e| e.name.as_str());
+    let right_names = rfields.iter().map(|e| e.name.as_str());
+
+    // Then Add Left Table non-join-key columns
+    for (index, field) in left.fields.values().enumerate() {
+        if names_so_far.contains(&field.name) {
+            continue;
+        } else {
+            result.push(JoinOutputColumn {
+                is_right: false,
+                index,
+                field: field.clone(),
+            });
+            names_so_far.insert(field.name.clone());
+        }
+    }
+
+    let zipped_names: Vec<_> = left_names.zip(right_names).collect();
+    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
+
+    // Then Add Right Table non-join-key columns
+
+    for (index, field) in right.fields.values().enumerate() {
+        // Skip fields if they were used in the join and have the same name as the corresponding left field
+        match right_to_left_keys.get(field.name.as_str()) {
+            Some(val) if val.eq(&field.name.as_str()) => {
+                continue;
+            }
+            _ => (),
+        }
+
+        let mut curr_name = field.name.clone();
+        while names_so_far.contains(&curr_name) {
+            curr_name = "right.".to_string() + curr_name.as_str();
+        }
+
+        names_so_far.insert(curr_name.clone());
+
+        let new_field = field.rename(curr_name.clone());
+        result.push(JoinOutputColumn {
+            is_right: true,
+            index,
+            field: new_field,
+        });
+    }
+    Ok(result)
 }
 
 fn add_non_join_key_columns(

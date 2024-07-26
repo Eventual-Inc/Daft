@@ -20,10 +20,14 @@ use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue};
 #[cfg(feature = "python")]
 pub mod ffi;
+mod growable;
 mod ops;
 mod probe_table;
+
+pub use growable::GrowableTable;
 pub use ops::infer_join_schema;
 pub use probe_table::ProbeTableBuilder;
+
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

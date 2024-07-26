@@ -66,8 +66,8 @@ impl DoubleInputSink for HashJoinSink {
             for table in mp.get_tables()?.iter() {
                 let join_keys = table.eval_expression_list(&self.right_on)?;
                 let iter = probe_table.probe(&join_keys)?;
-                for (table_idx, row_idx, right_idx) in iter {
-                    println!("{table_idx} {row_idx} {right_idx}");
+                for (l_table_idx, l_row_idx, right_idx) in iter {
+                    println!("{l_table_idx} {l_row_idx} {right_idx}");
                 }
             }
         }
