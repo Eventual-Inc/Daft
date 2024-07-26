@@ -39,12 +39,11 @@ impl DoubleInputSink for ConcatSink {
     }
 
     #[instrument(skip_all, name = "ConcatSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
         Ok(self
             .result_left
-            .clone()
             .into_iter()
-            .chain(self.result_right.clone())
+            .chain(self.result_right.into_iter())
             .collect())
     }
 

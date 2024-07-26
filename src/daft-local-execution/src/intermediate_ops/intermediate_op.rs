@@ -12,12 +12,10 @@ use crate::{
     NUM_CPUS,
 };
 
-pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
+pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     fn name(&self) -> &'static str;
 }
-
-dyn_clone::clone_trait_object!(IntermediateOperator);
 
 /// The number of rows that will trigger an intermediate operator to output its data.
 fn get_output_threshold() -> usize {
@@ -78,12 +76,12 @@ impl OperatorTaskState {
 pub struct IntermediateOpActor {
     sender: MultiSender,
     receiver: MultiReceiver,
-    op: Box<dyn IntermediateOperator>,
+    op: Arc<dyn IntermediateOperator>,
 }
 
 impl IntermediateOpActor {
     pub fn new(
-        op: Box<dyn IntermediateOperator>,
+        op: Arc<dyn IntermediateOperator>,
         receiver: MultiReceiver,
         sender: MultiSender,
     ) -> Self {
@@ -99,7 +97,7 @@ impl IntermediateOpActor {
     async fn run_single(
         mut receiver: SingleReceiver,
         sender: SingleSender,
-        op: Box<dyn IntermediateOperator>,
+        op: Arc<dyn IntermediateOperator>,
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
@@ -147,7 +145,7 @@ impl IntermediateOpActor {
     }
 }
 
-pub fn run_intermediate_op(op: Box<dyn IntermediateOperator>, send_to: MultiSender) -> MultiSender {
+pub fn run_intermediate_op(op: Arc<dyn IntermediateOperator>, send_to: MultiSender) -> MultiSender {
     let (sender, receiver) = create_channel(*NUM_CPUS, send_to.in_order());
     let mut actor = IntermediateOpActor::new(op, receiver, send_to);
     tokio::spawn(async move {

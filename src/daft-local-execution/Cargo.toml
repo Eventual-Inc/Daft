@@ -1,12 +1,14 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
+daft-table = {path = "../daft-table", default-features = false}
 dyn-clone = {workspace = true}
 futures = {workspace = true}
 lazy_static = {workspace = true}

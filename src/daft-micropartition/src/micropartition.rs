@@ -685,7 +685,10 @@ impl MicroPartition {
             TableState::Loaded(tables) => Ok(tables.clone()),
         }
     }
-
+    pub fn get_tables(&self) -> crate::Result<Arc<Vec<Table>>> {
+        let tables = self.tables_or_read(IOStatsContext::new("get tables"))?;
+        Ok(tables)
+    }
     pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {

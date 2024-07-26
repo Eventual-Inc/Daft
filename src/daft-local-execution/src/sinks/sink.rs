@@ -14,13 +14,11 @@ pub enum SinkResultType {
     Finished,
 }
 
-pub trait SingleInputSink: Send + Sync + dyn_clone::DynClone {
+pub trait SingleInputSink: Send + Sync {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
     fn in_order(&self) -> bool;
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
+    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>>;
 }
-
-dyn_clone::clone_trait_object!(SingleInputSink);
 
 pub struct SingleInputSinkActor {
     sink: Box<dyn SingleInputSink>,
@@ -42,7 +40,7 @@ impl SingleInputSinkActor {
     }
 
     #[instrument(level = "info", skip(self), name = "SingleInputSinkActor::run")]
-    pub async fn run(&mut self) -> DaftResult<()> {
+    pub async fn run(mut self) -> DaftResult<()> {
         while let Some(val) = self.receiver.recv().await {
             let _sink_span = info_span!("Sink::sink").entered();
 
@@ -75,15 +73,15 @@ pub fn run_single_input_sink(sink: Box<dyn SingleInputSink>, send_to: MultiSende
     sender
 }
 
-pub trait DoubleInputSink: Send + Sync + dyn_clone::DynClone {
+pub trait DoubleInputSink: Send + Sync {
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
     fn in_order(&self) -> bool;
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
+    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>>;
     fn name(&self) -> &'static str;
 }
 
-dyn_clone::clone_trait_object!(DoubleInputSink);
+// dyn_clone::clone_trait_object!(DoubleInputSink);
 
 pub struct DoubleInputSinkActor {
     sink: Box<dyn DoubleInputSink>,
@@ -108,7 +106,7 @@ impl DoubleInputSinkActor {
     }
 
     #[instrument(level = "info", skip(self), name = "DoubleInputSinkActor::run")]
-    pub async fn run(&mut self) -> DaftResult<()> {
+    pub async fn run(mut self) -> DaftResult<()> {
         while let Some(val) = self.left_receiver.recv().await {
             let _sink_span = info_span!("Sink::sink").entered();
             let sink_result = self.sink.sink_left(&val?)?;
@@ -151,7 +149,7 @@ pub fn run_double_input_sink(
 ) -> (MultiSender, MultiSender) {
     let (left_sender, left_receiver) = create_channel(*NUM_CPUS, sink.in_order());
     let (right_sender, right_receiver) = create_channel(*NUM_CPUS, sink.in_order());
-    let mut actor = DoubleInputSinkActor::new(sink, left_receiver, right_receiver, send_to);
+    let actor = DoubleInputSinkActor::new(sink, left_receiver, right_receiver, send_to);
     tokio::spawn(async move {
         let _ = actor.run().await;
     });

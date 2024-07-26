@@ -23,6 +23,7 @@ pub mod ffi;
 mod ops;
 mod probe_table;
 pub use ops::infer_join_schema;
+pub use probe_table::ProbeTableBuilder;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

@@ -1,5 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_error::DaftResult;
+use daft_core::schema::Schema;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -36,7 +38,7 @@ pub enum PipelineNode {
         source: Arc<dyn Source>,
     },
     IntermediateOp {
-        intermediate_op: Box<dyn IntermediateOperator>,
+        intermediate_op: Arc<dyn IntermediateOperator>,
         child: Box<PipelineNode>,
     },
     SingleInputSink {
@@ -51,7 +53,7 @@ pub enum PipelineNode {
 }
 
 impl PipelineNode {
-    pub fn start(&self, sender: MultiSender) {
+    pub fn start(self, sender: MultiSender) {
         match self {
             PipelineNode::Source { source } => {
                 run_source(source.clone(), sender);
@@ -60,11 +62,11 @@ impl PipelineNode {
                 intermediate_op,
                 child,
             } => {
-                let sender = run_intermediate_op(intermediate_op.clone(), sender);
+                let sender = run_intermediate_op(intermediate_op, sender);
                 child.start(sender);
             }
             PipelineNode::SingleInputSink { sink, child } => {
-                let sender = run_single_input_sink(sink.clone(), sender);
+                let sender = run_single_input_sink(sink, sender);
                 child.start(sender);
             }
             PipelineNode::DoubleInputSink {
@@ -72,7 +74,7 @@ impl PipelineNode {
                 left_child,
                 right_child,
             } => {
-                let (left_sender, right_sender) = run_double_input_sink(sink.clone(), sender);
+                let (left_sender, right_sender) = run_double_input_sink(sink, sender);
                 left_child.start(left_sender);
                 right_child.start(right_sender);
             }
@@ -83,8 +85,8 @@ impl PipelineNode {
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> PipelineNode {
-    match physical_plan {
+) -> DaftResult<PipelineNode> {
+    Ok(match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
             PipelineNode::Source {
@@ -102,9 +104,9 @@ pub fn physical_plan_to_pipeline(
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(proj_op),
+                intermediate_op: Arc::new(proj_op),
                 child: Box::new(child_node),
             }
         }
@@ -112,9 +114,9 @@ pub fn physical_plan_to_pipeline(
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(filter_op),
+                intermediate_op: Arc::new(filter_op),
                 child: Box::new(child_node),
             }
         }
@@ -122,7 +124,7 @@ pub fn physical_plan_to_pipeline(
             input, num_rows, ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::SingleInputSink {
                 sink: Box::new(sink),
                 child: Box::new(child_node),
@@ -130,8 +132,8 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
             let sink = ConcatSink::new();
-            let left_child = physical_plan_to_pipeline(input, psets);
-            let right_child = physical_plan_to_pipeline(other, psets);
+            let left_child = physical_plan_to_pipeline(input, psets)?;
+            let right_child = physical_plan_to_pipeline(other, psets)?;
             PipelineNode::DoubleInputSink {
                 sink: Box::new(sink),
                 left_child: Box::new(left_child),
@@ -164,9 +166,9 @@ pub fn physical_plan_to_pipeline(
             );
             let final_stage_project = ProjectOperator::new(final_exprs);
 
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             let intermediate_agg_op_node = PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(first_stage_agg_op),
+                intermediate_op: Arc::new(first_stage_agg_op),
                 child: Box::new(child_node),
             };
 
@@ -176,7 +178,7 @@ pub fn physical_plan_to_pipeline(
             };
 
             PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(final_stage_project),
+                intermediate_op: Arc::new(final_stage_project),
                 child: Box::new(sink_node),
             }
         }
@@ -193,7 +195,7 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::SingleInputSink {
                 sink: Box::new(agg_sink),
                 child: Box::new(child_node),
@@ -206,7 +208,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::SingleInputSink {
                 sink: Box::new(sort_sink),
                 child: Box::new(child_node),
@@ -218,11 +220,18 @@ pub fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
-            ..
+            schema,
         }) => {
-            let left_node = physical_plan_to_pipeline(left, psets);
-            let right_node = physical_plan_to_pipeline(right, psets);
-            let sink = HashJoinSink::new(left_on.clone(), right_on.clone(), *join_type);
+            let left_schema = left.schema();
+            let left_node = physical_plan_to_pipeline(left, psets)?;
+            let right_node = physical_plan_to_pipeline(right, psets)?;
+            let key_schema = Arc::new(Schema::new(
+                left_on
+                    .iter()
+                    .map(|e| e.to_field(left_schema))
+                    .collect::<DaftResult<Vec<_>>>()?,
+            )?);
+            let sink = HashJoinSink::new(left_on.clone(), right_on.clone(), *join_type, key_schema);
             PipelineNode::DoubleInputSink {
                 sink: Box::new(sink),
                 left_child: Box::new(left_node),
@@ -232,5 +241,5 @@ pub fn physical_plan_to_pipeline(
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
         }
-    }
+    })
 }

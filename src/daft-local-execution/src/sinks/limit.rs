@@ -50,7 +50,7 @@ impl SingleInputSink for LimitSink {
     }
 
     #[instrument(skip_all, name = "LimitSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        Ok(self.result.clone())
+    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+        Ok(self.result)
     }
 }
