@@ -421,6 +421,7 @@ async fn stream_csv_single(
             Ok(table) => table,
             Err(e) => Err(e.into()),
         })
+        // Chunk the tables into chunks of size max_chunks_in_flight.
         .try_ready_chunks(max_chunks_in_flight)
         .map_err(|e| DaftError::ComputeError(e.to_string()));
     Ok(tables)
