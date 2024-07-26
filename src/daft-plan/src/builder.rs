@@ -12,7 +12,7 @@ use crate::{
     },
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    ResourceRequest,
+    LogicalPlanRef, ResourceRequest,
 };
 use common_error::DaftResult;
 use common_io_config::IOConfig;
@@ -47,6 +47,27 @@ pub struct LogicalPlanBuilder {
 impl LogicalPlanBuilder {
     pub fn new(plan: Arc<LogicalPlan>) -> Self {
         Self { plan }
+    }
+}
+
+impl From<LogicalPlan> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlan) -> Self {
+        Self {
+            plan: Arc::new(plan),
+        }
+    }
+}
+
+impl From<LogicalPlanRef> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlanRef) -> Self {
+        Self { plan: plan.clone() }
+    }
+}
+impl From<&LogicalPlanBuilder> for LogicalPlanBuilder {
+    fn from(builder: &LogicalPlanBuilder) -> Self {
+        Self {
+            plan: builder.plan.clone(),
+        }
     }
 }
 
@@ -311,9 +332,9 @@ impl LogicalPlanBuilder {
         Ok(pivot_logical_plan.into())
     }
 
-    pub fn join(
+    pub fn join<Right: Into<Self>>(
         &self,
-        right: &Self,
+        right: Right,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         join_type: JoinType,
@@ -321,7 +342,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
-            right.plan.clone(),
+            right.into().plan.clone(),
             left_on,
             right_on,
             join_type,
@@ -458,12 +479,6 @@ impl LogicalPlanBuilder {
 
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
-    }
-}
-
-impl From<LogicalPlan> for LogicalPlanBuilder {
-    fn from(plan: LogicalPlan) -> Self {
-        Self::new(plan.into())
     }
 }
 
