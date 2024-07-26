@@ -136,30 +136,25 @@ pub fn read_csv_bulk(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn stream_csv(
+pub async fn stream_csv(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
-    runtime_handle.block_on(async move {
-        stream_csv_single(
-            uri,
-            convert_options,
-            parse_options,
-            read_options,
-            io_client,
-            io_stats,
-            max_chunks_in_flight,
-        )
-        .await
-    })
+    stream_csv_single(
+        uri,
+        convert_options,
+        parse_options,
+        read_options,
+        io_client,
+        io_stats,
+        max_chunks_in_flight,
+    )
+    .await
 }
 
 // Parallel version of table concat

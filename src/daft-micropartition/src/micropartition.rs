@@ -478,7 +478,7 @@ fn materialize_scan_task(
     Ok((table_values, cast_to_schema))
 }
 
-fn stream_scan_task(
+async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(impl Stream<Item = DaftResult<Vec<Table>>> + Send)> {
@@ -508,7 +508,9 @@ fn stream_scan_task(
                     .unwrap_or_default(),
             );
             let multi_threaded_io = native_storage_config.multithreaded_io;
-            let io_client = daft_io::get_io_client(multi_threaded_io, io_config).unwrap();
+            let io_client = daft_io::get_io_client_async(multi_threaded_io, io_config)
+                .await
+                .unwrap();
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
@@ -568,9 +570,9 @@ fn stream_scan_task(
                         Some(read_options),
                         io_client,
                         io_stats,
-                        native_storage_config.multithreaded_io,
                         None,
                     )
+                    .await
                     .context(DaftCoreComputeSnafu)?
                 }
 
@@ -776,11 +778,11 @@ impl MicroPartition {
         }
     }
 
-    pub fn from_scan_task_streaming(
+    pub async fn from_scan_task_streaming(
         scan_task: Arc<ScanTask>,
         io_stats: IOStatsRef,
         morsel_size: usize,
-    ) -> crate::Result<BoxStream<'static, DaftResult<Self>>> {
+    ) -> crate::Result<BoxStream<'static, DaftResult<Arc<Self>>>> {
         let schema = scan_task.materialized_schema();
         match (
             &scan_task.metadata,
@@ -791,7 +793,7 @@ impl MicroPartition {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
             (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
-                let unloaded = Ok(Self::new_unloaded(
+                let unloaded = Ok(Arc::new(Self::new_unloaded(
                     scan_task.clone(),
                     scan_task
                         .pushdowns
@@ -801,7 +803,7 @@ impl MicroPartition {
                         })
                         .unwrap_or_else(|| metadata.clone()),
                     statistics.clone(),
-                ));
+                )));
                 Ok(Box::pin(futures::stream::iter(std::iter::once(unloaded))))
             }
 
@@ -824,7 +826,7 @@ impl MicroPartition {
             // Perform an eager **data** read
             _ => {
                 let statistics = scan_task.statistics.clone();
-                let stream = stream_scan_task(scan_task.clone(), Some(io_stats))?;
+                let stream = stream_scan_task(scan_task.clone(), Some(io_stats)).await?;
                 let stream = chunk_tables_into_micropartition_stream(
                     Box::pin(stream),
                     schema,
@@ -957,7 +959,7 @@ fn chunk_tables_into_micropartition_stream(
     partition_spec: Option<PartitionSpec>,
     statistics: Option<TableStatistics>,
     morsel_size: usize,
-) -> impl Stream<Item = DaftResult<MicroPartition>> + Send {
+) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send {
     async_stream::try_stream! {
         let mut buffer = vec![];
         let mut total_rows = 0;
@@ -969,14 +971,14 @@ fn chunk_tables_into_micropartition_stream(
                 buffer.push(casted_table);
             }
             if total_rows >= morsel_size {
-                let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone());
+                let mp = Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone()));
                 buffer = vec![];
                 total_rows = 0;
                 yield mp;
             }
         }
         if !buffer.is_empty() {
-            let mp = MicroPartition::new_loaded(schema, Arc::new(buffer), statistics);
+            let mp = Arc::new(MicroPartition::new_loaded(schema, Arc::new(buffer), statistics));
             yield mp;
         }
     }

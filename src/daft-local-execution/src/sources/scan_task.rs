@@ -2,12 +2,11 @@ use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
 use futures::StreamExt;
-use snafu::ResultExt;
 use std::sync::Arc;
 
 use crate::{
     channel::{create_channel, SingleSender},
-    get_morsel_size, JoinSnafu,
+    get_morsel_size,
 };
 
 use super::source::{Source, SourceStream};
@@ -35,20 +34,13 @@ impl ScanTaskSource {
         morsel_size: usize,
     ) {
         let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
-        let stream_result = tokio::task::spawn_blocking(move || {
-            MicroPartition::from_scan_task_streaming(scan_task, io_stats, morsel_size)
-        })
-        .await
-        .context(JoinSnafu {});
-
+        let stream_result =
+            MicroPartition::from_scan_task_streaming(scan_task, io_stats, morsel_size).await;
         match stream_result {
-            Ok(Ok(mut stream)) => {
+            Ok(mut stream) => {
                 while let Some(partition) = stream.next().await {
-                    let _ = sender.send(partition.map(Arc::new)).await;
+                    let _ = sender.send(partition).await;
                 }
-            }
-            Ok(Err(e)) => {
-                let _ = sender.send(Err(e.into())).await;
             }
             Err(e) => {
                 let _ = sender.send(Err(e.into())).await;
