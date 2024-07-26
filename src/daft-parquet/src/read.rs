@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
+use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
 use common_error::DaftResult;
 
 use daft_core::{
@@ -166,7 +166,7 @@ async fn read_parquet_single(
             "Row group splitting is not supported with Iceberg deletion files."
         );
 
-        let mut selection_mask = vec![true; table.len()];
+        let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
 
         let mut num_deleted_rows = 0;
         let start_offset = start_offset.unwrap_or(0);
@@ -175,11 +175,17 @@ async fn read_parquet_single(
             if row >= start_offset && num_rows.map_or(true, |n| row < start_offset + n) {
                 num_deleted_rows += 1;
 
-                selection_mask[row - start_offset] = false;
+                if !selection_mask.get(row - start_offset) {
+                    num_deleted_rows += 1;
+
+                    unsafe {
+                        selection_mask.set_unchecked(row - start_offset, false);
+                    }
+                }
             }
         }
 
-        let selection_mask: BooleanArray = ("selection_mask", selection_mask.as_slice()).into();
+        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
 
         table = table.mask_filter(&selection_mask.into_series())?;
 

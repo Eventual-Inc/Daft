@@ -135,16 +135,19 @@ fn materialize_scan_task(
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
+                    // TODO: This is a hardcoded magic value but should be configurable
                     let num_parallel_tasks = 8;
 
-                    let mut iceberg_delete_files: HashSet<&str> = HashSet::new();
-                    for source in scan_task.sources.iter() {
-                        if let Some(delete_files) = source.get_iceberg_delete_files() {
-                            iceberg_delete_files.extend(delete_files.iter().map(String::as_str));
-                        }
-                    }
-
-                    let iceberg_delete_files = iceberg_delete_files.into_iter().collect::<Vec<_>>();
+                    // Create vec of all unique delete files in the scan task
+                    let iceberg_delete_files = scan_task
+                        .sources
+                        .iter()
+                        .flat_map(|s| s.get_iceberg_delete_files())
+                        .flatten()
+                        .map(String::as_str)
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
 
                     let delete_map = _read_delete_files(
                         iceberg_delete_files.as_slice(),
