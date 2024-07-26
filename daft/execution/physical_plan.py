@@ -1513,6 +1513,31 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
         seed += 1
 
 
+def _best_effort_next_step(
+    stage_id: int, child_plan: InProgressPhysicalPlan[PartitionT]
+) -> tuple[PartitionTask[PartitionT] | None, bool]:
+    """Performs a best-effort attempt at retrieving the next step from a child plan
+
+    Returns None in cases where there is nothing to run, or the plan has been exhausted.
+
+    Returns:
+        step: the step (potentially None) to run
+        is_final_task: a boolean indicating whether or not this step was a final step
+    """
+    try:
+        step = next(child_plan)
+    except StopIteration:
+        return (None, False)
+    else:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            return (step, True)
+        elif isinstance(step, PartitionTask):
+            return (step, False)
+        else:
+            return (None, False)
+
+
 def materialize(
     child_plan: InProgressPhysicalPlan[PartitionT],
     results_buffer_size: int | None,
@@ -1529,16 +1554,41 @@ def materialize(
     num_final_yielded = 0
     stage_id = next(stage_id_counter)
 
-    while True:
-        logger.debug(
-            "[plan-%s] Starting to emit tasks from `materialize` with results_buffer_size=%s",
-            stage_id,
-            results_buffer_size,
-        )
+    logger.debug(
+        "[plan-%s] Starting to emit tasks from `materialize` with results_buffer_size=%s",
+        stage_id,
+        results_buffer_size,
+    )
 
-        # Check if any inputs finished executing.
+    while True:
+        # If any inputs have finished executing, we want to drain the `materializations` buffer
         while len(materializations) > 0 and materializations[0].done():
+            # Pop the done task
             done_task = materializations.popleft()
+
+            # Best-effort attempt to yield new work and replace the task that was done.
+            # Without this, we will end up completely depleting the `materializations` buffer without replenishing work
+            best_effort_step, is_final_task = _best_effort_next_step(stage_id, child_plan)
+            if best_effort_step is not None:
+                if is_final_task:
+                    assert isinstance(best_effort_step, SingleOutputPartitionTask)
+                    materializations.append(best_effort_step)
+                    num_final_yielded += 1
+                    logger.debug(
+                        "[plan-%s] YIELDING final task to replace done materialized task (%s so far)",
+                        stage_id,
+                        num_final_yielded,
+                    )
+                else:
+                    num_intermediate_yielded += 1
+                    logger.debug(
+                        "[plan-%s] YIELDING an intermediate task to replace done materialized task (%s so far)",
+                        stage_id,
+                        num_intermediate_yielded,
+                    )
+                yield best_effort_step
+
+            # Yield the task that was done
             num_materialized_yielded += 1
             logger.debug("[plan-%s] YIELDING a materialized task (%s so far)", stage_id, num_materialized_yielded)
             yield done_task.result()
