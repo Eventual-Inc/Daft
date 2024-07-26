@@ -14,13 +14,11 @@ pub enum SinkResultType {
     Finished,
 }
 
-pub trait SingleInputSink: Send + Sync + dyn_clone::DynClone {
+pub trait SingleInputSink: Send + Sync {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
     fn in_order(&self) -> bool;
     fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>>;
 }
-
-dyn_clone::clone_trait_object!(SingleInputSink);
 
 pub struct SingleInputSinkActor {
     sink: Box<dyn SingleInputSink>,

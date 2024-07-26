@@ -5,6 +5,8 @@ mod run;
 mod sinks;
 mod sources;
 
+use std::env;
+
 use common_error::DaftError;
 pub use run::NativeExecutor;
 use snafu::Snafu;
@@ -12,6 +14,13 @@ use snafu::Snafu;
 use lazy_static::lazy_static;
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+}
+
+fn get_morsel_size() -> usize {
+    env::var("DAFT_MORSEL_SIZE")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse()
+        .expect("OUTPUT_THRESHOLD must be a number")
 }
 
 #[cfg(feature = "python")]

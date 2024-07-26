@@ -8,10 +8,10 @@ use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_dsl::{optimization::get_required_columns, ExprRef};
+use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{pin_mut, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator},
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -137,95 +137,29 @@ pub fn read_csv_bulk(
 
 #[allow(clippy::too_many_arguments)]
 pub fn stream_csv_bulk(
-    uris: Vec<String>,
+    uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
-    _num_parallel_tasks: usize,
-) -> impl Stream<Item = DaftResult<Table>> + Send {
-    // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
-    let (senders, receivers): (Vec<_>, Vec<_>) = (0..uris.len())
-        .map(|_| tokio::sync::mpsc::unbounded_channel())
-        .unzip();
-    let mut remaining_rows = convert_options
-        .as_ref()
-        .and_then(|opts| opts.limit.map(|limit| limit as i64));
-    for (uri, sender) in uris.into_iter().zip(senders.into_iter()) {
-        let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-            uri.to_string(),
-            convert_options.clone(),
-            parse_options.clone(),
-            read_options.clone(),
-            io_client.clone(),
-            io_stats.clone(),
-        );
-        tokio::task::spawn(async move {
-            let stream_result = stream_csv_single(
-                uri.as_str(),
-                convert_options,
-                parse_options,
-                read_options,
-                io_client,
-                io_stats,
-                max_chunks_in_flight,
-            )
-            .await;
-            if let Err(e) = stream_result {
-                let _ = sender.send(Err(e));
-                return;
-            }
-            let stream = stream_result.unwrap();
-            pin_mut!(stream);
-            while let Some(table_result) = stream.next().await {
-                let _ = sender.send(table_result);
-            }
-        });
-    }
-    // .try_take_while(move |result| {
-    //     match (result, remaining_rows) {
-    //         // Limit has been met, early-terminate.
-    //         (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-    //         // Limit has not yet been met, update remaining limit slack and continue.
-    //         (table, Some(rows_left)) => {
-    //             remaining_rows = Some(rows_left - table.len() as i64);
-    //             futures::future::ready(Ok(true))
-    //         }
-    //         // (1) No limit, never early-terminate.
-    //         // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-    //         (_, None) => futures::future::ready(Ok(true)),
-    //     }
-    // });
-    async_stream::try_stream! {
-        let mut done = false;
-        for receiver in receivers {
-            let mut receiver = receiver;
-            while let Some(table_result) = receiver.recv().await {
-                let table = table_result?;
-                match (table, remaining_rows) {
-                    // Limit has been met, early-terminate.
-                    (_, Some(rows_left)) if rows_left <= 0 => {
-                        done = true;
-                        break;
-                    }
-                    // Limit has not yet been met, update remaining limit slack and continue.
-                    (table, Some(rows_left)) => {
-                        remaining_rows = Some(rows_left - table.len() as i64);
-                        yield table;
-                    }
-                    // (1) No limit, never early-terminate.
-                    (table, None) => {
-                        yield table;
-                    }
-                }
-            }
-            if done {
-                break;
-            }
-        }
-    }
+) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+    let runtime_handle = get_runtime(multithreaded_io)?;
+    let _rt_guard = runtime_handle.enter();
+    runtime_handle.block_on(async move {
+        stream_csv_single(
+            uri,
+            convert_options,
+            parse_options,
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await
+    })
 }
 
 // Parallel version of table concat
@@ -345,8 +279,20 @@ async fn read_csv_single_into_table(
     let schema: arrow2::datatypes::Schema = schema_fields.into();
     let schema = Arc::new(Schema::try_from(&schema)?);
 
+    let filtered_tables = tables.map_ok(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.clone()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    });
     let mut remaining_rows = limit.map(|limit| limit as i64);
-    let collected_tables = tables
+    let collected_tables = filtered_tables
         .try_take_while(|result| {
             match (result, remaining_rows) {
                 // Limit has been met, early-terminate.
@@ -390,12 +336,17 @@ async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
 
     let limit = convert_options.as_ref().and_then(|opts| opts.limit);
+
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
+
     let convert_options_with_predicate_columns = match (convert_options, &predicate) {
         (None, _) => None,
         (co, None) => co,
@@ -437,8 +388,21 @@ async fn stream_csv_single(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
+    let filtered_tables = tables.map_ok(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.clone()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    });
+
     let mut remaining_rows = limit.map(|limit| limit as i64);
-    let tables = tables
+    let tables = filtered_tables
         .try_take_while(move |result| {
             match (result, remaining_rows) {
                 // Limit has been met, early-terminate.
@@ -456,7 +420,9 @@ async fn stream_csv_single(
         .map(|r| match r {
             Ok(table) => table,
             Err(e) => Err(e.into()),
-        });
+        })
+        .try_ready_chunks(max_chunks_in_flight)
+        .map_err(|e| DaftError::ComputeError(e.to_string()));
     Ok(tables)
 }
 
@@ -561,8 +527,6 @@ async fn read_csv_single_into_stream(
         read_stream,
         Arc::new(fields.clone()),
         projection_indices,
-        convert_options.predicate.clone(),
-        convert_options.include_columns.clone(),
     )?;
 
     Ok((stream, fields))
@@ -632,8 +596,6 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
-    predicate: Option<ExprRef>,
-    include_columns: Option<Vec<String>>,
 ) -> DaftResult<impl TableStream + Send> {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
@@ -655,8 +617,6 @@ fn parse_into_column_array_chunk_stream(
         let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
         let read_schema = read_schema.clone();
         let read_daft_fields = read_daft_fields.clone();
-        let predicate = predicate.clone();
-        let include_columns = include_columns.clone();
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
@@ -678,17 +638,7 @@ fn parse_into_column_array_chunk_stream(
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
-                    let table = Table::new_unchecked(read_schema, chunk, num_rows);
-                    if let Some(predicate) = &predicate {
-                        let filtered = table.filter(&[predicate.clone()])?;
-                        if let Some(include_columns) = &include_columns {
-                            filtered.get_columns(include_columns.as_slice())
-                        } else {
-                            Ok(filtered)
-                        }
-                    } else {
-                        Ok(table)
-                    }
+                    Ok(Table::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
             });

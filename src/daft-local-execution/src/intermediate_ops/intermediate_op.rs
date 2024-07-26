@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -9,7 +9,7 @@ use crate::{
         create_channel, create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
         SingleReceiver, SingleSender,
     },
-    NUM_CPUS,
+    get_morsel_size, NUM_CPUS,
 };
 
 pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
@@ -18,14 +18,6 @@ pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
 }
 
 dyn_clone::clone_trait_object!(IntermediateOperator);
-
-/// The number of rows that will trigger an intermediate operator to output its data.
-fn get_output_threshold() -> usize {
-    env::var("OUTPUT_THRESHOLD")
-        .unwrap_or_else(|_| "1000".to_string())
-        .parse()
-        .expect("OUTPUT_THRESHOLD must be a number")
-}
 
 /// State of an operator task, used to buffer data and output it when a threshold is reached.
 pub struct OperatorTaskState {
@@ -39,7 +31,7 @@ impl OperatorTaskState {
         Self {
             buffer: vec![],
             curr_len: 0,
-            threshold: get_output_threshold(),
+            threshold: get_morsel_size(),
         }
     }
 

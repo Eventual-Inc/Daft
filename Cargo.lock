@@ -1808,6 +1808,7 @@ name = "daft-micropartition"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "async-stream",
  "bincode",
  "common-error",
  "daft-core",

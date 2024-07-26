@@ -1,13 +1,18 @@
-use std::sync::Arc;
-
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_scan::ScanTask;
-use futures::{pin_mut, StreamExt};
+use futures::StreamExt;
+use snafu::ResultExt;
+use std::sync::Arc;
+
+use crate::{
+    channel::{create_channel, SingleSender},
+    get_morsel_size, JoinSnafu,
+};
 
 use super::source::{Source, SourceStream};
 
-use tracing::{instrument, Instrument, Span};
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct ScanTaskSource {
@@ -18,25 +23,56 @@ impl ScanTaskSource {
     pub fn new(scan_tasks: Vec<Arc<ScanTask>>) -> Self {
         Self { scan_tasks }
     }
+
+    #[instrument(
+        name = "ScanTaskSource::process_scan_task_stream",
+        level = "info",
+        skip_all
+    )]
+    async fn process_scan_task_stream(
+        scan_task: Arc<ScanTask>,
+        sender: SingleSender,
+        morsel_size: usize,
+    ) {
+        let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
+        let stream_result = tokio::task::spawn_blocking(move || {
+            MicroPartition::from_scan_task_streaming(scan_task, io_stats, morsel_size)
+        })
+        .await
+        .context(JoinSnafu {});
+
+        match stream_result {
+            Ok(Ok(mut stream)) => {
+                while let Some(partition) = stream.next().await {
+                    let _ = sender.send(partition.map(Arc::new)).await;
+                }
+            }
+            Ok(Err(e)) => {
+                let _ = sender.send(Err(e.into())).await;
+            }
+            Err(e) => {
+                let _ = sender.send(Err(e.into())).await;
+            }
+        }
+    }
 }
 
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip(self))]
     fn get_data(&self) -> SourceStream {
-        let stream = stream::iter(self.scan_tasks.clone().into_iter().map(|scan_task| async {
-            tokio::task::spawn_blocking(move || {
-                let child_span = tracing::info_span!("ScanTaskSource::from_scan_task");
-                let _span = child_span.follows_from(Span::current());
-                let _eg = _span.enter();
-                let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
-                MicroPartition::from_scan_task(scan_task, io_stats)
-                    .map(Arc::new)
-                    .map_err(Into::into)
-            })
-            .in_current_span()
-            .await
-            .context(JoinSnafu {})?
-        }));
-        stream.buffered(self.scan_tasks.len()).boxed()
+        let morsel_size = get_morsel_size();
+        let (mut sender, mut receiver) = create_channel(self.scan_tasks.len(), true);
+        for scan_task in self.scan_tasks.clone() {
+            tokio::task::spawn(Self::process_scan_task_stream(
+                scan_task,
+                sender.get_next_sender(),
+                morsel_size,
+            ));
+        }
+        Box::pin(async_stream::stream! {
+            while let Some(partition) = receiver.recv().await {
+                yield partition;
+            }
+        })
     }
 }

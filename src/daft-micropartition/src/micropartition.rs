@@ -20,6 +20,7 @@ use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
@@ -480,7 +481,7 @@ fn materialize_scan_task(
 fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
-) -> crate::Result<(impl Stream<Item = DaftResult<Table>> + Send)> {
+) -> crate::Result<(impl Stream<Item = DaftResult<Vec<Table>>> + Send)> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -489,7 +490,13 @@ fn stream_scan_task(
     let file_column_names =
         _get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
 
-    let urls = scan_task.sources.iter().map(|s| s.get_path().to_string());
+    if scan_task.sources.len() != 1 {
+        return Err(common_error::DaftError::TypeError(
+            "Streaming reads only supported for single source ScanTasks".to_string(),
+        ))
+        .context(DaftCoreComputeSnafu);
+    }
+    let url = scan_task.sources.first().map(|s| s.get_path()).unwrap();
 
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
@@ -501,11 +508,7 @@ fn stream_scan_task(
                     .unwrap_or_default(),
             );
             let multi_threaded_io = native_storage_config.multithreaded_io;
-            let io_client = std::thread::spawn(move || {
-                daft_io::get_io_client(multi_threaded_io, io_config).unwrap()
-            })
-            .join()
-            .unwrap();
+            let io_client = daft_io::get_io_client(multi_threaded_io, io_config).unwrap();
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
@@ -516,7 +519,7 @@ fn stream_scan_task(
                     field_id_mapping: _,
                     ..
                 }) => {
-                    todo!()
+                    todo!("Implement streaming reads for Parquet")
                 }
 
                 // ****************
@@ -558,29 +561,39 @@ fn stream_scan_task(
                     .context(DaftCSVSnafu)?;
                     let read_options =
                         CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-                    let uris = urls.collect::<Vec<_>>();
                     daft_csv::stream_csv_bulk(
-                        uris,
+                        url,
                         Some(convert_options),
                         Some(parse_options),
                         Some(read_options),
                         io_client,
                         io_stats,
+                        native_storage_config.multithreaded_io,
                         None,
-                        8,
                     )
+                    .context(DaftCoreComputeSnafu)?
                 }
 
                 // ****************
                 // Native JSON Reads
                 // ****************
                 FileFormatConfig::Json(_cfg) => {
-                    todo!()
+                    todo!("Implement streaming reads for JSON")
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => todo!(),
+                FileFormatConfig::Database(_) => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for Database file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction => todo!(),
+                FileFormatConfig::PythonFunction => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for PythonFunction file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
             }
         }
         #[cfg(feature = "python")]
@@ -588,19 +601,23 @@ fn stream_scan_task(
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: _,
                 ..
-            }) => todo!(),
+            }) => todo!("Implement streaming reads for Parquet with Python Storage Config"),
             FileFormatConfig::Csv(CsvSourceConfig {
                 has_headers: _,
                 delimiter: _,
                 double_quote: _,
                 ..
-            }) => todo!(),
-            FileFormatConfig::Json(_) => todo!(),
+            }) => todo!("Implement streaming reads for CSV with Python Storage Config"),
+            FileFormatConfig::Json(_) => {
+                todo!("Implement streaming reads for JSON with Python Storage Config")
+            }
             FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
                 sql: _,
                 conn: _,
-            }) => todo!(),
-            FileFormatConfig::PythonFunction => todo!(),
+            }) => todo!("Implement streaming reads for Database"),
+            FileFormatConfig::PythonFunction => {
+                todo!("Implement streaming reads for PythonFunction")
+            }
         },
     };
 
@@ -762,7 +779,8 @@ impl MicroPartition {
     pub fn from_scan_task_streaming(
         scan_task: Arc<ScanTask>,
         io_stats: IOStatsRef,
-    ) -> crate::Result<impl Stream<Item = DaftResult<Arc<Self>>> + Send> {
+        morsel_size: usize,
+    ) -> crate::Result<BoxStream<'static, DaftResult<Self>>> {
         let schema = scan_task.materialized_schema();
         match (
             &scan_task.metadata,
@@ -772,8 +790,19 @@ impl MicroPartition {
         ) {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(_metadata), Some(_statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
-                todo!()
+            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+                let unloaded = Ok(Self::new_unloaded(
+                    scan_task.clone(),
+                    scan_task
+                        .pushdowns
+                        .limit
+                        .map(|limit| TableMetadata {
+                            length: metadata.length.min(limit),
+                        })
+                        .unwrap_or_else(|| metadata.clone()),
+                    statistics.clone(),
+                ));
+                Ok(Box::pin(futures::stream::iter(std::iter::once(unloaded))))
             }
 
             // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
@@ -796,19 +825,14 @@ impl MicroPartition {
             _ => {
                 let statistics = scan_task.statistics.clone();
                 let stream = stream_scan_task(scan_task.clone(), Some(io_stats))?;
-                Ok(stream.map(move |result| match result {
-                    Ok(table) => {
-                        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-                        let casted_table =
-                            table.cast_to_schema_with_fill(schema.as_ref(), fill_map.as_ref())?;
-                        Ok(Arc::new(Self::new_loaded(
-                            schema.clone(),
-                            Arc::new(vec![casted_table]),
-                            statistics.clone(),
-                        )))
-                    }
-                    Err(e) => Err(e),
-                }))
+                let stream = chunk_tables_into_micropartition_stream(
+                    Box::pin(stream),
+                    schema,
+                    scan_task.partition_spec().cloned(),
+                    statistics,
+                    morsel_size,
+                );
+                Ok(Box::pin(stream))
             }
         }
     }
@@ -924,6 +948,37 @@ impl MicroPartition {
             Arc::new(tables_with_id),
             self.statistics.clone(),
         ))
+    }
+}
+
+fn chunk_tables_into_micropartition_stream(
+    mut table_stream: BoxStream<'static, DaftResult<Vec<Table>>>,
+    schema: SchemaRef,
+    partition_spec: Option<PartitionSpec>,
+    statistics: Option<TableStatistics>,
+    morsel_size: usize,
+) -> impl Stream<Item = DaftResult<MicroPartition>> + Send {
+    async_stream::try_stream! {
+        let mut buffer = vec![];
+        let mut total_rows = 0;
+        while let Some(tables) = table_stream.next().await {
+            let tables = tables?;
+            for table in tables {
+                let casted_table = table.cast_to_schema_with_fill(schema.as_ref(), partition_spec.as_ref().map(|pspec| pspec.to_fill_map()).as_ref())?;
+                total_rows += casted_table.len();
+                buffer.push(casted_table);
+            }
+            if total_rows >= morsel_size {
+                let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone());
+                buffer = vec![];
+                total_rows = 0;
+                yield mp;
+            }
+        }
+        if !buffer.is_empty() {
+            let mp = MicroPartition::new_loaded(schema, Arc::new(buffer), statistics);
+            yield mp;
+        }
     }
 }
 
