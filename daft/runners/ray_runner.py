@@ -440,6 +440,7 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
+        self.results_buffer_size_by_df: dict[str, int | None] = dict()
 
         self.use_ray_tqdm = use_ray_tqdm
 
@@ -467,8 +468,9 @@ class Scheduler:
         results_buffer_size: int | None = None,
     ) -> None:
         self.execution_configs_objref_by_df[result_uuid] = ray.put(daft_execution_config)
-        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+        self.results_by_df[result_uuid] = Queue(maxsize=1 if results_buffer_size is not None else -1)
         self.active_by_df[result_uuid] = True
+        self.results_buffer_size_by_df[result_uuid] = results_buffer_size
 
         t = threading.Thread(
             target=self._run_plan,
@@ -495,6 +497,7 @@ class Scheduler:
             del self.threads_by_df[result_uuid]
             del self.active_by_df[result_uuid]
             del self.results_by_df[result_uuid]
+            del self.results_buffer_size_by_df[result_uuid]
 
     def _run_plan(
         self,
@@ -503,7 +506,14 @@ class Scheduler:
         result_uuid: str,
     ) -> None:
         # Get executable tasks from plan scheduler.
-        tasks = plan_scheduler.to_partition_tasks(psets)
+        results_buffer_size = self.results_buffer_size_by_df[result_uuid]
+        tasks = plan_scheduler.to_partition_tasks(
+            psets,
+            # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
+            # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
+            # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
+            None if results_buffer_size is None else max(results_buffer_size - 1, 1),
+        )
 
         daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()

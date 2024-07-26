@@ -1515,6 +1515,7 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
 
 def materialize(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    results_buffer_size: int | None,
 ) -> MaterializedPhysicalPlan:
     """Materialize the child plan.
 
@@ -1523,12 +1524,39 @@ def materialize(
     """
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    num_materialized_yielded = 0
+    num_intermediate_yielded = 0
+    num_final_yielded = 0
     stage_id = next(stage_id_counter)
+
     while True:
+        logger.debug(
+            "[plan-%s] Starting to emit tasks from `materialize` with results_buffer_size=%s",
+            stage_id,
+            results_buffer_size,
+        )
+
         # Check if any inputs finished executing.
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
+            num_materialized_yielded += 1
+            logger.debug("[plan-%s] YIELDING a materialized task (%s so far)", stage_id, num_materialized_yielded)
             yield done_task.result()
+
+        # If the buffer has too many results already, we yield None until some are completed
+        if results_buffer_size is not None and len(materializations) >= results_buffer_size:
+            logger.debug(
+                "[plan-%s] YIELDING none, waiting on tasks in buffer to complete: %s in buffer, but maximum is %s",
+                stage_id,
+                len(materializations),
+                results_buffer_size,
+            )
+            yield None
+
+            # Important: start again at the top and drain materialized results
+            # Otherwise it may lead to a weird corner-case where the plan has ended (raising StopIteration)
+            # but some of the completed materializations haven't been drained from the buffer.
+            continue
 
         # Materialize a single dependency.
         try:
@@ -1536,13 +1564,22 @@ def materialize(
             if isinstance(step, PartitionTaskBuilder):
                 step = step.finalize_partition_task_single_output(stage_id=stage_id)
                 materializations.append(step)
-            assert isinstance(step, (PartitionTask, type(None)))
+                num_final_yielded += 1
+                logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)
+            elif isinstance(step, PartitionTask):
+                num_intermediate_yielded += 1
+                logger.debug("[plan-%s] YIELDING an intermediate task (%s so far)", stage_id, num_intermediate_yielded)
 
+            assert isinstance(step, (PartitionTask, type(None)))
             yield step
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug("materialize blocked on completion of all sources: %s", materializations)
+                logger.debug(
+                    "[plan-%s] YIELDING none, iterator completed but materialize is blocked on completion of all sources: %s",
+                    stage_id,
+                    materializations,
+                )
                 yield None
             else:
                 return
