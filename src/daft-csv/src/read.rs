@@ -136,7 +136,7 @@ pub fn read_csv_bulk(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn stream_csv_bulk(
+pub fn stream_csv(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,

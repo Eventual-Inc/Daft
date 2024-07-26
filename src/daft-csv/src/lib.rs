@@ -16,7 +16,7 @@ pub use metadata::read_csv_schema_bulk;
 pub use options::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use read::{read_csv, read_csv_bulk, stream_csv_bulk};
+pub use read::{read_csv, read_csv_bulk, stream_csv};
 
 #[derive(Debug, Snafu)]
 pub enum Error {

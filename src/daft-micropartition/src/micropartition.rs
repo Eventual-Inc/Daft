@@ -561,7 +561,7 @@ fn stream_scan_task(
                     .context(DaftCSVSnafu)?;
                     let read_options =
                         CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-                    daft_csv::stream_csv_bulk(
+                    daft_csv::stream_csv(
                         url,
                         Some(convert_options),
                         Some(parse_options),
