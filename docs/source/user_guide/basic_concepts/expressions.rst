@@ -314,3 +314,187 @@ The :meth:`.if_else() <daft.expressions.Expression.if_else>` method is a useful 
     (Showing first 3 of 3 rows)
 
 This is a useful expression for cleaning your data!
+
+
+
+Temporal Operations
+-------------------
+
+Daft lets you work with various temporal data types such as Time, Timestamp, and Duration. Let's explore how to use these types and their interactions.
+
+.. code:: python
+
+    df = daft.from_pydict({"x": [
+        datetime.datetime(2021, 1, 1, 0, 1, 1),
+        datetime.datetime(2021, 1, 1, 0, 1, 59),
+        datetime.datetime(2021, 1, 1, 0, 2, 0),
+        ]
+    })
+    df.show()
+
+.. code:: none
+
+    +------------------------+
+    | x                      |
+    | DateTime               |
+    +========================+
+    | 2021-01-01T00:01:01    |
+    +------------------------+
+    | 2021-01-01T00:01:59    |
+    +------------------------+
+    | 2021-01-01T00:02:00    |
+    +------------------------+
+    (Showing first 3 rows)
+
+Let's add 10 seconds to each timestamp.
+
+.. code:: python
+
+    df = df.with_column("x_plus_10_seconds", df["x"] + datetime.timedelta(seconds=10))
+    df.show()
+
+.. code:: none
+
+    +------------------------+------------------------+
+    | x                      | x_plus_10_seconds      |
+    | DateTime               | DateTime               |
+    +========================+========================+
+    | 2021-01-01T00:01:01    | 2021-01-01T00:01:11    |
+    +------------------------+------------------------+
+    | 2021-01-01T00:01:59    | 2021-01-01T00:02:09    |
+    +------------------------+------------------------+
+    | 2021-01-01T00:02:00    | 2021-01-01T00:02:10    |
+    +------------------------+------------------------+
+    (Showing first 3 rows)
+
+Subtracting Timestamps
+^^^^^^^^^^^^^^^^^^^^^^
+
+You can subtract one Timestamp from another to get a Duration.
+
+.. code:: python
+
+    df = df.with_column("duration_between_x_plus_10_and_x", df["x_plus_10_seconds"] - df["x"])
+    df.show()
+
+.. code:: none
+
+    +------------------------+------------------------+-------------------------------+
+    | x                      | x_plus_10_seconds      | duration_between_x_plus_10_and_x|
+    | DateTime               | DateTime               | Duration                      |
+    +========================+========================+===============================+
+    | 2021-01-01T00:01:01    | 2021-01-01T00:01:11    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    | 2021-01-01T00:01:59    | 2021-01-01T00:02:09    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    | 2021-01-01T00:02:00    | 2021-01-01T00:02:10    | 0:00:10                       |
+    +------------------------+------------------------+-------------------------------+
+    (Showing first 3 rows)
+
+
+Extracting Time Stamps
+^^^^^^^^^^^^^^^^^^^^^^
+
+You can extract parts of a Timestamp, such as the year, month, day, hour, minute, and second.
+
+.. code:: python
+
+    df = df.with_columns("year", df["x"].dt.year()) // with columns integration
+    df = df.with_column("month", df["x"].dt.month())
+    df = df.with_column("day", df["x"].dt.day())
+    df = df.with_column("hour", df["x"].dt.hour())
+    df = df.with_column("minute", df["x"].dt.minute())
+    df = df.with_column("second", df["x"].dt.second())
+    df.show()
+
+.. code:: none
+
+    +------------------------+------+------+-----+------+-------+--------+
+    | x                      | year | month| day | hour | minute| second |
+    | DateTime               | Int32| Int32|Int32| Int32| Int32 | Int32  |
+    +========================+======+======+=====+======+=======+========+
+    | 2021-01-01T00:01:01    | 2021 | 1    | 1   | 0    | 1     | 1      |
+    +------------------------+------+------+-----+------+-------+--------+
+    | 2021-01-01T00:01:59    | 2021 | 1    | 1   | 0    | 1     | 59     |
+    +------------------------+------+------+-----+------+-------+--------+
+    | 2021-01-01T00:02:00    | 2021 | 1    | 1   | 0    | 2     | 0      |
+    +------------------------+------+------+-----+------+-------+--------+
+    (Showing first 3 rows)
+
+
+Converting Between Time Zones
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can convert a Timestamp to a different time zone.
+
+.. code:: python
+
+    df = daft.from_pydict({"x": [
+        "2021-01-01 00:00:00.123 +0800",
+        "2021-01-02 12:30:00.456 +0800"]
+    })
+    df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="America/New_York"))
+    df.collect()
+
+.. code:: none
+
+    ╭───────────────────────────────┬───────────────────────────────────────────────────╮
+    │ x                             ┆ datetime                                          │
+    │ ---                           ┆ ---                                               │
+    │ Utf8                          ┆ Timestamp(Milliseconds, Some("America/New_York")) │
+    ╞═══════════════════════════════╪═══════════════════════════════════════════════════╡
+    │ 2021-01-01 00:00:00.123 +0800 ┆ 2020-12-31 11:00:00.123 EST                       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-01 23:30:00.456 EST                       │
+    ╰───────────────────────────────┴───────────────────────────────────────────────────╯
+
+    (Showing first 2 of 2 rows)
+
+
+Using the Truncate Function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+The `truncate` function can be used to truncate timestamps to a specific time unit. For example, you can use it to truncate timestamps to the nearest day
+.. code:: python
+
+    import pandas as pd
+    import daft
+
+    # Create a DataFrame with a range of dates
+    df = daft.from_pydict({
+             "datetime": [
+                 datetime.datetime(2021, 1, 7, 0, 1, 1),
+                 datetime.datetime(2021, 1, 8, 0, 1, 59),
+                 datetime.datetime(2021, 1, 9, 0, 2, 0),
+                 datetime.datetime(2021, 1, 10, 0, 2, 0),
+             ],
+         }
+    )
+
+    # Truncate dates to the start of the week
+    df.with_column("truncated", df["datetime"].dt.truncate("1 week")).collect()
+
+.. code:: none
+    ╭───────────────────────────────┬───────────────────────────────╮
+    │ datetime                      ┆ truncated                     │
+    │ ---                           ┆ ---                           │
+    │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+    ╞═══════════════════════════════╪═══════════════════════════════╡
+    │ 2021-01-07 00:01:01           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-08 00:01:59           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-09 00:02:00           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-10 00:02:00           ┆ 2021-01-07 00:00:00           │
+    ╰───────────────────────────────┴───────────────────────────────╯
+
+    (Showing first 4 of 4 rows)
+
+Explanation:
+- The `dates` column contains dates from January 7, 2021, to January 10, 2021.
+- The `truncated_dates` column shows the dates truncated to the start of the week.
+- For dates between January 7 and January 10, the start of the week is considered as the closest preceding Sunday.
+
+This example demonstrates the advantage of using the `truncate` function to group or round dates to a desired time unit, such as the start of the week, which can be particularly useful for summarizing or aggregating data by weeks.
