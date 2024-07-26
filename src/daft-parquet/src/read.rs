@@ -61,6 +61,44 @@ impl From<ParquetSchemaInferenceOptions>
     }
 }
 
+fn limit_with_delete_rows(
+    delete_rows: &[i64],
+    start_offset: Option<usize>,
+    num_rows_to_read: Option<usize>,
+) -> Option<usize> {
+    if let Some(mut n) = num_rows_to_read {
+        let mut delete_rows_sorted = if let Some(start_offset) = start_offset {
+            delete_rows
+                .iter()
+                .filter_map(|r| {
+                    let shifted_row = *r - start_offset as i64;
+                    if shifted_row >= 0 {
+                        Some(shifted_row as usize)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            delete_rows.iter().map(|r| *r as usize).collect::<Vec<_>>()
+        };
+        delete_rows_sorted.sort();
+        delete_rows_sorted.dedup();
+
+        for r in delete_rows_sorted {
+            if r < n {
+                n += 1;
+            } else {
+                break;
+            }
+        }
+
+        Some(n)
+    } else {
+        num_rows_to_read
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
@@ -77,16 +115,16 @@ async fn read_parquet_single(
     delete_rows: Option<Vec<i64>>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
-    let original_columns = columns;
-    let original_num_rows = num_rows;
-    let mut num_rows = num_rows;
-    let mut columns = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
-    let requested_columns = columns.as_ref().map(|v| v.len());
+    let columns_to_return = columns;
+    let num_rows_to_return = num_rows;
+    let mut num_rows_to_read = num_rows;
+    let mut columns_to_read = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
+    let requested_columns = columns_to_read.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
-        if num_rows.is_some() {
-            num_rows = None;
+        if num_rows_to_read.is_some() {
+            num_rows_to_read = None;
         }
-        if let Some(req_columns) = columns.as_mut() {
+        if let Some(req_columns) = columns_to_read.as_mut() {
             let needed_columns = get_required_columns(pred);
             for c in needed_columns {
                 if !req_columns.contains(&c) {
@@ -95,14 +133,21 @@ async fn read_parquet_single(
             }
         }
     }
+
+    // If we delete rows, we have to increase the number of rows to read by the deleted rows
+    // in order to have the correct number of rows in the end
+    if let Some(delete_rows) = &delete_rows {
+        num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
+    }
+
     let (source_type, fixed_uri) = parse_url(uri)?;
 
     let (metadata, mut table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
-            columns,
+            columns_to_read,
             start_offset,
-            num_rows,
+            num_rows_to_read,
             row_groups.clone(),
             predicate.clone(),
             schema_infer_options,
@@ -119,16 +164,16 @@ async fn read_parquet_single(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns.as_ref() {
+        let builder = if let Some(columns) = columns_to_read.as_ref() {
             builder.prune_columns(columns.as_slice())?
         } else {
             builder
         };
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
+        if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows)?;
+        let builder = builder.limit(start_offset, num_rows_to_read)?;
         let metadata = builder.metadata().clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
@@ -168,22 +213,28 @@ async fn read_parquet_single(
 
         let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
 
-        let mut num_deleted_rows = 0;
         let start_offset = start_offset.unwrap_or(0);
 
         for row in delete_rows.into_iter().map(|r| r as usize) {
-            if row >= start_offset && num_rows.map_or(true, |n| row < start_offset + n) {
-                num_deleted_rows += 1;
+            if row >= start_offset && num_rows_to_read.map_or(true, |n| row < start_offset + n) {
+                let table_row = row - start_offset;
 
-                if !selection_mask.get(row - start_offset) {
-                    num_deleted_rows += 1;
-
+                if table_row < table.len() {
                     unsafe {
-                        selection_mask.set_unchecked(row - start_offset, false);
+                        selection_mask.set_unchecked(table_row, false);
                     }
+                } else {
+                    return Err(super::Error::ParquetDeleteRowOutOfIndex {
+                        path: uri.into(),
+                        row: table_row,
+                        read_rows: table.len(),
+                    }
+                    .into());
                 }
             }
         }
+
+        let num_deleted_rows = selection_mask.unset_bits();
 
         let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
 
@@ -195,12 +246,13 @@ async fn read_parquet_single(
     };
 
     if let Some(predicate) = predicate {
+        // If a predicate exists, we need to apply it before a limit and also keep all of the columns that it needs until it is applied
         // TODO ideally pipeline this with IO and before concatenating, rather than after
         table = table.filter(&[predicate])?;
-        if let Some(oc) = original_columns {
+        if let Some(oc) = columns_to_return {
             table = table.get_columns(oc)?;
         }
-        if let Some(nr) = original_num_rows {
+        if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;
         }
     } else if let Some(row_groups) = row_groups {
@@ -212,31 +264,31 @@ async fn read_parquet_single(
         if expected_rows != table.len() {
             return Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: expected_rows,
+                expected_rows,
                 read_rows: table.len(),
             }
             .into());
         }
     } else {
         let expected_rows = metadata_num_rows - num_deleted_rows;
-        match (start_offset, num_rows) {
+        match (start_offset, num_rows_to_read) {
             (None, None) if expected_rows != table.len() => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows,
+                    expected_rows,
                     read_rows: table.len(),
                 })
             }
             (Some(s), None) if expected_rows.saturating_sub(s) != table.len() => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: expected_rows.saturating_sub(s),
+                    expected_rows: expected_rows.saturating_sub(s),
                     read_rows: table.len(),
                 })
             }
             (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: n.min(expected_rows),
+                expected_rows: n.min(expected_rows),
                 read_rows: table.len(),
             }),
             _ => Ok(()),
@@ -362,7 +414,7 @@ async fn read_parquet_single_into_arrow(
         if expected_rows != table_len {
             return Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: expected_rows,
+                expected_rows,
                 read_rows: table_len,
             }
             .into());
@@ -372,20 +424,20 @@ async fn read_parquet_single_into_arrow(
             (None, None) if metadata_num_rows != table_len => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows,
+                    expected_rows: metadata_num_rows,
                     read_rows: table_len,
                 })
             }
             (Some(s), None) if metadata_num_rows.saturating_sub(s) != table_len => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                    expected_rows: metadata_num_rows.saturating_sub(s),
                     read_rows: table_len,
                 })
             }
             (_, Some(n)) if n < table_len => Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: n.min(metadata_num_rows),
+                expected_rows: n.min(metadata_num_rows),
                 read_rows: table_len,
             }),
             _ => Ok(()),

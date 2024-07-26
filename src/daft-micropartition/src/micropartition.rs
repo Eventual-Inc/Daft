@@ -1113,7 +1113,7 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate then we no longer have an accurate accounting of required metadata
+    // If we have a predicate or deletion files then we no longer have an accurate accounting of required metadata
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
     if iceberg_delete_files
         .as_ref()
