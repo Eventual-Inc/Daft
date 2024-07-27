@@ -174,11 +174,7 @@ class PyRunner(Runner[MicroPartition]):
         self.total_bytes_memory = system_info.total_memory()
 
         # Resource accounting:
-        #
-        # Memory is not protected because all updates are expected to be performed on the main thread upon dispatch/retrieval of futures.
-        # CPUs and GPUs are updated from worker threads upon completion of each task, so as to free up those resources
-        # even if the futures have not yet been consumed.
-        self._available_bytes_memory = self.total_bytes_memory
+        self._available_bytes_memory = _MutexedResourceCounter(self.total_bytes_memory)
         self._available_cpus = _MutexedResourceCounter(self.num_cpus)
         self._available_gpus = _MutexedResourceCounter(self.num_gpus)
 
@@ -326,7 +322,7 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            with self._available_cpus as available_cpus, self._available_gpus as available_gpus:
+                            with self._available_cpus as available_cpus, self._available_gpus as available_gpus, self._available_bytes_memory as available_bytes_memory:
                                 future = self._thread_pool.submit(
                                     self.build_partitions,
                                     next_step.instructions,
@@ -336,11 +332,11 @@ class PyRunner(Runner[MicroPartition]):
                                 )
 
                                 # Update resource accounting
-                                self._available_bytes_memory -= next_step.resource_request.memory_bytes or 0
+                                mem = available_bytes_memory.sub(next_step.resource_request.memory_bytes or 0)
                                 cpus = available_cpus.sub(next_step.resource_request.num_cpus or 0)
                                 gpus = available_gpus.sub(next_step.resource_request.num_gpus or 0)
                                 assert (
-                                    self._available_bytes_memory >= 0
+                                    mem >= 0
                                 ), "Available bytes in memory should not go below 0. This indicates a scheduler bug."
                                 assert (
                                     cpus >= 0
@@ -378,9 +374,6 @@ class PyRunner(Runner[MicroPartition]):
                         len(materialized_results),
                     )
 
-                    # Update memory resource accounting, this is not protected because all memory resource accounting is done on the main thread
-                    self._available_bytes_memory += done_task.resource_request.memory_bytes or 0
-
                     done_task.set_result(materialized_results)
 
                 if next_step is None:
@@ -408,8 +401,8 @@ class PyRunner(Runner[MicroPartition]):
     ) -> bool:
         self._check_resource_requests(resource_request)
 
-        memory_okay = (resource_request.memory_bytes or 0) <= self._available_bytes_memory
-        with self._available_cpus as cpus, self._available_gpus as gpus:
+        with self._available_cpus as cpus, self._available_gpus as gpus, self._available_bytes_memory as mem:
+            memory_okay = (resource_request.memory_bytes or 0) <= mem.get()
             cpus_okay = (resource_request.num_cpus or 0) <= cpus.get()
             gpus_okay = (resource_request.num_gpus or 0) <= gpus.get()
 
