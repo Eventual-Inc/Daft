@@ -286,14 +286,6 @@ class PyRunner(Runner[MicroPartition]):
                             pbar.mark_task_start(next_step)
 
                             with self._resource_accounting_lock:
-                                future = self._thread_pool.submit(
-                                    self.build_partitions,
-                                    next_step.instructions,
-                                    next_step.inputs,
-                                    next_step.partial_metadatas,
-                                    next_step.resource_request,
-                                )
-
                                 # Update resource accounting
                                 self._available_bytes_memory -= next_step.resource_request.memory_bytes or 0
                                 self._available_cpus -= next_step.resource_request.num_cpus or 0.0
@@ -308,12 +300,20 @@ class PyRunner(Runner[MicroPartition]):
                                     self._available_gpus >= 0
                                 ), "Available GPUs should not go below 0. This indicates a scheduler bug."
 
-                                # Register the inflight task
-                                assert (
-                                    next_step.id() not in local_futures_to_task
-                                ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
-                                self._inflight_futures[next_step.id()] = future
-                                local_futures_to_task[future] = next_step
+                            future = self._thread_pool.submit(
+                                self.build_partitions,
+                                next_step.instructions,
+                                next_step.inputs,
+                                next_step.partial_metadatas,
+                                next_step.resource_request,
+                            )
+
+                            # Register the inflight task
+                            assert (
+                                next_step.id() not in local_futures_to_task
+                            ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
+                            self._inflight_futures[next_step.id()] = future
+                            local_futures_to_task[future] = next_step
 
                         next_step = next(plan)
 
