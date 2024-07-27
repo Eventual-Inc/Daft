@@ -205,7 +205,9 @@ async fn read_parquet_single(
     let metadata_num_rows = metadata.num_rows;
     let metadata_num_columns = metadata.schema().fields().len();
 
-    let num_deleted_rows = if let Some(delete_rows) = delete_rows {
+    let num_deleted_rows = if let Some(delete_rows) = delete_rows
+        && !delete_rows.is_empty()
+    {
         assert!(
             row_groups.is_none(),
             "Row group splitting is not supported with Iceberg deletion files."
