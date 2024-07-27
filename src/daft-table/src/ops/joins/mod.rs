@@ -122,19 +122,73 @@ pub fn infer_join_schema(
     Ok(Arc::new(schema))
 }
 
-pub struct JoinOutputColumn {
+struct JoinOutputColumn {
     pub is_right: bool,
     pub index: usize,
     pub field: Field,
 }
 
-pub fn infer_join_schema_mapping(
+pub struct JoinOutputMapper {
+    mapping: Vec<JoinOutputColumn>,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
+}
+
+impl JoinOutputMapper {
+    pub(super) fn try_new(mapping: Vec<JoinOutputColumn>) -> DaftResult<Self> {
+        let left_schema = Schema::new(
+            mapping
+                .iter()
+                .filter(|jc| !jc.is_right)
+                .map(|jc| jc.field.clone())
+                .collect::<Vec<_>>(),
+        )?
+        .into();
+        let right_schema = Schema::new(
+            mapping
+                .iter()
+                .filter(|jc| jc.is_right)
+                .map(|jc| jc.field.clone())
+                .collect::<Vec<_>>(),
+        )?
+        .into();
+        Ok(JoinOutputMapper {
+            mapping,
+            left_schema,
+            right_schema,
+        })
+    }
+
+    pub fn map_left(&self, table: &Table) -> DaftResult<Table> {
+        let out = self
+            .mapping
+            .iter()
+            .filter(|jc| !jc.is_right)
+            .map(|jc| DaftResult::Ok(table.get_column_by_index(jc.index)?.rename(&jc.field.name)))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Table::new_with_size(self.left_schema.clone(), out, table.num_rows)
+    }
+
+    pub fn map_right(&self, table: &Table) -> DaftResult<Table> {
+        let out = self
+            .mapping
+            .iter()
+            .filter(|jc| jc.is_right)
+            .map(|jc| DaftResult::Ok(table.get_column_by_index(jc.index)?.rename(&jc.field.name)))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Table::new_with_size(self.right_schema.clone(), out, table.num_rows)
+    }
+}
+
+pub fn infer_join_schema_mapper(
     left: &SchemaRef,
     right: &SchemaRef,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
     how: JoinType,
-) -> DaftResult<Vec<JoinOutputColumn>> {
+) -> DaftResult<JoinOutputMapper> {
     if left_on.len() != right_on.len() {
         return Err(DaftError::ValueError(format!(
             "Length of left_on does not match length of right_on for Join {} vs {}",
@@ -143,17 +197,18 @@ pub fn infer_join_schema_mapping(
         )));
     }
     if matches!(how, JoinType::Anti | JoinType::Semi) {
-        return Ok(left
-            .fields
-            .values()
-            .into_iter()
-            .enumerate()
-            .map(|(i, f)| JoinOutputColumn {
-                is_right: false,
-                index: i,
-                field: f.clone(),
-            })
-            .collect());
+        return JoinOutputMapper::try_new(
+            left.fields
+                .values()
+                .into_iter()
+                .enumerate()
+                .map(|(i, f)| JoinOutputColumn {
+                    is_right: false,
+                    index: i,
+                    field: f.clone(),
+                })
+                .collect(),
+        );
     }
     let mut result = vec![];
     let mut names_so_far = HashSet::new();
@@ -224,7 +279,7 @@ pub fn infer_join_schema_mapping(
             field: new_field,
         });
     }
-    Ok(result)
+    JoinOutputMapper::try_new(result)
 }
 
 fn add_non_join_key_columns(

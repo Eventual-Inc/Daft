@@ -35,25 +35,33 @@ impl<'a> GrowableTable<'a> {
 
     /// This function panics if the range is out of bounds, i.e. if `start + len >= array.len()`.
     pub fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.growables
-            .iter_mut()
-            .for_each(|g| g.extend(index, start, len))
+        if !self.growables.is_empty() {
+            self.growables
+                .iter_mut()
+                .for_each(|g| g.extend(index, start, len))
+        }
     }
 
     /// Extends this [`Growable`] with null elements
     pub fn add_nulls(&mut self, additional: usize) {
-        self.growables
-            .iter_mut()
-            .for_each(|g| g.add_nulls(additional))
+        if !self.growables.is_empty() {
+            self.growables
+                .iter_mut()
+                .for_each(|g| g.add_nulls(additional))
+        }
     }
 
     /// Builds an array from the [`Growable`]
     pub fn build(&mut self) -> DaftResult<Table> {
-        let columns = self
-            .growables
-            .iter_mut()
-            .map(|g| g.build())
-            .collect::<DaftResult<Vec<_>>>()?;
-        Table::from_nonempty_columns(columns)
+        if self.growables.is_empty() {
+            Table::empty(None)
+        } else {
+            let columns = self
+                .growables
+                .iter_mut()
+                .map(|g| g.build())
+                .collect::<DaftResult<Vec<_>>>()?;
+            Table::from_nonempty_columns(columns)
+        }
     }
 }

@@ -34,7 +34,15 @@ impl ProbeTable {
         &'a self,
         right: &'a Table,
     ) -> DaftResult<impl Iterator<Item = (u32, u64, u64)> + 'a> {
-        assert_eq!(right.schema, self.schema);
+        assert_eq!(self.schema.len(), right.schema.len());
+        assert!(self
+            .schema
+            .fields
+            .values()
+            .into_iter()
+            .zip(right.schema.fields.values().into_iter())
+            .all(|(l, r)| l.dtype == r.dtype));
+
         let r_hashes = right.hash_rows()?;
 
         let right_arrays = right

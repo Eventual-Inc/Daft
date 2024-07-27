@@ -223,15 +223,16 @@ pub fn physical_plan_to_pipeline(
             schema,
         }) => {
             let left_schema = left.schema();
+            let right_schema = right.schema();
             let left_node = physical_plan_to_pipeline(left, psets)?;
             let right_node = physical_plan_to_pipeline(right, psets)?;
-            let key_schema = Arc::new(Schema::new(
-                left_on
-                    .iter()
-                    .map(|e| e.to_field(left_schema))
-                    .collect::<DaftResult<Vec<_>>>()?,
-            )?);
-            let sink = HashJoinSink::new(left_on.clone(), right_on.clone(), *join_type, key_schema);
+            let sink = HashJoinSink::new(
+                left_on.clone(),
+                right_on.clone(),
+                *join_type,
+                left_schema,
+                right_schema,
+            )?;
             PipelineNode::DoubleInputSink {
                 sink: Box::new(sink),
                 left_child: Box::new(left_node),

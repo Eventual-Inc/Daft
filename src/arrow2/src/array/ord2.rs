@@ -1,7 +1,5 @@
 use ord::total_cmp;
 
-use crate::datatypes::DataType;
-
 use std::cmp::Ordering;
 
 use crate::datatypes::*;

@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{format, Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;
@@ -25,7 +25,8 @@ mod ops;
 mod probe_table;
 
 pub use growable::GrowableTable;
-pub use ops::infer_join_schema;
+pub use ops::{infer_join_schema, infer_join_schema_mapper, JoinOutputMapper};
+
 pub use probe_table::ProbeTableBuilder;
 
 #[cfg(feature = "python")]
@@ -386,6 +387,22 @@ impl Table {
             new_series,
             tables.iter().map(|t| t.as_ref().len()).sum(),
         )
+    }
+
+    pub fn union(&self, other: &Table) -> DaftResult<Self> {
+        if self.num_rows != other.num_rows {
+            return Err(DaftError::ValueError(format!(
+                "Cannot union tables of length {} and {}",
+                self.num_rows, other.num_rows
+            )));
+        }
+        let unioned = self
+            .columns
+            .iter()
+            .chain(other.columns.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        Self::from_nonempty_columns(unioned)
     }
 
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
