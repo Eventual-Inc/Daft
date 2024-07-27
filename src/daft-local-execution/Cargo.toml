@@ -7,7 +7,6 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
-dyn-clone = {workspace = true}
 futures = {workspace = true}
 lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}

@@ -21,11 +21,6 @@ impl ProjectOperator {
 impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        let out = input.eval_expression_list(&self.projection)?;
-        Ok(Arc::new(out))
-    }
-
-    fn name(&self) -> &'static str {
-        "ProjectOperator"
+        input.eval_expression_list(&self.projection).map(Arc::new)
     }
 }

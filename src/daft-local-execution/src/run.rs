@@ -18,7 +18,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline};
+use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline, TaskSet};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -103,14 +103,37 @@ pub fn run_local(
         .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
+        // Convert the physical plan to a pipeline
         let pipeline = physical_plan_to_pipeline(physical_plan, &psets);
+        // Create a channel to send and receive results
         let (sender, mut receiver) = create_channel(1, true);
-        pipeline.start(sender);
-        let mut result = vec![];
-        while let Some(val) = receiver.recv().await {
-            result.push(val);
+        // Initialize the task set that runs each pipeline node as a task
+        let mut op_set = TaskSet::new();
+        // Start the pipeline
+        pipeline.start(sender, &mut op_set);
+
+        // Collect the results
+        let mut results = vec![];
+        loop {
+            tokio::select! {
+                // Receive the results from the pipeline
+                result = receiver.recv() => {
+                    match result {
+                        Some(part) => {
+                            results.push(Ok(part));
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+                // Wait for all tasks to finish and return an error if any of them failed
+                Err(e) = op_set.join_all() => {
+                    return Err(e);
+                }
+            }
         }
-        result.into_iter()
-    });
+        Ok(results.into_iter())
+    })?;
     Ok(Box::new(res))
 }
