@@ -138,6 +138,8 @@ fn materialize_scan_task(
                     // TODO: This is a hardcoded magic value but should be configurable
                     let num_parallel_tasks = 8;
 
+                    let urls = urls.collect::<Vec<_>>();
+
                     // Create vec of all unique delete files in the scan task
                     let iceberg_delete_files = scan_task
                         .sources
@@ -151,6 +153,7 @@ fn materialize_scan_task(
 
                     let delete_map = _read_delete_files(
                         iceberg_delete_files.as_slice(),
+                        urls.as_slice(),
                         io_client.clone(),
                         io_stats.clone(),
                         num_parallel_tasks,
@@ -158,8 +161,6 @@ fn materialize_scan_task(
                         &inference_options,
                     )
                     .context(DaftCoreComputeSnafu)?;
-
-                    let urls = urls.collect::<Vec<_>>();
 
                     let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     let metadatas = scan_task
@@ -954,6 +955,7 @@ fn _get_file_column_names<'a>(
 
 fn _read_delete_files(
     delete_files: &[&str],
+    uris: &[&str],
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -979,9 +981,12 @@ fn _read_delete_files(
         None,
     )?;
 
-    let mut delete_map: HashMap<String, Vec<i64>> = HashMap::new();
+    let mut delete_map: HashMap<String, Vec<i64>> =
+        uris.iter().map(|uri| (uri.to_string(), vec![])).collect();
 
     for table in tables.iter() {
+        // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+        // https://iceberg.apache.org/spec/#position-delete-files
         let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
         let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
 
@@ -991,12 +996,9 @@ fn _read_delete_files(
 
             if let Some(file) = file
                 && let Some(pos) = pos
+                && delete_map.contains_key(file)
             {
-                if delete_map.contains_key(file) {
-                    delete_map.get_mut(file).unwrap().push(pos);
-                } else {
-                    delete_map.insert(file.to_string(), vec![pos]);
-                }
+                delete_map.get_mut(file).unwrap().push(pos);
             }
         }
     }
@@ -1026,6 +1028,7 @@ fn _read_parquet_into_loaded_micropartition(
         .map(|files| {
             _read_delete_files(
                 files.as_slice(),
+                uris,
                 io_client.clone(),
                 io_stats.clone(),
                 num_parallel_tasks,

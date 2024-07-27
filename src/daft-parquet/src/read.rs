@@ -61,6 +61,7 @@ impl From<ParquetSchemaInferenceOptions>
     }
 }
 
+/// Returns the new number of rows to read after taking into account rows that need to be deleted after reading
 fn limit_with_delete_rows(
     delete_rows: &[i64],
     start_offset: Option<usize>,
@@ -121,9 +122,8 @@ async fn read_parquet_single(
     let mut columns_to_read = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
     let requested_columns = columns_to_read.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
-        if num_rows_to_read.is_some() {
-            num_rows_to_read = None;
-        }
+        num_rows_to_read = None;
+
         if let Some(req_columns) = columns_to_read.as_mut() {
             let needed_columns = get_required_columns(pred);
             for c in needed_columns {
@@ -134,7 +134,7 @@ async fn read_parquet_single(
         }
     }
 
-    // If we delete rows, we have to increase the number of rows to read by the deleted rows
+    // Increase the number of rows_to_read to account for deleted rows
     // in order to have the correct number of rows in the end
     if let Some(delete_rows) = &delete_rows {
         num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
