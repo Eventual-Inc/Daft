@@ -718,6 +718,7 @@ class ScanTask:
         storage_config: StorageConfig,
         num_rows: int | None,
         size_bytes: int | None,
+        iceberg_delete_files: list[str] | None,
         pushdowns: Pushdowns | None,
         partition_values: PyTable | None,
         stats: PyTable | None,
