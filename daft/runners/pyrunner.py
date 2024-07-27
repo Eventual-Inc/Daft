@@ -317,7 +317,7 @@ class PyRunner(Runner[MicroPartition]):
 
                         next_step = next(plan)
 
-                if not len(self._inflight_futures) > 0:
+                if next_step is None and not len(local_futures_to_task) > 0:
                     raise RuntimeError(
                         f"Scheduler deadlocked! This should never happen. Please file an issue. Current step: {type(next_step)}"
                     )
