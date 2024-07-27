@@ -122,7 +122,7 @@ class PyRunner(Runner[MicroPartition]):
         self._thread_pool = futures.ThreadPoolExecutor()
 
         # Global accounting of tasks and resources
-        self._inflight_tasks: dict[str, PartitionTask] = dict()
+        self._inflight_futures: dict[str, futures.Future] = {}
 
         system_info = SystemInfo()
         num_cpus = system_info.cpu_count()
@@ -219,8 +219,7 @@ class PyRunner(Runner[MicroPartition]):
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
     ) -> Iterator[PyMaterializedResult]:
-        future_to_task: dict[futures.Future, str] = dict()
-
+        local_futures_to_task: dict[futures.Future, PartitionTask] = {}
         pbar = ProgressBar(use_ray_tqdm=False)
 
         try:
@@ -310,31 +309,34 @@ class PyRunner(Runner[MicroPartition]):
                                 ), "Available GPUs should not go below 0. This indicates a scheduler bug."
 
                                 # Register the inflight task
-                                future_to_task[future] = next_step.id()
                                 assert (
-                                    next_step.id() not in self._inflight_tasks
+                                    next_step.id() not in local_futures_to_task
                                 ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
-                                self._inflight_tasks[next_step.id()] = next_step
+                                self._inflight_futures[next_step.id()] = future
+                                local_futures_to_task[future] = next_step
 
                         next_step = next(plan)
 
-                if not len(self._inflight_tasks) > 0:
+                if not len(self._inflight_futures) > 0:
                     raise RuntimeError(
                         f"Scheduler deadlocked! This should never happen. Please file an issue. Current step: {type(next_step)}"
                     )
 
-                # Await at least one task and process the results.
-                done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
+                # Await at least one task in the global futures to finish before proceeding
+                _ = futures.wait(list(self._inflight_futures.values()), return_when=futures.FIRST_COMPLETED)
+
+                # Now await at a task in the local futures to finish, so as to progress the local execution
+                done_set, _ = futures.wait(list(local_futures_to_task), return_when=futures.FIRST_COMPLETED)
                 for done_future in done_set:
-                    done_id = future_to_task.pop(done_future)
-                    done_task = self._inflight_tasks.pop(done_id)
+                    done_task = local_futures_to_task.pop(done_future)
                     materialized_results = done_future.result()
 
                     pbar.mark_task_done(done_task)
+                    del self._inflight_futures[done_task.id()]
 
                     logger.debug(
                         "Task completed: %s -> <%s partitions>",
-                        done_id,
+                        done_task.id(),
                         len(materialized_results),
                     )
 
