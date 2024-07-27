@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Iterator
@@ -113,6 +114,43 @@ class PyRunnerIO(runner_io.RunnerIO):
         return file_infos
 
 
+class MutexedResourceCounter:
+    def __init__(self, initial_count: int):
+        self._lock = threading.Lock()
+        self._lock_acquired = False
+        self._count = initial_count
+
+    def get(self) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        return self._count
+
+    def add(self, value: int | None) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        if value is None:
+            return self._count
+        self._count += value
+        return self._count
+
+    def sub(self, value: int | None) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        if value is None:
+            return self._count
+        self._count -= value
+        return self._count
+
+    def __enter__(self):
+        self._lock.acquire()
+        self._lock_acquired = True
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._lock_acquired = False
+        self._lock.release()
+
+
 class PyRunner(Runner[MicroPartition]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
@@ -121,7 +159,6 @@ class PyRunner(Runner[MicroPartition]):
         self._thread_pool = futures.ThreadPoolExecutor()
 
         # Global accounting of tasks and resources
-        self._inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         self._inflight_tasks: dict[str, PartitionTask] = dict()
 
         system_info = SystemInfo()
@@ -135,6 +172,10 @@ class PyRunner(Runner[MicroPartition]):
 
         self.num_gpus = cuda_device_count()
         self.bytes_memory = system_info.total_memory()
+
+        self._available_cpus = MutexedResourceCounter(self.num_cpus)
+        self._available_gpus = MutexedResourceCounter(self.num_gpus)
+        self._available_bytes_memory = MutexedResourceCounter(self.bytes_memory)
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
@@ -269,6 +310,7 @@ class PyRunner(Runner[MicroPartition]):
                                 next_step.instructions,
                                 next_step.inputs,
                                 next_step.partial_metadatas,
+                                next_step.resource_request,
                             )
                             next_step.set_result(materialized_results)
 
@@ -279,20 +321,35 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            future = self._thread_pool.submit(
-                                self.build_partitions,
-                                next_step.instructions,
-                                next_step.inputs,
-                                next_step.partial_metadatas,
-                            )
-                            # Register the inflight task and resources used.
-                            future_to_task[future] = next_step.id()
+                            with self._available_bytes_memory as available_bytes_memory, self._available_cpus as available_cpus, self._available_gpus as available_gpus:
+                                future = self._thread_pool.submit(
+                                    self.build_partitions,
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
+                                    next_step.resource_request,
+                                )
 
-                            assert (
-                                next_step.id() not in self._inflight_tasks_resources
-                            ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
-                            self._inflight_tasks[next_step.id()] = next_step
-                            self._inflight_tasks_resources[next_step.id()] = next_step.resource_request
+                                # Update the resources used
+                                mem = available_bytes_memory.sub(next_step.resource_request.memory_bytes)
+                                cpus = available_cpus.sub(next_step.resource_request.num_cpus)
+                                gpus = available_gpus.sub(next_step.resource_request.num_gpus)
+                                assert (
+                                    mem >= 0
+                                ), "Available bytes in memory should not go below 0. This indicates a scheduler bug."
+                                assert (
+                                    cpus >= 0
+                                ), "Available CPUs should not go below 0. This indicates a scheduler bug."
+                                assert (
+                                    gpus >= 0
+                                ), "Available GPUs should not go below 0. This indicates a scheduler bug."
+
+                                # Register the inflight task
+                                future_to_task[future] = next_step.id()
+                                assert (
+                                    next_step.id() not in self._inflight_tasks
+                                ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
+                                self._inflight_tasks[next_step.id()] = next_step
 
                         next_step = next(plan)
 
@@ -305,7 +362,6 @@ class PyRunner(Runner[MicroPartition]):
                 done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                 for done_future in done_set:
                     done_id = future_to_task.pop(done_future)
-                    del self._inflight_tasks_resources[done_id]
                     done_task = self._inflight_tasks.pop(done_id)
                     materialized_results = done_future.result()
 
@@ -318,6 +374,9 @@ class PyRunner(Runner[MicroPartition]):
                     )
 
                     done_task.set_result(materialized_results)
+
+                    with self._available_bytes_memory as available_memory:
+                        available_memory.add(done_task.resource_request.memory_bytes)
 
                 if next_step is None:
                     next_step = next(plan)
@@ -344,28 +403,33 @@ class PyRunner(Runner[MicroPartition]):
     ) -> bool:
         self._check_resource_requests(resource_request)
 
-        inflight_resources = self._inflight_tasks_resources.values()
-        total_inflight_resources: ResourceRequest = sum(inflight_resources, ResourceRequest())
-        cpus_okay = (total_inflight_resources.num_cpus or 0) + (resource_request.num_cpus or 0) <= self.num_cpus
-        gpus_okay = (total_inflight_resources.num_gpus or 0) + (resource_request.num_gpus or 0) <= self.num_gpus
-        memory_okay = (total_inflight_resources.memory_bytes or 0) + (
-            resource_request.memory_bytes or 0
-        ) <= self.bytes_memory
+        with self._available_bytes_memory as mem, self._available_cpus as cpus, self._available_gpus as gpus:
+            cpus_okay = (resource_request.num_cpus or 0) <= cpus.get()
+            gpus_okay = (resource_request.num_gpus or 0) <= gpus.get()
+            memory_okay = (resource_request.memory_bytes or 0) <= mem.get()
 
         return all((cpus_okay, gpus_okay, memory_okay))
 
-    @staticmethod
     def build_partitions(
+        self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
         final_metadata: list[PartialPartitionMetadata],
+        resource_request: ResourceRequest,
     ) -> list[MaterializedResult[MicroPartition]]:
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
-        return [
+
+        results: list[MaterializedResult[MicroPartition]] = [
             PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
             for part, partial in zip(partitions, final_metadata)
         ]
+
+        # Release CPU and GPU resources, but not memory since the future has not been consumed yet
+        with self._available_cpus as available_cpus, self._available_gpus as available_gpus:
+            available_cpus.add(resource_request.num_cpus)
+            available_gpus.add(resource_request.num_gpus)
+            return results
 
 
 @dataclass
