@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
+    datatypes::Field,
     join,
     schema::{Schema, SchemaRef},
+    utils::supertype,
 };
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -33,17 +35,43 @@ impl HashJoinSink {
         left_schema: &SchemaRef,
         right_schema: &SchemaRef,
     ) -> DaftResult<Self> {
-        let key_schema = Arc::new(Schema::new(
-            left_on
-                .iter()
-                .map(|e| e.to_field(&left_schema))
+        let left_key_fields = left_on
+            .iter()
+            .map(|e| e.to_field(&left_schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let right_key_fields = right_on
+            .iter()
+            .map(|e| e.to_field(&right_schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let key_schema: SchemaRef = Schema::new(
+            left_key_fields
+                .into_iter()
+                .zip(right_key_fields.into_iter())
+                .map(|(l, r)| {
+                    // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
+                    let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
+                    Ok(Field::new(l.name, dtype))
+                })
                 .collect::<DaftResult<Vec<_>>>()?,
-        )?);
+        )?
+        .into();
+
         let join_mapper =
             infer_join_schema_mapper(&left_schema, &right_schema, &left_on, &right_on, join_type)?;
 
+        let left_on = left_on
+            .into_iter()
+            .zip(key_schema.fields.values().into_iter())
+            .map(|(e, f)| e.cast(&f.dtype))
+            .collect::<Vec<_>>();
+        let right_on = right_on
+            .into_iter()
+            .zip(key_schema.fields.values().into_iter())
+            .map(|(e, f)| e.cast(&f.dtype))
+            .collect::<Vec<_>>();
+
         Ok(Self {
-            probe_table_builder: ProbeTableBuilder::new(key_schema).unwrap(),
+            probe_table_builder: ProbeTableBuilder::new(key_schema.clone())?,
             result_left: Vec::new(),
             result_right: Vec::new(),
             left_on,
@@ -60,6 +88,7 @@ impl DoubleInputSink for HashJoinSink {
         for table in input.get_tables()?.iter() {
             self.result_left.push(table.clone());
             let join_keys = table.eval_expression_list(&self.left_on)?;
+
             self.probe_table_builder.add_table(&join_keys)?;
         }
         Ok(SinkResultType::NeedMoreInput)
@@ -119,7 +148,6 @@ impl DoubleInputSink for HashJoinSink {
             Arc::new(vec![final_table]),
             None,
         ))])
-        // Ok(vec![Arc::new(joined)])
     }
 
     fn name(&self) -> &'static str {

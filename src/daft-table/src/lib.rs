@@ -1,6 +1,7 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
 
+use core::slice;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{format, Display, Formatter, Result};
@@ -744,6 +745,14 @@ impl Display for Table {
 impl AsRef<Table> for Table {
     fn as_ref(&self) -> &Table {
         self
+    }
+}
+
+impl<'a> IntoIterator for &'a Table {
+    type Item = &'a Series;
+    type IntoIter = slice::Iter<'a, Series>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.columns.as_slice().iter()
     }
 }
 
