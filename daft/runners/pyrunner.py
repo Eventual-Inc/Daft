@@ -31,6 +31,43 @@ from daft.table import MicroPartition
 logger = logging.getLogger(__name__)
 
 
+class _MutexedResourceCounter:
+    def __init__(self, initial_count: int):
+        self._lock = threading.Lock()
+        self._lock_acquired = False
+        self._count = initial_count
+
+    def get(self) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        return self._count
+
+    def add(self, value: int | None) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        if value is None:
+            return self._count
+        self._count += value
+        return self._count
+
+    def sub(self, value: int | None) -> int:
+        if not self._lock_acquired:
+            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
+        if value is None:
+            return self._count
+        self._count -= value
+        return self._count
+
+    def __enter__(self):
+        self._lock.acquire()
+        self._lock_acquired = True
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._lock_acquired = False
+        self._lock.release()
+
+
 class LocalPartitionSet(PartitionSet[MicroPartition]):
     _partitions: dict[PartID, MaterializedResult[MicroPartition]]
 
@@ -114,43 +151,6 @@ class PyRunnerIO(runner_io.RunnerIO):
         return file_infos
 
 
-class MutexedResourceCounter:
-    def __init__(self, initial_count: int):
-        self._lock = threading.Lock()
-        self._lock_acquired = False
-        self._count = initial_count
-
-    def get(self) -> int:
-        if not self._lock_acquired:
-            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
-        return self._count
-
-    def add(self, value: int | None) -> int:
-        if not self._lock_acquired:
-            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
-        if value is None:
-            return self._count
-        self._count += value
-        return self._count
-
-    def sub(self, value: int | None) -> int:
-        if not self._lock_acquired:
-            raise RuntimeError("Cannot access a MutexedResourceCounter without acquiring its lock")
-        if value is None:
-            return self._count
-        self._count -= value
-        return self._count
-
-    def __enter__(self):
-        self._lock.acquire()
-        self._lock_acquired = True
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self._lock_acquired = False
-        self._lock.release()
-
-
 class PyRunner(Runner[MicroPartition]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
@@ -171,11 +171,16 @@ class PyRunner(Runner[MicroPartition]):
             self.num_cpus = num_cpus
 
         self.num_gpus = cuda_device_count()
-        self.bytes_memory = system_info.total_memory()
+        self.total_bytes_memory = system_info.total_memory()
 
-        self._available_cpus = MutexedResourceCounter(self.num_cpus)
-        self._available_gpus = MutexedResourceCounter(self.num_gpus)
-        self._available_bytes_memory = MutexedResourceCounter(self.bytes_memory)
+        # Resource accounting:
+        #
+        # Memory is not protected because all updates are expected to be performed on the main thread upon dispatch/retrieval of futures.
+        # CPUs and GPUs are updated from worker threads upon completion of each task, so as to free up those resources
+        # even if the futures have not yet been consumed.
+        self._available_bytes_memory = self.total_bytes_memory
+        self._available_cpus = _MutexedResourceCounter(self.num_cpus)
+        self._available_gpus = _MutexedResourceCounter(self.num_gpus)
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
@@ -321,7 +326,7 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            with self._available_bytes_memory as available_bytes_memory, self._available_cpus as available_cpus, self._available_gpus as available_gpus:
+                            with self._available_cpus as available_cpus, self._available_gpus as available_gpus:
                                 future = self._thread_pool.submit(
                                     self.build_partitions,
                                     next_step.instructions,
@@ -330,12 +335,12 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.resource_request,
                                 )
 
-                                # Update the resources used
-                                mem = available_bytes_memory.sub(next_step.resource_request.memory_bytes)
-                                cpus = available_cpus.sub(next_step.resource_request.num_cpus)
-                                gpus = available_gpus.sub(next_step.resource_request.num_gpus)
+                                # Update resource accounting
+                                self._available_bytes_memory -= next_step.resource_request.memory_bytes or 0
+                                cpus = available_cpus.sub(next_step.resource_request.num_cpus or 0)
+                                gpus = available_gpus.sub(next_step.resource_request.num_gpus or 0)
                                 assert (
-                                    mem >= 0
+                                    self._available_bytes_memory >= 0
                                 ), "Available bytes in memory should not go below 0. This indicates a scheduler bug."
                                 assert (
                                     cpus >= 0
@@ -373,10 +378,10 @@ class PyRunner(Runner[MicroPartition]):
                         len(materialized_results),
                     )
 
-                    done_task.set_result(materialized_results)
+                    # Update memory resource accounting, this is not protected because all memory resource accounting is done on the main thread
+                    self._available_bytes_memory += done_task.resource_request.memory_bytes or 0
 
-                    with self._available_bytes_memory as available_memory:
-                        available_memory.add(done_task.resource_request.memory_bytes)
+                    done_task.set_result(materialized_results)
 
                 if next_step is None:
                     next_step = next(plan)
@@ -392,9 +397,9 @@ class PyRunner(Runner[MicroPartition]):
             raise RuntimeError(f"Requested {resource_request.num_cpus} CPUs but found only {self.num_cpus} available")
         if resource_request.num_gpus is not None and resource_request.num_gpus > self.num_gpus:
             raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {self.num_gpus} available")
-        if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.bytes_memory:
+        if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.total_bytes_memory:
             raise RuntimeError(
-                f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.bytes_memory} available"
+                f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.total_bytes_memory} available"
             )
 
     def _can_admit_task(
@@ -403,10 +408,10 @@ class PyRunner(Runner[MicroPartition]):
     ) -> bool:
         self._check_resource_requests(resource_request)
 
-        with self._available_bytes_memory as mem, self._available_cpus as cpus, self._available_gpus as gpus:
+        memory_okay = (resource_request.memory_bytes or 0) <= self._available_bytes_memory
+        with self._available_cpus as cpus, self._available_gpus as gpus:
             cpus_okay = (resource_request.num_cpus or 0) <= cpus.get()
             gpus_okay = (resource_request.num_gpus or 0) <= gpus.get()
-            memory_okay = (resource_request.memory_bytes or 0) <= mem.get()
 
         return all((cpus_okay, gpus_okay, memory_okay))
 
