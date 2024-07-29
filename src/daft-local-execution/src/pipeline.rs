@@ -9,7 +9,7 @@ use daft_physical_plan::{
     Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan,
     Project, Sort, UnGroupedAggregate,
 };
-use daft_plan::populate_aggregation_stages;
+use daft_plan::{logical_plan::Sink, populate_aggregation_stages};
 
 use crate::{
     channel::MultiSender,
@@ -24,7 +24,7 @@ use crate::{
         concat::ConcatSink,
         hash_join::HashJoinSink,
         limit::LimitSink,
-        sink::{run_double_input_sink, run_single_input_sink, DoubleInputSink, SingleInputSink},
+        sink::{run_sink, DoubleInputSink, SingleInputSink, Sink as ExecSink},
         sort::SortSink,
     },
     sources::{
@@ -42,18 +42,27 @@ pub enum PipelineNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<PipelineNode>,
     },
-    SingleInputSink {
-        sink: Box<dyn SingleInputSink>,
-        child: Box<PipelineNode>,
-    },
-    DoubleInputSink {
-        sink: Box<dyn DoubleInputSink>,
-        left_child: Box<PipelineNode>,
-        right_child: Box<PipelineNode>,
+    Sink {
+        sink: Box<dyn ExecSink>,
+        children: Vec<PipelineNode>,
     },
 }
 
 impl PipelineNode {
+    fn single_sink<S: SingleInputSink + 'static>(sink: S, child: Self) -> Self {
+        PipelineNode::Sink {
+            sink: (Box::new(sink) as Box<dyn SingleInputSink>).into(),
+            children: vec![child],
+        }
+    }
+
+    fn double_sink<S: DoubleInputSink + 'static>(sink: S, left: Self, right: Self) -> Self {
+        PipelineNode::Sink {
+            sink: (Box::new(sink) as Box<dyn DoubleInputSink>).into(),
+            children: vec![left, right],
+        }
+    }
+
     pub fn start(self, sender: MultiSender) {
         match self {
             PipelineNode::Source { source } => {
@@ -63,23 +72,21 @@ impl PipelineNode {
                 intermediate_op,
                 mut children,
             } => {
-                assert!(children.len() == 1, "we can only handle 1 child for intermediate ops right now: {}", children.len());
+                assert!(
+                    children.len() == 1,
+                    "we can only handle 1 child for intermediate ops right now: {}",
+                    children.len()
+                );
                 let child = children.pop().expect("exactly 1 child");
                 let sender = run_intermediate_op(intermediate_op, sender);
                 child.start(sender);
             }
-            PipelineNode::SingleInputSink { sink, child } => {
-                let sender = run_single_input_sink(sink, sender);
-                child.start(sender);
-            }
-            PipelineNode::DoubleInputSink {
-                sink,
-                left_child,
-                right_child,
-            } => {
-                let (left_sender, right_sender) = run_double_input_sink(sink, sender);
-                left_child.start(left_sender);
-                right_child.start(right_sender);
+            PipelineNode::Sink { sink, children } => {
+                let senders = run_sink(sink, sender);
+                children
+                    .into_iter()
+                    .zip(senders.into_iter())
+                    .for_each(|(child, s)| child.start(s));
             }
         }
     }
@@ -128,20 +135,13 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            PipelineNode::SingleInputSink {
-                sink: Box::new(sink),
-                child: Box::new(child_node),
-            }
+            PipelineNode::single_sink(sink, child_node)
         }
         LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
             let sink = ConcatSink::new();
             let left_child = physical_plan_to_pipeline(input, psets)?;
             let right_child = physical_plan_to_pipeline(other, psets)?;
-            PipelineNode::DoubleInputSink {
-                sink: Box::new(sink),
-                left_child: Box::new(left_child),
-                right_child: Box::new(right_child),
-            }
+            PipelineNode::double_sink(sink, left_child, right_child)
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -175,10 +175,8 @@ pub fn physical_plan_to_pipeline(
                 children: vec![child_node],
             };
 
-            let sink_node = PipelineNode::SingleInputSink {
-                sink: Box::new(second_stage_agg_sink),
-                child: Box::new(intermediate_agg_op_node),
-            };
+            let sink_node =
+                PipelineNode::single_sink(second_stage_agg_sink, intermediate_agg_op_node);
 
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(final_stage_project),
@@ -218,10 +216,8 @@ pub fn physical_plan_to_pipeline(
                 children: vec![child_node],
             };
 
-            let sink_node = PipelineNode::SingleInputSink {
-                sink: Box::new(second_stage_agg_sink),
-                child: Box::new(intermediate_agg_op_node),
-            };
+            let sink_node =
+                PipelineNode::single_sink(second_stage_agg_sink, intermediate_agg_op_node);
 
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(final_stage_project),
@@ -236,10 +232,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            PipelineNode::SingleInputSink {
-                sink: Box::new(sort_sink),
-                child: Box::new(child_node),
-            }
+            PipelineNode::single_sink(sort_sink, child_node)
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
@@ -260,11 +253,7 @@ pub fn physical_plan_to_pipeline(
                 left_schema,
                 right_schema,
             )?;
-            PipelineNode::DoubleInputSink {
-                sink: Box::new(sink),
-                left_child: Box::new(left_node),
-                right_child: Box::new(right_node),
-            }
+            PipelineNode::double_sink(sink, left_node, right_node)
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
@@ -277,9 +266,9 @@ pub fn physical_plan_to_pipeline(
 //             &self,
 //             f: F,
 //         ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-        
+
 //     }
-    
+
 //     // fn children(&self) -> Vec<&Self> {
 //     //     use PipelineNode::*;
 //     //     match self.as_ref() {
@@ -294,6 +283,6 @@ pub fn physical_plan_to_pipeline(
 //     //         Source { source } => vec![],
 //     //         IntermediateOp { child, ..} | SingleInputSink { child, ..} => vec![child],
 //     //         DoubleInputSink {left_child, right_child,.. } => vec![left_child, right_child],
-//     //     } 
+//     //     }
 //     // }
 // }
