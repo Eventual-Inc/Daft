@@ -165,18 +165,12 @@ class PyRunner(Runner[MicroPartition]):
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
-                if daft_execution_config.enable_native_executor:
-                    logger.info("Using new executor")
-                    results_gen = plan_scheduler.run(
-                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                    )
-                else:
-                    # don't store partition sets in variable to avoid reference
-                    tasks = plan_scheduler.to_partition_tasks(
-                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                    )
-                    del plan_scheduler
-                    results_gen = self._physical_plan_to_partitions(tasks)
+                # don't store partition sets in variable to avoid reference
+                tasks = plan_scheduler.to_partition_tasks(
+                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                )
+                del plan_scheduler
+                results_gen = self._physical_plan_to_partitions(tasks)
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen

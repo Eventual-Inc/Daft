@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
 use super::intermediate_op::IntermediateOperator;
 
@@ -18,8 +19,8 @@ impl FilterOperator {
 }
 
 impl IntermediateOperator for FilterOperator {
+    #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        log::debug!("FilterOperator::execute");
         let out = input.filter(&[self.predicate.clone()])?;
         Ok(Arc::new(out))
     }

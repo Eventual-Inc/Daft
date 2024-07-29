@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -31,8 +33,20 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     .y
 });
 
+fn should_enable_chrome_trace() -> bool {
+    let chrome_trace_var_name = "DAFT_DEV_ENABLE_CHROME_TRACE";
+    if let Ok(val) = std::env::var(chrome_trace_var_name)
+        && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    {
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(feature = "python")]
 pub mod pylib {
+    use common_tracing::init_tracing;
     use lazy_static::lazy_static;
     use pyo3::prelude::*;
     lazy_static! {
@@ -56,12 +70,12 @@ pub mod pylib {
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         refresh_logger();
+        init_tracing(crate::should_enable_chrome_trace());
 
         common_daft_config::register_modules(_py, m)?;
         common_system_info::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
-        daft_execution::register_modules(_py, m)?;
         daft_local_execution::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;
         daft_table::register_modules(_py, m)?;
@@ -73,6 +87,7 @@ pub mod pylib {
         daft_micropartition::register_modules(_py, m)?;
         daft_scan::register_modules(_py, m)?;
         daft_scheduler::register_modules(_py, m)?;
+        daft_sql::register_modules(_py, m)?;
         daft_functions::register_modules(_py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;

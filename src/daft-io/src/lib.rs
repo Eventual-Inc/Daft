@@ -442,6 +442,28 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
     }
 }
 
+pub async fn get_io_client_async(
+    multi_thread: bool,
+    config: Arc<IOConfig>,
+) -> DaftResult<Arc<IOClient>> {
+    let read_handle = CLIENT_CACHE.read().await;
+    let key = (multi_thread, config.clone());
+    if let Some(client) = read_handle.get(&key) {
+        Ok(client.clone())
+    } else {
+        drop(read_handle);
+
+        let mut w_handle = CLIENT_CACHE.write().await;
+        if let Some(client) = w_handle.get(&key) {
+            Ok(client.clone())
+        } else {
+            let client = Arc::new(IOClient::new(config.clone())?);
+            w_handle.insert(key, client.clone());
+            Ok(client)
+        }
+    }
+}
+
 pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
     match multi_thread {
         false => {

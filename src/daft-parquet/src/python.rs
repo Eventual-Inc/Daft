@@ -171,6 +171,7 @@ pub mod pylib {
                 &schema_infer_options,
                 None,
                 None,
+                None,
             )?
             .into_iter()
             .map(|v| v.into())

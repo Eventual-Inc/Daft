@@ -1,0 +1,19 @@
+[dependencies]
+common-error = {path = "../common/error"}
+daft-core = {path = "../daft-core"}
+daft-dsl = {path = "../daft-dsl"}
+daft-plan = {path = "../daft-plan"}
+pyo3 = {workspace = true, optional = true}
+sqlparser = {workspace = true}
+snafu.workspace = true
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[features]
+python = ["dep:pyo3", "common-error/python"]
+
+[package]
+name = "daft-sql"
+edition.workspace = true
+version.workspace = true

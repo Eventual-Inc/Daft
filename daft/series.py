@@ -5,7 +5,7 @@ from typing import Any, Literal, TypeVar
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, PySeries
+from daft.daft import CountMode, ImageFormat, ImageMode, PySeries
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -975,7 +975,11 @@ class SeriesMapNamespace(SeriesNamespace):
 
 
 class SeriesImageNamespace(SeriesNamespace):
-    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Series:
+    def decode(
+        self,
+        on_error: Literal["raise"] | Literal["null"] = "raise",
+        mode: str | ImageMode | None = None,
+    ) -> Series:
         raise_on_error = False
         if on_error == "raise":
             raise_on_error = True
@@ -983,7 +987,12 @@ class SeriesImageNamespace(SeriesNamespace):
             raise_on_error = False
         else:
             raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error))
+        if mode is not None:
+            if isinstance(mode, str):
+                mode = ImageMode.from_mode_string(mode.upper())
+            if not isinstance(mode, ImageMode):
+                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
+        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Series:
         if isinstance(image_format, str):
@@ -999,3 +1008,10 @@ class SeriesImageNamespace(SeriesNamespace):
             raise TypeError(f"expected int for h but got {type(h)}")
 
         return Series._from_pyseries(self._series.image_resize(w, h))
+
+    def to_mode(self, mode: str | ImageMode) -> Series:
+        if isinstance(mode, str):
+            mode = ImageMode.from_mode_string(mode.upper())
+        if not isinstance(mode, ImageMode):
+            raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
+        return Series._from_pyseries(self._series.image_to_mode(mode))

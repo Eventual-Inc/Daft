@@ -187,6 +187,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 num_rows=record_count,
                 storage_config=self._storage_config,
                 size_bytes=size_bytes,
+                iceberg_delete_files=None,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
                 stats=stats._table if stats is not None else None,

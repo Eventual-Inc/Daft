@@ -41,6 +41,19 @@ impl Schema {
 
         Ok(Schema { fields: map })
     }
+
+    pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Schema> {
+        let mut fields = IndexMap::new();
+        let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
+        for (name, field) in self.fields.iter() {
+            if !names.contains(&name.as_str()) {
+                fields.insert(name.clone(), field.clone());
+            }
+        }
+
+        Ok(Schema { fields })
+    }
+
     pub fn empty() -> Self {
         Schema {
             fields: indexmap::IndexMap::new(),

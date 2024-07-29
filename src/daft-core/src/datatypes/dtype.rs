@@ -121,6 +121,14 @@ impl DataType {
         DataType::Null
     }
 
+    pub fn new_list(datatype: DataType) -> DataType {
+        DataType::List(Box::new(datatype))
+    }
+
+    pub fn new_fixed_size_list(datatype: DataType, size: usize) -> DataType {
+        DataType::FixedSizeList(Box::new(datatype), size)
+    }
+
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
         match self {
             DataType::Null => Ok(ArrowType::Null),
