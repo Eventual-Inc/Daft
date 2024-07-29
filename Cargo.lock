@@ -1788,6 +1788,7 @@ dependencies = [
  "async-stream",
  "common-error",
  "common-tracing",
+ "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-io",

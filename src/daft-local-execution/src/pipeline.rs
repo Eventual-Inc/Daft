@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_treenode::{ConcreteTreeNode, TreeNode};
 use daft_core::schema::Schema;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
@@ -39,7 +40,7 @@ pub enum PipelineNode {
     },
     IntermediateOp {
         intermediate_op: Arc<dyn IntermediateOperator>,
-        child: Box<PipelineNode>,
+        children: Vec<PipelineNode>,
     },
     SingleInputSink {
         sink: Box<dyn SingleInputSink>,
@@ -60,8 +61,10 @@ impl PipelineNode {
             }
             PipelineNode::IntermediateOp {
                 intermediate_op,
-                child,
+                mut children,
             } => {
+                assert!(children.len() == 1, "we can only handle 1 child for intermediate ops right now: {}", children.len());
+                let child = children.pop().expect("exactly 1 child");
                 let sender = run_intermediate_op(intermediate_op, sender);
                 child.start(sender);
             }
@@ -107,7 +110,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(proj_op),
-                child: Box::new(child_node),
+                children: vec![child_node],
             }
         }
         LocalPhysicalPlan::Filter(Filter {
@@ -117,7 +120,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(filter_op),
-                child: Box::new(child_node),
+                children: vec![child_node],
             }
         }
         LocalPhysicalPlan::Limit(Limit {
@@ -169,7 +172,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let intermediate_agg_op_node = PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(first_stage_agg_op),
-                child: Box::new(child_node),
+                children: vec![child_node],
             };
 
             let sink_node = PipelineNode::SingleInputSink {
@@ -179,7 +182,7 @@ pub fn physical_plan_to_pipeline(
 
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(final_stage_project),
-                child: Box::new(sink_node),
+                children: vec![sink_node],
             }
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
@@ -212,7 +215,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let intermediate_agg_op_node = PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(first_stage_agg_op),
-                child: Box::new(child_node),
+                children: vec![child_node],
             };
 
             let sink_node = PipelineNode::SingleInputSink {
@@ -222,7 +225,7 @@ pub fn physical_plan_to_pipeline(
 
             PipelineNode::IntermediateOp {
                 intermediate_op: Arc::new(final_stage_project),
-                child: Box::new(sink_node),
+                children: vec![sink_node],
             }
         }
         LocalPhysicalPlan::Sort(Sort {
@@ -268,3 +271,29 @@ pub fn physical_plan_to_pipeline(
         }
     })
 }
+
+// impl TreeNode for PipelineNode {
+//     fn apply_children<F: FnMut(&Self) -> DaftResult<common_treenode::TreeNodeRecursion>>(
+//             &self,
+//             f: F,
+//         ) -> DaftResult<common_treenode::TreeNodeRecursion> {
+        
+//     }
+    
+//     // fn children(&self) -> Vec<&Self> {
+//     //     use PipelineNode::*;
+//     //     match self.as_ref() {
+//     //         Source { .. } => vec![],
+//     //         IntermediateOp { child, ..} | SingleInputSink { child, ..} => vec![child],
+//     //         DoubleInputSink {left_child, right_child,.. } => vec![left_child, right_child],
+//     //     }
+//     // }
+//     // fn take_children(self) -> (Self, Vec<Self>) {
+//     //     use PipelineNode::*;
+//     //     match self {
+//     //         Source { source } => vec![],
+//     //         IntermediateOp { child, ..} | SingleInputSink { child, ..} => vec![child],
+//     //         DoubleInputSink {left_child, right_child,.. } => vec![left_child, right_child],
+//     //     } 
+//     // }
+// }

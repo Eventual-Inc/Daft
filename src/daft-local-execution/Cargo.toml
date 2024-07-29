@@ -2,6 +2,8 @@
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
+common-treenode = {path = "../common/treenode", default-features = false}
+
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
