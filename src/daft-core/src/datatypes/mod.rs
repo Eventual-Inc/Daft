@@ -7,11 +7,10 @@ mod image_mode;
 mod matching;
 mod time_unit;
 
+use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
-use crate::array::{ListArray, StructArray};
 pub use agg_ops::{try_mean_supertype, try_sum_supertype};
 use arrow2::{
-    array::PrimitiveArray,
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
@@ -360,25 +359,9 @@ pub type ExtensionArray = DataArray<ExtensionType>;
 
 #[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;
-macro_rules! impl_as_slice {
-    ($arr:ident, $native:ty) => {
-        impl $arr {
-            pub fn as_slice(&self) -> &[$native] {
-                let data: &PrimitiveArray<$native> = self.data().as_any().downcast_ref().unwrap();
-                data.values().as_slice()
-            }
-        }
-    };
-}
 
-impl_as_slice!(Int8Array, i8);
-impl_as_slice!(Int16Array, i16);
-impl_as_slice!(Int32Array, i32);
-impl_as_slice!(Int64Array, i64);
-impl_as_slice!(Int128Array, i128);
-impl_as_slice!(UInt8Array, u8);
-impl_as_slice!(UInt16Array, u16);
-impl_as_slice!(UInt32Array, u32);
-impl_as_slice!(UInt64Array, u64);
-impl_as_slice!(Float32Array, f32);
-impl_as_slice!(Float64Array, f64);
+impl<T: DaftNumericType> DataArray<T> {
+    pub fn as_slice(&self) -> &[T::Native] {
+        self.as_arrow().values().as_slice()
+    }
+}

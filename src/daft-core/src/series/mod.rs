@@ -10,8 +10,11 @@ use std::{
 };
 
 use crate::{
-    array::ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
-    datatypes::{DataType, Field, FieldRef},
+    array::{
+        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
+        DataArray,
+    },
+    datatypes::{DaftNumericType, DataType, Field, FieldRef},
     utils::display_table::make_comfy_table,
     with_match_daft_types,
 };
@@ -106,6 +109,19 @@ impl Series {
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.inner.validity()
+    }
+
+    /// Attempts to downcast the Series to a primitive slice
+    /// This will return an error if the Series is not of the physical type `T`
+    /// # Example
+    /// ```rust,no_run
+    /// let i32_arr: &[i32] = series.try_as_slice::<Int32Type>()?;
+    ///
+    /// let f64_arr: &[f64] = series.try_as_slice::<Float64Type>()?;
+    /// ```
+    pub fn try_as_slice<T: DaftNumericType>(&self) -> DaftResult<&[T::Native]> {
+        let arr: &DataArray<T> = self.downcast()?;
+        Ok(arr.as_slice())
     }
 }
 

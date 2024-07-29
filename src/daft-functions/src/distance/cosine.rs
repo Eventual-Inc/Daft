@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{Field, Float64Array},
+    array::FixedSizeListArray,
+    datatypes::{DaftNumericType, Field, Float32Type, Float64Array, Float64Type, Int8Type},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -14,20 +15,26 @@ use simsimd::SpatialSimilarity;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CosineDistanceFunction {}
 
-macro_rules! compute_cosine_distance {
-    ($source:expr, $query:expr, $type:ident) => {{
-        let query = &$query.fixed_size_list()?.flat_child;
-        let query = query.$type()?.as_slice();
-        $source
-            .into_iter()
-            .map(|list_opt| {
-                let list = list_opt?;
-                let list = list.$type().unwrap().as_slice();
-                let cosine = $type::cosine(&list, &query);
-                cosine
-            })
-            .collect::<Vec<_>>()
-    }};
+fn compute_cosine_distance<T>(
+    source: &FixedSizeListArray,
+    query: &Series,
+) -> DaftResult<Vec<Option<f64>>>
+where
+    T: DaftNumericType,
+    T::Native: SpatialSimilarity,
+{
+    let query = &query.fixed_size_list()?.flat_child;
+    let query = query.try_as_slice::<T>()?;
+
+    source
+        .into_iter()
+        .map(|list_opt| {
+            let list = list_opt.as_ref().unwrap();
+            let list = list.try_as_slice::<T>()?;
+            let cosine = T::Native::cosine(list, query);
+            Ok(cosine)
+        })
+        .collect::<DaftResult<Vec<_>>>()
 }
 
 #[typetag::serde]
@@ -54,18 +61,13 @@ impl ScalarUDF for CosineDistanceFunction {
 
                 let res = match query.data_type() {
                     DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
-                        DataType::Int8 => {
-                            compute_cosine_distance!(source, query, i8)
-                        }
-                        DataType::Float32 => {
-                            compute_cosine_distance!(source, query, f32)
-                        }
-                        DataType::Float64 => {
-                            compute_cosine_distance!(source, query, f64)
-                        }
+                        DataType::Int8 => compute_cosine_distance::<Int8Type>(source, query),
+                        DataType::Float32 => compute_cosine_distance::<Float32Type>(source, query),
+                        DataType::Float64 => compute_cosine_distance::<Float64Type>(source, query),
                         _ => {
                             return Err(DaftError::ValueError(
-                                "Cosine only supports Int8|Float32|Float32 datatypes".to_string(),
+                                "'cosine_distance' only supports Int8|Float32|Float32 datatypes"
+                                    .to_string(),
                             ));
                         }
                     },
@@ -74,7 +76,7 @@ impl ScalarUDF for CosineDistanceFunction {
                             "Expected query to be a nested list".to_string(),
                         ));
                     }
-                };
+                }?;
 
                 let output = Float64Array::from_iter(source_name, res.into_iter());
 
