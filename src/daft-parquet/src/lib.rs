@@ -121,14 +121,14 @@ pub enum Error {
     },
 
     #[snafu(display(
-        "Parquet file: {} metadata listed {} rows but only read: {} ",
+        "Parquet file: {} expected {} rows but only read: {} ",
         path,
-        metadata_num_rows,
+        expected_rows,
         read_rows
     ))]
     ParquetNumRowMismatch {
         path: String,
-        metadata_num_rows: usize,
+        expected_rows: usize,
         read_rows: usize,
     },
 
@@ -148,6 +148,18 @@ pub enum Error {
         path: String,
         metadata_num_columns: usize,
         read_columns: usize,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} attempted to delete row at position {} but only read {} rows",
+        path,
+        row,
+        read_rows
+    ))]
+    ParquetDeleteRowOutOfIndex {
+        path: String,
+        row: usize,
+        read_rows: usize,
     },
 
     #[snafu(display(

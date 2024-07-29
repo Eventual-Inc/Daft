@@ -76,7 +76,6 @@ pub mod pylib {
         common_system_info::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
-        daft_execution::register_modules(_py, m)?;
         daft_local_execution::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;
         daft_table::register_modules(_py, m)?;
@@ -88,6 +87,7 @@ pub mod pylib {
         daft_micropartition::register_modules(_py, m)?;
         daft_scan::register_modules(_py, m)?;
         daft_scheduler::register_modules(_py, m)?;
+        daft_sql::register_modules(_py, m)?;
         daft_functions::register_modules(_py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;

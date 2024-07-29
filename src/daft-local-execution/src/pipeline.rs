@@ -35,7 +35,7 @@ use crate::{
 
 pub enum PipelineNode {
     Source {
-        source: Arc<dyn Source>,
+        source: Box<dyn Source>,
     },
     IntermediateOp {
         intermediate_op: Arc<dyn IntermediateOperator>,
@@ -56,7 +56,7 @@ impl PipelineNode {
     pub fn start(self, sender: MultiSender) {
         match self {
             PipelineNode::Source { source } => {
-                run_source(source.clone(), sender);
+                run_source(source, sender);
             }
             PipelineNode::IntermediateOp {
                 intermediate_op,
@@ -90,14 +90,14 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
             PipelineNode::Source {
-                source: Arc::new(scan_task_source),
+                source: Box::new(scan_task_source),
             }
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
             let in_memory_source = InMemorySource::new(partitions.clone());
             PipelineNode::Source {
-                source: Arc::new(in_memory_source),
+                source: Box::new(in_memory_source),
             }
         }
         LocalPhysicalPlan::Project(Project {
@@ -186,19 +186,43 @@ pub fn physical_plan_to_pipeline(
             input,
             aggregations,
             group_by,
+            schema,
             ..
         }) => {
-            let agg_sink = AggregateSink::new(
-                aggregations
-                    .iter()
+            let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                populate_aggregation_stages(aggregations, schema, group_by);
+            let first_stage_agg_op = AggregateOperator::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
                     .map(|e| Arc::new(Expr::Agg(e.clone())))
                     .collect(),
                 group_by.clone(),
             );
+            let second_stage_agg_sink = AggregateSink::new(
+                second_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by.clone(),
+            );
+            let final_stage_project = ProjectOperator::new(final_exprs);
+
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            PipelineNode::SingleInputSink {
-                sink: Box::new(agg_sink),
+            let intermediate_agg_op_node = PipelineNode::IntermediateOp {
+                intermediate_op: Arc::new(first_stage_agg_op),
                 child: Box::new(child_node),
+            };
+
+            let sink_node = PipelineNode::SingleInputSink {
+                sink: Box::new(second_stage_agg_sink),
+                child: Box::new(intermediate_agg_op_node),
+            };
+
+            PipelineNode::IntermediateOp {
+                intermediate_op: Arc::new(final_stage_project),
+                child: Box::new(sink_node),
             }
         }
         LocalPhysicalPlan::Sort(Sort {

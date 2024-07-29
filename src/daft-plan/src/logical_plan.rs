@@ -6,7 +6,8 @@ use daft_dsl::optimization::get_required_columns;
 use indexmap::IndexSet;
 use snafu::Snafu;
 
-use crate::{display::TreeDisplay, logical_ops::*};
+use crate::display::TreeDisplay;
+pub use crate::logical_ops::*;
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

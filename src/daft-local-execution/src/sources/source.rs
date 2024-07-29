@@ -14,12 +14,12 @@ pub trait Source: Send + Sync {
 }
 
 pub struct SourceActor {
-    source: Arc<dyn Source>,
+    source: Box<dyn Source>,
     sender: MultiSender,
 }
 
 impl SourceActor {
-    pub fn new(source: Arc<dyn Source>, sender: MultiSender) -> Self {
+    pub fn new(source: Box<dyn Source>, sender: MultiSender) -> Self {
         Self { source, sender }
     }
 
@@ -32,7 +32,7 @@ impl SourceActor {
         Ok(())
     }
 }
-pub fn run_source(source: Arc<dyn Source>, sender: MultiSender) {
+pub fn run_source(source: Box<dyn Source>, sender: MultiSender) {
     let mut actor = SourceActor::new(source, sender);
     tokio::spawn(
         async move {

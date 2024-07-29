@@ -7,14 +7,14 @@ mod builder;
 mod display;
 mod logical_ops;
 mod logical_optimization;
-mod logical_plan;
+pub mod logical_plan;
 mod partitioning;
 pub mod physical_ops;
 mod physical_plan;
 mod physical_planner;
 mod resource_request;
 mod sink_info;
-mod source_info;
+pub mod source_info;
 #[cfg(test)]
 mod test;
 mod treenode;

@@ -257,6 +257,24 @@ impl<'a> DaftImageBuffer<'a> {
             _ => unimplemented!("Mode {self:?} not implemented"),
         }
     }
+
+    pub fn into_mode(self, mode: ImageMode) -> Self {
+        let img: DynamicImage = self.into();
+        // I couldn't find a method from the image crate to do this
+        let img: DynamicImage = match mode {
+            ImageMode::L => img.into_luma8().into(),
+            ImageMode::LA => img.into_luma_alpha8().into(),
+            ImageMode::RGB => img.into_rgb8().into(),
+            ImageMode::RGBA => img.into_rgba8().into(),
+            ImageMode::L16 => img.into_luma16().into(),
+            ImageMode::LA16 => img.into_luma_alpha16().into(),
+            ImageMode::RGB16 => img.into_rgb16().into(),
+            ImageMode::RGBA16 => img.into_rgba16().into(),
+            ImageMode::RGB32F => img.into_rgb32f().into(),
+            ImageMode::RGBA32F => img.into_rgba32f().into(),
+        };
+        img.into()
+    }
 }
 
 fn image_buffer_vec_to_cow<'a, P, T>(input: ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<'a, [T]>>
@@ -269,6 +287,19 @@ where
     let h = input.height();
     let w = input.width();
     let owned: Cow<[T]> = input.into_raw().into();
+    ImageBuffer::from_raw(w, h, owned).unwrap()
+}
+
+fn image_buffer_cow_to_vec<P, T>(input: ImageBuffer<P, Cow<[T]>>) -> ImageBuffer<P, Vec<T>>
+where
+    P: image::Pixel<Subpixel = T>,
+    Vec<T>: Deref<Target = [P::Subpixel]>,
+    T: ToOwned + std::clone::Clone,
+    [T]: ToOwned,
+{
+    let h = input.height();
+    let w = input.width();
+    let owned: Vec<T> = input.into_raw().to_vec();
     ImageBuffer::from_raw(w, h, owned).unwrap()
 }
 
@@ -306,6 +337,23 @@ impl<'a> From<DynamicImage> for DaftImageBuffer<'a> {
                 DaftImageBuffer::<'a>::RGBA32F(image_buffer_vec_to_cow(img_buf))
             }
             _ => unimplemented!("{dyn_img:?} not implemented"),
+        }
+    }
+}
+
+impl<'a> From<DaftImageBuffer<'a>> for DynamicImage {
+    fn from(daft_buf: DaftImageBuffer<'a>) -> Self {
+        match daft_buf {
+            DaftImageBuffer::L(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::LA(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGB(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGBA(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::L16(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::LA16(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGB16(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGBA16(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGB32F(buf) => image_buffer_cow_to_vec(buf).into(),
+            DaftImageBuffer::RGBA32F(buf) => image_buffer_cow_to_vec(buf).into(),
         }
     }
 }
@@ -569,6 +617,14 @@ impl ImageArray {
             },
         )
     }
+
+    pub fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
+        let buffers: Vec<Option<DaftImageBuffer>> = self
+            .into_iter()
+            .map(|img| img.map(|img| img.into_mode(mode)))
+            .collect();
+        Self::from_daft_image_buffers(self.name(), &buffers, &Some(mode))
+    }
 }
 
 impl AsImageObj for ImageArray {
@@ -723,6 +779,19 @@ impl FixedShapeImageArray {
         let result = crop_images(self, &mut bboxes_iterator);
         ImageArray::from_daft_image_buffers(self.name(), result.as_slice(), &Some(self.mode()))
     }
+
+    pub fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
+        let buffers: Vec<Option<DaftImageBuffer>> = self
+            .into_iter()
+            .map(|img| img.map(|img| img.into_mode(mode)))
+            .collect();
+
+        let (height, width) = match self.data_type() {
+            DataType::FixedShapeImage(_, h, w) => (h, w),
+            _ => unreachable!("self should always be a FixedShapeImage"),
+        };
+        Self::from_daft_image_buffers(self.name(), &buffers, &mode, *height, *width)
+    }
 }
 
 impl AsImageObj for FixedShapeImageArray {
@@ -787,7 +856,11 @@ where
 }
 
 impl BinaryArray {
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> DaftResult<ImageArray> {
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> DaftResult<ImageArray> {
         let arrow_array = self
             .data()
             .as_any()
@@ -798,7 +871,7 @@ impl BinaryArray {
         // Load images from binary buffers.
         // Confirm that all images have the same value dtype.
         for (index, row) in arrow_array.iter().enumerate() {
-            let img_buf = match row.map(DaftImageBuffer::decode).transpose() {
+            let mut img_buf = match row.map(DaftImageBuffer::decode).transpose() {
                 Ok(val) => val,
                 Err(err) => {
                     if raise_error_on_failure {
@@ -812,6 +885,9 @@ impl BinaryArray {
                     }
                 }
             };
+            if let Some(mode) = mode {
+                img_buf = img_buf.map(|buf| buf.into_mode(mode));
+            }
             let dtype = img_buf.as_ref().map(|im| im.mode().get_dtype());
             match (dtype.as_ref(), cached_dtype.as_ref()) {
                 (Some(t1), Some(t2)) => {
@@ -829,7 +905,7 @@ impl BinaryArray {
         // Fall back to UInt8 dtype if series is all nulls.
         let cached_dtype = cached_dtype.unwrap_or(DataType::UInt8);
         match cached_dtype {
-            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &None)?),
+            DataType::UInt8 => Ok(ImageArray::from_daft_image_buffers(self.name(), img_bufs.as_slice(), &mode)?),
             _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
         }
     }

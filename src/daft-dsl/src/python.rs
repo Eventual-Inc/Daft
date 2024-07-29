@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
-    datatypes::ImageFormat,
+    datatypes::{ImageFormat, ImageMode},
     impl_bincode_py_state_serialization,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
@@ -728,9 +728,13 @@ impl PyExpr {
         Ok(normalize(self.into(), opts).into())
     }
 
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> PyResult<Self> {
         use crate::functions::image::decode;
-        Ok(decode(self.into(), raise_error_on_failure).into())
+        Ok(decode(self.into(), raise_error_on_failure, mode).into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
@@ -756,6 +760,11 @@ impl PyExpr {
     pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
         use crate::functions::image::crop;
         Ok(crop(self.into(), bbox.into()).into())
+    }
+
+    pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
+        use crate::functions::image::to_mode;
+        Ok(to_mode(self.into(), mode).into())
     }
 
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {

@@ -135,6 +135,28 @@ pub fn read_csv_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn stream_csv(
+    uri: &str,
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    max_chunks_in_flight: Option<usize>,
+) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+    stream_csv_single(
+        uri,
+        convert_options,
+        parse_options,
+        read_options,
+        io_client,
+        io_stats,
+        max_chunks_in_flight,
+    )
+    .await
+}
+
 // Parallel version of table concat
 // get rid of this once Table APIs are parallel
 fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
@@ -299,6 +321,105 @@ async fn read_csv_single_into_table(
     } else {
         Ok(concated_table)
     }
+}
+
+async fn stream_csv_single(
+    uri: &str,
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    max_chunks_in_flight: Option<usize>,
+) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+    let predicate = convert_options
+        .as_ref()
+        .and_then(|opts| opts.predicate.clone());
+
+    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
+
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
+
+    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
+        (None, _) => None,
+        (co, None) => co,
+        (Some(mut co), Some(predicate)) => {
+            if let Some(ref mut include_columns) = co.include_columns {
+                let required_columns_for_predicate = get_required_columns(predicate);
+                for rc in required_columns_for_predicate {
+                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        include_columns.push(rc)
+                    }
+                }
+            }
+            // if we have a limit and a predicate, remove limit for stream
+            co.limit = None;
+            Some(co)
+        }
+    };
+
+    let (chunk_stream, _fields) = read_csv_single_into_stream(
+        uri,
+        convert_options_with_predicate_columns.unwrap_or_default(),
+        parse_options.unwrap_or_default(),
+        read_options,
+        io_client,
+        io_stats,
+    )
+    .await?;
+    // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+    // with the parsing of chunks on the rayon threadpool.
+    let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(2).unwrap())
+            .checked_mul(2.try_into().unwrap())
+            .unwrap()
+            .into()
+    });
+    // Collect all chunks in chunk x column form.
+    let tables = chunk_stream
+        // Limit the number of chunks we have in flight at any given time.
+        .try_buffered(max_chunks_in_flight);
+
+    let filtered_tables = tables.map_ok(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.clone()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    });
+
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    let tables = filtered_tables
+        .try_take_while(move |result| {
+            match (result, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                (Ok(table), Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // (1) No limit, never early-terminate.
+                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+            }
+        })
+        .map(|r| match r {
+            Ok(table) => table,
+            Err(e) => Err(e.into()),
+        })
+        // Chunk the tables into chunks of size max_chunks_in_flight.
+        .try_ready_chunks(max_chunks_in_flight)
+        .map_err(|e| DaftError::ComputeError(e.to_string()));
+    Ok(tables)
 }
 
 async fn read_csv_single_into_stream(

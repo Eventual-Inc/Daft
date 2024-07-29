@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::datatypes::Field;
+use daft_core::datatypes::{Field, Int64Array, Utf8Array};
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_core::DataType;
@@ -17,9 +17,11 @@ use daft_parquet::read::{
 };
 use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
+use daft_scan::{ChunkSpec, DataSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use futures::stream::BoxStream;
+use futures::{Stream, StreamExt};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
@@ -134,7 +136,33 @@ fn materialize_scan_task(
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+
+                    // TODO: This is a hardcoded magic value but should be configurable
+                    let num_parallel_tasks = 8;
+
                     let urls = urls.collect::<Vec<_>>();
+
+                    // Create vec of all unique delete files in the scan task
+                    let iceberg_delete_files = scan_task
+                        .sources
+                        .iter()
+                        .flat_map(|s| s.get_iceberg_delete_files())
+                        .flatten()
+                        .map(String::as_str)
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+
+                    let delete_map = _read_delete_files(
+                        iceberg_delete_files.as_slice(),
+                        urls.as_slice(),
+                        io_client.clone(),
+                        io_stats.clone(),
+                        num_parallel_tasks,
+                        runtime_handle.clone(),
+                        &inference_options,
+                    )
+                    .context(DaftCoreComputeSnafu)?;
 
                     let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     let metadatas = scan_task
@@ -151,11 +179,12 @@ fn materialize_scan_task(
                         scan_task.pushdowns.filters.clone(),
                         io_client.clone(),
                         io_stats,
-                        8,
+                        num_parallel_tasks,
                         runtime_handle,
                         &inference_options,
                         field_id_mapping.clone(),
                         metadatas,
+                        Some(delete_map),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -366,7 +395,7 @@ fn materialize_scan_task(
                     let table_iterators = scan_task.sources.iter().map(|source| {
                         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
                         match source {
-                            DataFileSource::PythonFactoryFunction {
+                            DataSource::PythonFactoryFunction {
                                 module,
                                 func_name,
                                 func_args,
@@ -474,6 +503,154 @@ fn materialize_scan_task(
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
     Ok((table_values, cast_to_schema))
+}
+
+async fn stream_scan_task(
+    scan_task: Arc<ScanTask>,
+    io_stats: Option<IOStatsRef>,
+) -> crate::Result<(impl Stream<Item = DaftResult<Vec<Table>>> + Send)> {
+    let pushdown_columns = scan_task
+        .pushdowns
+        .columns
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+    let file_column_names =
+        _get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
+
+    if scan_task.sources.len() != 1 {
+        return Err(common_error::DaftError::TypeError(
+            "Streaming reads only supported for single source ScanTasks".to_string(),
+        ))
+        .context(DaftCoreComputeSnafu);
+    }
+    let url = scan_task.sources.first().map(|s| s.get_path()).unwrap();
+
+    let table_values = match scan_task.storage_config.as_ref() {
+        StorageConfig::Native(native_storage_config) => {
+            let io_config = Arc::new(
+                native_storage_config
+                    .io_config
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            let multi_threaded_io = native_storage_config.multithreaded_io;
+            let io_client = daft_io::get_io_client_async(multi_threaded_io, io_config)
+                .await
+                .unwrap();
+
+            match scan_task.file_format_config.as_ref() {
+                // ********************
+                // Native Parquet Reads
+                // ********************
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: _,
+                    field_id_mapping: _,
+                    ..
+                }) => {
+                    todo!("Implement streaming reads for Parquet")
+                }
+
+                // ****************
+                // Native CSV Reads
+                // ****************
+                FileFormatConfig::Csv(cfg) => {
+                    let schema_of_file = scan_task.schema.clone();
+                    let col_names = if !cfg.has_headers {
+                        Some(
+                            schema_of_file
+                                .fields
+                                .values()
+                                .map(|f| f.name.as_str())
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    };
+                    let convert_options = CsvConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        file_column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        col_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        Some(schema_of_file),
+                        scan_task.pushdowns.filters.clone(),
+                    );
+                    let parse_options = CsvParseOptions::new_with_defaults(
+                        cfg.has_headers,
+                        cfg.delimiter,
+                        cfg.double_quote,
+                        cfg.quote,
+                        cfg.allow_variable_columns,
+                        cfg.escape_char,
+                        cfg.comment,
+                    )
+                    .context(DaftCSVSnafu)?;
+                    let read_options =
+                        CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+                    daft_csv::stream_csv(
+                        url,
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        None,
+                    )
+                    .await
+                    .context(DaftCoreComputeSnafu)?
+                }
+
+                // ****************
+                // Native JSON Reads
+                // ****************
+                FileFormatConfig::Json(_cfg) => {
+                    todo!("Implement streaming reads for JSON")
+                }
+                #[cfg(feature = "python")]
+                FileFormatConfig::Database(_) => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for Database file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for PythonFunction file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
+            }
+        }
+        #[cfg(feature = "python")]
+        StorageConfig::Python(_) => match scan_task.file_format_config.as_ref() {
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit: _,
+                ..
+            }) => todo!("Implement streaming reads for Parquet with Python Storage Config"),
+            FileFormatConfig::Csv(CsvSourceConfig {
+                has_headers: _,
+                delimiter: _,
+                double_quote: _,
+                ..
+            }) => todo!("Implement streaming reads for CSV with Python Storage Config"),
+            FileFormatConfig::Json(_) => {
+                todo!("Implement streaming reads for JSON with Python Storage Config")
+            }
+            FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                sql: _,
+                conn: _,
+            }) => todo!("Implement streaming reads for Database"),
+            FileFormatConfig::PythonFunction => {
+                todo!("Implement streaming reads for PythonFunction")
+            }
+        },
+    };
+
+    Ok(table_values)
 }
 
 impl MicroPartition {
@@ -593,11 +770,19 @@ impl MicroPartition {
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
 
+                let mut iceberg_delete_files: HashSet<&str> = HashSet::new();
+                for source in scan_task.sources.iter() {
+                    if let Some(delete_files) = source.get_iceberg_delete_files() {
+                        iceberg_delete_files.extend(delete_files.iter().map(String::as_str));
+                    }
+                }
+
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
                     None,
                     scan_task.pushdowns.limit,
+                    Some(iceberg_delete_files.into_iter().collect()),
                     row_groups,
                     scan_task.pushdowns.filters.clone(),
                     scan_task.partition_spec(),
@@ -624,6 +809,67 @@ impl MicroPartition {
                 let statistics = scan_task.statistics.clone();
                 let (tables, schema) = materialize_scan_task(scan_task, Some(io_stats))?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
+            }
+        }
+    }
+
+    pub async fn from_scan_task_streaming(
+        scan_task: Arc<ScanTask>,
+        io_stats: IOStatsRef,
+        morsel_size: usize,
+    ) -> crate::Result<BoxStream<'static, DaftResult<Arc<Self>>>> {
+        let schema = scan_task.materialized_schema();
+        match (
+            &scan_task.metadata,
+            &scan_task.statistics,
+            scan_task.file_format_config.as_ref(),
+            scan_task.storage_config.as_ref(),
+        ) {
+            // CASE: ScanTask provides all required metadata.
+            // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
+            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+                let unloaded = Ok(Arc::new(Self::new_unloaded(
+                    scan_task.clone(),
+                    scan_task
+                        .pushdowns
+                        .limit
+                        .map(|limit| TableMetadata {
+                            length: metadata.length.min(limit),
+                        })
+                        .unwrap_or_else(|| metadata.clone()),
+                    statistics.clone(),
+                )));
+                Ok(Box::pin(futures::stream::iter(std::iter::once(unloaded))))
+            }
+
+            // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
+            // We can perform an eager **metadata** read to create an unloaded MicroPartition
+            (
+                _,
+                _,
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: _,
+                    field_id_mapping: _,
+                    ..
+                }),
+                StorageConfig::Native(_cfg),
+            ) => {
+                todo!()
+            }
+
+            // CASE: Last resort fallback option
+            // Perform an eager **data** read
+            _ => {
+                let statistics = scan_task.statistics.clone();
+                let stream = stream_scan_task(scan_task.clone(), Some(io_stats)).await?;
+                let stream = chunk_tables_into_micropartition_stream(
+                    Box::pin(stream),
+                    schema,
+                    scan_task.partition_spec().cloned(),
+                    statistics,
+                    morsel_size,
+                );
+                Ok(Box::pin(stream))
             }
         }
     }
@@ -745,6 +991,37 @@ impl MicroPartition {
     }
 }
 
+fn chunk_tables_into_micropartition_stream(
+    mut table_stream: BoxStream<'static, DaftResult<Vec<Table>>>,
+    schema: SchemaRef,
+    partition_spec: Option<PartitionSpec>,
+    statistics: Option<TableStatistics>,
+    morsel_size: usize,
+) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send {
+    async_stream::try_stream! {
+        let mut buffer = vec![];
+        let mut total_rows = 0;
+        while let Some(tables) = table_stream.next().await {
+            let tables = tables?;
+            for table in tables {
+                let casted_table = table.cast_to_schema_with_fill(schema.as_ref(), partition_spec.as_ref().map(|pspec| pspec.to_fill_map()).as_ref())?;
+                total_rows += casted_table.len();
+                buffer.push(casted_table);
+            }
+            if total_rows >= morsel_size {
+                let mp = Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone()));
+                buffer = vec![];
+                total_rows = 0;
+                yield mp;
+            }
+        }
+        if !buffer.is_empty() {
+            let mp = Arc::new(MicroPartition::new_loaded(schema, Arc::new(buffer), statistics));
+            yield mp;
+        }
+    }
+}
+
 fn prune_fields_from_schema(
     schema: Arc<Schema>,
     columns: Option<&[&str]>,
@@ -780,7 +1057,7 @@ fn prune_fields_from_schema(
     }
 }
 
-fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Option<Vec<i64>>>> {
+fn parquet_sources_to_row_groups(sources: &[DataSource]) -> Option<Vec<Option<Vec<i64>>>> {
     let row_groups = sources
         .iter()
         .map(|s| {
@@ -921,6 +1198,59 @@ fn _get_file_column_names<'a>(
     }
 }
 
+fn _read_delete_files(
+    delete_files: &[&str],
+    uris: &[&str],
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    num_parallel_tasks: usize,
+    runtime_handle: Arc<tokio::runtime::Runtime>,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
+) -> DaftResult<HashMap<String, Vec<i64>>> {
+    let columns: Option<&[&str]> = Some(&["file_path", "pos"]);
+
+    let tables = read_parquet_bulk(
+        delete_files,
+        columns,
+        None,
+        None,
+        None,
+        None,
+        io_client,
+        io_stats,
+        num_parallel_tasks,
+        runtime_handle,
+        schema_infer_options,
+        None,
+        None,
+        None,
+    )?;
+
+    let mut delete_map: HashMap<String, Vec<i64>> =
+        uris.iter().map(|uri| (uri.to_string(), vec![])).collect();
+
+    for table in tables.iter() {
+        // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+        // https://iceberg.apache.org/spec/#position-delete-files
+        let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+        let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+        for i in 0..table.len() {
+            let file = file_paths.get(i);
+            let pos = positions.get(i);
+
+            if let Some(file) = file
+                && let Some(pos) = pos
+                && delete_map.contains_key(file)
+            {
+                delete_map.get_mut(file).unwrap().push(pos);
+            }
+        }
+    }
+
+    Ok(delete_map)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn _read_parquet_into_loaded_micropartition(
     io_client: Arc<IOClient>,
@@ -929,6 +1259,7 @@ fn _read_parquet_into_loaded_micropartition(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    iceberg_delete_files: Option<Vec<&str>>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
     predicate: Option<ExprRef>,
     partition_spec: Option<&PartitionSpec>,
@@ -938,6 +1269,20 @@ fn _read_parquet_into_loaded_micropartition(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
+    let delete_map = iceberg_delete_files
+        .map(|files| {
+            _read_delete_files(
+                files.as_slice(),
+                uris,
+                io_client.clone(),
+                io_stats.clone(),
+                num_parallel_tasks,
+                runtime_handle.clone(),
+                schema_infer_options,
+            )
+        })
+        .transpose()?;
+
     let file_column_names = _get_file_column_names(columns, partition_spec);
     let all_tables = read_parquet_bulk(
         uris,
@@ -953,6 +1298,7 @@ fn _read_parquet_into_loaded_micropartition(
         schema_infer_options,
         field_id_mapping,
         None,
+        delete_map,
     )?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
@@ -990,6 +1336,7 @@ pub(crate) fn read_parquet_into_micropartition(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    iceberg_delete_files: Option<Vec<&str>>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
     predicate: Option<ExprRef>,
     partition_spec: Option<&PartitionSpec>,
@@ -1014,9 +1361,13 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate then we no longer have an accurate accounting of required metadata
+    // If we have a predicate or deletion files then we no longer have an accurate accounting of required metadata
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
-    if predicate.is_some() {
+    if iceberg_delete_files
+        .as_ref()
+        .map_or(false, |files| !files.is_empty())
+        || predicate.is_some()
+    {
         return _read_parquet_into_loaded_micropartition(
             io_client,
             runtime_handle,
@@ -1024,6 +1375,7 @@ pub(crate) fn read_parquet_into_micropartition(
             columns,
             start_offset,
             num_rows,
+            iceberg_delete_files,
             row_groups,
             predicate,
             partition_spec,
@@ -1145,10 +1497,11 @@ pub(crate) fn read_parquet_into_micropartition(
                         .clone()
                         .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
                 )
-                .map(|((url, metadata), rgs)| DataFileSource::AnonymousDataFile {
+                .map(|((url, metadata), rgs)| DataSource::File {
                     path: url,
                     chunk_spec: rgs.map(ChunkSpec::Parquet),
                     size_bytes: Some(size_bytes),
+                    iceberg_delete_files: None,
                     metadata: None,
                     partition_spec: partition_spec.cloned(),
                     statistics: None,
@@ -1197,6 +1550,7 @@ pub(crate) fn read_parquet_into_micropartition(
             columns,
             start_offset,
             num_rows,
+            iceberg_delete_files,
             row_groups,
             predicate,
             partition_spec,

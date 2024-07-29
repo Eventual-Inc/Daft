@@ -247,6 +247,7 @@ Image
    Expression.image.encode
    Expression.image.resize
    Expression.image.crop
+   Expression.image.to_mode
 
 Partitioning
 ############

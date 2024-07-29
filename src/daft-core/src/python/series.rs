@@ -649,8 +649,15 @@ impl PySeries {
         Ok(self.series.map_get(&key.series)?.into())
     }
 
-    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
-        Ok(self.series.image_decode(raise_error_on_failure)?.into())
+    pub fn image_decode(
+        &self,
+        raise_error_on_failure: bool,
+        mode: Option<ImageMode>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .series
+            .image_decode(raise_error_on_failure, mode)?
+            .into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
@@ -670,6 +677,10 @@ impl PySeries {
         }
 
         Ok(self.series.image_resize(w as u32, h as u32)?.into())
+    }
+
+    pub fn image_to_mode(&self, mode: &ImageMode) -> PyResult<Self> {
+        Ok(self.series.image_to_mode(*mode)?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {

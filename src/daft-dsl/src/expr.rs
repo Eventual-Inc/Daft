@@ -1209,7 +1209,6 @@ pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Fiel
             "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
         )));
     }
-
     let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
     let resolved_field = resolved_expr.to_field(schema)?;
     Ok((resolved_expr, resolved_field))

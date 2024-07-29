@@ -1,4 +1,5 @@
 [dependencies]
+async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
