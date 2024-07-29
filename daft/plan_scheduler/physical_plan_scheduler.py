@@ -48,7 +48,7 @@ class PhysicalPlanScheduler:
     def to_partition_tasks(
         self, psets: dict[str, list[PartitionT]], results_buffer_size: int | None
     ) -> physical_plan.MaterializedPhysicalPlan:
-        return physical_plan.materialize(self._scheduler.to_partition_tasks(psets), results_buffer_size)
+        return iter(physical_plan.Materialize(self._scheduler.to_partition_tasks(psets), results_buffer_size))
 
 
 class AdaptivePhysicalPlanScheduler:

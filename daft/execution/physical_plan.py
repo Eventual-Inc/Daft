@@ -1538,101 +1538,111 @@ def _best_effort_next_step(
             return (None, False)
 
 
-def materialize(
-    child_plan: InProgressPhysicalPlan[PartitionT],
-    results_buffer_size: int | None,
-) -> MaterializedPhysicalPlan:
+class Materialize:
     """Materialize the child plan.
 
     Repeatedly yields either a PartitionTask (to produce an intermediate partition)
     or a PartitionT (which is part of the final result).
     """
 
-    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    num_materialized_yielded = 0
-    num_intermediate_yielded = 0
-    num_final_yielded = 0
-    stage_id = next(stage_id_counter)
+    def __init__(
+        self,
+        child_plan: InProgressPhysicalPlan[PartitionT],
+        results_buffer_size: int | None,
+    ):
+        self.child_plan = child_plan
+        self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+        self.results_buffer_size = results_buffer_size
 
-    logger.debug(
-        "[plan-%s] Starting to emit tasks from `materialize` with results_buffer_size=%s",
-        stage_id,
-        results_buffer_size,
-    )
+    def __iter__(self) -> MaterializedPhysicalPlan:
+        num_materialized_yielded = 0
+        num_intermediate_yielded = 0
+        num_final_yielded = 0
+        stage_id = next(stage_id_counter)
 
-    while True:
-        # If any inputs have finished executing, we want to drain the `materializations` buffer
-        while len(materializations) > 0 and materializations[0].done():
-            # Pop the done task
-            done_task = materializations.popleft()
+        logger.debug(
+            "[plan-%s] Starting to emit tasks from `materialize` with results_buffer_size=%s",
+            stage_id,
+            self.results_buffer_size,
+        )
 
-            # Best-effort attempt to yield new work and replace the task that was done.
-            # Without this, we will end up completely depleting the `materializations` buffer without replenishing work
-            best_effort_step, is_final_task = _best_effort_next_step(stage_id, child_plan)
-            if best_effort_step is not None:
-                if is_final_task:
-                    assert isinstance(best_effort_step, SingleOutputPartitionTask)
-                    materializations.append(best_effort_step)
-                    num_final_yielded += 1
-                    logger.debug(
-                        "[plan-%s] YIELDING final task to replace done materialized task (%s so far)",
-                        stage_id,
-                        num_final_yielded,
-                    )
-                else:
-                    num_intermediate_yielded += 1
-                    logger.debug(
-                        "[plan-%s] YIELDING an intermediate task to replace done materialized task (%s so far)",
-                        stage_id,
-                        num_intermediate_yielded,
-                    )
-                yield best_effort_step
+        while True:
+            # If any inputs have finished executing, we want to drain the `materializations` buffer
+            while len(self.materializations) > 0 and self.materializations[0].done():
+                # Make space on buffer by popping the task that was done
+                done_task = self.materializations.popleft()
 
-            # Yield the task that was done
-            num_materialized_yielded += 1
-            logger.debug("[plan-%s] YIELDING a materialized task (%s so far)", stage_id, num_materialized_yielded)
-            yield done_task.result()
+                # Best-effort attempt to yield new work and fill up the buffer to the desired `results_buffer_size`
+                if self.results_buffer_size is not None:
+                    for _ in range(self.results_buffer_size - len(self.materializations)):
+                        best_effort_step, is_final_task = _best_effort_next_step(stage_id, self.child_plan)
+                        if best_effort_step is None:
+                            break
+                        elif is_final_task:
+                            assert isinstance(best_effort_step, SingleOutputPartitionTask)
+                            self.materializations.append(best_effort_step)
+                            num_final_yielded += 1
+                            logger.debug(
+                                "[plan-%s] YIELDING final task to replace done materialized task (%s so far)",
+                                stage_id,
+                                num_final_yielded,
+                            )
+                        else:
+                            num_intermediate_yielded += 1
+                            logger.debug(
+                                "[plan-%s] YIELDING an intermediate task to replace done materialized task (%s so far)",
+                                stage_id,
+                                num_intermediate_yielded,
+                            )
+                        yield best_effort_step
 
-        # If the buffer has too many results already, we yield None until some are completed
-        if results_buffer_size is not None and len(materializations) >= results_buffer_size:
-            logger.debug(
-                "[plan-%s] YIELDING none, waiting on tasks in buffer to complete: %s in buffer, but maximum is %s",
-                stage_id,
-                len(materializations),
-                results_buffer_size,
-            )
-            yield None
+                # Yield the task that was done
+                num_materialized_yielded += 1
+                logger.debug("[plan-%s] YIELDING a materialized task (%s so far)", stage_id, num_materialized_yielded)
+                yield done_task.result()
 
-            # Important: start again at the top and drain materialized results
-            # Otherwise it may lead to a weird corner-case where the plan has ended (raising StopIteration)
-            # but some of the completed materializations haven't been drained from the buffer.
-            continue
-
-        # Materialize a single dependency.
-        try:
-            step = next(child_plan)
-            if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_single_output(stage_id=stage_id)
-                materializations.append(step)
-                num_final_yielded += 1
-                logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)
-            elif isinstance(step, PartitionTask):
-                num_intermediate_yielded += 1
-                logger.debug("[plan-%s] YIELDING an intermediate task (%s so far)", stage_id, num_intermediate_yielded)
-
-            assert isinstance(step, (PartitionTask, type(None)))
-            yield step
-
-        except StopIteration:
-            if len(materializations) > 0:
+            # If the buffer has too many results already, we yield None until some are completed
+            if self.results_buffer_size is not None and len(self.materializations) >= self.results_buffer_size:
                 logger.debug(
-                    "[plan-%s] YIELDING none, iterator completed but materialize is blocked on completion of all sources: %s",
+                    "[plan-%s] YIELDING none, waiting on tasks in buffer to complete: %s in buffer, but maximum is %s",
                     stage_id,
-                    materializations,
+                    len(self.materializations),
+                    self.results_buffer_size,
                 )
                 yield None
-            else:
-                return
+
+                # Important: start again at the top and drain materialized results
+                # Otherwise it may lead to a weird corner-case where the plan has ended (raising StopIteration)
+                # but some of the completed materializations haven't been drained from the buffer.
+                continue
+
+            # Materialize a single dependency.
+            try:
+                step = next(self.child_plan)
+                if isinstance(step, PartitionTaskBuilder):
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    self.materializations.append(step)
+                    num_final_yielded += 1
+                    logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)
+                elif isinstance(step, PartitionTask):
+                    num_intermediate_yielded += 1
+                    logger.debug(
+                        "[plan-%s] YIELDING an intermediate task (%s so far)", stage_id, num_intermediate_yielded
+                    )
+
+                assert isinstance(step, (PartitionTask, type(None)))
+                yield step
+
+            except StopIteration:
+                if len(self.materializations) > 0:
+                    logger.debug(
+                        "[plan-%s] YIELDING none, iterator completed but materialize is blocked on completion of all sources: %s",
+                        stage_id,
+                        self.materializations,
+                    )
+                    yield None
+                else:
+                    return
 
 
 def enumerate_open_executions(
