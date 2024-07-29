@@ -1576,3 +1576,12 @@ def test_series_utf8_count_matches():
     assert res == [3, 0, 7, 3, 3, 3, 1, 3]
     res = s.str.count_matches(p, True, True).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 1, 3]
+
+
+@pytest.mark.parametrize("whole_words", [False, True])
+@pytest.mark.parametrize("case_sensitive", [False, True])
+def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
+    s = Series.from_pylist(["hello world"])
+    p = Series.from_pylist(["hello world", "hello", "world"])
+    res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
+    assert res == [2]

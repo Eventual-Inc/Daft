@@ -904,15 +904,15 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
 
-    def count_matches(self, patterns: Series, whole_word: bool = False, case_sensitive: bool = True) -> Series:
+    def count_matches(self, patterns: Series, whole_words: bool = False, case_sensitive: bool = True) -> Series:
         if not isinstance(patterns, Series):
             raise ValueError(f"expected another Series but got {type(patterns)}")
-        if not isinstance(whole_word, bool):
-            raise ValueError(f"expected bool for whole_word but got {type(whole_word)}")
+        if not isinstance(whole_words, bool):
+            raise ValueError(f"expected bool for whole_word but got {type(whole_words)}")
         if not isinstance(case_sensitive, bool):
             raise ValueError(f"expected bool for case_sensitive but got {type(case_sensitive)}")
         assert self._series is not None and patterns._series is not None
-        return Series._from_pyseries(self._series.utf8_count_matches(patterns._series, whole_word, case_sensitive))
+        return Series._from_pyseries(self._series.utf8_count_matches(patterns._series, whole_words, case_sensitive))
 
 
 class SeriesDateNamespace(SeriesNamespace):

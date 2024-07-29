@@ -160,6 +160,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.normalize
    Expression.str.tokenize_encode
    Expression.str.tokenize_decode
+   Expression.str.count_matches
 
 .. _api-float-expression-operations:
 

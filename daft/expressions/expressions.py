@@ -2617,17 +2617,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
     def count_matches(
         self,
-        patterns: str | Expression,
+        patterns: Any,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ):
         """
-        Counts the number of times a pattern, or any of many patterns, appears in a string.
+        Counts the number of times a pattern, or multiple patterns, appear in a string.
 
         .. NOTE::
-            If a pattern is a substring of another pattern, only the larger pattern is counted.
-            For example, on the string "hello world", with patterns "world" and "hello world",
-            only one match is counted, corresponding to "hello world".
+            If a pattern is a substring of another pattern, the smaller pattern is matched first.
+            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
+            two matches are counted, "hello" and "world".
 
         If whole_words is true, then matches are only counted if they are whole words. This
         also applies to multi-word strings. For example, on the string "abc def", the strings
@@ -2638,14 +2638,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
         characters; unicode uppercase/lowercase will still be considered distinct.
 
         Args:
-            patterns: A pattern or an expression containing many patterns.
+            patterns: A pattern or a list of patterns.
             whole_words: Whether to only match whole word(s). Defaults to false.
             case_sensitive: Whether the matching should be case sensitive. Defaults to true.
         """
-        patterns_expr = Expression._to_expression(patterns)
-        return Expression._from_pyexpr(
-            _utf8_count_matches(self._expr, patterns_expr._expr, whole_words, case_sensitive)
-        )
+        if not isinstance(patterns, Expression):
+            series = item_to_series("items", patterns)
+            patterns = Expression._to_expression(series)
+
+        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
