@@ -8,12 +8,14 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
+use common_treenode::TreeNode;
 use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::ExprRef;
+use daft_dsl::functions::FunctionExpr;
 use daft_dsl::{col, ApproxPercentileParams};
+use daft_dsl::{Expr, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
 
@@ -102,15 +104,63 @@ pub(super) fn translate_single_logical_node(
             resource_request,
             ..
         }) => {
+            #[cfg(feature = "python")]
+            use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
+            // Pull out any ActorPoolProject nodes from the projection as separate Physical nodes
+            // TODO: handle corner-cases such as nested stateful UDFs
+            // We probably want a split each of the expressions here into a sequence of expressions, split by stateful UDFs to make sure that
+            // the stateful UDF is standalone:
+            // [udf2(udf1(x + 1)) + 1, ...] -> [[(x + 1), udf1(x), udf2(x), (x + 1)], ...]
+            //
+            // For now, we make an assumption that stateful UDFs will not be nested, and that we will run the rest of the expression on the actor itself. YOLO.
+            #[cfg(feature = "python")]
+            let mut stateful_python_udfs: Vec<StatefulPythonUDF> = Vec::new();
+            let non_actor_projections: Vec<&Arc<Expr>> = projection
+                .iter()
+                .filter(|expr| {
+                    !expr.exists(|e| match e.as_ref() {
+                        #[cfg(feature = "python")]
+                        Expr::Function {
+                            func: FunctionExpr::Python(PythonUDF::Stateful(stateful_python_udf)),
+                            ..
+                        } => {
+                            // HACK: Figure out a better way of extracting this. We also need a way of layering more stuff on top of this (e.g. aliases)
+                            // This will currently break if there are any more operations on top of it.
+                            stateful_python_udfs.push(stateful_python_udf.clone());
+                            true
+                        }
+                        _ => false,
+                    })
+                })
+                .collect();
+
             let input_physical = physical_children.pop().expect("requires 1 input");
             let clustering_spec = input_physical.clustering_spec().clone();
-            Ok(PhysicalPlan::Project(Project::try_new(
+            let non_actor_project = PhysicalPlan::Project(Project::try_new(
                 input_physical,
-                projection.clone(),
+                non_actor_projections.iter().map(|&e| e.clone()).collect(),
                 resource_request.clone(),
                 clustering_spec,
             )?)
-            .arced())
+            .arced();
+
+            let mut final_project = non_actor_project;
+
+            // Iteratively wrap the Project in ActorPoolProjects for each stateful UDF
+            #[cfg(feature = "python")]
+            for stateful_python_udf in stateful_python_udfs {
+                let prev_clustering_spec = final_project.clustering_spec().clone();
+                final_project = Arc::new(PhysicalPlan::ActorPoolProject(ActorPoolProject {
+                    input: final_project,
+                    stateful_python_udf: stateful_python_udf.clone(),
+                    resource_request: resource_request.clone(),
+                    clustering_spec: prev_clustering_spec,
+                    // TODO: Figure out how to forward num_actors from user to this point
+                    num_actors: 8,
+                }));
+            }
+
+            Ok(final_project)
         }
         LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");

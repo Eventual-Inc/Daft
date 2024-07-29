@@ -84,7 +84,7 @@ impl FunctionExpr {
             Json(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
-            Python(expr) => expr,
+            Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }
     }

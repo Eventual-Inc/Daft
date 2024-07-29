@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
@@ -53,7 +53,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.runners.runner import Runner
+from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -61,6 +61,8 @@ if TYPE_CHECKING:
     import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
+
+    from daft.udf import PartialStatefulUDF
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:
@@ -441,6 +443,8 @@ class Scheduler:
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
 
+        self._actor_pools: dict[str, RayRoundRobinActorPool] = {}
+
         self.use_ray_tqdm = use_ray_tqdm
 
     def next(self, result_uuid: str) -> RayMaterializedResult | StopIteration:
@@ -601,7 +605,13 @@ class Scheduler:
                             break
 
                         for task in tasks_to_dispatch:
-                            results = _build_partitions(daft_execution_config, task)
+                            if task.executor_id is None:
+                                results = _build_partitions(daft_execution_config, task)
+                            else:
+                                actor_pool = self._actor_pools.get(task.executor_id)
+                                assert actor_pool is not None, "Ray actor pool must live for as long as the tasks."
+                                results = _build_partitions_on_actor_pool(task, actor_pool)
+
                             logger.debug("%s -> %s", task, results)
                             inflight_tasks[task.id()] = task
                             for result in results:
@@ -671,6 +681,25 @@ class Scheduler:
 
         pbar.close()
 
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> RayRoundRobinActorPool:
+        def setup(pool_id: str, actor_pool: RayRoundRobinActorPool):
+            self._actor_pools[pool_id] = actor_pool
+
+        def teardown(pool_id: str):
+            del self._actor_pools[pool_id]
+
+        actor_pool_id = f"ray_actor_pool-{name}"
+
+        # TODO: Figure out how to correctly pipe the execution config for the current execution
+        # instead of naively taking it from the current context
+        execution_config = get_context().daft_execution_config
+
+        return RayRoundRobinActorPool(
+            actor_pool_id, resource_request, num_actors, execution_config, setup, teardown, partial_stateful_udf
+        )
+
 
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
@@ -681,6 +710,26 @@ class SchedulerActor(Scheduler):
     def __init__(self, *n, **kw) -> None:
         super().__init__(*n, **kw)
         self.reserved_cores = 1
+
+
+def _build_partitions_on_actor_pool(
+    task: PartitionTask[ray.ObjectRef],
+    actor_pool: RayRoundRobinActorPool,
+) -> list[ray.ObjectRef]:
+    """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
+    [metadatas_ref, *partitions] = actor_pool.submit(task.instructions, task.partial_metadatas, task.inputs)
+    metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
+    task.set_result(
+        [
+            RayMaterializedResult(
+                partition=partition,
+                metadatas=metadatas_accessor,
+                metadata_idx=i,
+            )
+            for i, partition in enumerate(partitions)
+        ]
+    )
+    return partitions
 
 
 def _build_partitions(
@@ -729,6 +778,116 @@ def _build_partitions(
     )
 
     return partitions
+
+
+@ray.remote
+class DaftRayActor:
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig, partial_stateful_udf: PartialStatefulUDF):
+        set_execution_config(daft_execution_config)
+
+        self.initialized_stateful_udf = partial_stateful_udf.func_cls()
+        self.partial_stateful_udf = partial_stateful_udf
+
+    @ray.method(num_returns=2)
+    def run(
+        self, instruction_stack: list[Instruction], partial_metadatas: list[PartitionMetadata], *inputs: MicroPartition
+    ) -> list[list[PartitionMetadata] | MicroPartition]:
+        from daft.execution import execution_step
+        from daft.expressions import ExpressionsProjection
+        from daft.udf import run_udf
+
+        assert (
+            len(instruction_stack) == 1
+        ), f"Stateful Actor can only run a single UDF instruction, but received: {instruction_stack}"
+        instr = instruction_stack[0]
+        assert isinstance(
+            instr, execution_step.StatefulUDFProject
+        ), f"Stateful Actor can only run StatefulUDFProject, but received: {instr}"
+
+        assert len(inputs) == 1
+        assert len(partial_metadatas) == 1
+        part = inputs[0]
+        partial = partial_metadatas[0]
+
+        evaluated_expressions_mp = part.eval_expression_list(
+            ExpressionsProjection(list(self.partial_stateful_udf.bound_args.expressions().values()))
+        )
+        evaluated_expressions_series = [
+            evaluated_expressions_mp.get_column(cname) for cname in evaluated_expressions_mp.column_names()
+        ]
+        processed_series = run_udf(
+            self.initialized_stateful_udf,
+            self.partial_stateful_udf.bound_args,
+            evaluated_expressions_series,
+            self.partial_stateful_udf.return_dtype._dtype,
+        )
+
+        new_part = MicroPartition.from_pydict(
+            {
+                processed_series.name(): processed_series,
+                **{cname: part.get_column(cname) for cname in part.column_names()},
+            }
+        )
+
+        return [
+            [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+            new_part,
+        ]
+
+
+class RayRoundRobinActorPool(ActorPool[ray.ObjectRef]):
+    """Naive implementation of an ActorPool that performs round-robin task submission to the actors"""
+
+    def __init__(
+        self,
+        pool_id: str,
+        resource_request: ResourceRequest,
+        num_actors: int,
+        execution_config: PyDaftExecutionConfig,
+        setup: Callable[[str, RayRoundRobinActorPool], None],
+        teardown: Callable[[str], None],
+        partial_stateful_udf: PartialStatefulUDF,
+    ):
+        self._actors: list[DaftRayActor] | None = None
+        self._task_idx = 0
+
+        self._execution_config = execution_config
+        self._num_actors = num_actors
+        self._resource_request_per_actor = resource_request
+        self._id = pool_id
+
+        self._setup_callback = setup
+        self._teardown_callback = teardown
+
+        self._partial_stateful_udf = partial_stateful_udf
+
+    def __enter__(self) -> str:
+        self._actors = [
+            DaftRayActor.remote(self._execution_config, self._partial_stateful_udf)  # type: ignore
+            for _ in range(self._num_actors)
+        ]
+        self._setup_callback(self._id, self)
+        return self._id
+
+    def __exit__(self, type, value, tb):
+        assert self._actors is not None, "Must have active Ray actors on teardown"
+
+        # Delete the actors in the old pool so Ray can tear them down
+        old_actors = self._actors
+        self._actors = None
+        del old_actors
+
+        self._teardown_callback(self._id)
+
+    def submit(
+        self, instruction_stack: list[Instruction], partial_metadatas: ray.ObjectRef, inputs: ray.ObjectRef
+    ) -> list[ray.ObjectRef]:
+        assert self._actors is not None, "Must have active Ray actors during submission"
+
+        idx = self._task_idx % self._num_actors
+        self._task_idx += 1
+        actor = self._actors[idx]
+        return actor.run.remote(instruction_stack, partial_metadatas, *inputs)
 
 
 class RayRunner(Runner[ray.ObjectRef]):
@@ -892,6 +1051,18 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()
+
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, partial_stateful_udf: PartialStatefulUDF
+    ) -> RayRoundRobinActorPool:
+        if self.ray_client_mode:
+            # TODO: I'm guessing that this is probably not going to work. Setups/teardowns are going to be really
+            # tricky to get correct here. We might need to change some abstractions.
+            return ray.get(
+                self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors, partial_stateful_udf)
+            )
+        else:
+            return self.scheduler.get_actor_pool(name, resource_request, num_actors, partial_stateful_udf)
 
 
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
