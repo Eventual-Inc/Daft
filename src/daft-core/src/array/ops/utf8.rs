@@ -610,7 +610,7 @@ impl Utf8Array {
             .iter()
             .map(|val| {
                 let v = val?;
-                Some(v.len() as u64)
+                Some(v.chars().count() as u64)
             })
             .collect::<arrow2::array::UInt64Array>()
             .with_validity(self_arrow.validity().cloned());
