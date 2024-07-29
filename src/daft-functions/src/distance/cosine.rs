@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::FixedSizeListArray,
-    datatypes::{DaftNumericType, Field, Float32Type, Float64Array, Float64Type, Int8Type},
+    datatypes::{DaftNumericType, Field, Float64Array, NumericNative},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -20,21 +20,22 @@ fn compute_cosine_distance<T>(
     query: &Series,
 ) -> DaftResult<Vec<Option<f64>>>
 where
-    T: DaftNumericType,
-    T::Native: SpatialSimilarity,
+    T: NumericNative,
+    <T::DAFTTYPE as DaftNumericType>::Native: SpatialSimilarity,
 {
     let query = &query.fixed_size_list()?.flat_child;
     let query = query.try_as_slice::<T>()?;
 
-    source
+    Ok(source
         .into_iter()
         .map(|list_opt| {
-            let list = list_opt.as_ref().unwrap();
-            let list = list.try_as_slice::<T>()?;
-            let cosine = T::Native::cosine(list, query);
-            Ok(cosine)
+            let list = list_opt.as_ref()?;
+            let list = list
+                .try_as_slice::<T>()
+                .expect("types should already be checked at this point");
+            SpatialSimilarity::cosine(list, query)
         })
-        .collect::<DaftResult<Vec<_>>>()
+        .collect::<Vec<_>>())
 }
 
 #[typetag::serde]
@@ -61,9 +62,9 @@ impl ScalarUDF for CosineDistanceFunction {
 
                 let res = match query.data_type() {
                     DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
-                        DataType::Int8 => compute_cosine_distance::<Int8Type>(source, query),
-                        DataType::Float32 => compute_cosine_distance::<Float32Type>(source, query),
-                        DataType::Float64 => compute_cosine_distance::<Float64Type>(source, query),
+                        DataType::Int8 => compute_cosine_distance::<i8>(source, query),
+                        DataType::Float32 => compute_cosine_distance::<f32>(source, query),
+                        DataType::Float64 => compute_cosine_distance::<f64>(source, query),
                         _ => {
                             return Err(DaftError::ValueError(
                                 "'cosine_distance' only supports Int8|Float32|Float32 datatypes"

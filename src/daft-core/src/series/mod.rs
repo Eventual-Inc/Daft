@@ -14,7 +14,7 @@ use crate::{
         ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
         DataArray,
     },
-    datatypes::{DaftNumericType, DataType, Field, FieldRef},
+    datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
     utils::display_table::make_comfy_table,
     with_match_daft_types,
 };
@@ -115,16 +115,20 @@ impl Series {
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
     /// ```rust,no_run
-    /// let i32_arr: &[i32] = series.try_as_slice::<Int32Type>()?;
+    /// let i32_arr: &[i32] = series.try_as_slice::<i32>()?;
     ///
-    /// let f64_arr: &[f64] = series.try_as_slice::<Float64Type>()?;
+    /// let f64_arr: &[f64] = series.try_as_slice::<f64>()?;
     /// ```
-    pub fn try_as_slice<T: DaftNumericType>(&self) -> DaftResult<&[T::Native]> {
-        let arr: &DataArray<T> = self.downcast()?;
-        Ok(arr.as_slice())
+    pub fn try_as_slice<N: NumericNative>(
+        &self,
+    ) -> DaftResult<&[<N::DAFTTYPE as DaftNumericType>::Native]>
+    where
+        N::DAFTTYPE: DaftNumericType + DaftDataType,
+    {
+        let data: &DataArray<N::DAFTTYPE> = self.downcast()?;
+        Ok(data.as_slice())
     }
 }
-
 impl Display for Series {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
