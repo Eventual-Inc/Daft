@@ -9,7 +9,7 @@ use crate::{
         create_channel, create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
         SingleReceiver, SingleSender,
     },
-    get_morsel_size, NUM_CPUS,
+    DEFAULT_MORSEL_SIZE, NUM_CPUS,
 };
 
 pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
@@ -31,7 +31,7 @@ impl OperatorTaskState {
         Self {
             buffer: vec![],
             curr_len: 0,
-            threshold: get_morsel_size(),
+            threshold: DEFAULT_MORSEL_SIZE,
         }
     }
 

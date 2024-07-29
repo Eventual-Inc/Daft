@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::{
     channel::{create_channel, SingleSender},
-    get_morsel_size,
+    DEFAULT_MORSEL_SIZE,
 };
 
 use super::source::{Source, SourceStream};
@@ -52,7 +52,7 @@ impl ScanTaskSource {
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip(self))]
     fn get_data(&self) -> SourceStream {
-        let morsel_size = get_morsel_size();
+        let morsel_size = DEFAULT_MORSEL_SIZE;
         let (mut sender, mut receiver) = create_channel(self.scan_tasks.len(), true);
         for scan_task in self.scan_tasks.clone() {
             tokio::task::spawn(Self::process_scan_task_stream(
