@@ -77,13 +77,13 @@ def test_single_non_buffered_plan_done_while_planning():
         next(plan)
 
 
-def test_single_plan_with_buffer():
+def test_single_plan_with_buffer_slow_tasks():
     result1, result2, result3 = MagicMock(), MagicMock(), MagicMock()
     scan = scan_with_tasks([MagicMock() for i in range(3)])
     materialized = Materialize(scan, results_buffer_size=2)
     plan = iter(materialized)
 
-    # Buffer and grows to size 2
+    # Buffer and grows to size 2 (tasks are "slow" and don't complete faster than the next plan loop call)
     assert len(materialized.materializations) == 0
     task1 = next(plan)
     assert isinstance(task1, PartitionTask)
@@ -112,7 +112,7 @@ def test_single_plan_with_buffer():
         next(plan)
 
 
-def test_single_plan_with_buffer_saturation_after_task_done():
+def test_single_plan_with_buffer_saturation_fast_tasks():
     result1, result2, result3 = MagicMock(), MagicMock(), MagicMock()
     scan = scan_with_tasks([MagicMock() for i in range(3)])
     materialized = Materialize(scan, results_buffer_size=2)
@@ -124,7 +124,7 @@ def test_single_plan_with_buffer_saturation_after_task_done():
     assert isinstance(task1, PartitionTask)
     assert len(materialized.materializations) == 1
 
-    # Finish up on task 1
+    # Finish up on task 1 (task is "fast" and completes so quickly even before the next plan loop call)
     task1.set_result([result1])
 
     # Plan should fill its buffer completely with new tasks before starting to yield results again
