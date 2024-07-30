@@ -33,6 +33,7 @@ from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
+from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -2618,6 +2619,41 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: An expression with decoded strings.
         """
         return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
+
+    def count_matches(
+        self,
+        patterns: Any,
+        whole_words: bool = False,
+        case_sensitive: bool = True,
+    ):
+        """
+        Counts the number of times a pattern, or multiple patterns, appear in a string.
+
+        .. NOTE::
+            If a pattern is a substring of another pattern, the longest pattern is matched first.
+            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
+            one match is counted for "hello world".
+
+        If whole_words is true, then matches are only counted if they are whole words. This
+        also applies to multi-word strings. For example, on the string "abc def", the strings
+        "def" and "abc def" would be matched, but "bc de", "abc d", and "abc " (with the space)
+        would not.
+
+        If case_sensitive is false, then case will be ignored. This only applies to ASCII
+        characters; unicode uppercase/lowercase will still be considered distinct.
+
+        Args:
+            patterns: A pattern or a list of patterns.
+            whole_words: Whether to only match whole word(s). Defaults to false.
+            case_sensitive: Whether the matching should be case sensitive. Defaults to true.
+        """
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        if not isinstance(patterns, Expression):
+            series = item_to_series("items", patterns)
+            patterns = Expression._to_expression(series)
+
+        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
