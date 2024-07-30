@@ -232,7 +232,7 @@ class DataFrame:
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
-                Setting this value value will buffer results up to the provided size and provide backpressure
+                Setting this value will buffer results up to the provided size and provide backpressure
                 to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
                 `None` will result in a buffer of unbounded size, causing the dataframe run asynchronously
                 to completion.
