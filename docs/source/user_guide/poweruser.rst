@@ -5,4 +5,4 @@ The Daft Poweruser
 
     poweruser/memory
     poweruser/partitioning
-    poweruser/scaling-up
+    poweruser/distributed-computing
