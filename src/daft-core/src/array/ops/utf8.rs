@@ -13,7 +13,7 @@ use crate::{
     },
     DataType, Series,
 };
-use aho_corasick::AhoCorasickBuilder;
+use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
@@ -1400,6 +1400,7 @@ impl Utf8Array {
         let patterns = patterns.as_arrow().iter().flatten();
         let ac = AhoCorasickBuilder::new()
             .ascii_case_insensitive(!case_sensitive)
+            .match_kind(MatchKind::LeftmostLongest)
             .build(patterns)
             .map_err(|e| {
                 DaftError::ComputeError(format!("Error creating string automaton: {}", e))

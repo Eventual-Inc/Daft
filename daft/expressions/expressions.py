@@ -2625,9 +2625,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Counts the number of times a pattern, or multiple patterns, appear in a string.
 
         .. NOTE::
-            If a pattern is a substring of another pattern, the smaller pattern is matched first.
+            If a pattern is a substring of another pattern, the longest pattern is matched first.
             For example, in the string "hello world", with patterns "hello", "world", and "hello world",
-            two matches are counted, "hello" and "world".
+            one match is counted for "hello world".
 
         If whole_words is true, then matches are only counted if they are whole words. This
         also applies to multi-word strings. For example, on the string "abc def", the strings

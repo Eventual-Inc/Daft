@@ -1584,4 +1584,4 @@ def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     s = Series.from_pylist(["hello world"])
     p = Series.from_pylist(["hello world", "hello", "world"])
     res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
-    assert res == [2]
+    assert res == [1]
