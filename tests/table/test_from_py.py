@@ -9,6 +9,7 @@ import pyarrow as pa
 import pyarrow.compute as pac
 import pytest
 
+import daft
 from daft import DataType, TimeUnit
 from daft.context import get_context
 from daft.series import Series
@@ -649,3 +650,17 @@ def test_nested_struct_dates(levels: int) -> None:
 
     assert back_again.to_arrow().type == expected_arrow_type
     assert back_again.to_pylist() == data
+
+
+def test_from_arrow_iterable() -> None:
+    class CustomIterable:
+        def __iter__(self):
+            yield pa.table({"text": ["foo1", "bar2"]})
+            yield pa.table({"text": ["foo2", "bar2"]})
+            yield pa.table({"text": ["foo3", "bar3"]})
+
+    my_iter = CustomIterable()
+
+    table = daft.from_arrow(my_iter)
+    tbl = table.to_pydict()
+    assert tbl == {"text": ["foo1", "bar2", "foo2", "bar2", "foo3", "bar3"]}
