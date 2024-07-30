@@ -210,7 +210,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=1)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -222,15 +222,24 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    def iter_partitions(
+        self, results_buffer_size: Optional[int] = 1
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
-        .. WARNING::
-            This method is experimental and may change in future versions.
+        Args:
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
+                Setting this value will buffer results up to the provided size and provide backpressure
+                to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
+                `None` will result in a buffer of unbounded size, causing the dataframe to run asynchronously
+                to completion.
         """
+        if results_buffer_size is not None and not results_buffer_size > 0:
+            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -240,7 +249,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder)
+            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
             for result in results_iter:
                 yield result.partition()
 
