@@ -2647,6 +2647,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             whole_words: Whether to only match whole word(s). Defaults to false.
             case_sensitive: Whether the matching should be case sensitive. Defaults to true.
         """
+        if isinstance(patterns, str):
+            patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
             patterns = Expression._to_expression(series)
