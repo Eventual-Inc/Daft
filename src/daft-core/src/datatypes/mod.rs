@@ -7,8 +7,8 @@ mod image_mode;
 mod matching;
 mod time_unit;
 
+use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
-use crate::array::{ListArray, StructArray};
 pub use agg_ops::{try_mean_supertype, try_sum_supertype};
 use arrow2::{
     compute::comparison::Simd8,
@@ -359,3 +359,9 @@ pub type ExtensionArray = DataArray<ExtensionType>;
 
 #[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;
+
+impl<T: DaftNumericType> DataArray<T> {
+    pub fn as_slice(&self) -> &[T::Native] {
+        self.as_arrow().values().as_slice()
+    }
+}

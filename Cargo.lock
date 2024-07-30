@@ -1701,6 +1701,7 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
+ "simsimd",
  "snafu",
  "tiktoken-rs",
  "tokio",
@@ -4559,6 +4560,15 @@ dependencies = [
  "num-traits",
  "thiserror",
  "time",
+]
+
+[[package]]
+name = "simsimd"
+version = "4.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efc843bc8f12d9c8e6b734a0fe8918fc497b42f6ae0f347dbfdad5b5138ab9b4"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
