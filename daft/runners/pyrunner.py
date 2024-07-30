@@ -374,20 +374,21 @@ class PyRunner(Runner[MicroPartition]):
         final_metadata: list[PartialPartitionMetadata],
         resource_request: ResourceRequest,
     ) -> list[MaterializedResult[MicroPartition]]:
-        for instruction in instruction_stack:
-            partitions = instruction.run(partitions)
+        try:
+            for instruction in instruction_stack:
+                partitions = instruction.run(partitions)
 
-        results: list[MaterializedResult[MicroPartition]] = [
-            PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
-            for part, partial in zip(partitions, final_metadata)
-        ]
-
-        # Release CPU, GPU and memory resources
-        with self._resource_accounting_lock:
-            self._available_bytes_memory += resource_request.memory_bytes or 0
-            self._available_cpus += resource_request.num_cpus or 0.0
-            self._available_gpus += resource_request.num_gpus or 0.0
+            results: list[MaterializedResult[MicroPartition]] = [
+                PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
+                for part, partial in zip(partitions, final_metadata)
+            ]
             return results
+        finally:
+            # Release CPU, GPU and memory resources
+            with self._resource_accounting_lock:
+                self._available_bytes_memory += resource_request.memory_bytes or 0
+                self._available_cpus += resource_request.num_cpus or 0.0
+                self._available_gpus += resource_request.num_gpus or 0.0
 
 
 @dataclass
