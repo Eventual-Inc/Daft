@@ -508,7 +508,7 @@ fn materialize_scan_task(
 async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
-) -> crate::Result<(impl Stream<Item = DaftResult<Vec<Table>>> + Send)> {
+) -> crate::Result<BoxStream<'static, DaftResult<Vec<Table>>>> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -524,7 +524,6 @@ async fn stream_scan_task(
         .context(DaftCoreComputeSnafu);
     }
     let url = scan_task.sources.first().map(|s| s.get_path()).unwrap();
-
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
             let io_config = Arc::new(
@@ -591,12 +590,12 @@ async fn stream_scan_task(
                     let read_options =
                         CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
                     daft_csv::stream_csv(
-                        url,
+                        url.to_string(),
                         Some(convert_options),
                         Some(parse_options),
                         Some(read_options),
-                        io_client,
-                        io_stats,
+                        io_client.clone(),
+                        io_stats.clone(),
                         None,
                     )
                     .await
@@ -606,8 +605,32 @@ async fn stream_scan_task(
                 // ****************
                 // Native JSON Reads
                 // ****************
-                FileFormatConfig::Json(_cfg) => {
-                    todo!("Implement streaming reads for JSON")
+                FileFormatConfig::Json(cfg) => {
+                    let schema_of_file = scan_task.schema.clone();
+                    let convert_options = JsonConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        file_column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        Some(schema_of_file),
+                        scan_task.pushdowns.filters.clone(),
+                    );
+                    // let
+                    let parse_options = JsonParseOptions::new_internal();
+                    let read_options =
+                        JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+
+                    daft_json::read::stream_json(
+                        url.to_string(),
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        None,
+                    )
+                    .await
+                    .context(DaftCoreComputeSnafu)?
                 }
                 #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
@@ -863,7 +886,7 @@ impl MicroPartition {
                 let statistics = scan_task.statistics.clone();
                 let stream = stream_scan_task(scan_task.clone(), Some(io_stats)).await?;
                 let stream = chunk_tables_into_micropartition_stream(
-                    Box::pin(stream),
+                    stream,
                     schema,
                     scan_task.partition_spec().cloned(),
                     statistics,
