@@ -234,7 +234,7 @@ class DataFrame:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
                 Setting this value will buffer results up to the provided size and provide backpressure
                 to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
-                `None` will result in a buffer of unbounded size, causing the dataframe run asynchronously
+                `None` will result in a buffer of unbounded size, causing the dataframe to run asynchronously
                 to completion.
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
