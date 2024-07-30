@@ -382,7 +382,7 @@ class PyRunner(Runner[MicroPartition]):
             for part, partial in zip(partitions, final_metadata)
         ]
 
-        # Release CPU and GPU resources, but not memory since the future has not been consumed yet
+        # Release CPU, GPU and memory resources
         with self._resource_accounting_lock:
             self._available_bytes_memory += resource_request.memory_bytes or 0
             self._available_cpus += resource_request.num_cpus or 0.0
