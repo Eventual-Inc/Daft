@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Union
 
 from daft.api_annotations import PublicAPI
 
@@ -55,7 +55,7 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
 
 
 @PublicAPI
-def from_arrow(data: Union["pa.Table", List["pa.Table"]]) -> "DataFrame":
+def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
     """Creates a DataFrame from a pyarrow Table.
 
     Example:
