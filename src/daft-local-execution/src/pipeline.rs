@@ -9,7 +9,7 @@ use daft_physical_plan::{
     Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan,
     Project, Sort, UnGroupedAggregate,
 };
-use daft_plan::{logical_plan::Sink, populate_aggregation_stages};
+use daft_plan::populate_aggregation_stages;
 
 use crate::{
     channel::MultiSender,
@@ -24,7 +24,7 @@ use crate::{
         concat::ConcatSink,
         hash_join::HashJoinSink,
         limit::LimitSink,
-        sink::{run_sink, DoubleInputSink, SingleInputSink, Sink as ExecSink},
+        sink::{run_sink, Sink as ExecSink},
         sort::SortSink,
     },
     sources::{
@@ -49,18 +49,20 @@ pub enum PipelineNode {
 }
 
 impl PipelineNode {
-    fn single_sink<S: SingleInputSink + 'static>(sink: S, child: Self) -> Self {
+    fn single_sink<S: ExecSink + 'static>(sink: S, child: Self) -> Self {
         PipelineNode::Sink {
-            sink: (Box::new(sink) as Box<dyn SingleInputSink>).into(),
+            sink: Box::new(sink),
             children: vec![child],
         }
     }
 
-    fn double_sink<S: DoubleInputSink + 'static>(sink: S, left: Self, right: Self) -> Self {
-        PipelineNode::Sink {
-            sink: (Box::new(sink) as Box<dyn DoubleInputSink>).into(),
-            children: vec![left, right],
-        }
+    fn double_sink<S: ExecSink + 'static>(sink: S, left: Self, right: Self) -> Self {
+        let children = vec![left, right];
+        let after = PipelineNode::Sink {
+            sink: Box::new(sink),
+            children,
+        };
+        after
     }
 
     pub fn start(self, sender: MultiSender) {
@@ -96,7 +98,7 @@ pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<PipelineNode> {
-    Ok(match physical_plan {
+    let out = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
             PipelineNode::Source {
@@ -258,31 +260,40 @@ pub fn physical_plan_to_pipeline(
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
         }
-    })
+    };
+
+    Ok(out)
 }
 
-// impl TreeNode for PipelineNode {
-//     fn apply_children<F: FnMut(&Self) -> DaftResult<common_treenode::TreeNodeRecursion>>(
-//             &self,
-//             f: F,
-//         ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-
-//     }
-
-//     // fn children(&self) -> Vec<&Self> {
-//     //     use PipelineNode::*;
-//     //     match self.as_ref() {
-//     //         Source { .. } => vec![],
-//     //         IntermediateOp { child, ..} | SingleInputSink { child, ..} => vec![child],
-//     //         DoubleInputSink {left_child, right_child,.. } => vec![left_child, right_child],
-//     //     }
-//     // }
-//     // fn take_children(self) -> (Self, Vec<Self>) {
-//     //     use PipelineNode::*;
-//     //     match self {
-//     //         Source { source } => vec![],
-//     //         IntermediateOp { child, ..} | SingleInputSink { child, ..} => vec![child],
-//     //         DoubleInputSink {left_child, right_child,.. } => vec![left_child, right_child],
-//     //     }
-//     // }
-// }
+impl ConcreteTreeNode for PipelineNode {
+    fn children(&self) -> Vec<&Self> {
+        use PipelineNode::*;
+        match self {
+            Source { .. } => vec![],
+            IntermediateOp { children, .. } | Sink { children, .. } => children.iter().collect(),
+        }
+    }
+    fn take_children(mut self) -> (Self, Vec<Self>) {
+        use PipelineNode::*;
+        match &mut self {
+            Source { .. } => (self, vec![]),
+            IntermediateOp { children, .. } | Sink { children, .. } => {
+                let children = std::mem::take(children);
+                (self, children)
+            }
+        }
+    }
+    fn with_new_children(mut self, mut new_children: Vec<Self>) -> DaftResult<Self> {
+        use PipelineNode::*;
+        match &mut self {
+            Source { .. } => {
+                assert_eq!(new_children.len(), 0);
+                Ok(self)
+            }
+            IntermediateOp { children, .. } | Sink { children, .. } => {
+                std::mem::swap(children, &mut new_children);
+                Ok(self)
+            }
+        }
+    }
+}

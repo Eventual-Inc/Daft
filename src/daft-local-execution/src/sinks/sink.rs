@@ -14,28 +14,6 @@ pub enum SinkResultType {
     Finished,
 }
 
-pub trait SingleInputSink: Send + Sync {
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
-    fn in_order(&self) -> bool;
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>>;
-}
-
-impl Sink for dyn SingleInputSink {
-    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        assert_eq!(index, 0);
-        self.sink(input)
-    }
-    fn in_order(&self) -> bool {
-        self.in_order()
-    }
-    fn num_inputs(&self) -> usize {
-        1
-    }
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        self.finalize()
-    }
-}
-
 pub fn run_sink(sink: Box<dyn Sink>, send_to: MultiSender) -> Vec<MultiSender> {
     let inputs = sink.num_inputs();
     let mut senders = Vec::with_capacity(inputs);
@@ -52,33 +30,6 @@ pub fn run_sink(sink: Box<dyn Sink>, send_to: MultiSender) -> Vec<MultiSender> {
         let _ = actor.run().await;
     });
     senders
-}
-
-pub trait DoubleInputSink: Send + Sync {
-    fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
-    fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType>;
-    fn in_order(&self) -> bool;
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>>;
-    fn name(&self) -> &'static str;
-}
-
-impl Sink for dyn DoubleInputSink {
-    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        match index {
-            0 => self.sink_left(input),
-            1 => self.sink_right(input),
-            _ => panic!("DoubleInputSink only supports left and right inputs, recv: {index}"),
-        }
-    }
-    fn in_order(&self) -> bool {
-        self.in_order()
-    }
-    fn num_inputs(&self) -> usize {
-        2
-    }
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        self.finalize()
-    }
 }
 
 pub trait Sink: Send + Sync {
@@ -127,17 +78,5 @@ impl SinkActor {
             let _ = self.sender.get_next_sender().send(Ok(val)).await;
         }
         Ok(())
-    }
-}
-
-impl From<Box<dyn SingleInputSink>> for Box<dyn Sink> {
-    fn from(value: Box<dyn SingleInputSink>) -> Self {
-        value.into()
-    }
-}
-
-impl From<Box<dyn DoubleInputSink>> for Box<dyn Sink> {
-    fn from(value: Box<dyn DoubleInputSink>) -> Self {
-        value.into()
     }
 }

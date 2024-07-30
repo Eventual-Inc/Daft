@@ -12,7 +12,7 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use tracing::instrument;
 
-use super::sink::{DoubleInputSink, SinkResultType};
+use super::sink::{Sink, SinkResultType};
 use daft_table::{
     infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTableBuilder, Table,
 };
@@ -80,9 +80,7 @@ impl HashJoinSink {
             join_mapper,
         })
     }
-}
 
-impl DoubleInputSink for HashJoinSink {
     #[instrument(skip_all, name = "HashJoin::probe-table")]
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         for table in input.get_tables()?.iter() {
@@ -101,9 +99,23 @@ impl DoubleInputSink for HashJoinSink {
         }
         Ok(SinkResultType::NeedMoreInput)
     }
+}
+
+impl Sink for HashJoinSink {
+    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+        match index {
+            0 => self.sink_left(input),
+            1 => self.sink_right(input),
+            _ => panic!("hash join only supports 2 inputs, got {index}"),
+        }
+    }
 
     fn in_order(&self) -> bool {
         false
+    }
+
+    fn num_inputs(&self) -> usize {
+        2
     }
 
     #[instrument(skip_all, name = "HashJoin::finalize")]
@@ -148,9 +160,5 @@ impl DoubleInputSink for HashJoinSink {
             Arc::new(vec![final_table]),
             None,
         ))])
-    }
-
-    fn name(&self) -> &'static str {
-        "HashJoin"
     }
 }

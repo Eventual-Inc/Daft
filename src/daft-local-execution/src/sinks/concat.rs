@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{DoubleInputSink, SinkResultType};
+use super::sink::{Sink, SinkResultType};
 
 #[derive(Clone)]
 pub struct ConcatSink {
@@ -19,9 +19,7 @@ impl ConcatSink {
             result_right: Vec::new(),
         }
     }
-}
 
-impl DoubleInputSink for ConcatSink {
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
         self.result_left.push(input.clone());
@@ -33,9 +31,23 @@ impl DoubleInputSink for ConcatSink {
         self.result_right.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
+}
+
+impl Sink for ConcatSink {
+    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+        match index {
+            0 => self.sink_left(input),
+            1 => self.sink_right(input),
+            _ => panic!("concat only supports 2 inputs, got {index}"),
+        }
+    }
 
     fn in_order(&self) -> bool {
         true
+    }
+
+    fn num_inputs(&self) -> usize {
+        2
     }
 
     #[instrument(skip_all, name = "ConcatSink::finalize")]
@@ -45,9 +57,5 @@ impl DoubleInputSink for ConcatSink {
             .into_iter()
             .chain(self.result_right.into_iter())
             .collect())
-    }
-
-    fn name(&self) -> &'static str {
-        "Concat"
     }
 }

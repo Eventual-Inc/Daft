@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{SingleInputSink, SinkResultType};
+use super::sink::{Sink, SinkResultType};
 
 #[derive(Clone)]
 pub struct LimitSink {
@@ -23,9 +23,11 @@ impl LimitSink {
     }
 }
 
-impl SingleInputSink for LimitSink {
+impl Sink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+        assert_eq!(index, 0);
+
         let input_num_rows = input.len();
 
         if self.num_rows_taken == self.limit {
@@ -47,6 +49,10 @@ impl SingleInputSink for LimitSink {
 
     fn in_order(&self) -> bool {
         false
+    }
+
+    fn num_inputs(&self) -> usize {
+        1
     }
 
     #[instrument(skip_all, name = "LimitSink::finalize")]

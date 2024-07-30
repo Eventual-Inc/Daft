@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{SingleInputSink, SinkResultType};
+use super::sink::{Sink, SinkResultType};
 
 #[derive(Clone)]
 pub struct SortSink {
@@ -24,15 +24,20 @@ impl SortSink {
     }
 }
 
-impl SingleInputSink for SortSink {
+impl Sink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+        assert_eq!(index, 0);
         self.parts.push(input.clone());
         Ok(SinkResultType::NeedMoreInput)
     }
 
     fn in_order(&self) -> bool {
         false
+    }
+
+    fn num_inputs(&self) -> usize {
+        1
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
