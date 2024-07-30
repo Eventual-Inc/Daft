@@ -152,7 +152,6 @@ class PyRunner(Runner[MicroPartition]):
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
-        # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
     ) -> Iterator[PyMaterializedResult]:
         # NOTE: Freeze and use this same execution config for the entire execution
@@ -165,18 +164,13 @@ class PyRunner(Runner[MicroPartition]):
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
-                if daft_execution_config.enable_native_executor:
-                    logger.info("Using new executor")
-                    results_gen = plan_scheduler.run(
-                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                    )
-                else:
-                    # don't store partition sets in variable to avoid reference
-                    tasks = plan_scheduler.to_partition_tasks(
-                        {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                    )
-                    del plan_scheduler
-                    results_gen = self._physical_plan_to_partitions(tasks)
+                # don't store partition sets in variable to avoid reference
+                tasks = plan_scheduler.to_partition_tasks(
+                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    results_buffer_size,
+                )
+                del plan_scheduler
+                results_gen = self._physical_plan_to_partitions(tasks)
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -204,7 +198,7 @@ class PyRunner(Runner[MicroPartition]):
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets)
+                tasks = plan_scheduler.to_partition_tasks(psets, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                     results_gen = self._physical_plan_to_partitions(tasks)
@@ -232,12 +226,14 @@ class PyRunner(Runner[MicroPartition]):
                 while True:
                     if next_step is None:
                         # Blocked on already dispatched tasks; await some tasks.
+                        logger.debug("Skipping to wait on dispatched tasks: plan waiting on work")
                         break
 
                     elif isinstance(next_step, MaterializedResult):
                         assert isinstance(next_step, PyMaterializedResult)
 
                         # A final result.
+                        logger.debug("Yielding completed step")
                         yield next_step
                         next_step = next(plan)
                         continue
@@ -246,6 +242,7 @@ class PyRunner(Runner[MicroPartition]):
                         next_step.resource_request,
                     ):
                         # Insufficient resources; await some tasks.
+                        logger.debug("Skipping to wait on dispatched tasks: insufficient resources")
                         break
 
                     else:
@@ -300,7 +297,11 @@ class PyRunner(Runner[MicroPartition]):
                         next_step = next(plan)
 
                 # Await at least one task and process the results.
-                assert len(future_to_task) > 0, "Scheduler deadlocked! This should never happen. Please file an issue."
+                if not len(future_to_task) > 0:
+                    raise RuntimeError(
+                        f"Scheduler deadlocked! This should never happen. Please file an issue. Current step: {type(next_step)}"
+                    )
+
                 done_set, _ = futures.wait(list(future_to_task.keys()), return_when=futures.FIRST_COMPLETED)
                 for done_future in done_set:
                     done_id = future_to_task.pop(done_future)

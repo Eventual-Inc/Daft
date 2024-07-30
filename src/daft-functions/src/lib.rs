@@ -1,5 +1,6 @@
 #![feature(async_closure)]
 pub mod count_matches;
+pub mod distance;
 pub mod hash;
 pub mod minhash;
 pub mod tokenize;
@@ -15,6 +16,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
+    parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine_distance))?;
     parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
     parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_decode))?;
     parent.add_wrapped(wrap_pyfunction!(minhash::python::minhash))?;

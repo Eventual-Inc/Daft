@@ -168,6 +168,11 @@ class Expression:
         return ExpressionDatetimeNamespace.from_expression(self)
 
     @property
+    def embedding(self) -> ExpressionEmbeddingNamespace:
+        """Access methods that work on columns of embeddings"""
+        return ExpressionEmbeddingNamespace.from_expression(self)
+
+    @property
     def float(self) -> ExpressionFloatNamespace:
         """Access methods that work on columns of floats"""
         return ExpressionFloatNamespace.from_expression(self)
@@ -3102,3 +3107,9 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         """
 
         return Expression._from_pyexpr(self._expr.json_query(jq_query))
+
+
+class ExpressionEmbeddingNamespace(ExpressionNamespace):
+    def cosine_distance(self, other: Expression) -> Expression:
+        """Compute the cosine distance between two embeddings"""
+        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))

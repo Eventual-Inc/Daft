@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_execution::run_local_async;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
 use serde::{Deserialize, Serialize};
 
@@ -11,19 +10,17 @@ use {
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_micropartition::python::PyMicroPartition,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
     pyo3::{
-        pyclass, pymethods, types::PyBytes, IntoPy, PyObject, PyRef, PyRefMut, PyResult,
-        PyTypeInfo, Python, ToPyObject,
+        pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
+        Python, ToPyObject,
     },
     std::collections::HashMap,
 };
 
 use daft_core::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
-use daft_micropartition::MicroPartition;
 use daft_plan::InMemoryInfo;
 use std::sync::Arc;
 
@@ -79,30 +76,6 @@ impl PhysicalPlanScheduler {
         psets: HashMap<String, Vec<PyObject>>,
     ) -> PyResult<PyObject> {
         physical_plan_to_partition_tasks(self.plan().as_ref(), py, &psets)
-    }
-    pub fn run(
-        &self,
-        py: Python,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
-    ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
-            .into_iter()
-            .map(|(part_id, parts)| {
-                (
-                    part_id,
-                    parts
-                        .into_iter()
-                        .map(|part| part.into())
-                        .collect::<Vec<Arc<MicroPartition>>>(),
-                )
-            })
-            .collect();
-        let out = py.allow_threads(|| run_local_async(&self.query_stage, native_psets))?;
-        let iter = Box::new(out.map(|part| {
-            part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
-        }));
-        let part_iter = StreamingPartitionIterator { iter };
-        Ok(part_iter.into_py(py))
     }
 }
 

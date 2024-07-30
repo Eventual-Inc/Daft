@@ -6,7 +6,7 @@ use daft_core::schema::SchemaRef;
 use crate::{
     file_format::{FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    ChunkSpec, DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -86,10 +86,11 @@ impl ScanOperator for AnonymousScanOperator {
             move |(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Ok(ScanTask::new(
-                    vec![DataFileSource::AnonymousDataFile {
+                    vec![DataSource::File {
                         path: f.to_string(),
                         chunk_spec,
                         size_bytes: None,
+                        iceberg_delete_files: None,
                         metadata: None,
                         partition_spec: None,
                         statistics: None,

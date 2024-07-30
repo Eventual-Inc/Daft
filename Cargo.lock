@@ -1560,7 +1560,6 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
- "daft-execution",
  "daft-functions",
  "daft-io",
  "daft-json",
@@ -1689,32 +1688,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-execution"
-version = "0.2.0-dev0"
-dependencies = [
- "arrow2",
- "async-trait",
- "common-error",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "daft-micropartition",
- "daft-plan",
- "daft-scan",
- "daft-table",
- "futures",
- "itertools 0.11.0",
- "log",
- "pyo3",
- "rand 0.8.5",
- "rayon",
- "rstest",
- "snafu",
- "sysinfo",
- "tokio",
-]
-
-[[package]]
 name = "daft-functions"
 version = "0.2.0-dev0"
 dependencies = [
@@ -1729,6 +1702,7 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
+ "simsimd",
  "snafu",
  "tiktoken-rs",
  "tokio",
@@ -1813,6 +1787,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
+ "async-stream",
  "common-error",
  "common-tracing",
  "daft-dsl",
@@ -1835,6 +1810,7 @@ name = "daft-micropartition"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "async-stream",
  "bincode",
  "common-error",
  "daft-core",
@@ -1846,6 +1822,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "futures",
  "parquet2",
  "pyo3",
  "snafu",
@@ -1962,8 +1939,6 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
- "daft-execution",
- "daft-micropartition",
  "daft-plan",
  "daft-scan",
  "pyo3",
@@ -1988,8 +1963,12 @@ name = "daft-sql"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "daft-core",
+ "daft-dsl",
  "daft-plan",
  "pyo3",
+ "rstest",
+ "snafu",
  "sqlparser",
 ]
 
@@ -4585,6 +4564,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simsimd"
+version = "4.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efc843bc8f12d9c8e6b734a0fe8918fc497b42f6ae0f347dbfdad5b5138ab9b4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "siphasher"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4921,18 +4909,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.49"
+version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1177e8c6d7ede7afde3585fd2513e611227efd6481bd78d2e82ba1ce16557ed4"
+checksum = "c0342370b38b6a11b6cc11d6a805569958d54cfa061a29969c3b5ce2ea405724"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.49"
+version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10712f02019e9288794769fba95cd6847df9874d49d871d062172f9dd41bc4cc"
+checksum = "a4558b58466b9ad7ca0f102865eccc95938dca1a74a856f2b57b6629050da261"
 dependencies = [
  "proc-macro2",
  "quote",

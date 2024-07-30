@@ -14,6 +14,8 @@ lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
+const DEFAULT_MORSEL_SIZE: usize = 1000;
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 

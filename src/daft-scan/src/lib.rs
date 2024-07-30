@@ -117,30 +117,21 @@ impl ChunkSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DataFileSource {
-    AnonymousDataFile {
+pub enum DataSource {
+    File {
         path: String,
         chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
+        iceberg_delete_files: Option<Vec<String>>,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
         parquet_metadata: Option<Arc<FileMetaData>>,
     },
-    CatalogDataFile {
+    Database {
         path: String,
-        chunk_spec: Option<ChunkSpec>,
-        size_bytes: Option<u64>,
-        metadata: TableMetadata,
-        partition_spec: PartitionSpec,
-        statistics: Option<TableStatistics>,
-    },
-    DatabaseDataSource {
-        path: String,
-        chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
-        partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
     },
     #[cfg(feature = "python")]
@@ -155,12 +146,10 @@ pub enum DataFileSource {
     },
 }
 
-impl DataFileSource {
+impl DataSource {
     pub fn get_path(&self) -> &str {
         match self {
-            Self::AnonymousDataFile { path, .. }
-            | Self::CatalogDataFile { path, .. }
-            | Self::DatabaseDataSource { path, .. } => path,
+            Self::File { path, .. } | Self::Database { path, .. } => path,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { module, .. } => module,
         }
@@ -168,7 +157,7 @@ impl DataFileSource {
 
     pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
         match self {
-            Self::AnonymousDataFile {
+            Self::File {
                 parquet_metadata, ..
             } => parquet_metadata.as_ref(),
             _ => None,
@@ -177,9 +166,8 @@ impl DataFileSource {
 
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
-            Self::AnonymousDataFile { chunk_spec, .. }
-            | Self::CatalogDataFile { chunk_spec, .. }
-            | Self::DatabaseDataSource { chunk_spec, .. } => chunk_spec.as_ref(),
+            Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
+            Self::Database { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { .. } => None,
         }
@@ -187,9 +175,7 @@ impl DataFileSource {
 
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
-            Self::AnonymousDataFile { size_bytes, .. }
-            | Self::CatalogDataFile { size_bytes, .. }
-            | Self::DatabaseDataSource { size_bytes, .. } => *size_bytes,
+            Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
         }
@@ -197,9 +183,7 @@ impl DataFileSource {
 
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
-            Self::AnonymousDataFile { metadata, .. }
-            | Self::DatabaseDataSource { metadata, .. } => metadata.as_ref(),
-            Self::CatalogDataFile { metadata, .. } => Some(metadata),
+            Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
         }
@@ -207,9 +191,9 @@ impl DataFileSource {
 
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
-            Self::AnonymousDataFile { statistics, .. }
-            | Self::CatalogDataFile { statistics, .. }
-            | Self::DatabaseDataSource { statistics, .. } => statistics.as_ref(),
+            Self::File { statistics, .. } | Self::Database { statistics, .. } => {
+                statistics.as_ref()
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
         }
@@ -217,33 +201,35 @@ impl DataFileSource {
 
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
-            Self::AnonymousDataFile { partition_spec, .. }
-            | Self::DatabaseDataSource { partition_spec, .. } => partition_spec.as_ref(),
-            Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
+            Self::File { partition_spec, .. } => partition_spec.as_ref(),
+            Self::Database { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
+        }
+    }
+
+    pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
+        match self {
+            Self::File {
+                iceberg_delete_files,
+                ..
+            } => iceberg_delete_files.as_ref(),
+            _ => None,
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
-            Self::AnonymousDataFile {
+            Self::File {
                 path,
                 chunk_spec,
                 size_bytes,
+                iceberg_delete_files,
                 metadata,
                 partition_spec,
                 statistics,
                 parquet_metadata: _,
-            }
-            | Self::DatabaseDataSource {
-                path,
-                chunk_spec,
-                size_bytes,
-                metadata,
-                partition_spec,
-                statistics,
             } => {
                 res.push(format!("Path = {}", path));
                 if let Some(chunk_spec) = chunk_spec {
@@ -254,6 +240,9 @@ impl DataFileSource {
                 }
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {}", size_bytes));
+                }
+                if let Some(iceberg_delete_files) = iceberg_delete_files {
+                    res.push(format!("Iceberg delete files = {:?}", iceberg_delete_files));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -271,32 +260,22 @@ impl DataFileSource {
                     res.push(format!("Statistics = {}", statistics));
                 }
             }
-            Self::CatalogDataFile {
+            Self::Database {
                 path,
-                chunk_spec,
                 size_bytes,
                 metadata,
-                partition_spec,
                 statistics,
             } => {
                 res.push(format!("Path = {}", path));
-                if let Some(chunk_spec) = chunk_spec {
-                    res.push(format!(
-                        "Chunk spec = {{ {} }}",
-                        chunk_spec.multiline_display().join(", ")
-                    ));
-                }
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {}", size_bytes));
                 }
-                res.push(format!(
-                    "Metadata = {}",
-                    metadata.multiline_display().join(", ")
-                ));
-                res.push(format!(
-                    "Partition spec = {}",
-                    partition_spec.multiline_display().join(", ")
-                ));
+                if let Some(metadata) = metadata {
+                    res.push(format!(
+                        "Metadata = {}",
+                        metadata.multiline_display().join(", ")
+                    ));
+                }
                 if let Some(statistics) = statistics {
                     res.push(format!("Statistics = {}", statistics));
                 }
@@ -338,11 +317,11 @@ impl DataFileSource {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScanTask {
-    pub sources: Vec<DataFileSource>,
+    pub sources: Vec<DataSource>,
 
-    /// Schema to use when reading the DataFileSources.
+    /// Schema to use when reading the DataSources.
     ///
-    /// Schema to use when reading the DataFileSources. This should always be passed in by the
+    /// Schema to use when reading the DataSources. This should always be passed in by the
     /// ScanOperator implementation and should not have had any "pruning" applied.
     ///
     /// Note that this is different than the schema of the data after pushdowns have been applied,
@@ -360,7 +339,7 @@ pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
     pub fn new(
-        sources: Vec<DataFileSource>,
+        sources: Vec<DataSource>,
         file_format_config: Arc<FileFormatConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,

@@ -6,6 +6,7 @@ import pytest
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
+import pyarrow.compute as pc
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 import daft
@@ -34,8 +35,8 @@ WORKING_SHOW_COLLECT = [
     "test_partitioned_by_months",
     "test_partitioned_by_truncate",
     "test_partitioned_by_years",
-    # "test_positional_mor_deletes", # Need Merge on Read
-    # "test_positional_mor_double_deletes", # Need Merge on Read
+    "test_positional_mor_deletes",
+    "test_positional_mor_double_deletes",
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
@@ -163,3 +164,35 @@ def test_daft_iceberg_table_read_table_snapshot(local_iceberg_catalog):
         daft_pandas = daft.read_iceberg(tab, snapshot_id=snapshot.snapshot_id).to_pandas()
         iceberg_pandas = tab.scan(snapshot_id=snapshot.snapshot_id).to_pandas()
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("table_name", ["test_positional_mor_deletes", "test_positional_mor_double_deletes"])
+def test_daft_iceberg_table_mor_limit_collect_correct(table_name, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table_name}")
+    df = daft.read_iceberg(tab)
+    df = df.limit(10)
+    df.collect()
+    daft_pandas = df.to_pandas()
+
+    iceberg_arrow = tab.scan().to_arrow()
+    iceberg_arrow = iceberg_arrow.slice(length=10)
+    iceberg_pandas = iceberg_arrow.to_pandas()
+
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("table_name", ["test_positional_mor_deletes", "test_positional_mor_double_deletes"])
+def test_daft_iceberg_table_mor_predicate_collect_correct(table_name, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table_name}")
+    df = daft.read_iceberg(tab)
+    df = df.where(df["number"] > 5)
+    df.collect()
+    daft_pandas = df.to_pandas()
+
+    iceberg_arrow = tab.scan().to_arrow()
+    iceberg_arrow = iceberg_arrow.filter(pc.field("number") > 5)
+    iceberg_pandas = iceberg_arrow.to_pandas()
+
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

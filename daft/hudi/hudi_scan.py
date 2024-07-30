@@ -118,6 +118,7 @@ class HudiScanOperator(ScanOperator):
                 storage_config=self._storage_config,
                 num_rows=record_count,
                 size_bytes=size_bytes,
+                iceberg_delete_files=None,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
                 stats=stats,

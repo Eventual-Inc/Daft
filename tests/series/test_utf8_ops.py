@@ -265,6 +265,12 @@ def test_series_utf8_length_all_null() -> None:
     assert result.to_pylist() == [None, None, None]
 
 
+def test_series_utf8_length_unicode() -> None:
+    s = Series.from_arrow(pa.array(["😉test", "hey̆"]))
+    result = s.str.length()
+    assert result.to_pylist() == [5, 4]
+
+
 @pytest.mark.parametrize(
     ["data", "expected"],
     [

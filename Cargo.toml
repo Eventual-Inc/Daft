@@ -6,7 +6,6 @@ daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
-daft-execution = {path = "src/daft-execution", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
@@ -35,7 +34,6 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
-  "daft-execution/python",
   "daft-local-execution/python",
   "daft-io/python",
   "daft-json/python",
@@ -106,7 +104,6 @@ members = [
   "src/common/daft-config",
   "src/common/system-info",
   "src/daft-core",
-  "src/daft-execution",
   "src/daft-local-execution",
   "src/daft-io",
   "src/daft-parquet",
@@ -120,8 +117,8 @@ members = [
   "src/daft-scan",
   "src/daft-scheduler",
   "src/daft-sketch",
-  "src/daft-sql",
-  "src/daft-functions"
+  "src/daft-functions",
+  "src/daft-sql"
 ]
 
 [workspace.dependencies]
