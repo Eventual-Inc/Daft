@@ -30,9 +30,12 @@ where
         .into_iter()
         .map(|list_opt| {
             let list = list_opt.as_ref()?;
-            let list = list
-                .try_as_slice::<T>()
-                .expect("types should already be checked at this point");
+            let list = list.try_as_slice::<T>();
+            debug_assert!(
+                list.is_ok(),
+                "types should already be checked at this point"
+            );
+            let list = list.unwrap();
             SpatialSimilarity::cosine(list, query)
         })
         .collect::<Vec<_>>())
