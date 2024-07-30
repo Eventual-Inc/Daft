@@ -1,5 +1,3 @@
-.. _scaling_up:
-
 Distributed Computing
 =====================
 
