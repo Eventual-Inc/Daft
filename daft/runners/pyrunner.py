@@ -243,15 +243,16 @@ class PyRunner(Runner[MicroPartition]):
                         next_step = next(plan)
                         continue
 
-                    elif not self._can_admit_task(
-                        next_step.resource_request,
-                    ):
-                        # Insufficient resources; await some tasks.
-                        logger.debug("Skipping to wait on dispatched tasks: insufficient resources")
-                        break
-
                     else:
                         # next_task is a task to run.
+                        task_admitted = self._attempt_admit_task(
+                            next_step.resource_request,
+                        )
+
+                        if not task_admitted:
+                            # Insufficient resources; await some tasks.
+                            logger.debug("Skipping to wait on dispatched tasks: insufficient resources")
+                            break
 
                         # Run the task in the main thread, instead of the thread pool, in certain conditions:
                         # - Threading is disabled in runner config.
@@ -284,21 +285,6 @@ class PyRunner(Runner[MicroPartition]):
 
                             # update progress bar
                             pbar.mark_task_start(next_step)
-
-                            with self._resource_accounting_lock:
-                                # Update resource accounting
-                                self._available_bytes_memory -= next_step.resource_request.memory_bytes or 0
-                                self._available_cpus -= next_step.resource_request.num_cpus or 0.0
-                                self._available_gpus -= next_step.resource_request.num_gpus or 0.0
-                                assert (
-                                    self._available_bytes_memory >= 0
-                                ), "Available bytes in memory should not go below 0. This indicates a scheduler bug."
-                                assert (
-                                    self._available_cpus >= 0
-                                ), "Available CPUs should not go below 0. This indicates a scheduler bug."
-                                assert (
-                                    self._available_gpus >= 0
-                                ), "Available GPUs should not go below 0. This indicates a scheduler bug."
 
                             future = self._thread_pool.submit(
                                 self.build_partitions,
@@ -361,7 +347,7 @@ class PyRunner(Runner[MicroPartition]):
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.total_bytes_memory} available"
             )
 
-    def _can_admit_task(
+    def _attempt_admit_task(
         self,
         resource_request: ResourceRequest,
     ) -> bool:
@@ -371,8 +357,15 @@ class PyRunner(Runner[MicroPartition]):
             memory_okay = (resource_request.memory_bytes or 0) <= self._available_bytes_memory
             cpus_okay = (resource_request.num_cpus or 0) <= self._available_cpus
             gpus_okay = (resource_request.num_gpus or 0) <= self._available_gpus
+            all_okay = all((cpus_okay, gpus_okay, memory_okay))
 
-        return all((cpus_okay, gpus_okay, memory_okay))
+            # Update resource accounting if we have the resources (this is considered as the task being "admitted")
+            if all_okay:
+                self._available_bytes_memory -= resource_request.memory_bytes or 0
+                self._available_cpus -= resource_request.num_cpus or 0.0
+                self._available_gpus -= resource_request.num_gpus or 0.0
+
+            return all_okay
 
     def build_partitions(
         self,
