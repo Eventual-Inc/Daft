@@ -16,7 +16,7 @@ endif
 
 
 .venv:  ## Set up virtual environment
-	python3.11 -m venv $(VENV)
+	python3 -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 	## Hacks to deal with grpcio compile errors on m1 macs
 ifeq ($(IS_M1), 1)
