@@ -401,7 +401,7 @@ async fn read_json_single_into_stream(
         None => read_json_schema_single(
             uri,
             parse_options.clone(),
-            // Read at most 1 MiB when doing schema inference.S
+            // Read at most 1 MiB when doing schema inference.
             Some(1024 * 1024),
             io_client.clone(),
             io_stats.clone(),
