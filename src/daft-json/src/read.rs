@@ -5,7 +5,7 @@ use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Ser
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
     futures::{try_future::Context, TryFutureExt, TryStreamExt as _},
@@ -288,6 +288,106 @@ async fn read_json_single_into_table(
     }
 }
 
+pub async fn stream_json(
+    uri: String,
+    convert_options: Option<JsonConvertOptions>,
+    parse_options: Option<JsonParseOptions>,
+    read_options: Option<JsonReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    max_chunks_in_flight: Option<usize>,
+) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
+    // BoxStream::
+    let predicate = convert_options
+        .as_ref()
+        .and_then(|opts| opts.predicate.clone());
+
+    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
+
+    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
+        (None, _) => None,
+        (co, None) => co,
+        (Some(mut co), Some(predicate)) => {
+            if let Some(ref mut include_columns) = co.include_columns {
+                let required_columns_for_predicate = get_required_columns(predicate);
+                for rc in required_columns_for_predicate {
+                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        include_columns.push(rc)
+                    }
+                }
+            }
+            // if we have a limit and a predicate, remove limit for stream
+            co.limit = None;
+            Some(co)
+        }
+    };
+
+    let (chunk_stream, _fields) = read_json_single_into_stream(
+        &uri,
+        convert_options_with_predicate_columns.unwrap_or_default(),
+        parse_options.unwrap_or_default(),
+        read_options,
+        io_client,
+        io_stats,
+    )
+    .await?;
+
+    // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+    // with the parsing of chunks on the rayon threadpool.
+    let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(2).unwrap())
+            .checked_mul(2.try_into().unwrap())
+            .unwrap()
+            .into()
+    });
+    // Collect all chunks in chunk x column form.
+    let tables = chunk_stream
+        // Limit the number of chunks we have in flight at any given time.
+        .try_buffered(max_chunks_in_flight);
+
+    let filtered_tables = tables.map_ok(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.clone()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    });
+
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    let tables = filtered_tables
+        .try_take_while(move |result| {
+            match (result, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                (Ok(table), Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // (1) No limit, never early-terminate.
+                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+            }
+        })
+        .map(|r| match r {
+            Ok(table) => table,
+            Err(e) => Err(e.into()),
+        })
+        // Chunk the tables into chunks of size max_chunks_in_flight.
+        .try_ready_chunks(max_chunks_in_flight)
+        .map_err(|e| DaftError::ComputeError(e.to_string()));
+    Ok(Box::pin(tables))
+}
+
 async fn read_json_single_into_stream(
     uri: &str,
     convert_options: JsonConvertOptions,
@@ -301,7 +401,7 @@ async fn read_json_single_into_stream(
         None => read_json_schema_single(
             uri,
             parse_options.clone(),
-            // Read at most 1 MiB when doing schema inference.
+            // Read at most 1 MiB when doing schema inference.S
             Some(1024 * 1024),
             io_client.clone(),
             io_stats.clone(),
