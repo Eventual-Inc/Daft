@@ -1,140 +1,185 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, os::macos::raw::stat, sync::Arc};
 
+use crate::{channel::{create_channel, spawn_compute_task, MultiReceiver}, intermediate_ops::{filter::FilterOperator, intermediate_op::{IntermediateOpActor, IntermediateOperator}, project::ProjectOperator}, sinks::{blocking_sink::BlockingSinkStatus, hash_join::HashJoinOperator, limit::LimitSink, sink::SinkActor}, sources::{in_memory::InMemorySource, source::{Source, SourceActor}}, NUM_CPUS};
+
+use async_trait::async_trait;
 use common_error::DaftResult;
-use common_treenode::{ConcreteTreeNode, TreeNode};
-use daft_core::schema::Schema;
-use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
-    Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan,
-    Project, Sort, UnGroupedAggregate,
-};
-use daft_plan::populate_aggregation_stages;
+use daft_physical_plan::{Filter, InMemoryScan, Limit, LocalPhysicalPlan, Project};
+use futures::{future::{join_all, try_join_all}, stream, StreamExt};
+use tracing::Instrument;
 
-use crate::{
-    channel::MultiSender,
-    intermediate_ops::{
-        aggregate::AggregateOperator,
-        filter::FilterOperator,
-        intermediate_op::{run_intermediate_op, IntermediateOperator},
-        project::ProjectOperator,
-    },
-    sinks::{
-        aggregate::AggregateSink,
-        concat::ConcatSink,
-        hash_join::HashJoinSink,
-        limit::LimitSink,
-        sink::{run_sink, Sink as ExecSink},
-        sort::SortSink,
-    },
-    sources::{
-        in_memory::InMemorySource,
-        scan_task::ScanTaskSource,
-        source::{run_source, Source},
-    },
-};
+use crate::channel::MultiSender;
 
-pub enum PipelineNode {
-    Source {
-        source: Box<dyn Source>,
-    },
-    IntermediateOp {
-        intermediate_op: Arc<dyn IntermediateOperator>,
-        children: Vec<PipelineNode>,
-    },
-    StreamingSink {
-        sink: Box<dyn StreamingSink>,
-        children: Vec<PipelineNode>,
-    },
-    BlockingSink {
-        sink: Box<dyn BlockingSink>,
-        children: Vec<PipelineNode>,
-    },
+#[async_trait]
+pub trait PipelineNode: Sync + Send {
+    fn children(&self) -> Vec<&dyn PipelineNode>;
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()>;
 }
 
-impl PipelineNode {
-    fn single_sink<S: ExecSink + 'static>(sink: S, child: Self) -> Self {
-        PipelineNode::Sink {
-            sink: Box::new(sink),
-            children: vec![child],
-        }
-    }
+struct IntermediateNode {
+    intermediate_op: Arc<dyn IntermediateOperator>,
+    children: Vec<Box<dyn PipelineNode>>
+}
 
-    fn double_sink<S: ExecSink + 'static>(sink: S, left: Self, right: Self) -> Self {
-        let children = vec![left, right];
-        let after = PipelineNode::Sink {
-            sink: Box::new(sink),
-            children,
-        };
-        after
+impl IntermediateNode {
+    fn new(intermediate_op: Arc<dyn IntermediateOperator>, children: Vec<Box<dyn PipelineNode>>) -> Self {
+        IntermediateNode { intermediate_op, children }
     }
-
-    pub fn start(self, sender: MultiSender) {
-        match self {
-            PipelineNode::Source { source } => {
-                run_source(source, sender);
-            }
-            PipelineNode::IntermediateOp {
-                intermediate_op,
-                mut children,
-            } => {
-                assert!(
-                    children.len() == 1,
-                    "we can only handle 1 child for intermediate ops right now: {}",
-                    children.len()
-                );
-                let child = children.pop().expect("exactly 1 child");
-                let sender = run_intermediate_op(intermediate_op, sender);
-                child.start(sender);
-            }
-            PipelineNode::Sink { sink, children } => {
-                let senders = run_sink(sink, sender);
-                children
-                    .into_iter()
-                    .zip(senders.into_iter())
-                    .for_each(|(child, s)| child.start(s));
-            }
-        }
+    fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
     }
 }
+
+
+#[async_trait]
+impl PipelineNode for IntermediateNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        self.children.iter().map(|v| v.as_ref()).collect()
+    }
+
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+        assert_eq!(self.children.len(), 1, "we only support 1 child for Intermediate Node for now");
+
+        let (sender, receiver) = create_channel(*NUM_CPUS, destination.in_order());
+
+        let mut child = self.children.pop().expect("we should only have 1 child");
+        child.start(sender).await?;
+
+        // let child_futures = self.children.into_iter().map(|c| c.start(requires_order));
+        // let mut child_receivers = try_join_all(child_futures).await?;
+        // let receiver = child_receivers.pop().expect("we should only have 1 child here"); 
+
+        let mut actor = IntermediateOpActor::new(self.intermediate_op.clone(), receiver, destination);
+        // this should ideally be in the actor
+        spawn_compute_task(async move {
+            actor.run_parallel().await
+        });
+        Ok(())
+    }
+}
+
+struct HashJoinNode {
+    // use a RW lock
+    hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
+    left: Box<dyn PipelineNode>,
+    right: Box<dyn PipelineNode>
+}
+
+
+#[async_trait]
+impl PipelineNode for HashJoinNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        vec![self.left.as_ref(), self.right.as_ref()]
+    }
+
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+
+        let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
+        self.left.start(sender).await?;
+        let hash_join = self.hash_join.clone();
+
+        let probe_table_build = tokio::spawn(async move {
+            let mut guard = hash_join.lock().await;
+            let sink = guard.as_sink();
+            while let Some(val) = pt_receiver.recv().await {
+                if let BlockingSinkStatus::Finished = sink.sink(&val?)? {
+                    break
+                }
+            }
+            DaftResult::Ok(())
+        });
+        // should wrap in context join handle
+        probe_table_build.await.unwrap()?;
+
+        let (right_sender, mut streaming_receiver) = create_channel(*NUM_CPUS, false);
+        // now we can start building the right side
+        self.right.start(right_sender).await?;
+
+        let hash_join = self.hash_join.clone();
+        let mut destination = destination;
+        tokio::spawn(async move {
+            // this should be a RWLock and run in concurrent workers
+            let guard = hash_join.lock().await;
+            let sink = guard.as_intermediate_op();
+            while let Some(val) = streaming_receiver.recv().await {                
+                let result = sink.execute(&val?);
+                let sender = destination.get_next_sender();
+                sender.send(result).await.unwrap();
+                
+            }
+            DaftResult::Ok(())
+        });
+
+        Ok(())
+    }
+}
+
+
+struct SourceNode {
+    source_op: Arc<tokio::sync::Mutex<Box<dyn Source>>>
+}
+
+
+#[async_trait]
+impl PipelineNode for SourceNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        vec![]
+    }
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+        let op = self.source_op.clone();
+        tokio::spawn(
+            async move {
+                let guard = op.lock().await;
+                let mut source_stream = guard.get_data();
+                while let Some(val) = source_stream.next().in_current_span().await {
+                    let _ = destination.get_next_sender().send(val).await;
+                }
+                DaftResult::Ok(())
+            }
+        );
+        Ok(())
+    }
+}
+
+impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
+  fn from(value: Box<dyn Source>) -> Self {
+      Box::new(SourceNode{ source_op: Arc::new(tokio::sync::Mutex::new(value))})
+  }
+}
+
+
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> DaftResult<PipelineNode> {
-    let out = match physical_plan {
+) -> DaftResult<Box<dyn PipelineNode>> {
+
+    use daft_physical_plan::PhysicalScan;
+    use crate::sources::scan_task::ScanTaskSource;
+    let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            PipelineNode::Source {
-                source: Box::new(scan_task_source),
-            }
+            scan_task_source.boxed().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            let in_memory_source = InMemorySource::new(partitions.clone());
-            PipelineNode::Source {
-                source: Box::new(in_memory_source),
-            }
+            InMemorySource::new(partitions.clone()).boxed().into()
+
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            PipelineNode::IntermediateOp {
-                intermediate_op: Arc::new(proj_op),
-                children: vec![child_node],
-            }
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            PipelineNode::IntermediateOp {
-                intermediate_op: Arc::new(filter_op),
-                children: vec![child_node],
-            }
+            IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
@@ -267,37 +312,4 @@ pub fn physical_plan_to_pipeline(
     };
 
     Ok(out)
-}
-
-impl ConcreteTreeNode for PipelineNode {
-    fn children(&self) -> Vec<&Self> {
-        use PipelineNode::*;
-        match self {
-            Source { .. } => vec![],
-            IntermediateOp { children, .. } | Sink { children, .. } => children.iter().collect(),
-        }
-    }
-    fn take_children(mut self) -> (Self, Vec<Self>) {
-        use PipelineNode::*;
-        match &mut self {
-            Source { .. } => (self, vec![]),
-            IntermediateOp { children, .. } | Sink { children, .. } => {
-                let children = std::mem::take(children);
-                (self, children)
-            }
-        }
-    }
-    fn with_new_children(mut self, mut new_children: Vec<Self>) -> DaftResult<Self> {
-        use PipelineNode::*;
-        match &mut self {
-            Source { .. } => {
-                assert_eq!(new_children.len(), 0);
-                Ok(self)
-            }
-            IntermediateOp { children, .. } | Sink { children, .. } => {
-                std::mem::swap(children, &mut new_children);
-                Ok(self)
-            }
-        }
-    }
 }

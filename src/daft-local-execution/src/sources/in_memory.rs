@@ -14,6 +14,9 @@ impl InMemorySource {
     pub fn new(data: Vec<Arc<MicroPartition>>) -> Self {
         Self { data }
     }
+    pub fn boxed(self) -> Box<dyn Source> {
+        Box::new(self) as Box<dyn Source>
+    }
 }
 
 impl Source for InMemorySource {

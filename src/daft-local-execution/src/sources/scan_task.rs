@@ -5,8 +5,7 @@ use futures::StreamExt;
 use std::sync::Arc;
 
 use crate::{
-    channel::{create_channel, SingleSender},
-    DEFAULT_MORSEL_SIZE,
+    channel::{create_channel, SingleSender}, pipeline2::PipelineNode, DEFAULT_MORSEL_SIZE
 };
 
 use super::source::{Source, SourceStream};
@@ -46,6 +45,9 @@ impl ScanTaskSource {
                 let _ = sender.send(Err(e.into())).await;
             }
         }
+    }
+    pub fn boxed(self) -> Box<dyn Source> {
+        Box::new(self) as Box<dyn Source>
     }
 }
 

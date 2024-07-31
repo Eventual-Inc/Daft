@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{marker::PhantomPinned, pin::Pin, ptr::NonNull, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{
@@ -12,22 +12,75 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use tracing::instrument;
 
-use super::sink::{Sink, SinkResultType};
+use crate::intermediate_ops::intermediate_op::IntermediateOperator;
+
+use super::{blocking_sink::{BlockingSink, BlockingSinkStatus}, sink::{Sink, SinkResultType}};
 use daft_table::{
-    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTableBuilder, Table,
+    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table
 };
 
-pub struct HashJoinSink {
-    probe_table_builder: ProbeTableBuilder,
-    result_left: Vec<Table>,
-    result_right: Vec<Table>,
+
+enum HashJoinState {
+    Building{
+        probe_table_builder: Option<ProbeTableBuilder>,
+        projection: Vec<ExprRef>,
+        tables: Vec<Table>,
+    },
+    Probing {
+        probe_table: ProbeTable,
+        tables: Vec<Table>,
+    }
+}
+
+impl HashJoinState {
+    fn new(key_schema: &SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+        Ok(Self::Building { probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone())?), projection, tables: vec![] })
+    }
+
+    fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+
+        if let Self::Building { ref mut probe_table_builder, projection, tables } = self {
+            let probe_table_builder = probe_table_builder.as_mut().unwrap();
+            for table in input.get_tables()?.iter() {
+                tables.push(table.clone());
+                let join_keys = table.eval_expression_list(&projection)?;
+    
+                probe_table_builder.add_table(&join_keys)?;
+            }
+            Ok(())
+    
+        } else {
+            panic!("add_tables can only be used during the Building Phase")
+        }
+    }
+    fn finalize(&mut self, join_mapper: &JoinOutputMapper) -> DaftResult<()> {
+        if let Self::Building { probe_table_builder, tables , ..} = self {
+        let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
+        let pt = ptb.build();
+        let mapped_tables = tables
+            .iter()
+            .map(|t| join_mapper.map_left(t))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+            *self = Self::Probing { probe_table: pt, tables: mapped_tables };
+            Ok(())
+        } else {
+            panic!("finalize can only be used during the Building Phase")
+        }
+    }
+}
+
+
+
+pub struct HashJoinOperator {
     left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
     join_type: JoinType,
     join_mapper: JoinOutputMapper,
+    join_state: HashJoinState,
 }
 
-impl HashJoinSink {
+impl HashJoinOperator {
     pub fn new(
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
@@ -71,94 +124,168 @@ impl HashJoinSink {
             .collect::<Vec<_>>();
 
         Ok(Self {
-            probe_table_builder: ProbeTableBuilder::new(key_schema.clone())?,
-            result_left: Vec::new(),
-            result_right: Vec::new(),
-            left_on,
+            left_on: left_on.clone(),
             right_on,
             join_type,
             join_mapper,
+            join_state: HashJoinState::new(&key_schema, left_on)?
         })
     }
 
-    #[instrument(skip_all, name = "HashJoin::probe-table")]
-    fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        for table in input.get_tables()?.iter() {
-            self.result_left.push(table.clone());
-            let join_keys = table.eval_expression_list(&self.left_on)?;
-
-            self.probe_table_builder.add_table(&join_keys)?;
-        }
-        Ok(SinkResultType::NeedMoreInput)
+    pub fn as_sink(&mut self) -> &mut dyn BlockingSink { 
+        self
     }
 
-    #[instrument(skip_all, name = "HashJoin::sink")]
-    fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        for table in input.get_tables()?.iter() {
-            self.result_right.push(table.clone());
-        }
-        Ok(SinkResultType::NeedMoreInput)
+    pub fn as_intermediate_op(&self) -> &dyn IntermediateOperator { 
+        self
+    }
+
+    // #[instrument(skip_all, name = "HashJoin::probe-table")]
+    // fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+    //     for table in input.get_tables()?.iter() {
+    //         self.result_left.push(table.clone());
+    //         let join_keys = table.eval_expression_list(&self.left_on)?;
+
+    //         self.probe_table_builder.add_table(&join_keys)?;
+    //     }
+    //     Ok(SinkResultType::NeedMoreInput)
+    // }
+
+    // #[instrument(skip_all, name = "HashJoin::sink")]
+    // fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+    //     for table in input.get_tables()?.iter() {
+    //         self.result_right.push(table.clone());
+    //     }
+    //     Ok(SinkResultType::NeedMoreInput)
+    // }
+
+}
+
+// impl Sink for HashJoinSink {
+//     fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+//         match index {
+//             0 => self.sink_left(input),
+//             1 => self.sink_right(input),
+//             _ => panic!("hash join only supports 2 inputs, got {index}")
+//         }
+//     }
+
+//     fn in_order(&self) -> bool {
+//         false
+//     }
+
+//     fn num_inputs(&self) -> usize {
+//         2
+//     }
+
+//     #[instrument(skip_all, name = "HashJoin::finalize")]
+//     fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
+//         let probe_table = self.probe_table_builder.build();
+
+//         // Left should only be created once per probe table
+//         let left_tables = self
+//             .result_left
+//             .iter()
+//             .map(|t| self.join_mapper.map_left(t))
+//             .collect::<DaftResult<Vec<_>>>()?;
+//         let mut left_growable =
+//             GrowableTable::new(&left_tables.iter().collect::<Vec<_>>(), false, 20);
+//         // right should only be created morsel
+//         let right_tables = self
+//             .result_right
+//             .iter()
+//             .map(|t| self.join_mapper.map_right(t))
+//             .collect::<DaftResult<Vec<_>>>()?;
+
+//         let mut right_growable =
+//             GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
+
+//         for (r_table_idx, table) in self.result_right.iter().enumerate() {
+//             // we should emit one table at a time when this is streaming
+//             let join_keys = table.eval_expression_list(&self.right_on)?;
+//             let iter = probe_table.probe(&join_keys)?;
+
+//             for (l_table_idx, l_row_idx, right_idx) in iter {
+//                 left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
+//                 // we can perform run length compression for this to make this more efficient
+//                 right_growable.extend(r_table_idx, right_idx as usize, 1);
+//             }
+//         }
+//         let left_table = left_growable.build()?;
+//         let right_table = right_growable.build()?;
+
+//         let final_table = left_table.union(&right_table)?;
+//         Ok(vec![Arc::new(MicroPartition::new_loaded(
+//             final_table.schema.clone(),
+//             Arc::new(vec![final_table]),
+//             None,
+//         ))])
+//     }
+
+
+// }
+
+
+impl BlockingSink for HashJoinOperator {
+    fn name(&self) -> &'static str {
+        "HashJoin"
+    }
+
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
+        self.join_state.add_tables(input)?;
+        Ok(BlockingSinkStatus::NeedMoreInput)
+    }
+    fn finalize(&mut self) -> DaftResult<()> {
+        self.join_state.finalize(&self.join_mapper)?;
+        Ok(())
     }
 }
 
-impl Sink for HashJoinSink {
-    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        match index {
-            0 => self.sink_left(input),
-            1 => self.sink_right(input),
-            _ => panic!("hash join only supports 2 inputs, got {index}"),
-        }
-    }
 
-    fn in_order(&self) -> bool {
-        false
-    }
+impl IntermediateOperator for HashJoinOperator {
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
 
-    fn num_inputs(&self) -> usize {
-        2
-    }
+        if let HashJoinState::Probing { probe_table, tables } = &self.join_state {
+            // Left should only be created once per probe table
+            let mut left_growable =
+                GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20);
+            // right should only be created morsel
 
-    #[instrument(skip_all, name = "HashJoin::finalize")]
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        let probe_table = self.probe_table_builder.build();
+            let right_input_tables = input.get_tables()?;
 
-        // Left should only be created once per probe table
-        let left_tables = self
-            .result_left
-            .iter()
-            .map(|t| self.join_mapper.map_left(t))
-            .collect::<DaftResult<Vec<_>>>()?;
-        let mut left_growable =
-            GrowableTable::new(&left_tables.iter().collect::<Vec<_>>(), false, 20);
-        // right should only be created morsel
-        let right_tables = self
-            .result_right
-            .iter()
-            .map(|t| self.join_mapper.map_right(t))
-            .collect::<DaftResult<Vec<_>>>()?;
+            let right_tables = right_input_tables
+                .iter()
+                .map(|t| self.join_mapper.map_right(t))
+                .collect::<DaftResult<Vec<_>>>()?;
 
-        let mut right_growable =
-            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
+            let mut right_growable =
+                GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
 
-        for (r_table_idx, table) in self.result_right.iter().enumerate() {
-            // we should emit one table at a time when this is streaming
-            let join_keys = table.eval_expression_list(&self.right_on)?;
-            let iter = probe_table.probe(&join_keys)?;
+            for (r_table_idx, table) in right_input_tables.iter().enumerate() {
+                // we should emit one table at a time when this is streaming
+                let join_keys = table.eval_expression_list(&self.right_on)?;
+                let iter = probe_table.probe(&join_keys)?;
 
-            for (l_table_idx, l_row_idx, right_idx) in iter {
-                left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
-                // we can perform run length compression for this to make this more efficient
-                right_growable.extend(r_table_idx, right_idx as usize, 1);
+                for (l_table_idx, l_row_idx, right_idx) in iter {
+                    left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
+                    // we can perform run length compression for this to make this more efficient
+                    right_growable.extend(r_table_idx, right_idx as usize, 1);
+                }
             }
-        }
-        let left_table = left_growable.build()?;
-        let right_table = right_growable.build()?;
+            let left_table = left_growable.build()?;
+            let right_table = right_growable.build()?;
 
-        let final_table = left_table.union(&right_table)?;
-        Ok(vec![Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
-            None,
-        ))])
+            let final_table = left_table.union(&right_table)?;
+            Ok(Arc::new(MicroPartition::new_loaded(
+                final_table.schema.clone(),
+                Arc::new(vec![final_table]),
+                None,
+            )))
+        } else {
+            panic!("we should be in probing mode during execution");
+        }
+    }
+    fn name(&self) -> &'static str {
+        "HashJoin"
     }
 }

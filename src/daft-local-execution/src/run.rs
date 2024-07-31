@@ -18,7 +18,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline};
+use crate::{channel::create_channel, pipeline2::physical_plan_to_pipeline};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -103,7 +103,7 @@ pub fn run_local(
         .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
-        let pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
+        let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
 
         let (sender, mut receiver) = create_channel(1, true);
         pipeline.start(sender);

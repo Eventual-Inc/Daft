@@ -1786,6 +1786,7 @@ name = "daft-local-execution"
 version = "0.2.0-dev0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "common-error",
  "common-tracing",
  "common-treenode",
