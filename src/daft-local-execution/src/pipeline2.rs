@@ -3,10 +3,19 @@ use std::{collections::HashMap, os::macos::raw::stat, sync::Arc};
 use crate::{
     channel::{create_channel, spawn_compute_task, MultiReceiver},
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::{IntermediateOpActor, IntermediateOperator}, project::ProjectOperator
+        aggregate::AggregateOperator,
+        filter::FilterOperator,
+        intermediate_op::{IntermediateOpActor, IntermediateOperator},
+        project::ProjectOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::{BlockingSink, BlockingSinkStatus}, hash_join::HashJoinOperator, limit::LimitSink, sink::SinkActor, sort::SortSink, streaming_sink::{StreamSinkOutput, StreamingSink}
+        aggregate::AggregateSink,
+        blocking_sink::{BlockingSink, BlockingSinkStatus},
+        hash_join::HashJoinOperator,
+        limit::LimitSink,
+        sink::SinkActor,
+        sort::SortSink,
+        streaming_sink::{StreamSinkOutput, StreamingSink},
     },
     sources::{
         in_memory::InMemorySource,
@@ -28,7 +37,7 @@ use futures::{
     future::{join_all, try_join_all},
     stream, StreamExt,
 };
-use tracing::Instrument;
+use tracing::{info_span, Instrument};
 
 use crate::channel::MultiSender;
 
@@ -127,32 +136,37 @@ impl PipelineNode for HashJoinNode {
         let hash_join = self.hash_join.clone();
 
         let probe_table_build = tokio::spawn(async move {
+            let span = info_span!("ProbeTable::sink");
             let mut guard = hash_join.lock().await;
             let sink = guard.as_sink();
             while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = sink.sink(&val?)? {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val?))? {
                     break;
                 }
             }
-            sink.finalize()?;
+
+            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
             DaftResult::Ok(())
         });
         // should wrap in context join handle
-        probe_table_build.await.unwrap()?;
 
         let (right_sender, mut streaming_receiver) =
             create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         self.right.start(right_sender).await?;
 
+        probe_table_build.await.unwrap()?;
+
         let hash_join = self.hash_join.clone();
         let mut destination = destination;
         tokio::spawn(async move {
+            let span = info_span!("ProbeTable::probe");
+
             // this should be a RWLock and run in concurrent workers
             let guard = hash_join.lock().await;
             let int_op = guard.as_intermediate_op();
             while let Some(val) = streaming_receiver.recv().await {
-                let result = int_op.execute(&val?);
+                let result = span.in_scope(|| int_op.execute(&val?));
                 let sender = destination.get_next_sender();
                 sender.send(result).await.unwrap();
             }
@@ -412,7 +426,6 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, group_by);
             let first_stage_agg_op = AggregateOperator::new(
@@ -425,7 +438,8 @@ pub fn physical_plan_to_pipeline(
             );
 
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node = IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -435,7 +449,8 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
-            let second_stage_node =  BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+            let second_stage_node =
+                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
             let final_stage_project = ProjectOperator::new(final_exprs);
 
