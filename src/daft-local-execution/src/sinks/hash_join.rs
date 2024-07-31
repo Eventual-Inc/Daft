@@ -11,7 +11,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use futures::{stream, StreamExt};
-use tracing::instrument;
+use tracing::{info_span, instrument};
 
 use crate::{intermediate_ops::intermediate_op::IntermediateOperator, sources::source::Source};
 
@@ -268,8 +268,10 @@ impl IntermediateOperator for HashJoinOperator {
         if let HashJoinState::Probing {
             probe_table,
             tables,
-        } = &self.join_state
-        {
+        } = &self.join_state {
+            let _span = info_span!("HashJoinOperator::execute").entered();
+            let _growables = info_span!("HashJoinOperator::build_growables").entered();
+
             // Left should only be created once per probe table
             let mut left_growable =
                 GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20);
@@ -285,15 +287,19 @@ impl IntermediateOperator for HashJoinOperator {
             let mut right_growable =
                 GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
 
-            for (r_table_idx, table) in right_input_tables.iter().enumerate() {
-                // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(&self.right_on)?;
-                let iter = probe_table.probe(&join_keys)?;
+            drop(_growables);
+            {
+                let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
+                for (r_table_idx, table) in right_input_tables.iter().enumerate() {
+                    // we should emit one table at a time when this is streaming
+                    let join_keys = table.eval_expression_list(&self.right_on)?;
+                    let iter = probe_table.probe(&join_keys)?;
 
-                for (l_table_idx, l_row_idx, right_idx) in iter {
-                    left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
-                    // we can perform run length compression for this to make this more efficient
-                    right_growable.extend(r_table_idx, right_idx as usize, 1);
+                    for (l_table_idx, l_row_idx, right_idx) in iter {
+                        left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
+                        // we can perform run length compression for this to make this more efficient
+                        right_growable.extend(r_table_idx, right_idx as usize, 1);
+                    }
                 }
             }
             let left_table = left_growable.build()?;
