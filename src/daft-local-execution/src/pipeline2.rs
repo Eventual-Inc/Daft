@@ -139,6 +139,7 @@ impl PipelineNode for HashJoinNode {
                     break;
                 }
             }
+            sink.finalize()?;
             DaftResult::Ok(())
         });
         // should wrap in context join handle
@@ -154,9 +155,9 @@ impl PipelineNode for HashJoinNode {
         tokio::spawn(async move {
             // this should be a RWLock and run in concurrent workers
             let guard = hash_join.lock().await;
-            let sink = guard.as_intermediate_op();
+            let int_op = guard.as_intermediate_op();
             while let Some(val) = streaming_receiver.recv().await {
-                let result = sink.execute(&val?);
+                let result = int_op.execute(&val?);
                 let sender = destination.get_next_sender();
                 sender.send(result).await.unwrap();
             }
@@ -401,7 +402,7 @@ pub fn physical_plan_to_pipeline(
             descending,
             ..
         }) => {
-            todo!("sort");
+            todo!("sort")
             // let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
             // let child_node = physical_plan_to_pipeline(input, psets)?;
             // PipelineNode::single_sink(sort_sink, child_node)
