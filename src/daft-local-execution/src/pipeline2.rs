@@ -250,12 +250,14 @@ impl PipelineNode for StreamingSinkNode {
         let op = self.op.clone();
         tokio::spawn(async move {
             // this should be a RWLock and run in concurrent workers
+            let span = info_span!("StreamingSink::execute");
+
             let mut sink = op.lock().await;
             let mut is_active = true;
             while is_active && let Some(val) = streaming_receiver.recv().await {
                 let val = val?;
                 loop {
-                    let result = sink.execute(0, &val)?;
+                    let result = span.in_scope(|| sink.execute(0, &val))?;
                     match result {
                         StreamSinkOutput::HasMoreOutput(mp) => {
                             let sender = destination.get_next_sender();
@@ -316,13 +318,14 @@ impl PipelineNode for BlockingSinkNode {
         child.start(sender).await?;
         let op = self.op.clone();
         let sink_build = tokio::spawn(async move {
+            let span = info_span!("BlockingSinkNode::execute");
             let mut guard = op.lock().await;
             while let Some(val) = streaming_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = guard.sink(&val?)? {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val?))? {
                     break;
                 }
             }
-            guard.finalize()?;
+            info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
             DaftResult::Ok(())
         });
         sink_build.await.unwrap()?;
