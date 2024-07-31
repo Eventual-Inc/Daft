@@ -312,8 +312,10 @@ class DataFrame:
         return cls._from_tables(data_vpartition)
 
     @classmethod
-    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"]]) -> "DataFrame":
+    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
         """Creates a DataFrame from a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__."""
+        if isinstance(data, Iterable):
+            data = list(data)
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
