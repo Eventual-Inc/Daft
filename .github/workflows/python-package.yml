@@ -156,7 +156,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     needs: unit-tests-with-coverage
     if: always()
     steps:
@@ -168,7 +168,7 @@ jobs:
       run: exit 1
 
   integration-test-build:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     env:
       package-name: getdaft
@@ -203,7 +203,7 @@ jobs:
         path: dist
 
   integration-test-tpch:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -278,7 +278,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-io:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -356,7 +356,7 @@ jobs:
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
     if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -450,7 +450,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-iceberg:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -529,7 +529,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-sql:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -600,7 +600,7 @@ jobs:
 
 
   integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     needs:
     - integration-test-tpch
     - integration-test-io
@@ -663,7 +663,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     needs:
     - rust-tests-platform
     if: always()
@@ -676,7 +676,7 @@ jobs:
       run: exit 1
 
   check-unused-cargo-deps:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -690,7 +690,7 @@ jobs:
       run: cargo machete --with-metadata
 
   doctests:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     continue-on-error: true
     env:
       python-version: '3.10'
@@ -729,7 +729,7 @@ jobs:
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     needs:
     - unit-tests-with-coverage
     - rust-tests-platform
@@ -847,7 +847,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   test-imports:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     needs:
     - test-imports-platform
     if: always()
@@ -861,7 +861,7 @@ jobs:
 
 
   style:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 15
     env:
       python-version: '3.8'
