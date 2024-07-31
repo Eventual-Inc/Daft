@@ -3,7 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use futures::{stream, StreamExt};
 use tracing::instrument;
+
+use crate::sources::source::Source;
 
 use super::{
     blocking_sink::{BlockingSink, BlockingSinkStatus},
@@ -56,5 +59,18 @@ impl BlockingSink for AggregateSink {
     }
     fn name(&self) -> &'static str {
         "AggregateSink"
+    }
+    fn as_source(&mut self) -> &mut dyn crate::sources::source::Source {
+        self
+    }
+}
+
+impl Source for AggregateSink {
+    fn get_data(&self) -> crate::sources::source::SourceStream {
+        if let AggregateState::Done(parts) = &self.state {
+            stream::iter([Ok(parts.clone())]).boxed()
+        } else {
+            panic!("as_source must be in Done phase")
+        }
     }
 }

@@ -3,6 +3,8 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
+use crate::sources::source::Source;
+
 pub enum BlockingSinkStatus {
     NeedMoreInput,
     Finished,
@@ -14,4 +16,5 @@ pub trait BlockingSink: Send + Sync {
         Ok(())
     }
     fn name(&self) -> &'static str;
+    fn as_source(&mut self) -> &mut dyn Source;
 }

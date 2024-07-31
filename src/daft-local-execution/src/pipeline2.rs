@@ -8,10 +8,11 @@ use crate::{
         project::ProjectOperator,
     },
     sinks::{
-        blocking_sink::BlockingSinkStatus,
+        blocking_sink::{BlockingSink, BlockingSinkStatus},
         hash_join::HashJoinOperator,
         limit::LimitSink,
         sink::SinkActor,
+        sort::SortSink,
         streaming_sink::{StreamSinkOutput, StreamingSink},
     },
     sources::{
@@ -269,6 +270,63 @@ impl PipelineNode for StreamingSinkNode {
     }
 }
 
+struct BlockingSinkNode {
+    // use a RW lock
+    op: Arc<tokio::sync::Mutex<Box<dyn BlockingSink>>>,
+    child: Box<dyn PipelineNode>,
+}
+
+impl BlockingSinkNode {
+    fn new(op: Box<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
+        BlockingSinkNode {
+            op: Arc::new(tokio::sync::Mutex::new(op)),
+            child,
+        }
+    }
+    fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
+}
+
+#[async_trait]
+impl PipelineNode for BlockingSinkNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        vec![self.child.as_ref()]
+    }
+
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, true);
+        // now we can start building the right side
+        let child = self.child.as_mut();
+        child.start(sender).await?;
+        let op = self.op.clone();
+        let sink_build = tokio::spawn(async move {
+            let mut guard = op.lock().await;
+            while let Some(val) = streaming_receiver.recv().await {
+                if let BlockingSinkStatus::Finished = guard.sink(&val?)? {
+                    break;
+                }
+            }
+            guard.finalize()?;
+            DaftResult::Ok(())
+        });
+        sink_build.await.unwrap()?;
+        let op = self.op.clone();
+
+        tokio::spawn(async move {
+            let mut guard = op.lock().await;
+            let source = guard.as_source();
+            let mut source_stream = source.get_data();
+            while let Some(val) = source_stream.next().in_current_span().await {
+                let _ = destination.get_next_sender().send(val).await;
+            }
+            DaftResult::Ok(())
+        });
+
+        Ok(())
+    }
+}
+
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -402,10 +460,9 @@ pub fn physical_plan_to_pipeline(
             descending,
             ..
         }) => {
-            todo!("sort")
-            // let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
-            // let child_node = physical_plan_to_pipeline(input, psets)?;
-            // PipelineNode::single_sink(sort_sink, child_node)
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,

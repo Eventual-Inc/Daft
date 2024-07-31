@@ -10,9 +10,10 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+use futures::{stream, StreamExt};
 use tracing::instrument;
 
-use crate::intermediate_ops::intermediate_op::IntermediateOperator;
+use crate::{intermediate_ops::intermediate_op::IntermediateOperator, sources::source::Source};
 
 use super::{
     blocking_sink::{BlockingSink, BlockingSinkStatus},
@@ -250,6 +251,15 @@ impl BlockingSink for HashJoinOperator {
     fn finalize(&mut self) -> DaftResult<()> {
         self.join_state.finalize(&self.join_mapper)?;
         Ok(())
+    }
+    fn as_source(&mut self) -> &mut dyn Source {
+        self
+    }
+}
+
+impl Source for HashJoinOperator {
+    fn get_data(&self) -> crate::sources::source::SourceStream {
+        stream::empty().boxed()
     }
 }
 
