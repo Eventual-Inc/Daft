@@ -3,17 +3,10 @@ use std::{collections::HashMap, os::macos::raw::stat, sync::Arc};
 use crate::{
     channel::{create_channel, spawn_compute_task, MultiReceiver},
     intermediate_ops::{
-        filter::FilterOperator,
-        intermediate_op::{IntermediateOpActor, IntermediateOperator},
-        project::ProjectOperator,
+        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::{IntermediateOpActor, IntermediateOperator}, project::ProjectOperator
     },
     sinks::{
-        blocking_sink::{BlockingSink, BlockingSinkStatus},
-        hash_join::HashJoinOperator,
-        limit::LimitSink,
-        sink::SinkActor,
-        sort::SortSink,
-        streaming_sink::{StreamSinkOutput, StreamingSink},
+        aggregate::AggregateSink, blocking_sink::{BlockingSink, BlockingSinkStatus}, hash_join::HashJoinOperator, limit::LimitSink, sink::SinkActor, sort::SortSink, streaming_sink::{StreamSinkOutput, StreamingSink}
     },
     sources::{
         in_memory::InMemorySource,
@@ -24,6 +17,7 @@ use crate::{
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
@@ -418,41 +412,34 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            todo!("agg")
 
-            // let (first_stage_aggs, second_stage_aggs, final_exprs) =
-            //     populate_aggregation_stages(aggregations, schema, group_by);
-            // let first_stage_agg_op = AggregateOperator::new(
-            //     first_stage_aggs
-            //         .values()
-            //         .cloned()
-            //         .map(|e| Arc::new(Expr::Agg(e.clone())))
-            //         .collect(),
-            //     group_by.clone(),
-            // );
-            // let second_stage_agg_sink = AggregateSink::new(
-            //     second_stage_aggs
-            //         .values()
-            //         .cloned()
-            //         .map(|e| Arc::new(Expr::Agg(e.clone())))
-            //         .collect(),
-            //     group_by.clone(),
-            // );
-            // let final_stage_project = ProjectOperator::new(final_exprs);
+            let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                populate_aggregation_stages(aggregations, schema, group_by);
+            let first_stage_agg_op = AggregateOperator::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by.clone(),
+            );
 
-            // let child_node = physical_plan_to_pipeline(input, psets)?;
-            // let intermediate_agg_op_node = PipelineNode::IntermediateOp {
-            //     intermediate_op: Arc::new(first_stage_agg_op),
-            //     children: vec![child_node],
-            // };
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let post_first_agg_node = IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
-            // let sink_node =
-            //     PipelineNode::single_sink(second_stage_agg_sink, intermediate_agg_op_node);
+            let second_stage_agg_sink = AggregateSink::new(
+                second_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by.clone(),
+            );
+            let second_stage_node =  BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            // PipelineNode::IntermediateOp {
-            //     intermediate_op: Arc::new(final_stage_project),
-            //     children: vec![sink_node],
-            // }
+            let final_stage_project = ProjectOperator::new(final_exprs);
+
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,

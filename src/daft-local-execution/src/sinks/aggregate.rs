@@ -32,6 +32,10 @@ impl AggregateSink {
             state: AggregateState::Accumulating(vec![]),
         }
     }
+
+    pub fn boxed(self) -> Box<dyn BlockingSink> {
+        Box::new(self)
+    }
 }
 
 impl BlockingSink for AggregateSink {
