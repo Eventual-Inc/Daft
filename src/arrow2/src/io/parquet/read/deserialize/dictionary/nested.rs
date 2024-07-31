@@ -184,7 +184,11 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 init,
                 items,
                 None,
-                remaining,
+                (remaining, &mut 0), // TODO(issue#2537): Daft does not currently support Arrow's
+                //                      dictionary logical type. This means we don't currently have
+                //                      a way to encounter or test this code. For now we set
+                //                      `values_remaining` to 0 since this is dead code, but should
+                //                      fix this when support for dictionary type is added.
                 &DictionaryDecoder::<K>::default(),
                 chunk_size,
             );

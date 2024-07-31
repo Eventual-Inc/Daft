@@ -41,6 +41,7 @@ pub fn columns_to_iter_recursive<'a, I>(
     mut init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
+    mut num_values: Vec<i64>,
 ) -> Result<NestedArrayIter<'a>>
 where
     I: Pages + 'a,
@@ -59,6 +60,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
             ))
         }
         Boolean => {
@@ -69,6 +71,7 @@ where
                 init,
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
             ))
         }
         Primitive(Int8) => {
@@ -80,6 +83,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i32| x as i8,
             ))
         }
@@ -92,6 +96,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i32| x as i16,
             ))
         }
@@ -104,6 +109,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i32| x,
             ))
         }
@@ -116,6 +122,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i64| x,
             ))
         }
@@ -128,6 +135,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i32| x as u8,
             ))
         }
@@ -140,6 +148,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i32| x as u16,
             ))
         }
@@ -153,6 +162,7 @@ where
                     field.data_type().clone(),
                     num_rows,
                     chunk_size,
+                    num_values.pop().unwrap(),
                     |x: i32| x as u32,
                 )),
                 // some implementations of parquet write arrow's u32 into i64.
@@ -162,6 +172,7 @@ where
                     field.data_type().clone(),
                     num_rows,
                     chunk_size,
+                    num_values.pop().unwrap(),
                     |x: i64| x as u32,
                 )),
                 other => {
@@ -180,6 +191,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: i64| x as u64,
             ))
         }
@@ -192,6 +204,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: f32| x,
             ))
         }
@@ -204,6 +217,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
                 |x: f64| x,
             ))
         }
@@ -216,6 +230,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
             ))
         }
         LargeBinary | LargeUtf8 => {
@@ -227,10 +242,18 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
+                num_values.pop().unwrap(),
             ))
         }
         _ => match field.data_type().to_logical_type() {
             DataType::Dictionary(key_type, _, _) => {
+                // TODO(issue#2537): Daft does not currently support Arrow's dictionary logical
+                // type. Furthermore, the reader does not encounter dictionary types since
+                // dictionaries of type T are stored as a regular column of type T in parquet, and
+                // there are no schema hints for Daft to read such columns as dictionary types.
+                // Hence, unlike the other type readers, for now we do not pass on `num_values` as
+                // there is currently no way to encounter or test this code. This should be fixed
+                // when support for reading the dictionary types is added.
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 let iter = columns.pop().unwrap();
@@ -250,6 +273,7 @@ where
                     init,
                     num_rows,
                     chunk_size,
+                    num_values,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -268,6 +292,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
+                        num_values.pop().unwrap(),
                         |x: i32| x as i128,
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
@@ -276,6 +301,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
+                        num_values.pop().unwrap(),
                         |x: i64| x as i128,
                     )),
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
@@ -290,6 +316,7 @@ where
                             DataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
+                            num_values.pop().unwrap(),
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -331,6 +358,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
+                        num_values.pop().unwrap(),
                         |x: i32| i256(I256::new(x as i128)),
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
@@ -339,6 +367,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
+                        num_values.pop().unwrap(),
                         |x: i64| i256(I256::new(x as i128)),
                     )),
                     PhysicalType::FixedLenByteArray(n) if n <= 16 => {
@@ -348,6 +377,7 @@ where
                             DataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
+                            num_values.pop().unwrap(),
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -379,6 +409,7 @@ where
                             DataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
+                            num_values.pop().unwrap(),
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -425,6 +456,7 @@ where
                         let n = n_columns(&f.data_type);
                         let columns = columns.drain(columns.len() - n..).collect();
                         let types = types.drain(types.len() - n..).collect();
+                        let num_values = num_values.drain(num_values.len() - n..).collect();
                         columns_to_iter_recursive(
                             columns,
                             types,
@@ -432,6 +464,7 @@ where
                             init,
                             num_rows,
                             chunk_size,
+                            num_values,
                         )
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -447,6 +480,7 @@ where
                     init,
                     num_rows,
                     chunk_size,
+                    num_values,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;

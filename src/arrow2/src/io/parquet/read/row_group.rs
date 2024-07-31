@@ -201,8 +201,8 @@ pub fn to_deserializer<'a>(
 ) -> Result<ArrayIter<'a>> {
     let chunk_size = chunk_size.map(|c| c.min(num_rows));
 
-    let (columns, types) = if let Some(pages) = pages {
-        let (columns, types): (Vec<_>, Vec<_>) = columns
+    let (columns, types, num_values) = if let Some(pages) = pages {
+        let ((columns, types), num_values): ((Vec<_>, Vec<_>), Vec<i64>) = columns
             .into_iter()
             .zip(pages)
             .map(|((column_meta, chunk), mut pages)| {
@@ -211,6 +211,7 @@ pub fn to_deserializer<'a>(
                 pages
                     .iter_mut()
                     .for_each(|page| page.start -= meta.column_start);
+                let num_values = meta.num_values;
                 meta.column_start = 0;
                 let pages = IndexedPageReader::new_with_page_meta(
                     std::io::Cursor::new(chunk),
@@ -221,18 +222,22 @@ pub fn to_deserializer<'a>(
                 );
                 let pages = Box::new(pages) as Pages;
                 (
-                    BasicDecompressor::new(pages, vec![]),
-                    &column_meta.descriptor().descriptor.primitive_type,
+                    (
+                        BasicDecompressor::new(pages, vec![]),
+                        &column_meta.descriptor().descriptor.primitive_type,
+                    ),
+                    num_values,
                 )
             })
             .unzip();
 
-        (columns, types)
+        (columns, types, num_values)
     } else {
-        let (columns, types): (Vec<_>, Vec<_>) = columns
+        let ((columns, types), num_values): ((Vec<_>, Vec<_>), Vec<i64>) = columns
             .into_iter()
             .map(|(column_meta, chunk)| {
                 let len = chunk.len();
+                let num_values = column_meta.num_values();
                 let pages = PageReader::new(
                     std::io::Cursor::new(chunk),
                     column_meta,
@@ -242,16 +247,19 @@ pub fn to_deserializer<'a>(
                 );
                 let pages = Box::new(pages) as Pages;
                 (
-                    BasicDecompressor::new(pages, vec![]),
-                    &column_meta.descriptor().descriptor.primitive_type,
+                    (
+                        BasicDecompressor::new(pages, vec![]),
+                        &column_meta.descriptor().descriptor.primitive_type,
+                    ),
+                    num_values,
                 )
             })
             .unzip();
 
-        (columns, types)
+        (columns, types, num_values)
     };
 
-    column_iter_to_arrays(columns, types, field, chunk_size, num_rows)
+    column_iter_to_arrays(columns, types, field, chunk_size, num_rows, num_values)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top

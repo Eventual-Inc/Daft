@@ -427,7 +427,7 @@ impl ParquetFileReader {
                             let mut decompressed_iters =
                                 Vec::with_capacity(filtered_cols_idx.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
-
+                            let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
                             for (col_idx, range_reader) in
                                 filtered_cols_idx.into_iter().zip(range_readers)
                             {
@@ -439,6 +439,7 @@ impl ParquetFileReader {
                                     .get(col_idx)
                                     .expect("Column index should be in bounds");
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
+                                num_values.push(col.metadata().num_values);
 
                                 let compressed_page_stream =
                                     get_owned_page_stream_from_column_start(
@@ -471,6 +472,7 @@ impl ParquetFileReader {
                                     field.clone(),
                                     Some(2048),
                                     num_rows,
+                                    num_values,
                                 );
 
                                 let series = (|| {
@@ -611,6 +613,7 @@ impl ParquetFileReader {
                             let mut decompressed_iters =
                                 Vec::with_capacity(filtered_cols_idx.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
+                            let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
 
                             for (col_idx, range_reader) in
                                 filtered_cols_idx.into_iter().zip(range_readers)
@@ -623,6 +626,7 @@ impl ParquetFileReader {
                                     .get(col_idx)
                                     .expect("Column index should be in bounds");
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
+                                num_values.push(col.metadata().num_values);
 
                                 let compressed_page_stream =
                                     get_owned_page_stream_from_column_start(
@@ -655,6 +659,7 @@ impl ParquetFileReader {
                                     field.clone(),
                                     Some(128 * 1024),
                                     num_rows,
+                                    num_values,
                                 );
 
                                 let ser = (|| {
