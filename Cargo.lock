@@ -1826,6 +1826,7 @@ dependencies = [
  "pyo3",
  "snafu",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1863,6 +1864,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

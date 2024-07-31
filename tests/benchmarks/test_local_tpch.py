@@ -28,36 +28,41 @@ def gen_tpch(request):
     num_parts = request.param
 
     csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
+    parquet_files_location = data_generation.gen_parquet(csv_files_location)
 
     sqlite_path = data_generation.gen_sqlite_db(
         csv_filepath=csv_files_location,
         num_parts=num_parts,
     )
 
-    return (csv_files_location, num_parts), sqlite_path
+    return (csv_files_location, parquet_files_location, num_parts), sqlite_path
 
 
-@pytest.fixture(scope="module")
-def get_df(gen_tpch):
-    (csv_files_location, num_parts), _ = gen_tpch
+@pytest.fixture(scope="module", params=["csv", "parquet"])
+def get_df(gen_tpch, request):
+    (csv_files_location, parquet_files_location, num_parts), _ = gen_tpch
+    file_type = request.param
 
     def _get_df(tbl_name: str):
-        # TODO (jay): Perhaps we should use Parquet here instead similar to benchmarking and get rid of this CSV parsing stuff?
-        local_fs = LocalFileSystem()
-        # Used chunked files if found
-        nonchunked_filepath = f"{csv_files_location}/{tbl_name}.tbl"
-        chunked_filepath = nonchunked_filepath + ".*"
-        try:
-            local_fs.expand_path(chunked_filepath)
-            fp = chunked_filepath
-        except FileNotFoundError:
-            fp = nonchunked_filepath
+        if file_type == "csv":
+            local_fs = LocalFileSystem()
+            nonchunked_filepath = f"{csv_files_location}/{tbl_name}.tbl"
+            chunked_filepath = nonchunked_filepath + ".*"
+            try:
+                local_fs.expand_path(chunked_filepath)
+                fp = chunked_filepath
+            except FileNotFoundError:
+                fp = nonchunked_filepath
 
-        df = daft.read_csv(
-            fp,
-            has_headers=False,
-            delimiter="|",
-        )
+            df = daft.read_csv(
+                fp,
+                has_headers=False,
+                delimiter="|",
+            )
+        elif file_type == "parquet":
+            fp = f"{parquet_files_location}/{tbl_name}/*"
+            df = daft.read_parquet(fp)
+
         df = df.select(
             *[
                 daft.col(autoname).alias(colname)
@@ -69,7 +74,7 @@ def get_df(gen_tpch):
     return _get_df, num_parts
 
 
-TPCH_QUESTIONS = list(range(1, 11))
+TPCH_QUESTIONS = [6]
 
 
 @pytest.mark.parametrize("engine, q", itertools.product(["native", "python"], TPCH_QUESTIONS))

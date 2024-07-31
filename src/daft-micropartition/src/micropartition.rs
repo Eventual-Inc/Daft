@@ -523,7 +523,8 @@ async fn stream_scan_task(
         ))
         .context(DaftCoreComputeSnafu);
     }
-    let url = scan_task.sources.first().map(|s| s.get_path()).unwrap();
+    let source = scan_task.sources.first().unwrap();
+    let url = source.get_path();
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
             let io_config = Arc::new(
@@ -543,11 +544,59 @@ async fn stream_scan_task(
                 // Native Parquet Reads
                 // ********************
                 FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit: _,
-                    field_id_mapping: _,
+                    coerce_int96_timestamp_unit,
+                    field_id_mapping,
                     ..
                 }) => {
-                    todo!("Implement streaming reads for Parquet")
+                    let inference_options =
+                        ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+
+                    // TODO: Support iceberg delete files in streaming read
+                    //
+                    // Create vec of all unique delete files in the scan task
+                    // let iceberg_delete_files = scan_task
+                    //     .sources
+                    //     .iter()
+                    //     .flat_map(|s| s.get_iceberg_delete_files())
+                    //     .flatten()
+                    //     .map(String::as_str)
+                    //     .collect::<HashSet<_>>()
+                    //     .into_iter()
+                    //     .collect::<Vec<_>>();
+
+                    // let delete_map = _read_delete_files(
+                    //     iceberg_delete_files.as_slice(),
+                    //     &[url],
+                    //     io_client.clone(),
+                    //     io_stats.clone(),
+                    //     num_parallel_tasks,
+                    //     runtime_handle.clone(),
+                    //     &inference_options,
+                    // )
+                    // .context(DaftCoreComputeSnafu)?;
+
+                    let row_groups = parquet_sources_to_row_groups(&[source.clone()])
+                        .and_then(|rg| rg.first().cloned())
+                        .flatten();
+                    let metadata = scan_task
+                        .sources
+                        .first()
+                        .and_then(|s| s.get_parquet_metadata().cloned());
+                    daft_parquet::read::stream_parquet(
+                        url,
+                        file_column_names.as_deref(),
+                        None,
+                        scan_task.pushdowns.limit,
+                        row_groups,
+                        scan_task.pushdowns.filters.clone(),
+                        io_client.clone(),
+                        io_stats,
+                        &inference_options,
+                        field_id_mapping.clone(),
+                        metadata,
+                    )
+                    .await
+                    .context(DaftCoreComputeSnafu)?
                 }
 
                 // ****************
@@ -865,20 +914,21 @@ impl MicroPartition {
                 Ok(Box::pin(futures::stream::iter(std::iter::once(unloaded))))
             }
 
+            // TODO: Enable metadata reads for streaming
             // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
             // We can perform an eager **metadata** read to create an unloaded MicroPartition
-            (
-                _,
-                _,
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit: _,
-                    field_id_mapping: _,
-                    ..
-                }),
-                StorageConfig::Native(_cfg),
-            ) => {
-                todo!()
-            }
+            // (
+            //     _,
+            //     _,
+            //     FileFormatConfig::Parquet(ParquetSourceConfig {
+            //         coerce_int96_timestamp_unit: _,
+            //         field_id_mapping: _,
+            //         ..
+            //     }),
+            //     StorageConfig::Native(_cfg),
+            // ) => {
+            //     todo!()
+            // }
 
             // CASE: Last resort fallback option
             // Perform an eager **data** read
@@ -1022,6 +1072,8 @@ fn chunk_tables_into_micropartition_stream(
         let mut buffer = vec![];
         let mut total_rows = 0;
         while let Some(tables) = table_stream.next().await {
+            let span = tracing::info_span!("chunk_tables_into_micropartition_stream");
+            let _enter = span.enter();
             let tables = tables?;
             for table in tables {
                 let casted_table = table.cast_to_schema_with_fill(schema.as_ref(), partition_spec.as_ref().map(|pspec| pspec.to_fill_map()).as_ref())?;
@@ -1029,6 +1081,8 @@ fn chunk_tables_into_micropartition_stream(
                 buffer.push(casted_table);
             }
             if total_rows >= morsel_size {
+                let yield_span = tracing::info_span!("yield_micropartition");
+                let _yield_enter = yield_span.enter();
                 let mp = Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone()));
                 buffer = vec![];
                 total_rows = 0;

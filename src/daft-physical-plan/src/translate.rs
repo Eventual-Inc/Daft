@@ -16,7 +16,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     let scan_tasks = scan_tasks_iter.collect::<DaftResult<Vec<_>>>()?;
                     Ok(LocalPhysicalPlan::physical_scan(
                         scan_tasks,
-                        info.source_schema.clone(),
+                        source.output_schema.clone(),
                     ))
                 }
                 SourceInfo::PlaceHolder(_) => {

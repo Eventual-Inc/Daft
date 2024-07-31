@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression", "io_parquet_async"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
@@ -21,6 +21,7 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+tracing = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python"]
