@@ -25,6 +25,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
+from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
@@ -2759,6 +2760,19 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a Float64 expression with the type of the list values
         """
         return Expression._from_pyexpr(self._expr.list_max())
+
+    def sort(self, desc: bool | Expression = False) -> Expression:
+        """Sorts the inner lists of a list column.
+
+        Args:
+            desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
+
+        Returns:
+            Expression: An expression with the sorted lists
+        """
+        if isinstance(desc, bool):
+            desc = Expression._to_expression(desc)
+        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
