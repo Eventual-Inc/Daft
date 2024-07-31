@@ -216,14 +216,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
 
     - name: Download built wheels
       uses: actions/download-artifact@v4
@@ -290,15 +282,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
@@ -373,14 +356,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
 
     - name: Download built wheels
       uses: actions/download-artifact@v4
@@ -463,14 +438,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
@@ -541,14 +508,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
