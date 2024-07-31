@@ -28,7 +28,7 @@ mod probe_table;
 pub use growable::GrowableTable;
 pub use ops::{infer_join_schema, infer_join_schema_mapper, JoinOutputMapper};
 
-pub use probe_table::{ProbeTableBuilder, ProbeTable};
+pub use probe_table::{ProbeTable, ProbeTableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;

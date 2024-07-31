@@ -14,14 +14,16 @@ use tracing::instrument;
 
 use crate::intermediate_ops::intermediate_op::IntermediateOperator;
 
-use super::{blocking_sink::{BlockingSink, BlockingSinkStatus}, sink::{Sink, SinkResultType}};
+use super::{
+    blocking_sink::{BlockingSink, BlockingSinkStatus},
+    sink::{Sink, SinkResultType},
+};
 use daft_table::{
-    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table
+    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table,
 };
 
-
 enum HashJoinState {
-    Building{
+    Building {
         probe_table_builder: Option<ProbeTableBuilder>,
         projection: Vec<ExprRef>,
         tables: Vec<Table>,
@@ -29,48 +31,61 @@ enum HashJoinState {
     Probing {
         probe_table: ProbeTable,
         tables: Vec<Table>,
-    }
+    },
 }
 
 impl HashJoinState {
     fn new(key_schema: &SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
-        Ok(Self::Building { probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone())?), projection, tables: vec![] })
+        Ok(Self::Building {
+            probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone())?),
+            projection,
+            tables: vec![],
+        })
     }
 
     fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
-
-        if let Self::Building { ref mut probe_table_builder, projection, tables } = self {
+        if let Self::Building {
+            ref mut probe_table_builder,
+            projection,
+            tables,
+        } = self
+        {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             for table in input.get_tables()?.iter() {
                 tables.push(table.clone());
                 let join_keys = table.eval_expression_list(&projection)?;
-    
+
                 probe_table_builder.add_table(&join_keys)?;
             }
             Ok(())
-    
         } else {
             panic!("add_tables can only be used during the Building Phase")
         }
     }
     fn finalize(&mut self, join_mapper: &JoinOutputMapper) -> DaftResult<()> {
-        if let Self::Building { probe_table_builder, tables , ..} = self {
-        let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
-        let pt = ptb.build();
-        let mapped_tables = tables
-            .iter()
-            .map(|t| join_mapper.map_left(t))
-            .collect::<DaftResult<Vec<_>>>()?;
+        if let Self::Building {
+            probe_table_builder,
+            tables,
+            ..
+        } = self
+        {
+            let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
+            let pt = ptb.build();
+            let mapped_tables = tables
+                .iter()
+                .map(|t| join_mapper.map_left(t))
+                .collect::<DaftResult<Vec<_>>>()?;
 
-            *self = Self::Probing { probe_table: pt, tables: mapped_tables };
+            *self = Self::Probing {
+                probe_table: pt,
+                tables: mapped_tables,
+            };
             Ok(())
         } else {
             panic!("finalize can only be used during the Building Phase")
         }
     }
 }
-
-
 
 pub struct HashJoinOperator {
     left_on: Vec<ExprRef>,
@@ -128,15 +143,15 @@ impl HashJoinOperator {
             right_on,
             join_type,
             join_mapper,
-            join_state: HashJoinState::new(&key_schema, left_on)?
+            join_state: HashJoinState::new(&key_schema, left_on)?,
         })
     }
 
-    pub fn as_sink(&mut self) -> &mut dyn BlockingSink { 
+    pub fn as_sink(&mut self) -> &mut dyn BlockingSink {
         self
     }
 
-    pub fn as_intermediate_op(&self) -> &dyn IntermediateOperator { 
+    pub fn as_intermediate_op(&self) -> &dyn IntermediateOperator {
         self
     }
 
@@ -158,7 +173,6 @@ impl HashJoinOperator {
     //     }
     //     Ok(SinkResultType::NeedMoreInput)
     // }
-
 }
 
 // impl Sink for HashJoinSink {
@@ -222,9 +236,7 @@ impl HashJoinOperator {
 //         ))])
 //     }
 
-
 // }
-
 
 impl BlockingSink for HashJoinOperator {
     fn name(&self) -> &'static str {
@@ -241,11 +253,13 @@ impl BlockingSink for HashJoinOperator {
     }
 }
 
-
 impl IntermediateOperator for HashJoinOperator {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-
-        if let HashJoinState::Probing { probe_table, tables } = &self.join_state {
+        if let HashJoinState::Probing {
+            probe_table,
+            tables,
+        } = &self.join_state
+        {
             // Left should only be created once per probe table
             let mut left_growable =
                 GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20);

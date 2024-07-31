@@ -5,13 +5,20 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{Sink, SinkResultType};
+use super::{
+    blocking_sink::{BlockingSink, BlockingSinkStatus},
+    sink::{Sink, SinkResultType},
+};
 
-#[derive(Clone)]
+enum AggregateState {
+    Accumulating(Vec<Arc<MicroPartition>>),
+    Done(Arc<MicroPartition>),
+}
+
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
-    parts: Vec<Arc<MicroPartition>>,
+    state: AggregateState,
 }
 
 impl AggregateSink {
@@ -19,31 +26,35 @@ impl AggregateSink {
         Self {
             agg_exprs,
             group_by,
-            parts: Vec::new(),
+            state: AggregateState::Accumulating(vec![]),
         }
     }
 }
 
-impl Sink for AggregateSink {
+impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
-    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-        assert_eq!(index, 0);
-        self.parts.push(input.clone());
-        Ok(SinkResultType::NeedMoreInput)
-    }
-
-    fn in_order(&self) -> bool {
-        true
-    }
-    fn num_inputs(&self) -> usize {
-        1
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
+        if let AggregateState::Accumulating(parts) = &mut self.state {
+            parts.push(input.clone());
+            Ok(BlockingSinkStatus::NeedMoreInput)
+        } else {
+            panic!("sink must be in Accumulating phase")
+        }
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        let concated =
-            MicroPartition::concat(&self.parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-        let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
-        Ok(vec![Arc::new(agged)])
+    fn finalize(&mut self) -> DaftResult<()> {
+        if let AggregateState::Accumulating(parts) = &mut self.state {
+            let concated =
+                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
+            self.state = AggregateState::Done(Arc::new(agged));
+            Ok(())
+        } else {
+            panic!("finalize must be in Accumulating phase")
+        }
+    }
+    fn name(&self) -> &'static str {
+        "AggregateSink"
     }
 }

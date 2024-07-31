@@ -3,12 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-
 pub enum BlockingSinkStatus {
     NeedMoreInput,
-    Finished
+    Finished,
 }
-
 
 pub trait BlockingSink: Send + Sync {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus>;

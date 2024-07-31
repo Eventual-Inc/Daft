@@ -10,6 +10,10 @@ pub enum StreamSinkOutput {
 }
 
 pub trait StreamingSink: Send + Sync {
-    fn execute(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<StreamSinkOutput>;
+    fn execute(
+        &mut self,
+        index: usize,
+        input: &Arc<MicroPartition>,
+    ) -> DaftResult<StreamSinkOutput>;
     fn name(&self) -> &'static str;
 }

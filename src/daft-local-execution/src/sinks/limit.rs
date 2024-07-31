@@ -4,59 +4,54 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::sink::{Sink, SinkResultType};
+use super::{
+    sink::{Sink, SinkResultType},
+    streaming_sink::{StreamSinkOutput, StreamingSink},
+};
 
 #[derive(Clone)]
 pub struct LimitSink {
     limit: usize,
-    num_rows_taken: usize,
-    result: Vec<Arc<MicroPartition>>,
+    remaining: usize,
 }
 
 impl LimitSink {
     pub fn new(limit: usize) -> Self {
         Self {
             limit,
-            num_rows_taken: 0,
-            result: Vec::new(),
+            remaining: limit,
         }
+    }
+    pub fn boxed(self) -> Box<dyn StreamingSink> {
+        Box::new(self)
     }
 }
 
-impl Sink for LimitSink {
+impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
-    fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
+    fn execute(
+        &mut self,
+        index: usize,
+        input: &Arc<MicroPartition>,
+    ) -> DaftResult<StreamSinkOutput> {
         assert_eq!(index, 0);
 
         let input_num_rows = input.len();
 
-        if self.num_rows_taken == self.limit {
-            return Ok(SinkResultType::Finished);
-        }
-
-        if self.num_rows_taken + input_num_rows <= self.limit {
-            self.num_rows_taken += input_num_rows;
-            self.result.push(input.clone());
-            Ok(SinkResultType::NeedMoreInput)
+        if input_num_rows == self.remaining {
+            self.remaining = 0;
+            Ok(StreamSinkOutput::Finished(Some(input.clone())))
+        } else if input_num_rows > self.remaining {
+            let taken = input.head(self.remaining)?;
+            self.remaining -= taken.len();
+            Ok(StreamSinkOutput::Finished(Some(Arc::new(taken))))
         } else {
-            let num_rows_to_take = self.limit - self.num_rows_taken;
-            let taken = input.head(num_rows_to_take)?;
-            self.num_rows_taken = self.limit;
-            self.result.push(Arc::new(taken));
-            Ok(SinkResultType::Finished)
+            self.remaining -= input_num_rows;
+            Ok(StreamSinkOutput::NeedMoreInput(Some(input.clone())))
         }
     }
 
-    fn in_order(&self) -> bool {
-        false
-    }
-
-    fn num_inputs(&self) -> usize {
-        1
-    }
-
-    #[instrument(skip_all, name = "LimitSink::finalize")]
-    fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-        Ok(self.result)
+    fn name(&self) -> &'static str {
+        "Limit"
     }
 }
