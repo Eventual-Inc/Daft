@@ -4,6 +4,7 @@ use daft_core::{
     schema::Schema,
     utils::supertype::try_get_supertype,
 };
+use itertools::Itertools;
 
 use crate::{
     functions::{
@@ -1250,6 +1251,14 @@ pub fn resolve_aggexprs(
 ) -> DaftResult<(Vec<AggExpr>, Vec<Field>)> {
     let resolved_iter = exprs.into_iter().map(|e| resolve_aggexpr(e, schema));
     itertools::process_results(resolved_iter, |res| res.unzip())
+}
+
+// Check if one set of columns is a reordering of the other
+pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
+    // sort a and b by name
+    let a: Vec<&str> = a.iter().map(|a| a.name()).sorted().collect();
+    let b: Vec<&str> = b.iter().map(|a| a.name()).sorted().collect();
+    a == b
 }
 
 #[cfg(test)]
