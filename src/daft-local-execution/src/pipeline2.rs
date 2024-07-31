@@ -158,20 +158,27 @@ impl PipelineNode for HashJoinNode {
         probe_table_build.await.unwrap()?;
 
         let hash_join = self.hash_join.clone();
-        let mut destination = destination;
-        tokio::spawn(async move {
-            let span = info_span!("ProbeTable::probe");
-
-            // this should be a RWLock and run in concurrent workers
+        let destination = destination;
+        let probing_op = {
             let guard = hash_join.lock().await;
-            let int_op = guard.as_intermediate_op();
-            while let Some(val) = streaming_receiver.recv().await {
-                let result = span.in_scope(|| int_op.execute(&val?));
-                let sender = destination.get_next_sender();
-                sender.send(result).await.unwrap();
-            }
-            DaftResult::Ok(())
-        });
+            guard.as_intermediate_op()
+        };
+
+        let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
+        // this should ideally be in the actor
+        spawn_compute_task(async move { actor.run_parallel().await });
+
+        // tokio::spawn(async move {
+        //     let span = info_span!("ProbeTable::probe");
+
+        //     // this should be a RWLock and run in concurrent workers
+        //     while let Some(val) = streaming_receiver.recv().await {
+        //         let result = span.in_scope(|| int_op.execute(&val?));
+        //         let sender = destination.get_next_sender();
+        //         sender.send(result).await.unwrap();
+        //     }
+        //     DaftResult::Ok(())
+        // });
 
         Ok(())
     }

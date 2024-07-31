@@ -30,8 +30,8 @@ enum HashJoinState {
         tables: Vec<Table>,
     },
     Probing {
-        probe_table: ProbeTable,
-        tables: Vec<Table>,
+        probe_table: Arc<ProbeTable>,
+        tables: Arc<Vec<Table>>,
     },
 }
 
@@ -78,8 +78,8 @@ impl HashJoinState {
                 .collect::<DaftResult<Vec<_>>>()?;
 
             *self = Self::Probing {
-                probe_table: pt,
-                tables: mapped_tables,
+                probe_table: Arc::new(pt),
+                tables: Arc::new(mapped_tables),
             };
             Ok(())
         } else {
@@ -92,7 +92,7 @@ pub struct HashJoinOperator {
     left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
     join_type: JoinType,
-    join_mapper: JoinOutputMapper,
+    join_mapper: Arc<JoinOutputMapper>,
     join_state: HashJoinState,
 }
 
@@ -143,7 +143,7 @@ impl HashJoinOperator {
             left_on: left_on.clone(),
             right_on,
             join_type,
-            join_mapper,
+            join_mapper: Arc::new(join_mapper),
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
     }
@@ -152,8 +152,21 @@ impl HashJoinOperator {
         self
     }
 
-    pub fn as_intermediate_op(&self) -> &dyn IntermediateOperator {
-        self
+    pub fn as_intermediate_op(&self) -> Arc<dyn IntermediateOperator> {
+        if let HashJoinState::Probing {
+            probe_table,
+            tables,
+        } = &self.join_state
+        {
+            Arc::new(HashJoinProber {
+                probe_table: probe_table.clone(),
+                tables: tables.clone(),
+                right_on: self.right_on.clone(),
+                join_mapper: self.join_mapper.clone(),
+            })
+        } else {
+            panic!("can't call as_intermediate_op when not in probing state")
+        }
     }
 
     // #[instrument(skip_all, name = "HashJoin::probe-table")]
@@ -239,6 +252,63 @@ impl HashJoinOperator {
 
 // }
 
+struct HashJoinProber {
+    probe_table: Arc<ProbeTable>,
+    tables: Arc<Vec<Table>>,
+    right_on: Vec<ExprRef>,
+    join_mapper: Arc<JoinOutputMapper>,
+}
+
+impl IntermediateOperator for HashJoinProber {
+    fn name(&self) -> &'static str {
+        "HashJoinProber"
+    }
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+        let _span = info_span!("HashJoinOperator::execute").entered();
+        let _growables = info_span!("HashJoinOperator::build_growables").entered();
+
+        // Left should only be created once per probe table
+        let mut left_growable =
+            GrowableTable::new(&self.tables.iter().collect::<Vec<_>>(), false, 20);
+        // right should only be created morsel
+
+        let right_input_tables = input.get_tables()?;
+
+        let right_tables = right_input_tables
+            .iter()
+            .map(|t| self.join_mapper.map_right(t))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let mut right_growable =
+            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
+
+        drop(_growables);
+        {
+            let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
+            for (r_table_idx, table) in right_input_tables.iter().enumerate() {
+                // we should emit one table at a time when this is streaming
+                let join_keys = table.eval_expression_list(&self.right_on)?;
+                let iter = self.probe_table.probe(&join_keys)?;
+
+                for (l_table_idx, l_row_idx, right_idx) in iter {
+                    left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
+                    // we can perform run length compression for this to make this more efficient
+                    right_growable.extend(r_table_idx, right_idx as usize, 1);
+                }
+            }
+        }
+        let left_table = left_growable.build()?;
+        let right_table = right_growable.build()?;
+
+        let final_table = left_table.union(&right_table)?;
+        Ok(Arc::new(MicroPartition::new_loaded(
+            final_table.schema.clone(),
+            Arc::new(vec![final_table]),
+            None,
+        )))
+    }
+}
+
 impl BlockingSink for HashJoinOperator {
     fn name(&self) -> &'static str {
         "HashJoin"
@@ -268,7 +338,8 @@ impl IntermediateOperator for HashJoinOperator {
         if let HashJoinState::Probing {
             probe_table,
             tables,
-        } = &self.join_state {
+        } = &self.join_state
+        {
             let _span = info_span!("HashJoinOperator::execute").entered();
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
