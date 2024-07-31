@@ -92,7 +92,8 @@ pub(crate) fn local_parquet_read_into_column_iters(
     // Use block in place to read metadata as the current function is in an asynchronous context.
     let metadata = match metadata {
         Some(m) => m,
-        None => tokio::task::block_in_place(|| read::read_metadata(&mut reader).map(Arc::new))
+        None => read::read_metadata(&mut reader)
+            .map(Arc::new)
             .with_context(|_| super::UnableToParseMetadataFromLocalFileSnafu {
                 path: uri.to_string(),
             })?,
@@ -362,6 +363,7 @@ pub(crate) fn local_parquet_stream(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    in_order: bool,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
@@ -488,9 +490,12 @@ pub(crate) fn local_parquet_stream(
             .into_iter()
             .chain(std::iter::once(error_rx))
             .map(ReceiverStream::new),
-    )
-    .flatten();
-    Ok((metadata, result_stream.boxed()))
+    );
+
+    match in_order {
+        true => Ok((metadata, Box::pin(result_stream.flatten()))),
+        false => Ok((metadata, Box::pin(result_stream.flatten_unordered(None)))),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -508,6 +508,7 @@ fn materialize_scan_task(
 async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
+    in_order: bool,
 ) -> crate::Result<BoxStream<'static, DaftResult<Vec<Table>>>> {
     let pushdown_columns = scan_task
         .pushdowns
@@ -594,6 +595,7 @@ async fn stream_scan_task(
                         &inference_options,
                         field_id_mapping.clone(),
                         metadata,
+                        in_order,
                     )
                     .await
                     .context(DaftCoreComputeSnafu)?
@@ -889,6 +891,7 @@ impl MicroPartition {
         scan_task: Arc<ScanTask>,
         io_stats: IOStatsRef,
         morsel_size: usize,
+        in_order: bool,
     ) -> crate::Result<BoxStream<'static, DaftResult<Arc<Self>>>> {
         let schema = scan_task.materialized_schema();
         match (
@@ -934,7 +937,7 @@ impl MicroPartition {
             // Perform an eager **data** read
             _ => {
                 let statistics = scan_task.statistics.clone();
-                let stream = stream_scan_task(scan_task.clone(), Some(io_stats)).await?;
+                let stream = stream_scan_task(scan_task.clone(), Some(io_stats), in_order).await?;
                 let stream = chunk_tables_into_micropartition_stream(
                     stream,
                     schema,

@@ -32,10 +32,12 @@ impl ScanTaskSource {
         scan_task: Arc<ScanTask>,
         sender: SingleSender,
         morsel_size: usize,
+        in_order: bool,
     ) {
         let io_stats = IOStatsContext::new("MicroPartition::from_scan_task");
         let stream_result =
-            MicroPartition::from_scan_task_streaming(scan_task, io_stats, morsel_size).await;
+            MicroPartition::from_scan_task_streaming(scan_task, io_stats, morsel_size, in_order)
+                .await;
         match stream_result {
             Ok(mut stream) => {
                 while let Some(partition) = stream.next().await {
@@ -51,7 +53,7 @@ impl ScanTaskSource {
 
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip(self))]
-    fn get_data(&self) -> SourceStream {
+    fn get_data(&self, in_order: bool) -> SourceStream {
         let morsel_size = DEFAULT_MORSEL_SIZE;
         let (mut sender, mut receiver) = create_channel(self.scan_tasks.len(), true);
         for scan_task in self.scan_tasks.clone() {
@@ -59,6 +61,7 @@ impl Source for ScanTaskSource {
                 scan_task,
                 sender.get_next_sender(),
                 morsel_size,
+                in_order,
             ));
         }
         Box::pin(async_stream::stream! {

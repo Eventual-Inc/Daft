@@ -74,7 +74,7 @@ def get_df(gen_tpch, request):
     return _get_df, num_parts
 
 
-TPCH_QUESTIONS = [6]
+TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.parametrize("engine, q", itertools.product(["native", "python"], TPCH_QUESTIONS))
