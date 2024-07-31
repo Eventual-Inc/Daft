@@ -67,8 +67,6 @@ pub(crate) fn local_parquet_read_into_column_iters(
     impl Iterator<Item = super::Result<ArrowChunkIters>>,
 )> {
     const LOCAL_PROTOCOL: &str = "file://";
-    let span = tracing::info_span!("local_parquet_read_chunks_into_arrow");
-    let _enter = span.enter();
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
         .map(|s| s.to_string())
@@ -90,6 +88,8 @@ pub(crate) fn local_parquet_read_into_column_iters(
             file_size: size as usize,
         });
     }
+
+    // Use block in place to read metadata as the current function is in an asynchronous context.
     let metadata = match metadata {
         Some(m) => m,
         None => tokio::task::block_in_place(|| read::read_metadata(&mut reader).map(Arc::new))
@@ -98,7 +98,6 @@ pub(crate) fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    // and infer a [`Schema`] from the `metadata`.
     let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
@@ -108,6 +107,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
         })?;
+
     let row_ranges = build_row_ranges(
         num_rows,
         start_offset.unwrap_or(0),
@@ -118,16 +118,22 @@ pub(crate) fn local_parquet_read_into_column_iters(
         &uri,
     )?;
 
-    let owned_metadata = metadata.clone();
-    let row_group_idxs = row_ranges
+    let required_row_group_idxs = row_ranges
         .iter()
         .map(|rg_range| rg_range.row_group_index)
         .collect::<Vec<_>>();
-    let column_iters_per_rg = row_group_idxs.into_iter().map(move |idx| {
-        let rg = owned_metadata.row_groups.get(idx).unwrap();
+    let all_row_groups = metadata.row_groups.clone();
+
+    // Read all the required row groups into memory sequentially
+    let column_iters_per_rg = required_row_group_idxs.into_iter().map(move |idx| {
+        let rg_metadata = all_row_groups.get(idx).unwrap();
+
+        // This operation is IO-bounded O(C) where C is the number of columns in the row group.
+        // It reads all the columns to memory from the row group associated to the requested fields,
+        // and returns a Vec of iterators that perform decompression and deserialization for each column.
         let single_rg_column_iter = read::read_columns_many(
             &mut reader,
-            rg,
+            rg_metadata,
             schema.fields.clone(),
             Some(chunk_size),
             num_rows,
@@ -361,7 +367,7 @@ pub(crate) fn local_parquet_stream(
     BoxStream<'static, DaftResult<Table>>,
 )> {
     let chunk_size = 128 * 1024;
-    let (metadata, schema_ref, row_ranges, column_iter) = local_parquet_read_into_column_iters(
+    let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
         start_offset,
@@ -373,6 +379,8 @@ pub(crate) fn local_parquet_stream(
         chunk_size,
     )?;
 
+    // Create a channel for each row group to send the processed tables to the stream
+    // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
     let (senders, receivers): (Vec<_>, Vec<_>) = row_ranges
         .iter()
         .map(|rg_range| {
@@ -381,31 +389,40 @@ pub(crate) fn local_parquet_stream(
             tokio::sync::mpsc::channel(expected_num_chunks)
         })
         .unzip();
+    // Create a channel to send errors to the stream
     let (error_tx, error_rx) = tokio::sync::mpsc::channel(1);
 
     let uri = uri.to_string();
     rayon::spawn(move || {
-        let par_column_iter = column_iter.zip(senders).zip(row_ranges).par_bridge();
+        // Once a row group has been read into memory and we have the column iterators,
+        // we can start processing them in parallel.
+        let par_column_iters = column_iters.zip(senders).zip(row_ranges).par_bridge();
 
-        let result = par_column_iter.try_for_each(move |((rg_col_iter_result, tx), rg_range)| {
+        // For each vec of column iters, process them in parallel lock step such that each iteration
+        // produces a chunk of the row group that can be processed into a table.
+        let result = par_column_iters.try_for_each(move |((rg_col_iter_result, tx), rg_range)| {
             let rg_col_iter = rg_col_iter_result?;
             let owned_schema_ref = schema_ref.clone();
             let owned_predicate = predicate.clone();
             let owned_original_columns = original_columns.clone();
             let owned_uri = uri.clone();
-            struct ParZippedDeserializer {
+
+            struct ParallelLockStepIter {
                 iters: ArrowChunkIters,
             }
-            impl Iterator for ParZippedDeserializer {
+            impl Iterator for ParallelLockStepIter {
                 type Item = arrow2::error::Result<ArrowChunk>;
 
                 fn next(&mut self) -> Option<Self::Item> {
                     self.iters.par_iter_mut().map(|iter| iter.next()).collect()
                 }
             }
-            let par_zip = ParZippedDeserializer { iters: rg_col_iter };
-            let mut curr_index = 0;
-            let table_iter = par_zip.into_iter().map(move |chunk| {
+            let par_lock_step_iter = ParallelLockStepIter { iters: rg_col_iter };
+
+            // Keep track of the current index in the row group so we can throw away arrays that are not needed
+            // and slice arrays that are partially needed.
+            let mut index_so_far = 0;
+            let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
                 let chunk = chunk.with_context(|_| {
                     super::UnableToCreateChunkFromStreamingFileReaderSnafu {
                         path: owned_uri.clone(),
@@ -415,12 +432,13 @@ pub(crate) fn local_parquet_stream(
                     .into_iter()
                     .zip(owned_schema_ref.fields.clone())
                     .filter_map(|(mut arr, (f_name, _))| {
-                        if (curr_index + arr.len()) < rg_range.start {
-                            // throw arrays less than what we need
+                        if (index_so_far + arr.len()) < rg_range.start {
+                            // No need to process arrays that are less than the start offset
                             return None;
                         }
-                        if curr_index < rg_range.start {
-                            let offset = rg_range.start.saturating_sub(curr_index);
+                        if index_so_far < rg_range.start {
+                            // Slice arrays that are partially needed
+                            let offset = rg_range.start.saturating_sub(index_so_far);
                             arr = arr.sliced(offset, arr.len() - offset);
                         }
                         let series_result =
@@ -430,12 +448,20 @@ pub(crate) fn local_parquet_stream(
                     .collect::<DaftResult<Vec<_>>>()?;
 
                 let len = all_series[0].len();
-                curr_index += len;
+                if all_series.iter().any(|s| s.len() != len) {
+                    return Err(super::Error::ParquetColumnsDontHaveEqualRows {
+                        path: owned_uri.clone(),
+                    }
+                    .into());
+                }
+                index_so_far += len;
 
                 let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
                     .with_context(|_| super::UnableToCreateTableFromChunkSnafu {
                         path: owned_uri.clone(),
                     })?;
+
+                // Apply pushdowns if needed
                 if let Some(predicate) = &owned_predicate {
                     table = table.filter(&[predicate.clone()])?;
                     if let Some(oc) = &owned_original_columns {

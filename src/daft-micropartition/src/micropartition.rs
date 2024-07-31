@@ -1072,8 +1072,6 @@ fn chunk_tables_into_micropartition_stream(
         let mut buffer = vec![];
         let mut total_rows = 0;
         while let Some(tables) = table_stream.next().await {
-            let span = tracing::info_span!("chunk_tables_into_micropartition_stream");
-            let _enter = span.enter();
             let tables = tables?;
             for table in tables {
                 let casted_table = table.cast_to_schema_with_fill(schema.as_ref(), partition_spec.as_ref().map(|pspec| pspec.to_fill_map()).as_ref())?;
@@ -1081,8 +1079,6 @@ fn chunk_tables_into_micropartition_stream(
                 buffer.push(casted_table);
             }
             if total_rows >= morsel_size {
-                let yield_span = tracing::info_span!("yield_micropartition");
-                let _yield_enter = yield_span.enter();
                 let mp = Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone()));
                 buffer = vec![];
                 total_rows = 0;

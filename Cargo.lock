@@ -1826,7 +1826,6 @@ dependencies = [
  "pyo3",
  "snafu",
  "tokio",
- "tracing",
 ]
 
 [[package]]

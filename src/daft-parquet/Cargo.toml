@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression", "io_parquet_async"]}
+arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
