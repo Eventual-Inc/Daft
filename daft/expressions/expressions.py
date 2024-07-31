@@ -2764,6 +2764,21 @@ class ExpressionListNamespace(ExpressionNamespace):
     def sort(self, desc: bool | Expression = False) -> Expression:
         """Sorts the inner lists of a list column.
 
+        Example:
+            >>> df = daft.from_pydict({"a": [[1, 3], [4, 2], [6, 7, 1]]})
+            >>> df.select(df["a"].list.sort()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 3]      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [2, 4]      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1, 6, 7]   │
+            ╰─────────────╯
+
         Args:
             desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
 
