@@ -163,8 +163,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
-    use common_treenode::{TreeNode, TreeNodeRecursion};
+    use common_error::DaftResult;
     use daft_core::{
         datatypes::Field,
         schema::{Schema, SchemaRef},
@@ -200,28 +199,10 @@ mod tests {
         .into()
     }
 
-    // ensure all repartitions are equal to cols
-    fn check_repartitions(plan: PhysicalPlanRef, cols: Vec<ExprRef>) -> DaftResult<()> {
-        plan.apply(|p| match p.as_ref() {
-            PhysicalPlan::FanoutByHash(FanoutByHash { partition_by, .. }) => {
-                if *partition_by != cols {
-                    Err(DaftError::ComputeError(format!(
-                        "Columns are different: got {:?}",
-                        partition_by
-                    )))
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            }
-            _ => Ok(TreeNodeRecursion::Continue),
-        })
-        .map(|_| ())
-    }
-
     // makes sure trivial repartitions are modified
     #[test]
     fn test_repartition_modified() -> DaftResult<()> {
-        let plan = create_dummy_plan(
+        let base = create_dummy_plan(
             Arc::new(Schema::new(vec![
                 Field::new("a", daft_core::DataType::Int32),
                 Field::new("b", daft_core::DataType::Int32),
@@ -229,12 +210,17 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
+        let plan = add_repartition(base.clone(), 1, vec![col("a"), col("b")]);
         let plan = add_repartition(plan, 1, vec![col("b"), col("a")]);
         let rule = ReorderPartitionKeys {};
         let res = rule.rewrite(plan)?;
         assert!(res.transformed);
-        check_repartitions(res.data, vec![col("b"), col("a")])
+
+        // expected is two repartitions by b, a
+        let expected_plan = add_repartition(base, 1, vec![col("b"), col("a")]);
+        let expected_plan = add_repartition(expected_plan, 1, vec![col("b"), col("a")]);
+        assert_eq!(res.data, expected_plan);
+        Ok(())
     }
 
     // makes sure different repartitions are not modified
@@ -253,15 +239,16 @@ mod tests {
         let plan = add_repartition(plan, 1, vec![col("a"), col("c"), col("b")]);
         let plan = add_repartition(plan, 1, vec![col("b")]);
         let rule = ReorderPartitionKeys {};
-        let res = rule.rewrite(plan)?;
+        let res = rule.rewrite(plan.clone())?;
         assert!(!res.transformed);
+        assert_eq!(res.data, plan);
         Ok(())
     }
 
     // makes sure hash joins reorder the columns
     #[test]
     fn test_repartition_hash_join_reorder() -> DaftResult<()> {
-        let plan1 = create_dummy_plan(
+        let base1 = create_dummy_plan(
             Arc::new(Schema::new(vec![
                 Field::new("a", daft_core::DataType::Int32),
                 Field::new("b", daft_core::DataType::Int32),
@@ -269,23 +256,23 @@ mod tests {
             ])?),
             1,
         );
-        let plan1 = add_repartition(plan1, 1, vec![col("a"), col("b")]);
+        let plan1 = add_repartition(base1.clone(), 1, vec![col("a"), col("b")]);
 
-        let plan2 = create_dummy_plan(
+        let base2 = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("x", daft_core::DataType::Int32),
+                Field::new("y", daft_core::DataType::Int32),
+                Field::new("z", daft_core::DataType::Int32),
             ])?),
             1,
         );
-        let plan2 = add_repartition(plan2, 1, vec![col("b"), col("a")]);
+        let plan2 = add_repartition(base2.clone(), 1, vec![col("x"), col("y")]);
 
         let plan = PhysicalPlan::HashJoin(HashJoin::new(
             plan1,
             plan2,
             vec![col("b"), col("a")],
-            vec![col("b"), col("a")],
+            vec![col("x"), col("y")],
             daft_core::JoinType::Inner,
         ))
         .arced();
@@ -293,6 +280,16 @@ mod tests {
         let rule = ReorderPartitionKeys {};
         let res = rule.rewrite(plan)?;
         assert!(res.transformed);
-        check_repartitions(res.data, vec![col("b"), col("a")])
+
+        let expected_plan = PhysicalPlan::HashJoin(HashJoin::new(
+            add_repartition(base1, 1, vec![col("b"), col("a")]),
+            add_repartition(base2, 1, vec![col("x"), col("y")]),
+            vec![col("b"), col("a")],
+            vec![col("x"), col("y")],
+            daft_core::JoinType::Inner,
+        ))
+        .arced();
+        assert_eq!(res.data, expected_plan);
+        Ok(())
     }
 }

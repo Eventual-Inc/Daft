@@ -54,7 +54,6 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_treenode::{TreeNode, TreeNodeRecursion};
     use daft_core::{
         datatypes::Field,
         schema::{Schema, SchemaRef},
@@ -90,25 +89,10 @@ mod tests {
         .into()
     }
 
-    fn count_repartitions(plan: PhysicalPlanRef) -> usize {
-        let mut total: usize = 0;
-        plan.apply(|p| {
-            match p.as_ref() {
-                PhysicalPlan::FanoutByHash(..) => {
-                    total += 1;
-                }
-                _ => {}
-            };
-            Ok(TreeNodeRecursion::Continue)
-        })
-        .unwrap();
-        total
-    }
-
     // makes sure trivial repartitions are removed
     #[test]
     fn test_repartition_removed() -> DaftResult<()> {
-        let plan = create_dummy_plan(
+        let base = create_dummy_plan(
             Arc::new(Schema::new(vec![
                 Field::new("a", daft_core::DataType::Int32),
                 Field::new("b", daft_core::DataType::Int32),
@@ -116,12 +100,14 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
+        let plan = add_repartition(base.clone(), 1, vec![col("a"), col("b")]);
         let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
         let rule = DropRepartitionPhysical {};
         let res = rule.rewrite(plan)?;
         assert!(res.transformed);
-        assert_eq!(count_repartitions(res.data), 1);
+
+        let expected_plan = add_repartition(base, 1, vec![col("a"), col("b")]);
+        assert_eq!(res.data, expected_plan);
         Ok(())
     }
 
@@ -141,9 +127,9 @@ mod tests {
         let plan = add_repartition(plan, 1, vec![col("a"), col("c"), col("b")]);
         let plan = add_repartition(plan, 1, vec![col("a")]);
         let rule = DropRepartitionPhysical {};
-        let res = rule.rewrite(plan)?;
+        let res = rule.rewrite(plan.clone())?;
         assert!(!res.transformed);
-        assert_eq!(count_repartitions(res.data), 4);
+        assert_eq!(res.data, plan);
         Ok(())
     }
 }
