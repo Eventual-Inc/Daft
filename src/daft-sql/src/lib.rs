@@ -112,18 +112,42 @@ mod tests {
     }
 
     #[rstest]
-    #[case::whenthen(
+    #[case("select * from tbl1")]
+    #[case("select * from tbl1 limit 1")]
+    #[case("select * exclude utf8 from tbl1")]
+    #[case("select * exclude (utf8, i32) from tbl1")]
+    #[case("select utf8 from tbl1")]
+    #[case("select i32 from tbl1")]
+    #[case("select i64 from tbl1")]
+    #[case("select f32 from tbl1")]
+    #[case("select f64 from tbl1")]
+    #[case("select bool from tbl1")]
+    #[case("select date from tbl1")]
+    #[case("select bool::text from tbl1")]
+    #[case("select cast(bool as text) from tbl1")]
+    #[case("select list_utf8 as a, utf8 as b, utf8 as c from tbl1")]
+    #[case("select list_utf8::text[] from tbl1")]
+    #[case("select list_utf8[0] from tbl1")]
+    #[case("select list_utf8[0:2] from tbl1")]
+    #[case("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
+    #[case("select tbl2.text from tbl2")]
+    #[case("select tbl2.text from tbl2 join tbl3 using (id)")]
+    #[case(
         r#"
-        select
-            case
-                when i32 = 1 then 'a'
-                when i32 = 2 then 'b'
-                when i32 = 3 then 'c'
-                else 'd'
-            end
-        from tbl1
-    "#
+    select
+        abs(i32) as abs,
+        ceil(i32) as ceil,
+        floor(i32) as floor,
+        sign(i32) as sign
+    from tbl1"#
     )]
+    #[case("select round(i32, 1) from tbl1")]
+    #[case::groupby("select max(i32) from tbl1 group by utf8")]
+    #[case::orderby("select * from tbl1 order by i32")]
+    #[case::orderby("select * from tbl1 order by i32 desc")]
+    #[case::orderby("select * from tbl1 order by i32 asc")]
+    #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
+    #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     fn test_compiles(#[case] query: &str) -> SQLPlannerResult<()> {
         let planner = setup();
 
