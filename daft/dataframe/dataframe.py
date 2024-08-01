@@ -560,13 +560,6 @@ class DataFrame:
 
             tx = table.transaction()
 
-            if unsupported_partitions := [
-                field for field in tx.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
-            ]:
-                raise ValueError(
-                    f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
-                )
-
             if mode == "overwrite":
                 tx.delete(delete_filter=ALWAYS_TRUE)
 
