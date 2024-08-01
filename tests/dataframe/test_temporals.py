@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import itertools
 import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
+import pytz
 
 import daft
+from daft import DataType, col
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -265,3 +268,18 @@ def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezo
     ]:
         with pytest.raises(ValueError):
             df.select(expression).collect()
+
+
+@pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
+@pytest.mark.parametrize("tz_repr", ["UTC", "+00:00"])
+def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
+    tz1 = [datetime(2022, 1, 1, tzinfo=pytz.utc), datetime(2022, 2, 1, tzinfo=pytz.utc)]
+    tz2 = [datetime(2022, 1, 2, tzinfo=pytz.utc), datetime(2022, 1, 1, tzinfo=pytz.utc)]
+    df1 = daft.from_pydict({"t": tz1, "x": [1, 2]}).with_column("t", col("t").cast(DataType.timestamp(tu1, tz_repr)))
+    df2 = daft.from_pydict({"t": tz2, "y": [3, 4]}).with_column("t", col("t").cast(DataType.timestamp(tu2, tz_repr)))
+    res = df1.join(df2, on="t")
+    assert res.to_pydict() == {
+        "t": [datetime(2022, 1, 1, tzinfo=pytz.utc)],
+        "x": [1],
+        "y": [4],
+    }

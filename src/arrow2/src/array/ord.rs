@@ -211,6 +211,14 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
         | (Duration(Millisecond), Duration(Millisecond))
         | (Duration(Microsecond), Duration(Microsecond))
         | (Duration(Nanosecond), Duration(Nanosecond)) => compare_primitives::<i64>(left, right),
+        (Timestamp(Second, x), Timestamp(Second, y))
+        | (Timestamp(Millisecond, x), Timestamp(Millisecond, y))
+        | (Timestamp(Microsecond, x), Timestamp(Microsecond, y))
+        | (Timestamp(Nanosecond, x), Timestamp(Nanosecond, y))
+            if x == y =>
+        {
+            compare_primitives::<i64>(left, right)
+        }
         (Float32, Float32) => compare_f32(left, right),
         (Float64, Float64) => compare_f64(left, right),
         (Decimal(_, _), Decimal(_, _)) => compare_primitives::<i128>(left, right),
