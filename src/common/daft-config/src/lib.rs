@@ -30,6 +30,7 @@ pub struct DaftExecutionConfig {
     pub scan_tasks_max_size_bytes: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub sort_merge_join_sort_with_aligned_boundaries: bool,
+    pub hash_join_partition_size_leniency: f64,
     pub sample_size_for_sort: usize,
     pub parquet_split_row_groups_max_files: usize,
     pub num_preview_rows: usize,
@@ -51,6 +52,7 @@ impl Default for DaftExecutionConfig {
             scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sort_merge_join_sort_with_aligned_boundaries: false,
+            hash_join_partition_size_leniency: 0.5,
             sample_size_for_sort: 20,
             parquet_split_row_groups_max_files: 10,
             num_preview_rows: 8,

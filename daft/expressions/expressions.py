@@ -2702,12 +2702,12 @@ class ExpressionListNamespace(ExpressionNamespace):
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
-    def slice(self, start: int | Expression, end: int | Expression) -> Expression:
+    def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list
 
         Args:
             start: index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end of the list
-            end: index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list
+            end: optional index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list. If not provided, the slice will include elements up to the end of the list
 
         Returns:
             Expression: an expression with a list of the type of the list values

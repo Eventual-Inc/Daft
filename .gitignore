@@ -35,3 +35,7 @@ log/
 
 # Added by pyenv
 .python-version
+
+
+# Zed editor
+.zed/
