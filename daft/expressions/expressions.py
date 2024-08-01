@@ -27,11 +27,12 @@ from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
+from daft.daft import stateful_udf as _stateful_udf
+from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
-from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
@@ -41,6 +42,7 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
+    from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -226,8 +228,18 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def udf(func: Callable, expressions: builtins.list[Expression], return_dtype: DataType) -> Expression:
-        return Expression._from_pyexpr(_udf(func, [e._expr for e in expressions], return_dtype._dtype))
+    def stateless_udf(
+        partial: PartialStatelessUDF,
+        expressions: builtins.list[Expression],
+        return_dtype: DataType,
+    ) -> Expression:
+        return Expression._from_pyexpr(_stateless_udf(partial, [e._expr for e in expressions], return_dtype._dtype))
+
+    @staticmethod
+    def stateful_udf(
+        partial: PartialStatefulUDF, expressions: builtins.list[Expression], return_dtype: DataType
+    ) -> Expression:
+        return Expression._from_pyexpr(_stateful_udf(partial, [e._expr for e in expressions], return_dtype._dtype))
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -781,12 +793,12 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udf import UDF
+        from daft.udf import StatelessUDF
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
 
-        return UDF(func=batch_func, return_dtype=return_dtype)(self)
+        return StatelessUDF(func=batch_func, return_dtype=return_dtype)(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)

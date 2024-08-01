@@ -1677,6 +1677,7 @@ name = "daft-dsl"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "common-py-serde",
  "common-treenode",
  "daft-core",
  "daft-sketch",
