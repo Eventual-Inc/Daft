@@ -72,11 +72,17 @@ impl Series {
     pub fn list_slice(&self, start: &Series, end: &Series) -> DaftResult<Series> {
         let start = start.cast(&DataType::Int64)?;
         let start_arr = start.i64().unwrap();
-        let end = end.cast(&DataType::Int64)?;
-        let end_arr = end.i64().unwrap();
+        let end_arr = if end.data_type().is_integer() {
+            let end = end.cast(&DataType::Int64)?;
+            Some(end.i64().unwrap().clone())
+        } else {
+            None
+        };
         match self.data_type() {
-            DataType::List(_) => self.list()?.get_slices(start_arr, end_arr),
-            DataType::FixedSizeList(..) => self.fixed_size_list()?.get_slices(start_arr, end_arr),
+            DataType::List(_) => self.list()?.get_slices(start_arr, end_arr.as_ref()),
+            DataType::FixedSizeList(..) => self
+                .fixed_size_list()?
+                .get_slices(start_arr, end_arr.as_ref()),
             dt => Err(DaftError::TypeError(format!(
                 "list slice not implemented for {dt}"
             ))),

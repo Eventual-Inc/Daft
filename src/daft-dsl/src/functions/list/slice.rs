@@ -26,9 +26,9 @@ impl FunctionEvaluator for SliceEvaluator {
                     )));
                 }
 
-                if !end_field.dtype.is_integer() {
+                if !end_field.dtype.is_integer() && !end_field.dtype.is_null() {
                     return Err(DaftError::TypeError(format!(
-                        "Expected end index to be integer, received: {}",
+                        "Expected end index to be integer or unprovided, received: {}",
                         end_field.dtype
                     )));
                 }
