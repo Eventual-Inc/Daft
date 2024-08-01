@@ -521,24 +521,13 @@ class DataFrame:
                 f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
             )
 
-        from pyiceberg.table import _MergingSnapshotProducer
-        from pyiceberg.table.snapshots import Operation
+        if mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
         operations = []
         path = []
         rows = []
         size = []
-
-        if mode == "append":
-            operation = Operation.APPEND
-        elif mode == "overwrite":
-            operation = Operation.OVERWRITE
-        else:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
-
-        # We perform the merge here since table is not pickle-able
-        # We should be able to move to a transaction API for iceberg 0.7.0
-        merge = _MergingSnapshotProducer(operation=operation, table=table)
 
         builder = self._builder.write_iceberg(table)
         write_df = DataFrame(builder)
@@ -548,13 +537,12 @@ class DataFrame:
         assert "data_file" in write_result
         data_files = write_result["data_file"]
 
-        if operation == Operation.OVERWRITE:
+        if mode == "overwrite":
             deleted_files = table.scan().plan_files()
         else:
             deleted_files = []
 
         for data_file in data_files:
-            merge.append_data_file(data_file)
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
@@ -567,7 +555,59 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-        merge.commit()
+        if parse(pyiceberg.__version__) >= parse("0.7.0"):
+            from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+            from pyiceberg.table import ALWAYS_TRUE, DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
+            from pyiceberg.utils.config import Config
+
+            tx = table.transaction()
+
+            if unsupported_partitions := [
+                field for field in tx.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+            ]:
+                raise ValueError(
+                    f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
+                )
+            downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+            _check_pyarrow_schema_compatible(
+                table.schema(),
+                provided_schema=self.schema().to_pyarrow_schema(),
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            )
+
+            if mode == "overwrite":
+                tx.delete(delete_filter=ALWAYS_TRUE)
+
+            update_snapshot = tx.update_snapshot()
+
+            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+                tx.table_metadata.properties,
+                TableProperties.MANIFEST_MERGE_ENABLED,
+                TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+            )
+
+            append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+            with append_method() as append_files:
+                for data_file in data_files:
+                    append_files.append_data_file(data_file)
+
+            tx.commit_transaction()
+        else:
+            from pyiceberg.table import _MergingSnapshotProducer
+            from pyiceberg.table.snapshots import Operation
+
+            operations_map = {
+                "append": Operation.APPEND,
+                "overwrite": Operation.OVERWRITE,
+            }
+
+            merge = _MergingSnapshotProducer(operation=operations_map[mode], table=table)
+
+            for data_file in data_files:
+                merge.append_data_file(data_file)
+
+            merge.commit()
 
         from daft import from_pydict
 
