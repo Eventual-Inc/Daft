@@ -556,9 +556,7 @@ class DataFrame:
             size.append(data_file.file_size_in_bytes)
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
-            from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
-            from pyiceberg.table import ALWAYS_TRUE, DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
-            from pyiceberg.utils.config import Config
+            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
 
             tx = table.transaction()
 
@@ -568,12 +566,6 @@ class DataFrame:
                 raise ValueError(
                     f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
                 )
-            downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-            _check_pyarrow_schema_compatible(
-                table.schema(),
-                provided_schema=self.schema().to_pyarrow_schema(),
-                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            )
 
             if mode == "overwrite":
                 tx.delete(delete_filter=ALWAYS_TRUE)
