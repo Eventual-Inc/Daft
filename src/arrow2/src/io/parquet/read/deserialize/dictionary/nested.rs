@@ -144,7 +144,15 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    // TODO(issue#2537): These linting errors should be disallowed once support for dictionary type
+    // is added and the below issue goes away.
+    clippy::diverging_sub_expression,
+    clippy::only_used_in_recursion,
+    unreachable_code,
+    unused_variables,
+)]
 pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>(
     iter: &mut I,
     items: &mut VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
@@ -184,7 +192,11 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 init,
                 items,
                 None,
-                remaining,
+                // TODO(issue#2537): Daft does not currently support Arrow's dictionary logical
+                // type, so we don't currently have a way to encounter or test this code.
+                // We should fix this when support for dictionary type is added by replacing this
+                // panic with the remaining number of rows and values.
+                panic!("Reading a dictionary logical type with Daft is not currently supported. Please file an issue."),
                 &DictionaryDecoder::<K>::default(),
                 chunk_size,
             );

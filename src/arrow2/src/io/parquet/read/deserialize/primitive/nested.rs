@@ -182,8 +182,9 @@ where
     data_type: DataType,
     items: VecDeque<(NestedState, (Vec<T>, MutableBitmap))>,
     dict: Option<Vec<T>>,
-    remaining: usize,
+    rows_remaining: usize,
     chunk_size: Option<usize>,
+    values_remaining: usize,
     decoder: PrimitiveDecoder<T, P, F>,
 }
 
@@ -201,6 +202,7 @@ where
         data_type: DataType,
         num_rows: usize,
         chunk_size: Option<usize>,
+        num_values: usize,
         op: F,
     ) -> Self {
         Self {
@@ -210,7 +212,8 @@ where
             items: VecDeque::new(),
             dict: None,
             chunk_size,
-            remaining: num_rows,
+            rows_remaining: num_rows,
+            values_remaining: num_values,
             decoder: PrimitiveDecoder::new(op),
         }
     }
@@ -231,7 +234,7 @@ where
             &mut self.iter,
             &mut self.items,
             &mut self.dict,
-            &mut self.remaining,
+            (&mut self.rows_remaining, &mut self.values_remaining),
             &self.init,
             self.chunk_size,
             &self.decoder,
