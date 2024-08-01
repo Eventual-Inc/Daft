@@ -355,10 +355,11 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     init: &[InitNested],
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
     dict: Option<&'a D::Dictionary>,
-    remaining: &mut usize,
+    remaining: (&mut usize, &mut usize),
     decoder: &D,
     chunk_size: Option<usize>,
 ) -> Result<()> {
+    let (rows_remaining, values_remaining) = remaining;
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
@@ -374,22 +375,23 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     };
     let existing = nested.len();
 
-    let additional = (chunk_size - existing).min(*remaining);
+    let additional = (chunk_size - existing).min(*rows_remaining);
 
     // extend the current state
     extend_offsets2(
         &mut page,
         &mut values_page,
         &mut nested.nested,
+        values_remaining,
         &mut decoded,
         decoder,
         additional,
     )?;
-    *remaining -= nested.len() - existing;
+    *rows_remaining -= nested.len() - existing;
     items.push_back((nested, decoded));
 
-    while page.len() > 0 && *remaining > 0 {
-        let additional = chunk_size.min(*remaining);
+    while page.len() > 0 && *rows_remaining > 0 {
+        let additional = chunk_size.min(*rows_remaining);
 
         let mut nested = init_nested(init, additional);
         let mut decoded = decoder.with_capacity(0);
@@ -397,11 +399,12 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             &mut page,
             &mut values_page,
             &mut nested.nested,
+            values_remaining,
             &mut decoded,
             decoder,
             additional,
         )?;
-        *remaining -= nested.len();
+        *rows_remaining -= nested.len();
         items.push_back((nested, decoded));
     }
     Ok(())
@@ -411,6 +414,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     page: &mut NestedPage<'a>,
     values_state: &mut D::State,
     nested: &mut [Box<dyn Nested>],
+    values_remaining: &mut usize,
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
@@ -431,6 +435,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 
     let mut rows = 0;
     while let Some((rep, def)) = page.iter.next() {
+        *values_remaining -= 1;
         let rep = rep?;
         let def = def?;
         if rep == 0 {
@@ -485,7 +490,7 @@ pub(super) fn next<'a, I, D>(
     iter: &'a mut I,
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
     dict: &'a mut Option<D::Dictionary>,
-    remaining: &mut usize,
+    remaining: (&mut usize, &mut usize),
     init: &[InitNested],
     chunk_size: Option<usize>,
     decoder: &D,
@@ -494,14 +499,18 @@ where
     I: Pages,
     D: NestedDecoder<'a>,
 {
+    let (rows_remaining, values_remaining) = remaining;
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
-    if (items.len() == 1) && items.front().unwrap().0.len() == chunk_size.unwrap_or(usize::MAX) {
+    if (items.len() == 1)
+        && items.front().unwrap().0.len() == chunk_size.unwrap_or(usize::MAX)
+        && *values_remaining == 0
+    {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
-    if *remaining == 0 {
+    if *rows_remaining == 0 && *values_remaining == 0 {
         return match items.pop_front() {
             Some(decoded) => MaybeNext::Some(Ok(decoded)),
             None => MaybeNext::None,
@@ -531,7 +540,7 @@ where
                 init,
                 items,
                 dict.as_ref(),
-                remaining,
+                (rows_remaining, values_remaining),
                 decoder,
                 chunk_size,
             );
@@ -541,7 +550,8 @@ where
             };
 
             if (items.len() == 1)
-                && items.front().unwrap().0.len() < chunk_size.unwrap_or(usize::MAX)
+                && (items.front().unwrap().0.len() < chunk_size.unwrap_or(usize::MAX)
+                    || *values_remaining > 0)
             {
                 MaybeNext::More
             } else {

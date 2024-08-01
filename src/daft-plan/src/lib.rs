@@ -10,6 +10,7 @@ mod logical_optimization;
 pub mod logical_plan;
 mod partitioning;
 pub mod physical_ops;
+mod physical_optimization;
 mod physical_plan;
 mod physical_planner;
 mod resource_request;
