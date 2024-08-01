@@ -33,6 +33,7 @@ from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
+from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -165,6 +166,11 @@ class Expression:
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
+
+    @property
+    def embedding(self) -> ExpressionEmbeddingNamespace:
+        """Access methods that work on columns of embeddings"""
+        return ExpressionEmbeddingNamespace.from_expression(self)
 
     @property
     def float(self) -> ExpressionFloatNamespace:
@@ -2614,6 +2620,41 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
 
+    def count_matches(
+        self,
+        patterns: Any,
+        whole_words: bool = False,
+        case_sensitive: bool = True,
+    ):
+        """
+        Counts the number of times a pattern, or multiple patterns, appear in a string.
+
+        .. NOTE::
+            If a pattern is a substring of another pattern, the longest pattern is matched first.
+            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
+            one match is counted for "hello world".
+
+        If whole_words is true, then matches are only counted if they are whole words. This
+        also applies to multi-word strings. For example, on the string "abc def", the strings
+        "def" and "abc def" would be matched, but "bc de", "abc d", and "abc " (with the space)
+        would not.
+
+        If case_sensitive is false, then case will be ignored. This only applies to ASCII
+        characters; unicode uppercase/lowercase will still be considered distinct.
+
+        Args:
+            patterns: A pattern or a list of patterns.
+            whole_words: Whether to only match whole word(s). Defaults to false.
+            case_sensitive: Whether the matching should be case sensitive. Defaults to true.
+        """
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        if not isinstance(patterns, Expression):
+            series = item_to_series("items", patterns)
+            patterns = Expression._to_expression(series)
+
+        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
@@ -2661,12 +2702,12 @@ class ExpressionListNamespace(ExpressionNamespace):
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
-    def slice(self, start: int | Expression, end: int | Expression) -> Expression:
+    def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list
 
         Args:
             start: index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end of the list
-            end: index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list
+            end: optional index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list. If not provided, the slice will include elements up to the end of the list
 
         Returns:
             Expression: an expression with a list of the type of the list values
@@ -3068,3 +3109,9 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         """
 
         return Expression._from_pyexpr(self._expr.json_query(jq_query))
+
+
+class ExpressionEmbeddingNamespace(ExpressionNamespace):
+    def cosine_distance(self, other: Expression) -> Expression:
+        """Compute the cosine distance between two embeddings"""
+        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))

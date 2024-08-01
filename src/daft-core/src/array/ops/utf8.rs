@@ -13,6 +13,7 @@ use crate::{
     },
     DataType, Series,
 };
+use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
@@ -610,7 +611,7 @@ impl Utf8Array {
             .iter()
             .map(|val| {
                 let v = val?;
-                Some(v.len() as u64)
+                Some(v.chars().count() as u64)
             })
             .collect::<arrow2::array::UInt64Array>()
             .with_validity(self_arrow.validity().cloned());
@@ -1381,6 +1382,50 @@ impl Utf8Array {
                 }
             }),
         ))
+    }
+
+    // Uses the Aho-Corasick algorithm to count occurrences of a number of patterns.
+    pub fn count_matches(
+        &self,
+        patterns: &Self,
+        whole_word: bool,
+        case_sensitive: bool,
+    ) -> DaftResult<UInt64Array> {
+        if patterns.null_count() == patterns.len() {
+            // no matches
+            return UInt64Array::from_iter(self.name(), iter::repeat(Some(0)).take(self.len()))
+                .with_validity(self.validity().cloned());
+        }
+
+        let patterns = patterns.as_arrow().iter().flatten();
+        let ac = AhoCorasickBuilder::new()
+            .ascii_case_insensitive(!case_sensitive)
+            .match_kind(MatchKind::LeftmostLongest)
+            .build(patterns)
+            .map_err(|e| {
+                DaftError::ComputeError(format!("Error creating string automaton: {}", e))
+            })?;
+        let iter = self.as_arrow().iter().map(|opt| {
+            opt.map(|s| {
+                let results = ac.find_iter(s);
+                if whole_word {
+                    results
+                        .filter(|m| {
+                            // ensure this match is a whole word (or set of words)
+                            // don't want to filter out things like "brass"
+                            let prev_char = s.get(m.start() - 1..m.start());
+                            let next_char = s.get(m.end()..m.end() + 1);
+                            !(prev_char.is_some_and(|s| s.chars().next().unwrap().is_alphabetic())
+                                || next_char
+                                    .is_some_and(|s| s.chars().next().unwrap().is_alphabetic()))
+                        })
+                        .count() as u64
+                } else {
+                    results.count() as u64
+                }
+            })
+        });
+        Ok(UInt64Array::from_iter(self.name(), iter))
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>

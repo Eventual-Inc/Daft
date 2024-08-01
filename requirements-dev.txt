@@ -35,7 +35,7 @@ opencv-python==4.8.1.78
 tiktoken==0.7.0
 
 # Pyarrow
-pyarrow==13.0.0
+pyarrow==15.0.0
 # Ray
 ray[data, client]==2.7.1; python_version < '3.8'
 ray[data, client]==2.10.0; python_version >= '3.8'
@@ -44,7 +44,7 @@ ray[data, client]==2.10.0; python_version >= '3.8'
 lancedb>=0.6.10; python_version >= '3.8'
 
 #Iceberg
-pyiceberg==0.6.0; python_version >= '3.8'
+pyiceberg==0.7.0; python_version >= '3.8'
 tenacity==8.2.3; python_version >= '3.8'
 
 # Delta Lake

@@ -339,9 +339,12 @@ impl ListArray {
         self.get_children_helper(idx_iter, default)
     }
 
-    pub fn get_slices(&self, start: &Int64Array, end: &Int64Array) -> DaftResult<Series> {
+    pub fn get_slices(&self, start: &Int64Array, end: Option<&Int64Array>) -> DaftResult<Series> {
         let start_iter = create_iter(start, self.len());
-        let end_iter = create_iter(end, self.len());
+        let end_iter = match end {
+            Some(end) => create_iter(end, self.len()),
+            None => Box::new(self.offsets().windows(2).map(|w| (w[1] - w[0]))),
+        };
         get_slices_helper(
             self.offsets().iter().copied(),
             self.field.clone(),
@@ -511,11 +514,14 @@ impl FixedSizeListArray {
         self.get_children_helper(idx_iter, default)
     }
 
-    pub fn get_slices(&self, start: &Int64Array, end: &Int64Array) -> DaftResult<Series> {
-        let start_iter = create_iter(start, self.len());
-        let end_iter = create_iter(end, self.len());
-        let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field()?);
+    pub fn get_slices(&self, start: &Int64Array, end: Option<&Int64Array>) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
+        let start_iter = create_iter(start, self.len());
+        let end_iter = match end {
+            Some(end) => create_iter(end, self.len()),
+            None => Box::new(repeat(list_size as i64).take(self.len())),
+        };
+        let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field()?);
         get_slices_helper(
             (0..=((self.len() * list_size) as i64)).step_by(list_size),
             new_field,

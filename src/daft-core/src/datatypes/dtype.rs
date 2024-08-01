@@ -254,6 +254,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn nested_dtype(&self) -> Option<&DataType> {
+        match self {
+            DataType::Map(dtype)
+            | DataType::List(dtype)
+            | DataType::FixedSizeList(dtype, _)
+            | DataType::FixedShapeTensor(dtype, _)
+            | DataType::Tensor(dtype) => Some(dtype),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
@@ -285,6 +297,15 @@ impl DataType {
             | DataType::Embedding(dtype, ..)
             | DataType::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
             _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn fixed_size(&self) -> Option<usize> {
+        match self {
+            DataType::FixedSizeList(_, size) => Some(*size),
+            DataType::Embedding(_, size) => Some(*size),
+            _ => None,
         }
     }
 

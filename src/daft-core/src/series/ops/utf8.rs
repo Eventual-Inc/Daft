@@ -254,4 +254,19 @@ impl Series {
     pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
     }
+
+    pub fn utf8_count_matches(
+        &self,
+        patterns: &Series,
+        whole_word: bool,
+        case_sensitive: bool,
+    ) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| {
+            patterns.with_utf8_array(|pattern_arr| {
+                Ok(arr
+                    .count_matches(pattern_arr, whole_word, case_sensitive)?
+                    .into_series())
+            })
+        })
+    }
 }

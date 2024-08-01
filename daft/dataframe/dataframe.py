@@ -210,7 +210,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=1)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -222,15 +222,24 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    def iter_partitions(
+        self, results_buffer_size: Optional[int] = 1
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
-        .. WARNING::
-            This method is experimental and may change in future versions.
+        Args:
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
+                Setting this value will buffer results up to the provided size and provide backpressure
+                to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
+                `None` will result in a buffer of unbounded size, causing the dataframe to run asynchronously
+                to completion.
         """
+        if results_buffer_size is not None and not results_buffer_size > 0:
+            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -240,7 +249,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder)
+            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
             for result in results_iter:
                 yield result.partition()
 
@@ -303,8 +312,10 @@ class DataFrame:
         return cls._from_tables(data_vpartition)
 
     @classmethod
-    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"]]) -> "DataFrame":
+    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
         """Creates a DataFrame from a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__."""
+        if isinstance(data, Iterable):
+            data = list(data)
         if not isinstance(data, list):
             data = [data]
         data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
@@ -510,24 +521,13 @@ class DataFrame:
                 f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
             )
 
-        from pyiceberg.table import _MergingSnapshotProducer
-        from pyiceberg.table.snapshots import Operation
+        if mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
         operations = []
         path = []
         rows = []
         size = []
-
-        if mode == "append":
-            operation = Operation.APPEND
-        elif mode == "overwrite":
-            operation = Operation.OVERWRITE
-        else:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
-
-        # We perform the merge here since table is not pickle-able
-        # We should be able to move to a transaction API for iceberg 0.7.0
-        merge = _MergingSnapshotProducer(operation=operation, table=table)
 
         builder = self._builder.write_iceberg(table)
         write_df = DataFrame(builder)
@@ -537,13 +537,12 @@ class DataFrame:
         assert "data_file" in write_result
         data_files = write_result["data_file"]
 
-        if operation == Operation.OVERWRITE:
+        if mode == "overwrite":
             deleted_files = table.scan().plan_files()
         else:
             deleted_files = []
 
         for data_file in data_files:
-            merge.append_data_file(data_file)
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
@@ -556,7 +555,44 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-        merge.commit()
+        if parse(pyiceberg.__version__) >= parse("0.7.0"):
+            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
+
+            tx = table.transaction()
+
+            if mode == "overwrite":
+                tx.delete(delete_filter=ALWAYS_TRUE)
+
+            update_snapshot = tx.update_snapshot()
+
+            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+                tx.table_metadata.properties,
+                TableProperties.MANIFEST_MERGE_ENABLED,
+                TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+            )
+
+            append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+            with append_method() as append_files:
+                for data_file in data_files:
+                    append_files.append_data_file(data_file)
+
+            tx.commit_transaction()
+        else:
+            from pyiceberg.table import _MergingSnapshotProducer
+            from pyiceberg.table.snapshots import Operation
+
+            operations_map = {
+                "append": Operation.APPEND,
+                "overwrite": Operation.OVERWRITE,
+            }
+
+            merge = _MergingSnapshotProducer(operation=operations_map[mode], table=table)
+
+            for data_file in data_files:
+                merge.append_data_file(data_file)
+
+            merge.commit()
 
         from daft import from_pydict
 

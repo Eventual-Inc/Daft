@@ -11,7 +11,7 @@ use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Ser
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator},
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -137,16 +137,16 @@ pub fn read_csv_bulk(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_csv(
-    uri: &str,
+    uri: String,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
-    stream_csv_single(
-        uri,
+) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
+    let stream = stream_csv_single(
+        &uri,
         convert_options,
         parse_options,
         read_options,
@@ -154,7 +154,9 @@ pub async fn stream_csv(
         io_stats,
         max_chunks_in_flight,
     )
-    .await
+    .await?;
+
+    Ok(Box::pin(stream))
 }
 
 // Parallel version of table concat

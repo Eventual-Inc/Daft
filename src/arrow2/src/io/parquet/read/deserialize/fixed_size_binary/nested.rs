@@ -139,7 +139,8 @@ pub struct NestedIter<I: Pages> {
     items: VecDeque<(NestedState, (FixedSizeBinary, MutableBitmap))>,
     dict: Option<Dict>,
     chunk_size: Option<usize>,
-    remaining: usize,
+    rows_remaining: usize,
+    values_remaining: usize,
 }
 
 impl<I: Pages> NestedIter<I> {
@@ -149,6 +150,7 @@ impl<I: Pages> NestedIter<I> {
         data_type: DataType,
         num_rows: usize,
         chunk_size: Option<usize>,
+        num_values: usize,
     ) -> Self {
         let size = FixedSizeBinaryArray::get_size(&data_type);
         Self {
@@ -159,7 +161,8 @@ impl<I: Pages> NestedIter<I> {
             items: VecDeque::new(),
             dict: None,
             chunk_size,
-            remaining: num_rows,
+            rows_remaining: num_rows,
+            values_remaining: num_values,
         }
     }
 }
@@ -172,7 +175,7 @@ impl<I: Pages> Iterator for NestedIter<I> {
             &mut self.iter,
             &mut self.items,
             &mut self.dict,
-            &mut self.remaining,
+            (&mut self.rows_remaining, &mut self.values_remaining),
             &self.init,
             self.chunk_size,
             &BinaryDecoder { size: self.size },

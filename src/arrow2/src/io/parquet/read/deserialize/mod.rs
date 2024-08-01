@@ -135,6 +135,7 @@ fn columns_to_iter_recursive<'a, I>(
     init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
+    num_values: Vec<usize>,
 ) -> Result<NestedArrayIter<'a>>
 where
     I: Pages + 'a,
@@ -152,7 +153,9 @@ where
         ));
     }
 
-    nested::columns_to_iter_recursive(columns, types, field, init, num_rows, chunk_size)
+    nested::columns_to_iter_recursive(
+        columns, types, field, init, num_rows, chunk_size, num_values,
+    )
 }
 
 /// Returns the number of (parquet) columns that a [`DataType`] contains.
@@ -204,13 +207,22 @@ pub fn column_iter_to_arrays<'a, I>(
     field: Field,
     chunk_size: Option<usize>,
     num_rows: usize,
+    num_values: Vec<usize>,
 ) -> Result<ArrayIter<'a>>
 where
     I: Pages + 'a,
 {
     Ok(Box::new(
-        columns_to_iter_recursive(columns, types, field, vec![], num_rows, chunk_size)?
-            .map(|x| x.map(|x| x.1)),
+        columns_to_iter_recursive(
+            columns,
+            types,
+            field,
+            vec![],
+            num_rows,
+            chunk_size,
+            num_values,
+        )?
+        .map(|x| x.map(|x| x.1)),
     ))
 }
 
@@ -223,12 +235,15 @@ pub fn nested_column_iter_to_arrays<'a, I>(
     init: Vec<InitNested>,
     chunk_size: Option<usize>,
     num_rows: usize,
+    num_values: Vec<usize>,
 ) -> Result<ArrayIter<'a>>
 where
     I: Pages + 'a,
 {
     Ok(Box::new(
-        nested::columns_to_iter_recursive(columns, types, field, init, num_rows, chunk_size)?
-            .map(|x| x.map(|x| x.1)),
+        nested::columns_to_iter_recursive(
+            columns, types, field, init, num_rows, chunk_size, num_values,
+        )?
+        .map(|x| x.map(|x| x.1)),
     ))
 }
