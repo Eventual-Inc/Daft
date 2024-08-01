@@ -13,6 +13,7 @@ use crate::{CountMode, DataType};
 
 use crate::series::{IntoSeries, Series};
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
@@ -194,6 +195,56 @@ fn get_chunks_helper(
         )
         .into_series())
     }
+}
+
+fn list_sort_helper(
+    flat_child: &Series,
+    offsets: &OffsetsBuffer<i64>,
+    desc_iter: impl Iterator<Item = bool>,
+    validity: impl Iterator<Item = bool>,
+) -> DaftResult<Vec<Series>> {
+    desc_iter
+        .zip(validity)
+        .enumerate()
+        .map(|(i, (desc, valid))| {
+            let start = *offsets.get(i).unwrap() as usize;
+            let end = *offsets.get(i + 1).unwrap() as usize;
+            if valid {
+                flat_child.slice(start, end)?.sort(desc)
+            } else {
+                Ok(Series::full_null(
+                    flat_child.name(),
+                    flat_child.data_type(),
+                    end - start,
+                ))
+            }
+        })
+        .collect()
+}
+
+fn list_sort_helper_fixed_size(
+    flat_child: &Series,
+    fixed_size: usize,
+    desc_iter: impl Iterator<Item = bool>,
+    validity: impl Iterator<Item = bool>,
+) -> DaftResult<Vec<Series>> {
+    desc_iter
+        .zip(validity)
+        .enumerate()
+        .map(|(i, (desc, valid))| {
+            let start = i * fixed_size;
+            let end = (i + 1) * fixed_size;
+            if valid {
+                flat_child.slice(start, end)?.sort(desc)
+            } else {
+                Ok(Series::full_null(
+                    flat_child.name(),
+                    flat_child.data_type(),
+                    end - start,
+                ))
+            }
+        })
+        .collect()
 }
 
 impl ListArray {
@@ -383,31 +434,39 @@ impl ListArray {
 
     // Sorts the lists within a list column
     pub fn list_sort(&self, desc: &BooleanArray) -> DaftResult<Self> {
-        let desc_iter: Box<dyn Iterator<Item = bool>> = match desc.len() {
-            1 => Box::new(repeat(desc.get(0).unwrap()).take(self.len())),
-            _ => {
-                assert_eq!(desc.len(), self.len());
-                Box::new(desc.as_arrow().values_iter())
+        let offsets = self.offsets();
+        let child_series = if desc.len() == 1 {
+            let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
+            if let Some(validity) = self.validity() {
+                list_sort_helper(&self.flat_child, offsets, desc_iter, validity.iter())?
+            } else {
+                list_sort_helper(
+                    &self.flat_child,
+                    offsets,
+                    desc_iter,
+                    repeat(true).take(self.len()),
+                )?
+            }
+        } else {
+            let desc_iter = desc.as_arrow().values_iter();
+            if let Some(validity) = self.validity() {
+                list_sort_helper(&self.flat_child, offsets, desc_iter, validity.iter())?
+            } else {
+                list_sort_helper(
+                    &self.flat_child,
+                    offsets,
+                    desc_iter,
+                    repeat(true).take(self.len()),
+                )?
             }
         };
-        let offsets = self.offsets();
-        let child = desc_iter
-            .enumerate()
-            .map(|(i, desc)| {
-                let start = offsets.get(i).unwrap();
-                let end = offsets.get(i + 1).unwrap();
-                self.flat_child
-                    .slice(*start as usize, *end as usize)?
-                    .sort(desc)
-            })
-            .collect::<DaftResult<Vec<Series>>>()?;
 
-        let child_refs: Vec<&Series> = child.iter().collect();
+        let child_refs: Vec<&Series> = child_series.iter().collect();
         let child = Series::concat(&child_refs)?;
         Ok(Self::new(
             self.field.clone(),
             child,
-            offsets.clone(),
+            self.offsets().clone(),
             self.validity().cloned(),
         ))
     }
@@ -588,24 +647,45 @@ impl FixedSizeListArray {
 
     // Sorts the lists within a list column
     pub fn list_sort(&self, desc: &BooleanArray) -> DaftResult<Self> {
-        let desc_iter: Box<dyn Iterator<Item = bool>> = match desc.len() {
-            1 => Box::new(repeat(desc.get(0).unwrap()).take(self.len())),
-            _ => {
-                assert_eq!(desc.len(), self.len());
-                Box::new(desc.as_arrow().values_iter())
+        let fixed_size = self.fixed_element_len();
+
+        let child_series = if desc.len() == 1 {
+            let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
+            if let Some(validity) = self.validity() {
+                list_sort_helper_fixed_size(
+                    &self.flat_child,
+                    fixed_size,
+                    desc_iter,
+                    validity.iter(),
+                )?
+            } else {
+                list_sort_helper_fixed_size(
+                    &self.flat_child,
+                    fixed_size,
+                    desc_iter,
+                    repeat(true).take(self.len()),
+                )?
+            }
+        } else {
+            let desc_iter = desc.as_arrow().values_iter();
+            if let Some(validity) = self.validity() {
+                list_sort_helper_fixed_size(
+                    &self.flat_child,
+                    fixed_size,
+                    desc_iter,
+                    validity.iter(),
+                )?
+            } else {
+                list_sort_helper_fixed_size(
+                    &self.flat_child,
+                    fixed_size,
+                    desc_iter,
+                    repeat(true).take(self.len()),
+                )?
             }
         };
-        let list_size = self.fixed_element_len();
-        let child = desc_iter
-            .enumerate()
-            .map(|(i, desc)| {
-                let start = i * list_size;
-                let end = (i + 1) * list_size;
-                self.flat_child.slice(start, end)?.sort(desc)
-            })
-            .collect::<DaftResult<Vec<Series>>>()?;
 
-        let child_refs: Vec<&Series> = child.iter().collect();
+        let child_refs: Vec<&Series> = child_series.iter().collect();
         let child = Series::concat(&child_refs)?;
         Ok(Self::new(
             self.field.clone(),
