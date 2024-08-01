@@ -184,7 +184,7 @@ where
     dict: Option<Vec<T>>,
     rows_remaining: usize,
     chunk_size: Option<usize>,
-    values_remaining: i64,
+    values_remaining: usize,
     decoder: PrimitiveDecoder<T, P, F>,
 }
 
@@ -202,7 +202,7 @@ where
         data_type: DataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        num_values: i64,
+        num_values: usize,
         op: F,
     ) -> Self {
         Self {

@@ -140,7 +140,7 @@ pub struct NestedIter<I: Pages> {
     dict: Option<Dict>,
     chunk_size: Option<usize>,
     rows_remaining: usize,
-    values_remaining: i64,
+    values_remaining: usize,
 }
 
 impl<I: Pages> NestedIter<I> {
@@ -150,7 +150,7 @@ impl<I: Pages> NestedIter<I> {
         data_type: DataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        num_values: i64,
+        num_values: usize,
     ) -> Self {
         let size = FixedSizeBinaryArray::get_size(&data_type);
         Self {

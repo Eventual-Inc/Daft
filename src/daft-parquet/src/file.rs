@@ -439,7 +439,7 @@ impl ParquetFileReader {
                                     .get(col_idx)
                                     .expect("Column index should be in bounds");
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-                                num_values.push(col.metadata().num_values);
+                                num_values.push(col.metadata().num_values as usize);
 
                                 let compressed_page_stream =
                                     get_owned_page_stream_from_column_start(
@@ -626,7 +626,7 @@ impl ParquetFileReader {
                                     .get(col_idx)
                                     .expect("Column index should be in bounds");
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-                                num_values.push(col.metadata().num_values);
+                                num_values.push(col.metadata().num_values as usize);
 
                                 let compressed_page_stream =
                                     get_owned_page_stream_from_column_start(

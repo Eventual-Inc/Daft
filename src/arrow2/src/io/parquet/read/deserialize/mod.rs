@@ -135,7 +135,7 @@ fn columns_to_iter_recursive<'a, I>(
     init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
-    num_values: Vec<i64>,
+    num_values: Vec<usize>,
 ) -> Result<NestedArrayIter<'a>>
 where
     I: Pages + 'a,
@@ -207,7 +207,7 @@ pub fn column_iter_to_arrays<'a, I>(
     field: Field,
     chunk_size: Option<usize>,
     num_rows: usize,
-    num_values: Vec<i64>,
+    num_values: Vec<usize>,
 ) -> Result<ArrayIter<'a>>
 where
     I: Pages + 'a,
@@ -235,7 +235,7 @@ pub fn nested_column_iter_to_arrays<'a, I>(
     init: Vec<InitNested>,
     chunk_size: Option<usize>,
     num_rows: usize,
-    num_values: Vec<i64>,
+    num_values: Vec<usize>,
 ) -> Result<ArrayIter<'a>>
 where
     I: Pages + 'a,

@@ -115,7 +115,7 @@ pub struct NestedIter<I: Pages> {
     items: VecDeque<(NestedState, (MutableBitmap, MutableBitmap))>,
     rows_remaining: usize,
     chunk_size: Option<usize>,
-    values_remaining: i64,
+    values_remaining: usize,
 }
 
 impl<I: Pages> NestedIter<I> {
@@ -124,7 +124,7 @@ impl<I: Pages> NestedIter<I> {
         init: Vec<InitNested>,
         num_rows: usize,
         chunk_size: Option<usize>,
-        num_values: i64,
+        num_values: usize,
     ) -> Self {
         Self {
             iter,

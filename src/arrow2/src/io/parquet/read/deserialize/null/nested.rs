@@ -73,7 +73,7 @@ where
     items: VecDeque<(NestedState, usize)>,
     rows_remaining: usize,
     chunk_size: Option<usize>,
-    values_remaining: i64,
+    values_remaining: usize,
     decoder: NullDecoder,
 }
 
@@ -87,7 +87,7 @@ where
         data_type: DataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        num_values: i64,
+        num_values: usize,
     ) -> Self {
         Self {
             iter,

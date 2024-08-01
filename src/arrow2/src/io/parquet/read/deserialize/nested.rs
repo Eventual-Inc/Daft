@@ -41,7 +41,7 @@ pub fn columns_to_iter_recursive<'a, I>(
     mut init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
-    mut num_values: Vec<i64>,
+    mut num_values: Vec<usize>,
 ) -> Result<NestedArrayIter<'a>>
 where
     I: Pages + 'a,
