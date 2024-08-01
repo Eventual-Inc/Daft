@@ -19,6 +19,8 @@ pub enum PhysicalPlan {
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
     Project(Project),
+    #[cfg(feature = "python")]
+    ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -111,6 +113,10 @@ impl PhysicalPlan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Project(Project {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            #[cfg(feature = "python")]
+            Self::ActorPoolProject(ActorPoolProject {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.clustering_spec(),
@@ -303,6 +309,11 @@ impl PhysicalPlan {
                 // TODO(sammy), we need the schema to estimate the new size per row
                 input.approximate_stats()
             }
+            #[cfg(feature = "python")]
+            Self::ActorPoolProject(ActorPoolProject { input, .. }) => {
+                // TODO(sammy), we need the schema to estimate the new size per row
+                input.approximate_stats()
+            }
             Self::Sample(Sample {
                 input, fraction, ..
             }) => input
@@ -410,6 +421,8 @@ impl PhysicalPlan {
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
+            #[cfg(feature = "python")]
+            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input.clone()],
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
             Self::Explode(Explode { input, .. }) => vec![input.clone()],
@@ -516,6 +529,8 @@ impl PhysicalPlan {
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
             Self::Project(..) => "Project",
+            #[cfg(feature = "python")]
+            Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
@@ -555,6 +570,8 @@ impl PhysicalPlan {
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),

@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.udf import PartialStatefulUDF
+
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
@@ -197,6 +199,15 @@ def pipeline_instruction(
         step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
+
+
+def actor_pool_project(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    partial_stateful_udf: PartialStatefulUDF,
+    resource_request: execution_step.ResourceRequest,
+    num_actors: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    raise NotImplementedError("Execution of ActorPoolProjects not yet implemented")
 
 
 def monotonically_increasing_id(
