@@ -3,16 +3,16 @@ use crate::{schema::Schema, DataType, Series};
 use arrow2::array::Array;
 use common_error::DaftResult;
 
-use arrow2::array::ord2::build_array_compare2;
+use arrow2::array::dyn_ord::build_array_compare2;
 
 fn build_dyn_is_equal(
     left: &DataType,
     right: &DataType,
     nulls_equal: bool,
-    nan_equal: bool,
+    // nan_equal: bool,
 ) -> DaftResult<Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> bool + Send + Sync>> {
-    let is_equal_fn = build_array_compare2(&left.to_arrow()?, &right.to_arrow()?)?;
-    if nulls_equal {
+    let is_equal_fn = build_array_compare2(&left.to_arrow()?, &right.to_arrow()?, nulls_equal)?;
+    if NULLS_EQUAL {
         Ok(Box::new(move |left, right, i: usize, j: usize| {
             match (left.is_valid(i), right.is_valid(j)) {
                 (true, true) => is_equal_fn(left, right, i, j).is_eq(),

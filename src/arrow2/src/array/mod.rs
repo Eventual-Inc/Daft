@@ -707,7 +707,7 @@ mod iterator;
 
 pub mod growable;
 pub mod ord;
-pub mod ord2;
+pub mod dyn_ord;
 
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
