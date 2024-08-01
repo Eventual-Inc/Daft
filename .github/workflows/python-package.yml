@@ -22,7 +22,7 @@ jobs:
       matrix:
         python-version: ['3.8', '3.10']
         daft-runner: [py, ray]
-        pyarrow-version: [7.0.0, 13.0.0]
+        pyarrow-version: [7.0.0, 17.0.0]
         enable-aqe: [0, 1]
         os: [ubuntu-20.04, windows-latest]
         exclude:
