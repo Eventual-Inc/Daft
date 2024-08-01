@@ -98,6 +98,14 @@ macro_rules! invalid_operation_err {
         return Err($crate::error::PlannerError::invalid_operation(format!($($arg)*)))
     };
 }
+#[macro_export]
+macro_rules! ensure {
+    ($condition:expr, $($arg:tt)*) => {
+        if !$condition {
+            return Err($crate::error::PlannerError::invalid_operation(format!($($arg)*)))
+        }
+    };
+}
 
 impl From<PlannerError> for DaftError {
     fn from(value: PlannerError) -> Self {

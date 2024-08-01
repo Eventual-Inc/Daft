@@ -923,6 +923,14 @@ impl Expr {
             .ok()
             .and_then(|_| String::from_utf8(buffer).ok())
     }
+
+    /// If the expression is a literal, return it. Otherwise, return None.
+    pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
+        match self {
+            Expr::Literal(lit) => Some(lit),
+            _ => None,
+        }
+    }
 }
 
 impl Display for Expr {
