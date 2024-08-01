@@ -18,7 +18,9 @@ def test_list_slice_empty_series():
     result = table.eval_expression_list(
         [
             col("col").list.slice(0, 1).alias("col"),
+            col("col").list.slice(0).alias("col-noend"),
             col("col").list.slice(col("start"), 1).alias("col-start"),
+            col("col").list.slice(col("start")).alias("col-start-noend"),
             col("col").list.slice(col("start"), col("end")).alias("col-start-end"),
             col("col").list.slice(0, col("end")).alias("col-end"),
         ]
@@ -26,7 +28,9 @@ def test_list_slice_empty_series():
 
     assert result.to_pydict() == {
         "col": [],
+        "col-noend": [],
         "col-start": [],
+        "col-start-noend": [],
         "col-start-end": [],
         "col-end": [],
     }
@@ -55,15 +59,21 @@ def test_list_slice():
     result = table.eval_expression_list(
         [
             col("col1").list.slice(0, 1).alias("col1"),
+            col("col1").list.slice(0).alias("col1-noend"),
             col("col1").list.slice(col("start"), 1).alias("col1-start"),
+            col("col1").list.slice(col("start")).alias("col1-start-noend"),
             col("col1").list.slice(col("start"), col("end")).alias("col1-start-end"),
             col("col1").list.slice(1, col("end")).alias("col1-end"),
             col("col1").list.slice(20, 25).alias("col1-invalid-start"),
+            col("col1").list.slice(20, 25).alias("col1-invalid-start-noend"),
             col("col2").list.slice(0, 1).alias("col2"),
+            col("col2").list.slice(0).alias("col2-noend"),
             col("col2").list.slice(col("start"), 1).alias("col2-start"),
+            col("col2").list.slice(col("start")).alias("col2-start-noend"),
             col("col2").list.slice(col("start"), col("end")).alias("col2-start-end"),
             col("col2").list.slice(0, col("end")).alias("col2-end"),
             col("col2").list.slice(20, 25).alias("col2-invalid-start"),
+            col("col2").list.slice(20, 25).alias("col2-invalid-start-noend"),
             # Test edge cases.
             col("col1").list.slice(-10, -20).alias("col1-edge1"),
             col("col1").list.slice(-20, -10).alias("col1-edge2"),
@@ -77,15 +87,21 @@ def test_list_slice():
 
     assert result.to_pydict() == {
         "col1": [["a"], ["ab"], [None], None, ["a"]],
+        "col1-noend": [["a"], ["ab", "a"], [None, "a", "", "b", "c"], None, ["a", ""]],
         "col1-start": [["a"], [], [None], None, ["a"]],
+        "col1-start-noend": [["a"], ["a"], [None, "a", "", "b", "c"], None, ["a", ""]],
         "col1-start-end": [["a"], ["a"], [], None, ["a", ""]],
         "col1-end": [[], ["a"], [], None, [""]],
         "col1-invalid-start": [[], [], [], None, []],
+        "col1-invalid-start-noend": [[], [], [], None, []],
         "col2": [[[1]], [[3, 3]], [], [[]], None],
+        "col2-noend": [[[1]], [[3, 3], [4], [5, 5]], [], [[], []], None],
         "col2-start": [[[1]], [], [], [], None],
+        "col2-start-noend": [[[1]], [[4], [5, 5]], [], [], None],
         "col2-start-end": [[[1]], [[4]], [], [], None],
         "col2-end": [[[1]], [[3, 3], [4]], [], [[], []], None],
         "col2-invalid-start": [[], [], [], [], None],
+        "col2-invalid-start-noend": [[], [], [], [], None],
         "col1-edge1": [[], [], [], None, []],
         "col1-edge2": [[], [], [], None, []],
         "col1-edge3": [["a"], ["ab", "a"], [None, "a", "", "b", "c"], None, ["a", ""]],
@@ -133,15 +149,21 @@ def test_fixed_size_list_slice():
     result = table.eval_expression_list(
         [
             col("col1").list.slice(0, 1).alias("col1"),
+            col("col1").list.slice(0).alias("col1-noend"),
             col("col1").list.slice(col("start"), 1).alias("col1-start"),
+            col("col1").list.slice(col("start")).alias("col1-start-noend"),
             col("col1").list.slice(col("start"), col("end")).alias("col1-start-end"),
             col("col1").list.slice(1, col("end")).alias("col1-end"),
             col("col1").list.slice(20, 25).alias("col1-invalid-start"),
+            col("col1").list.slice(20).alias("col1-invalid-start-noend"),
             col("col2").list.slice(0, 1).alias("col2"),
+            col("col2").list.slice(0).alias("col2-noend"),
             col("col2").list.slice(col("start"), 2).alias("col2-start"),
+            col("col2").list.slice(col("start")).alias("col2-start-noend"),
             col("col2").list.slice(col("start"), col("end")).alias("col2-start-end"),
             col("col2").list.slice(0, col("end")).alias("col2-end"),
             col("col2").list.slice(20, 25).alias("col2-invalid-start"),
+            col("col2").list.slice(20, 25).alias("col2-invalid-start-noend"),
             # Test edge cases.
             col("col1").list.slice(-10, -20).alias("col1-edge1"),
             col("col1").list.slice(-20, -10).alias("col1-edge2"),
@@ -155,15 +177,21 @@ def test_fixed_size_list_slice():
 
     assert result.to_pydict() == {
         "col1": [["a"], ["aa"], None, [None], ["aaaaa"]],
+        "col1-noend": [["a", "b"], ["aa", "bb"], None, [None, "bbbb"], ["aaaaa", None]],
         "col1-start": [[], [], None, [], ["aaaaa"]],
+        "col1-start-noend": [["b"], ["bb"], None, [], ["aaaaa", None]],
         "col1-start-end": [[], [], None, [], ["aaaaa", None]],
         "col1-end": [[], [], None, ["bbbb"], [None]],
         "col1-invalid-start": [[], [], None, [], []],
+        "col1-invalid-start-noend": [[], [], None, [], []],
         "col2": [[[1]], [[11, 111]], None, [None], [[]]],
+        "col2-noend": [[[1], [2]], [[11, 111], [22, 222]], None, [None, [3333]], [[], []]],
         "col2-start": [[[2]], [[22, 222]], None, [], [[], []]],
+        "col2-start-noend": [[[2]], [[22, 222]], None, [], [[], []]],
         "col2-start-end": [[], [], None, [], [[], []]],
         "col2-end": [[[1]], [[11, 111]], None, [None, [3333]], [[], []]],
         "col2-invalid-start": [[], [], None, [], []],
+        "col2-invalid-start-noend": [[], [], None, [], []],
         "col1-edge1": [[], [], None, [], []],
         "col1-edge2": [[], [], None, [], []],
         "col1-edge3": [["a", "b"], ["aa", "bb"], None, [None, "bbbb"], ["aaaaa", None]],
@@ -186,11 +214,9 @@ def test_list_slice_invalid_parameters():
         table.eval_expression_list([col("col").list.slice(1.0, 0)])
     with pytest.raises(ValueError, match="Expected end index to be integer"):
         table.eval_expression_list([col("col").list.slice(0, 1.0)])
-    with pytest.raises(TypeError, match="missing 1 required positional argument: 'end'"):
-        table.eval_expression_list([col("col").list.slice(0)])
-    with pytest.raises(TypeError, match="missing 2 required positional arguments"):
+    with pytest.raises(TypeError, match="missing 1 required positional argument: 'start'"):
         table.eval_expression_list([col("col").list.slice()])
-    with pytest.raises(TypeError, match="takes 3 positional arguments but 4 were given"):
+    with pytest.raises(TypeError, match="takes from 2 to 3 positional arguments but 4 were given"):
         table.eval_expression_list([col("col").list.slice(0, 0, 0)])
 
 
