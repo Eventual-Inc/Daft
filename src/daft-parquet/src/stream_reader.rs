@@ -16,7 +16,6 @@ use rayon::{
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
-use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     file::{build_row_ranges, RowGroupRange},
@@ -118,15 +117,11 @@ pub(crate) fn local_parquet_read_into_column_iters(
         &uri,
     )?;
 
-    let required_row_group_idxs = row_ranges
-        .iter()
-        .map(|rg_range| rg_range.row_group_index)
-        .collect::<Vec<_>>();
     let all_row_groups = metadata.row_groups.clone();
 
     // Read all the required row groups into memory sequentially
-    let column_iters_per_rg = required_row_group_idxs.into_iter().map(move |idx| {
-        let rg_metadata = all_row_groups.get(idx).unwrap();
+    let column_iters_per_rg = row_ranges.clone().into_iter().map(move |rg_range| {
+        let rg_metadata = all_row_groups.get(rg_range.row_group_index).unwrap();
 
         // This operation is IO-bounded O(C) where C is the number of columns in the row group.
         // It reads all the columns to memory from the row group associated to the requested fields,
@@ -136,7 +131,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
             rg_metadata,
             schema.fields.clone(),
             Some(chunk_size),
-            num_rows,
+            Some(rg_range.num_rows),
             None,
         )
         .with_context(|_| super::UnableToReadParquetRowGroupSnafu { path: uri.clone() })?;
@@ -387,11 +382,9 @@ pub(crate) fn local_parquet_stream(
         .map(|rg_range| {
             let expected_num_chunks =
                 f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-            tokio::sync::mpsc::channel(expected_num_chunks)
+            crossbeam_channel::bounded(expected_num_chunks)
         })
         .unzip();
-    // Create a channel to send errors to the stream
-    let (error_tx, error_rx) = tokio::sync::mpsc::channel(1);
 
     let uri = uri.to_string();
     rayon::spawn(move || {
@@ -399,10 +392,20 @@ pub(crate) fn local_parquet_stream(
         // we can start processing them in parallel.
         let par_column_iters = column_iters.zip(senders).zip(row_ranges).par_bridge();
 
-        // For each vec of column iters, process them in parallel lock step such that each iteration
-        // produces a chunk of the row group that can be processed into a table.
-        let result = par_column_iters.try_for_each(move |((rg_col_iter_result, tx), rg_range)| {
-            let rg_col_iter = rg_col_iter_result?;
+        // For each vec of column iters, iterate through them in parallel lock step such that each iteration
+        // produces a chunk of the row group that can be converted into a table.
+        par_column_iters.for_each(move |((rg_col_iter_result, tx), rg_range)| {
+            let rg_col_iter = match rg_col_iter_result {
+                Ok(iter) => iter,
+                Err(e) => {
+                    if let Err(crossbeam_channel::TrySendError::Full(_)) =
+                        tx.try_send(Err(e.into()))
+                    {
+                        panic!("Parquet stream channel should not be full")
+                    }
+                    return;
+                }
+            };
             let owned_schema_ref = schema_ref.clone();
             let owned_predicate = predicate.clone();
             let owned_original_columns = original_columns.clone();
@@ -474,22 +477,20 @@ pub(crate) fn local_parquet_stream(
                 }
                 DaftResult::Ok(table)
             });
-            for table in table_iter {
-                let _ = tx.blocking_send(table);
+
+            for table_result in table_iter {
+                let table_err = table_result.is_err();
+                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
+                    panic!("Parquet stream channel should not be full")
+                }
+                if table_err {
+                    break;
+                }
             }
-            DaftResult::Ok(())
         });
-        if let Err(e) = result {
-            let _ = error_tx.blocking_send(Err(e));
-        }
     });
 
-    let result_stream = futures::stream::iter(
-        receivers
-            .into_iter()
-            .chain(std::iter::once(error_rx))
-            .map(ReceiverStream::new),
-    );
+    let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
 
     match maintain_order {
         true => Ok((metadata, Box::pin(result_stream.flatten()))),
