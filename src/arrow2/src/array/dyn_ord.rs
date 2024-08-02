@@ -16,16 +16,22 @@ unsafe fn is_valid<A: Array>(arr: &A, i: usize) -> bool {
     // avoid dyn function hop by using generic
     arr.validity()
         .as_ref()
-        .map(|x| !x.get_bit_unchecked(i))
-        .unwrap_or(false)
-
+        .map(|x| x.get_bit_unchecked(i))
+        .unwrap_or(true)
 }
 
 #[inline]
-fn compare_with_nulls<A: Array, F: FnOnce() -> Ordering>(left: &A, right: &A, i: usize, j: usize, nulls_equal: bool, cmp: F) -> Ordering {
+fn compare_with_nulls<A: Array, F: FnOnce() -> Ordering>(
+    left: &A,
+    right: &A,
+    i: usize,
+    j: usize,
+    nulls_equal: bool,
+    cmp: F,
+) -> Ordering {
     assert!(i < left.len());
     assert!(j < right.len());
-    match (unsafe { is_valid(left, i) } , unsafe { is_valid(right, j)} ) {
+    match (unsafe { is_valid(left, i) }, unsafe { is_valid(right, j) }) {
         (true, true) => cmp(),
         (false, true) => Ordering::Greater,
         (true, false) => Ordering::Less,
@@ -35,7 +41,7 @@ fn compare_with_nulls<A: Array, F: FnOnce() -> Ordering>(left: &A, right: &A, i:
             } else {
                 Ordering::Less
             }
-        },
+        }
     }
 }
 
@@ -43,7 +49,11 @@ fn compare_dyn_primitives<T: NativeType + Ord>(nulls_equal: bool) -> DynArrayCom
     Box::new(move |left, right, i, j| {
         let left = left.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
         let right = right.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-        compare_with_nulls(left, right, i, j, nulls_equal,|| total_cmp(&unsafe {left.value_unchecked(i)}, &unsafe {right.value_unchecked(j) }))        
+        compare_with_nulls(left, right, i, j, nulls_equal, || {
+            total_cmp(&unsafe { left.value_unchecked(i) }, &unsafe {
+                right.value_unchecked(j)
+            })
+        })
     })
 }
 
@@ -51,7 +61,9 @@ fn compare_dyn_string<O: Offset>(nulls_equal: bool) -> DynArrayComparator {
     Box::new(move |left, right, i, j| {
         let left = left.as_any().downcast_ref::<Utf8Array<O>>().unwrap();
         let right = right.as_any().downcast_ref::<Utf8Array<O>>().unwrap();
-        compare_with_nulls(left, right, i, j, nulls_equal,|| unsafe {left.value_unchecked(i)}.cmp(unsafe {right.value_unchecked(j)}))
+        compare_with_nulls(left, right, i, j, nulls_equal, || {
+            unsafe { left.value_unchecked(i) }.cmp(unsafe { right.value_unchecked(j) })
+        })
     })
 }
 
@@ -59,20 +71,27 @@ fn compare_dyn_binary<O: Offset>(nulls_equal: bool) -> DynArrayComparator {
     Box::new(move |left, right, i, j| {
         let left = left.as_any().downcast_ref::<BinaryArray<O>>().unwrap();
         let right = right.as_any().downcast_ref::<BinaryArray<O>>().unwrap();
-        compare_with_nulls(left, right, i, j, nulls_equal,|| unsafe {left.value_unchecked(i)}.cmp(unsafe {right.value_unchecked(j)}))
+        compare_with_nulls(left, right, i, j, nulls_equal, || {
+            unsafe { left.value_unchecked(i) }.cmp(unsafe { right.value_unchecked(j) })
+        })
     })
 }
-
 
 fn compare_dyn_boolean(nulls_equal: bool) -> DynArrayComparator {
     Box::new(move |left, right, i, j| {
         let left = left.as_any().downcast_ref::<BooleanArray>().unwrap();
         let right = right.as_any().downcast_ref::<BooleanArray>().unwrap();
-        compare_with_nulls(left, right, i, j, nulls_equal,|| unsafe {left.value_unchecked(i)}.cmp(unsafe {&right.value_unchecked(j)}))
+        compare_with_nulls(left, right, i, j, nulls_equal, || {
+            unsafe { left.value_unchecked(i) }.cmp(unsafe { &right.value_unchecked(j) })
+        })
     })
 }
 
-pub fn build_array_compare2(left: &DataType, right: &DataType, nulls_equal: bool) -> Result<DynArrayComparator> {
+pub fn build_array_compare2(
+    left: &DataType,
+    right: &DataType,
+    nulls_equal: bool,
+) -> Result<DynArrayComparator> {
     use DataType::*;
     use IntervalUnit::*;
     use TimeUnit::*;
@@ -105,7 +124,9 @@ pub fn build_array_compare2(left: &DataType, right: &DataType, nulls_equal: bool
         | (Duration(Second), Duration(Second))
         | (Duration(Millisecond), Duration(Millisecond))
         | (Duration(Microsecond), Duration(Microsecond))
-        | (Duration(Nanosecond), Duration(Nanosecond)) => compare_dyn_primitives::<i64>(nulls_equal),
+        | (Duration(Nanosecond), Duration(Nanosecond)) => {
+            compare_dyn_primitives::<i64>(nulls_equal)
+        }
         // (Float32, Float32) => compare_f32(left, right),
         // (Float64, Float64) => compare_f64(left, right),
         (Decimal(_, _), Decimal(_, _)) => compare_dyn_primitives::<i128>(nulls_equal),

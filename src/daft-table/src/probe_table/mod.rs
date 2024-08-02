@@ -1,10 +1,13 @@
-use std::collections::{hash_map::RawEntryMut, HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{hash_map::RawEntryMut, HashMap},
+};
 
 use arrow2::array::Array;
 use common_error::DaftResult;
 use daft_core::{
     array::{
-        ops::{arrow2::comparison2::build_dyn_multi_array_is_equal, as_arrow::AsArrow},
+        ops::{arrow2::comparison2::build_dyn_multi_array_compare, as_arrow::AsArrow},
         DataArray,
     },
     datatypes::UInt64Array,
@@ -23,7 +26,7 @@ pub struct ProbeTable {
     hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn:
-        Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> bool + Send + Sync>,
+        Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>,
 }
 
 impl ProbeTable {
@@ -68,7 +71,7 @@ impl ProbeTable {
 
                             let left_refs = l_table.0.as_slice();
 
-                            (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx)
+                            (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
                         }
                     }) {
                     indices.as_slice()
@@ -101,7 +104,7 @@ impl ProbeTableBuilder {
                 Self::DEFAULT_SIZE,
                 Default::default(),
             );
-        let compare_fn = build_dyn_multi_array_is_equal(&schema, false, false)?;
+        let compare_fn = build_dyn_multi_array_compare(&schema, false, false)?;
         Ok(Self {
             pt: ProbeTable {
                 schema,
@@ -144,6 +147,7 @@ impl ProbeTableBuilder {
                             i,
                             j_row_idx as usize,
                         )
+                        .is_eq()
                     } else {
                         let j_table = self.pt.tables.get(j_table_idx as usize).unwrap();
 
@@ -155,6 +159,7 @@ impl ProbeTableBuilder {
                             i,
                             j_row_idx as usize,
                         )
+                        .is_eq()
                     }
                 }
             });
