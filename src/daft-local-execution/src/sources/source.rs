@@ -24,8 +24,8 @@ impl SourceActor {
     }
 
     #[instrument(level = "info", skip(self), name = "SourceActor::run")]
-    pub async fn run(&mut self, in_order: bool) -> DaftResult<()> {
-        let mut source_stream = self.source.get_data(in_order);
+    pub async fn run(&mut self, maintain_order: bool) -> DaftResult<()> {
+        let mut source_stream = self.source.get_data(maintain_order);
         while let Some(val) = source_stream.next().in_current_span().await {
             let _ = self.sender.get_next_sender().send(val).await;
         }
@@ -33,11 +33,11 @@ impl SourceActor {
     }
 }
 pub fn run_source(source: Arc<dyn Source>, sender: MultiSender) {
-    let in_order = sender.in_order();
+    let maintain_order = sender.in_order();
     let mut actor = SourceActor::new(source, sender);
     tokio::spawn(
         async move {
-            let _ = actor.run(in_order).in_current_span().await;
+            let _ = actor.run(maintain_order).in_current_span().await;
         }
         .in_current_span(),
     );

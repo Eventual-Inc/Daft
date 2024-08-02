@@ -144,7 +144,7 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
+) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_csv_single(
         &uri,
         convert_options,
@@ -333,7 +333,7 @@ async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -417,10 +417,7 @@ async fn stream_csv_single(
         .map(|r| match r {
             Ok(table) => table,
             Err(e) => Err(e.into()),
-        })
-        // Chunk the tables into chunks of size max_chunks_in_flight.
-        .try_ready_chunks(max_chunks_in_flight)
-        .map_err(|e| DaftError::ComputeError(e.to_string()));
+        });
     Ok(tables)
 }
 

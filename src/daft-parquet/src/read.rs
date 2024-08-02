@@ -1,12 +1,11 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    num::NonZeroUsize,
     sync::Arc,
     time::Duration,
 };
 
 use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 use daft_core::{
     datatypes::{BooleanArray, Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
@@ -336,7 +335,7 @@ async fn stream_parquet_single(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     in_order: bool,
-) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
     let num_rows_to_return = num_rows;
@@ -358,7 +357,7 @@ async fn stream_parquet_single(
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
 
-    let (metadata, stream) = if matches!(source_type, SourceType::File) {
+    let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_stream(
             fixed_uri.as_ref(),
             columns_to_return,
@@ -417,38 +416,31 @@ async fn stream_parquet_single(
     }?;
 
     let metadata_num_columns = metadata.schema().fields().len();
-    let max_ready_chunks = std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(1).unwrap())
-        .into();
+    let validated_table_stream = table_stream.map(move |table| {
+        let table = table?;
 
-    let chunked_stream = stream
-        .map(move |table| {
-            let table = table?;
+        let expected_num_columns = if let Some(columns) = requested_columns {
+            columns
+        } else {
+            metadata_num_columns
+        };
 
-            let expected_num_columns = if let Some(columns) = requested_columns {
-                columns
-            } else {
-                metadata_num_columns
-            };
-
-            if (!field_id_mapping_provided
-                && requested_columns.is_none()
-                && table.num_columns() != expected_num_columns)
-                || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
-                || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
-            {
-                return Err(super::Error::ParquetNumColumnMismatch {
-                    path: uri.to_string(),
-                    metadata_num_columns: expected_num_columns,
-                    read_columns: table.num_columns(),
-                }
-                .into());
+        if (!field_id_mapping_provided
+            && requested_columns.is_none()
+            && table.num_columns() != expected_num_columns)
+            || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
+            || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
+        {
+            return Err(super::Error::ParquetNumColumnMismatch {
+                path: uri.to_string(),
+                metadata_num_columns: expected_num_columns,
+                read_columns: table.num_columns(),
             }
-            DaftResult::Ok(table)
-        })
-        .try_ready_chunks(max_ready_chunks)
-        .map_err(|e| DaftError::ComputeError(e.to_string()));
-    Ok(chunked_stream)
+            .into());
+        }
+        DaftResult::Ok(table)
+    });
+    Ok(validated_table_stream)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -770,24 +762,23 @@ pub async fn stream_parquet(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     in_order: bool,
-) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
-    Ok(Box::pin(
-        stream_parquet_single(
-            uri.to_string(),
-            columns,
-            start_offset,
-            num_rows,
-            row_groups,
-            predicate,
-            io_client,
-            io_stats,
-            *schema_infer_options,
-            field_id_mapping,
-            metadata,
-            in_order,
-        )
-        .await?,
-    ))
+) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+    let stream = stream_parquet_single(
+        uri.to_string(),
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        predicate,
+        io_client,
+        io_stats,
+        *schema_infer_options,
+        field_id_mapping,
+        metadata,
+        in_order,
+    )
+    .await?;
+    Ok(Box::pin(stream))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1007,7 +998,6 @@ mod tests {
     use common_error::DaftResult;
 
     use daft_io::{IOClient, IOConfig};
-    use futures::StreamExt;
 
     use super::read_parquet;
     #[test]

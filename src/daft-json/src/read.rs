@@ -296,8 +296,7 @@ pub async fn stream_json(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
-    // BoxStream::
+) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -381,10 +380,7 @@ pub async fn stream_json(
         .map(|r| match r {
             Ok(table) => table,
             Err(e) => Err(e.into()),
-        })
-        // Chunk the tables into chunks of size max_chunks_in_flight.
-        .try_ready_chunks(max_chunks_in_flight)
-        .map_err(|e| DaftError::ComputeError(e.to_string()));
+        });
     Ok(Box::pin(tables))
 }
 
