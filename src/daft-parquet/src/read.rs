@@ -334,7 +334,7 @@ async fn stream_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-    in_order: bool,
+    maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
@@ -369,7 +369,7 @@ async fn stream_parquet_single(
             predicate.clone(),
             schema_infer_options,
             metadata,
-            in_order,
+            maintain_order,
         )
     } else {
         let builder = ParquetReaderBuilder::from_uri(
@@ -761,7 +761,7 @@ pub async fn stream_parquet(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-    in_order: bool,
+    maintain_order: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_parquet_single(
         uri.to_string(),
@@ -775,7 +775,7 @@ pub async fn stream_parquet(
         *schema_infer_options,
         field_id_mapping,
         metadata,
-        in_order,
+        maintain_order,
     )
     .await?;
     Ok(Box::pin(stream))

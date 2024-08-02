@@ -18,7 +18,7 @@ impl InMemorySource {
 
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip(self))]
-    fn get_data(&self, in_order: bool) -> SourceStream {
+    fn get_data(&self, maintain_order: bool) -> SourceStream {
         stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
 }

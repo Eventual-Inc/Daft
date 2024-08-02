@@ -363,7 +363,7 @@ pub(crate) fn local_parquet_stream(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
-    in_order: bool,
+    maintain_order: bool,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
@@ -492,7 +492,7 @@ pub(crate) fn local_parquet_stream(
             .map(ReceiverStream::new),
     );
 
-    match in_order {
+    match maintain_order {
         true => Ok((metadata, Box::pin(result_stream.flatten()))),
         false => Ok((metadata, Box::pin(result_stream.flatten_unordered(None)))),
     }

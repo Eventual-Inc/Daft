@@ -226,6 +226,7 @@ async fn stream_scan_task(
                         io_client.clone(),
                         io_stats.clone(),
                         None,
+                        // maintain_order, TODO: Implement maintain_order for CSV
                     )
                     .await?
                 }
@@ -256,6 +257,7 @@ async fn stream_scan_task(
                         io_client,
                         io_stats,
                         None,
+                        // maintain_order, TODO: Implement maintain_order for JSON
                     )
                     .await?
                 }

@@ -10,7 +10,7 @@ use crate::channel::MultiSender;
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
-    fn get_data(&self, in_order: bool) -> SourceStream;
+    fn get_data(&self, maintain_order: bool) -> SourceStream;
 }
 
 pub struct SourceActor {
