@@ -364,7 +364,7 @@ async fn stream_parquet_single(
             columns_to_read,
             start_offset,
             num_rows_to_return,
-            num_rows,
+            num_rows_to_read,
             row_groups.clone(),
             predicate.clone(),
             schema_infer_options,
@@ -416,31 +416,47 @@ async fn stream_parquet_single(
     }?;
 
     let metadata_num_columns = metadata.schema().fields().len();
-    let validated_table_stream = table_stream.map(move |table| {
-        let table = table?;
+    let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
+    let finalized_table_stream = table_stream
+        .map(move |table| {
+            let table = table?;
 
-        let expected_num_columns = if let Some(columns) = requested_columns {
-            columns
-        } else {
-            metadata_num_columns
-        };
+            let expected_num_columns = if let Some(columns) = requested_columns {
+                columns
+            } else {
+                metadata_num_columns
+            };
 
-        if (!field_id_mapping_provided
-            && requested_columns.is_none()
-            && table.num_columns() != expected_num_columns)
-            || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
-            || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
-        {
-            return Err(super::Error::ParquetNumColumnMismatch {
-                path: uri.to_string(),
-                metadata_num_columns: expected_num_columns,
-                read_columns: table.num_columns(),
+            if (!field_id_mapping_provided
+                && requested_columns.is_none()
+                && table.num_columns() != expected_num_columns)
+                || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
+                || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
+            {
+                return Err(super::Error::ParquetNumColumnMismatch {
+                    path: uri.to_string(),
+                    metadata_num_columns: expected_num_columns,
+                    read_columns: table.num_columns(),
+                }
+                .into());
             }
-            .into());
-        }
-        DaftResult::Ok(table)
-    });
-    Ok(validated_table_stream)
+            DaftResult::Ok(table)
+        })
+        .try_take_while(move |table| {
+            match remaining_rows {
+                // Limit has been met, early-terminate.
+                Some(rows_left) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                Some(rows_left) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // No limit, never early-terminate.
+                None => futures::future::ready(Ok(true)),
+            }
+        });
+
+    Ok(finalized_table_stream)
 }
 
 #[allow(clippy::too_many_arguments)]
