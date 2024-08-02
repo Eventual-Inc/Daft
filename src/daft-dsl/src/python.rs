@@ -149,6 +149,7 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn stateless_udf(
     py: Python,
+    name: &str,
     partial_stateless_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
@@ -160,7 +161,13 @@ pub fn stateless_udf(
     let partial_stateless_udf = partial_stateless_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: stateless_udf(partial_stateless_udf, &expressions_map, return_dtype.dtype)?.into(),
+        expr: stateless_udf(
+            name,
+            partial_stateless_udf,
+            &expressions_map,
+            return_dtype.dtype,
+        )?
+        .into(),
     })
 }
 
@@ -171,6 +178,7 @@ pub fn stateless_udf(
 #[pyfunction]
 pub fn stateful_udf(
     py: Python,
+    name: &str,
     partial_stateful_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
@@ -182,7 +190,13 @@ pub fn stateful_udf(
     let partial_stateful_udf = partial_stateful_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: stateful_udf(partial_stateful_udf, &expressions_map, return_dtype.dtype)?.into(),
+        expr: stateful_udf(
+            name,
+            partial_stateful_udf,
+            &expressions_map,
+            return_dtype.dtype,
+        )?
+        .into(),
     })
 }
 

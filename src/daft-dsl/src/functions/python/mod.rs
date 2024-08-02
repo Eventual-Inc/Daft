@@ -1,6 +1,8 @@
 mod partial_udf;
 mod udf;
 
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::datatypes::DataType;
 use serde::{Deserialize, Serialize};
@@ -27,6 +29,7 @@ impl PythonUDF {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StatelessPythonUDF {
+    pub name: Arc<String>,
     partial_func: partial_udf::PyPartialUDF,
     num_expressions: usize,
     pub return_dtype: DataType,
@@ -34,18 +37,21 @@ pub struct StatelessPythonUDF {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StatefulPythonUDF {
+    pub name: Arc<String>,
     pub stateful_partial_func: partial_udf::PyPartialUDF,
     num_expressions: usize,
     pub return_dtype: DataType,
 }
 
 pub fn stateless_udf(
+    name: &str,
     py_partial_stateless_udf: pyo3::PyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
+            name: name.to_string().into(),
             partial_func: partial_udf::PyPartialUDF(py_partial_stateless_udf),
             num_expressions: expressions.len(),
             return_dtype,
@@ -55,12 +61,14 @@ pub fn stateless_udf(
 }
 
 pub fn stateful_udf(
+    name: &str,
     py_stateful_partial_func: pyo3::PyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+            name: name.to_string().into(),
             stateful_partial_func: partial_udf::PyPartialUDF(py_stateful_partial_func),
             num_expressions: expressions.len(),
             return_dtype,

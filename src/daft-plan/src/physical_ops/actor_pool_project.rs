@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_treenode::TreeNode;
 use daft_dsl::{
-    functions::{python::PythonUDF, FunctionExpr},
+    functions::{
+        python::{PythonUDF, StatefulPythonUDF},
+        FunctionExpr,
+    },
     Expr, ExprRef,
 };
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -52,10 +57,35 @@ impl ActorPoolProject {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
+        res.push("ActorPoolProject:".to_string());
         res.push(format!(
-            "ActorPoolProject: {}",
-            // TODO: propagate name of UDF
-            "TODO",
+            "Projection = [{}]",
+            self.projection.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "UDFs = [{}]",
+            self.projection
+                .iter()
+                .flat_map(|proj| {
+                    let mut udf_names = vec![];
+                    proj.apply(|e| {
+                        if let Expr::Function {
+                            func:
+                                FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                                    name,
+                                    ..
+                                })),
+                            ..
+                        } = e.as_ref()
+                        {
+                            udf_names.push(name.clone());
+                        }
+                        Ok(common_treenode::TreeNodeRecursion::Continue)
+                    })
+                    .unwrap();
+                    udf_names
+                })
+                .join(", ")
         ));
         res.push(format!("Num actors = {}", self.num_actors,));
         res.push(format!(

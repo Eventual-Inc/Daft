@@ -163,6 +163,7 @@ class PartialStatefulUDF:
 
 @dataclasses.dataclass
 class StatelessUDF(UDF):
+    name: str
     func: UserProvidedPythonFunction
     return_dtype: DataType
 
@@ -178,6 +179,7 @@ class StatelessUDF(UDF):
         bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
         expressions = list(bound_args.expressions().values())
         return Expression.stateless_udf(
+            name=self.name,
             partial=PartialStatelessUDF(self.func, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
@@ -195,6 +197,7 @@ class StatelessUDF(UDF):
 
 @dataclasses.dataclass
 class StatefulUDF(UDF):
+    name: str
     cls: type
     return_dtype: DataType
 
@@ -210,6 +213,7 @@ class StatefulUDF(UDF):
         bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
         expressions = list(bound_args.expressions().values())
         return Expression.stateful_udf(
+            name=self.name,
             partial=PartialStatefulUDF(self.cls, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
@@ -284,13 +288,21 @@ def udf(
     """
 
     def _udf(f: UserProvidedPythonFunction | type) -> UDF:
+        # Grab a name for the UDF. It **should** be unique.
+        name = getattr(f, "__module__", default="")  # type: ignore[call-overload]
+        if name:
+            name = name + "."
+        name = name + getattr(f, "__qualname__")  # type: ignore[call-overload]
+
         if inspect.isclass(f):
             return StatefulUDF(
+                name=name,
                 cls=f,
                 return_dtype=return_dtype,
             )
         else:
             return StatelessUDF(
+                name=name,
                 func=f,
                 return_dtype=return_dtype,
             )

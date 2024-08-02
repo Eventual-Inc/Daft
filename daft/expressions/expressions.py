@@ -230,17 +230,22 @@ class Expression:
 
     @staticmethod
     def stateless_udf(
+        name: builtins.str,
         partial: PartialStatelessUDF,
         expressions: builtins.list[Expression],
         return_dtype: DataType,
     ) -> Expression:
-        return Expression._from_pyexpr(_stateless_udf(partial, [e._expr for e in expressions], return_dtype._dtype))
+        return Expression._from_pyexpr(
+            _stateless_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype)
+        )
 
     @staticmethod
     def stateful_udf(
-        partial: PartialStatefulUDF, expressions: builtins.list[Expression], return_dtype: DataType
+        name: builtins.str, partial: PartialStatefulUDF, expressions: builtins.list[Expression], return_dtype: DataType
     ) -> Expression:
-        return Expression._from_pyexpr(_stateful_udf(partial, [e._expr for e in expressions], return_dtype._dtype))
+        return Expression._from_pyexpr(
+            _stateful_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype)
+        )
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -799,7 +804,12 @@ class Expression:
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
 
-        return StatelessUDF(func=batch_func, return_dtype=return_dtype)(self)
+        name = getattr(func, "__module__", default="")  # type: ignore[call-overload]
+        if name:
+            name = name + "."
+        name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
+
+        return StatelessUDF(name=name, func=batch_func, return_dtype=return_dtype)(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)

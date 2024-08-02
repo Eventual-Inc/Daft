@@ -78,7 +78,7 @@ def project(
 def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     projection: list[PyExpr],
-    partial_stateful_udfs: list[PartialStatefulUDF],
+    partial_stateful_udfs: dict[str, PartialStatefulUDF],
     resource_request: ResourceRequest,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
