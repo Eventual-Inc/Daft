@@ -289,7 +289,7 @@ def udf(
 
     def _udf(f: UserProvidedPythonFunction | type) -> UDF:
         # Grab a name for the UDF. It **should** be unique.
-        name = getattr(f, "__module__", default="")  # type: ignore[call-overload]
+        name = getattr(f, "__module__", "")  # type: ignore[call-overload]
         if name:
             name = name + "."
         name = name + getattr(f, "__qualname__")  # type: ignore[call-overload]

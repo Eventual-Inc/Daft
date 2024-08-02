@@ -804,7 +804,7 @@ class Expression:
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
 
-        name = getattr(func, "__module__", default="")  # type: ignore[call-overload]
+        name = getattr(func, "__module__", "")  # type: ignore[call-overload]
         if name:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
