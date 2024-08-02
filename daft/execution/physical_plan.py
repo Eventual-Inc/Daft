@@ -203,7 +203,8 @@ def pipeline_instruction(
 
 def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    partial_stateful_udf: PartialStatefulUDF,
+    projection: ExpressionsProjection,
+    partial_stateful_udfs: list[PartialStatefulUDF],
     resource_request: execution_step.ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:

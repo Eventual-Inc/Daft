@@ -17,6 +17,8 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
 
+#[cfg(feature = "python")]
+use crate::logical_ops::ActorPoolProject as LogicalActorPoolProject;
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
     Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
@@ -107,6 +109,22 @@ pub(super) fn translate_single_logical_node(
                 input_physical,
                 projection.clone(),
                 resource_request.clone(),
+            )?)
+            .arced())
+        }
+        #[cfg(feature = "python")]
+        LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
+            projection,
+            resource_request,
+            num_actors,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                input_physical,
+                projection.clone(),
+                resource_request.clone(),
+                *num_actors,
             )?)
             .arced())
         }

@@ -31,3 +31,8 @@ pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;
 pub use unpivot::Unpivot;
+
+#[cfg(feature = "python")]
+mod actor_pool_project;
+#[cfg(feature = "python")]
+pub use actor_pool_project::ActorPoolProject;
