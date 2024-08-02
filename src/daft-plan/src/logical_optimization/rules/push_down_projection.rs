@@ -2,10 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
+use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
-use daft_dsl::{
-    col, functions::FunctionExpr, optimization::replace_columns_with_expressions, Expr, ExprRef,
-};
+use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
 use indexmap::IndexSet;
 
 #[cfg(feature = "python")]
@@ -241,8 +240,6 @@ impl PushDownProjection {
             }
             #[cfg(feature = "python")]
             LogicalPlan::ActorPoolProject(upstream_actor_pool_projection) => {
-                use daft_dsl::functions::python::PythonUDF;
-
                 // Prune columns from the child ActorPoolProjection that are not used in this projection.
                 let required_columns = &plan.required_columns()[0];
                 if required_columns.len() < upstream_schema.names().len() {
@@ -253,18 +250,18 @@ impl PushDownProjection {
                         .cloned()
                         .collect::<Vec<_>>();
 
-                    // If we end up pruning all StatefulUDF expressions, we should just get rid of the ActorPoolProject node altogether since it
-                    // no longer serves any purpose
-                    let any_stateful = pruned_upstream_projections.iter().any(|e| {
-                        matches!(
-                            e.as_ref(),
-                            Expr::Function {
-                                func: FunctionExpr::Python(PythonUDF::Stateful(..)),
-                                ..
-                            }
-                        )
-                    });
-                    let new_upstream = if !any_stateful {
+                    // If all StatefulUDF expressions end up being pruned, the ActorPoolProject should essentially become
+                    // a no-op passthrough projection for the rest of the columns. In this case, we should just get rid of it
+                    // altogether since it serves no purpose.
+                    let all_projections_are_just_colexprs =
+                        pruned_upstream_projections.iter().all(|proj| {
+                            !proj.exists(|e| match e.as_ref() {
+                                Expr::Column(_) => false,
+                                // Check for existence of any non-ColumnExprs
+                                _ => true,
+                            })
+                        });
+                    let new_upstream = if all_projections_are_just_colexprs {
                         upstream_plan.children()[0].clone()
                     } else {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
