@@ -89,7 +89,6 @@ pub(crate) fn local_parquet_read_into_column_iters(
         });
     }
 
-    // Use block in place to read metadata as the current function is in an asynchronous context.
     let metadata = match metadata {
         Some(m) => m,
         None => read::read_metadata(&mut reader)
