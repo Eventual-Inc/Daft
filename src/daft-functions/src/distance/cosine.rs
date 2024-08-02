@@ -10,7 +10,47 @@ use daft_dsl::{
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
-use simsimd::SpatialSimilarity;
+
+trait SpatialSimilarity {
+    fn cosine(a: &[Self], b: &[Self]) -> Option<f64>
+    where
+        Self: Sized;
+}
+
+impl SpatialSimilarity for f64 {
+    fn cosine(a: &[Self], b: &[Self]) -> Option<f64> {
+        let xy = a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+        let x_sq = a.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
+        let y_sq = b.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
+        Some(1.0 - xy / (x_sq * y_sq))
+    }
+}
+
+impl SpatialSimilarity for f32 {
+    fn cosine(a: &[Self], b: &[Self]) -> Option<f64> {
+        let xy = a
+            .iter()
+            .zip(b)
+            .map(|(a, b)| *a as f64 * *b as f64)
+            .sum::<f64>();
+        let x_sq = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        let y_sq = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        Some(1.0 - xy / (x_sq * y_sq))
+    }
+}
+
+impl SpatialSimilarity for i8 {
+    fn cosine(a: &[Self], b: &[Self]) -> Option<f64> {
+        let xy = a
+            .iter()
+            .zip(b)
+            .map(|(a, b)| *a as f64 * *b as f64)
+            .sum::<f64>();
+        let x_sq = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        let y_sq = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        Some(1.0 - xy / (x_sq * y_sq))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CosineDistanceFunction {}
