@@ -36,16 +36,21 @@ impl StreamingSink for LimitSink {
 
         let input_num_rows = input.len();
 
-        if input_num_rows == self.remaining {
-            self.remaining = 0;
-            Ok(StreamSinkOutput::Finished(Some(input.clone())))
-        } else if input_num_rows > self.remaining {
-            let taken = input.head(self.remaining)?;
-            self.remaining -= taken.len();
-            Ok(StreamSinkOutput::Finished(Some(Arc::new(taken))))
-        } else {
-            self.remaining -= input_num_rows;
-            Ok(StreamSinkOutput::NeedMoreInput(Some(input.clone())))
+        use std::cmp::Ordering::*;
+        match input_num_rows.cmp(&self.remaining) {
+            Less => {
+                self.remaining -= input_num_rows;
+                Ok(StreamSinkOutput::NeedMoreInput(Some(input.clone())))
+            }
+            Equal => {
+                self.remaining = 0;
+                Ok(StreamSinkOutput::Finished(Some(input.clone())))
+            }
+            Greater => {
+                let taken = input.head(self.remaining)?;
+                self.remaining -= taken.len();
+                Ok(StreamSinkOutput::Finished(Some(Arc::new(taken))))
+            }
         }
     }
 
