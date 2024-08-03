@@ -135,7 +135,7 @@ pub struct JoinOutputMapper {
 }
 
 impl JoinOutputMapper {
-    pub(super) fn try_new(mapping: Vec<JoinOutputColumn>) -> DaftResult<Self> {
+    fn try_new(mapping: Vec<JoinOutputColumn>) -> DaftResult<Self> {
         let left_schema = Schema::new(
             mapping
                 .iter()
@@ -200,7 +200,6 @@ pub fn infer_join_schema_mapper(
         return JoinOutputMapper::try_new(
             left.fields
                 .values()
-                .into_iter()
                 .enumerate()
                 .map(|(i, f)| JoinOutputColumn {
                     is_right: false,

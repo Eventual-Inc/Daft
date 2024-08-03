@@ -27,7 +27,7 @@ impl<'a> GrowableTable<'a> {
         }
         let growables = series_list
             .into_iter()
-            .zip(schema.fields.values().into_iter())
+            .zip(schema.fields.values())
             .map(|(vector, f)| make_growable(&f.name, &f.dtype, vector, use_validity, capacity))
             .collect::<Vec<_>>();
         Self { growables }

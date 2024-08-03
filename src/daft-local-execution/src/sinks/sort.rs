@@ -8,10 +8,7 @@ use tracing::instrument;
 
 use crate::sources::source::Source;
 
-use super::{
-    blocking_sink::{BlockingSink, BlockingSinkStatus},
-    sink::{Sink, SinkResultType},
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
 pub struct SortSink {
     sort_by: Vec<ExprRef>,

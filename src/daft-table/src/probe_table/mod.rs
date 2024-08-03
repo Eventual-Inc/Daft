@@ -1,16 +1,11 @@
-use std::{
-    cmp::Ordering,
-    collections::{hash_map::RawEntryMut, HashMap},
-};
+use std::collections::{hash_map::RawEntryMut, HashMap};
 
-use arrow2::array::Array;
 use common_error::DaftResult;
 use daft_core::{
-    array::{
-        ops::{arrow2::comparison2::build_dyn_multi_array_compare, as_arrow::AsArrow},
-        DataArray,
+    array::ops::{
+        arrow2::comparison2::{build_dyn_multi_array_compare, MultiDynArrayComparator},
+        as_arrow::AsArrow,
     },
-    datatypes::UInt64Array,
     schema::SchemaRef,
 };
 
@@ -25,8 +20,7 @@ pub struct ProbeTable {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
-    compare_fn:
-        Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>,
+    compare_fn: MultiDynArrayComparator,
 }
 
 impl ProbeTable {
@@ -60,8 +54,7 @@ impl ProbeTable {
             .schema
             .fields
             .values()
-            .into_iter()
-            .zip(right.schema.fields.values().into_iter())
+            .zip(right.schema.fields.values())
             .all(|(l, r)| l.dtype == r.dtype));
 
         let r_hashes = right.hash_rows()?;
@@ -76,8 +69,8 @@ impl ProbeTable {
 
         Ok(iter
             .enumerate()
-            .filter_map(|(i, h)| h.and_then(|h| Some((i, h))))
-            .map(move |(r_idx, h)| {
+            .filter_map(|(i, h)| h.map(|h| (i, h)))
+            .flat_map(move |(r_idx, h)| {
                 let indices = if let Some((_, indices)) =
                     self.hash_table.raw_entry().from_hash(h, |other| {
                         h == other.hash && {
@@ -85,7 +78,7 @@ impl ProbeTable {
                             let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
                             let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
 
-                            let l_table = self.tables.get(l_table_idx as usize).unwrap();
+                            let l_table = self.tables.get(l_table_idx).unwrap();
 
                             let left_refs = l_table.0.as_slice();
 
@@ -101,8 +94,7 @@ impl ProbeTable {
                     let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
                     (l_table_idx as u32, l_row_idx as u64, r_idx as u64)
                 })
-            })
-            .flatten())
+            }))
     }
 
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {
@@ -131,20 +123,14 @@ impl ProbeTable {
                     let j_row_idx = (j_idx & Self::LOWER_MASK) as usize;
 
                     if table_idx == j_table_idx {
-                        (self.compare_fn)(
-                            &current_array_refs,
-                            &current_array_refs,
-                            i,
-                            j_row_idx as usize,
-                        )
-                        .is_eq()
+                        (self.compare_fn)(current_array_refs, current_array_refs, i, j_row_idx)
+                            .is_eq()
                     } else {
-                        let j_table = self.tables.get(j_table_idx as usize).unwrap();
+                        let j_table = self.tables.get(j_table_idx).unwrap();
 
                         let array_refs = j_table.0.as_slice();
 
-                        (self.compare_fn)(&current_array_refs, &array_refs, i, j_row_idx as usize)
-                            .is_eq()
+                        (self.compare_fn)(current_array_refs, array_refs, i, j_row_idx).is_eq()
                     }
                 }
             });

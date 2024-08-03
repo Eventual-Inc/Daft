@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use crate::{
     channel::{create_channel, SingleSender},
-    pipeline2::PipelineNode,
     DEFAULT_MORSEL_SIZE,
 };
 

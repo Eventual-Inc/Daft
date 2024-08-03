@@ -1,7 +1,7 @@
-use std::{collections::HashMap, os::macos::raw::stat, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    channel::{create_channel, spawn_compute_task, MultiReceiver},
+    channel::{create_channel, spawn_compute_task},
     intermediate_ops::{
         aggregate::AggregateOperator,
         filter::FilterOperator,
@@ -13,14 +13,10 @@ use crate::{
         blocking_sink::{BlockingSink, BlockingSinkStatus},
         hash_join::HashJoinOperator,
         limit::LimitSink,
-        sink::SinkActor,
         sort::SortSink,
         streaming_sink::{StreamSinkOutput, StreamingSink},
     },
-    sources::{
-        in_memory::InMemorySource,
-        source::{Source, SourceActor},
-    },
+    sources::{in_memory::InMemorySource, source::Source},
     NUM_CPUS,
 };
 
@@ -33,10 +29,7 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
-use futures::{
-    future::{join_all, try_join_all},
-    stream, StreamExt,
-};
+use futures::StreamExt;
 use tracing::{info_span, Instrument};
 
 use crate::channel::MultiSender;
@@ -150,8 +143,7 @@ impl PipelineNode for HashJoinNode {
         });
         // should wrap in context join handle
 
-        let (right_sender, mut streaming_receiver) =
-            create_channel(*NUM_CPUS, destination.in_order());
+        let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         self.right.start(right_sender).await?;
 

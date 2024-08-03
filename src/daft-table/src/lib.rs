@@ -4,7 +4,7 @@
 use core::slice;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{format, Display, Formatter, Result};
+use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;

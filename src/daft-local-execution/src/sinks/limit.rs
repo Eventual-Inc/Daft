@@ -4,10 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::{
-    sink::{Sink, SinkResultType},
-    streaming_sink::{StreamSinkOutput, StreamingSink},
-};
+use super::streaming_sink::{StreamSinkOutput, StreamingSink};
 
 #[derive(Clone)]
 pub struct LimitSink {

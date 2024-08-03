@@ -1,9 +1,8 @@
-use std::{marker::PhantomPinned, pin::Pin, ptr::NonNull, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
     datatypes::Field,
-    join,
     schema::{Schema, SchemaRef},
     utils::supertype,
 };
@@ -11,13 +10,13 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use futures::{stream, StreamExt};
-use tracing::{info_span, instrument};
+use tracing::info_span;
 
 use crate::{intermediate_ops::intermediate_op::IntermediateOperator, sources::source::Source};
 
 use super::{
     blocking_sink::{BlockingSink, BlockingSinkStatus},
-    sink::{Sink, SinkResultType},
+    sink::Sink,
 };
 use daft_table::{
     infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table,
@@ -54,7 +53,7 @@ impl HashJoinState {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             for table in input.get_tables()?.iter() {
                 tables.push(table.clone());
-                let join_keys = table.eval_expression_list(&projection)?;
+                let join_keys = table.eval_expression_list(projection)?;
 
                 probe_table_builder.add_table(&join_keys)?;
             }
@@ -106,11 +105,11 @@ impl HashJoinOperator {
     ) -> DaftResult<Self> {
         let left_key_fields = left_on
             .iter()
-            .map(|e| e.to_field(&left_schema))
+            .map(|e| e.to_field(left_schema))
             .collect::<DaftResult<Vec<_>>>()?;
         let right_key_fields = right_on
             .iter()
-            .map(|e| e.to_field(&right_schema))
+            .map(|e| e.to_field(right_schema))
             .collect::<DaftResult<Vec<_>>>()?;
         let key_schema: SchemaRef = Schema::new(
             left_key_fields
@@ -126,16 +125,16 @@ impl HashJoinOperator {
         .into();
 
         let join_mapper =
-            infer_join_schema_mapper(&left_schema, &right_schema, &left_on, &right_on, join_type)?;
+            infer_join_schema_mapper(left_schema, right_schema, &left_on, &right_on, join_type)?;
 
         let left_on = left_on
             .into_iter()
-            .zip(key_schema.fields.values().into_iter())
+            .zip(key_schema.fields.values())
             .map(|(e, f)| e.cast(&f.dtype))
             .collect::<Vec<_>>();
         let right_on = right_on
             .into_iter()
-            .zip(key_schema.fields.values().into_iter())
+            .zip(key_schema.fields.values())
             .map(|(e, f)| e.cast(&f.dtype))
             .collect::<Vec<_>>();
 
