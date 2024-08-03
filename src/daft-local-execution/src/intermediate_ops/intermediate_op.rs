@@ -6,8 +6,8 @@ use tracing::{info_span, instrument};
 
 use crate::{
     channel::{
-        create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
-        SingleReceiver, SingleSender,
+        create_single_channel, spawn_compute_task, MultiReceiver, MultiSender, SingleReceiver,
+        SingleSender,
     },
     DEFAULT_MORSEL_SIZE,
 };

@@ -26,7 +26,6 @@ use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 use futures::StreamExt;
@@ -380,12 +379,7 @@ pub fn physical_plan_to_pipeline(
             // let right_child = physical_plan_to_pipeline(other, psets)?;
             // PipelineNode::double_sink(sink, left_child, right_child)
         }
-        LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
-            input,
-            aggregations,
-            schema,
-            ..
-        }) => {
+        LocalPhysicalPlan::UnGroupedAggregate(_) => {
             todo!("agg")
             // let (first_stage_aggs, second_stage_aggs, final_exprs) =
             //     populate_aggregation_stages(aggregations, schema, &[]);
@@ -474,7 +468,7 @@ pub fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
-            schema,
+            ..
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();

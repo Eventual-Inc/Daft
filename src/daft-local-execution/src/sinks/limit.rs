@@ -8,6 +8,7 @@ use super::streaming_sink::{StreamSinkOutput, StreamingSink};
 
 #[derive(Clone)]
 pub struct LimitSink {
+    #[allow(dead_code)]
     limit: usize,
     remaining: usize,
 }

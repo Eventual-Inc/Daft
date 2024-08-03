@@ -7,6 +7,7 @@ use crate::sources::source::Source;
 
 pub enum BlockingSinkStatus {
     NeedMoreInput,
+    #[allow(dead_code)]
     Finished,
 }
 
@@ -15,6 +16,7 @@ pub trait BlockingSink: Send + Sync {
     fn finalize(&mut self) -> DaftResult<()> {
         Ok(())
     }
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
     fn as_source(&mut self) -> &mut dyn Source;
 }
