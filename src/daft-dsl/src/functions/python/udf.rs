@@ -151,6 +151,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
 
     #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+        use crate::functions::python::udf_runtime_binding::UDFRuntimeBinding;
         use pyo3::Python;
 
         if inputs.len() != self.num_expressions {
@@ -161,24 +162,27 @@ impl FunctionEvaluator for StatefulPythonUDF {
             )));
         }
 
-        Python::with_gil(|py| {
-            // Extract the required Python objects to call our run_udf helper
-            let func = self
-                .stateful_partial_func
-                .0
-                .getattr(py, pyo3::intern!(py, "func_cls"))?;
-            let bound_args = self
-                .stateful_partial_func
-                .0
-                .getattr(py, pyo3::intern!(py, "bound_args"))?;
-
-            // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
-            // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
-            // Either that, or the code-path to evaluate a StatefulUDF should bypass `evaluate` entirely and do its own thing.
-            let func = func.call0(py)?;
-
-            run_udf(py, inputs, func, bound_args, &self.return_dtype)
-        })
+        if let UDFRuntimeBinding::Bound(func) = &self.runtime_binding {
+            Python::with_gil(|py| {
+                // Extract the required Python objects to call our run_udf helper
+                let bound_args = self
+                    .stateful_partial_func
+                    .0
+                    .getattr(py, pyo3::intern!(py, "bound_args"))?;
+                run_udf(
+                    py,
+                    inputs,
+                    pyo3::Py::clone_ref(func, py),
+                    bound_args,
+                    &self.return_dtype,
+                )
+            })
+        } else {
+            Err(DaftError::InternalError(format!(
+                "StatefulPythonUDF not bound when attempting execution: {}",
+                self.name.as_ref()
+            )))
+        }
     }
 
     #[cfg(not(feature = "python"))]

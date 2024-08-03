@@ -137,10 +137,14 @@ class PyActorPool(ActorPool[MicroPartition]):
         partition: MicroPartition,
         partial_metadata: PartialPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
-        # TODO: implement functionality to override placeholder expressions with initialized expressions
-        # initialized_projection = initialize_projection(uninitialized_projection, initialized_stateful_udfs)
-        initialized_projection = uninitialized_projection
-
+        # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
+        initialized_stateful_udfs = PyActorPool.initialized_stateful_udfs_process_singleton
+        assert (
+            initialized_stateful_udfs is not None
+        ), "PyActor process must be initialized with stateful UDFs before execution"
+        initialized_projection = ExpressionsProjection(
+            [e._bind_stateful_udfs(initialized_stateful_udfs) for e in uninitialized_projection]
+        )
         new_part = partition.eval_expression_list(initialized_projection)
         return [
             PyMaterializedResult(new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata))

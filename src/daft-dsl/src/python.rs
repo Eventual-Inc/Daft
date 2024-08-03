@@ -208,6 +208,16 @@ pub fn extract_partial_stateful_udf_py(expr: PyExpr) -> HashMap<String, Py<PyAny
     extract_partial_stateful_udf_py(expr.expr)
 }
 
+/// Binds the StatefulPythonUDFs in a given expression to any corresponding initialized Python callables in the provided map
+#[pyfunction]
+pub fn bind_stateful_udfs(
+    expr: PyExpr,
+    initialized_funcs: HashMap<String, Py<PyAny>>,
+) -> PyResult<PyExpr> {
+    use crate::functions::python::bind_stateful_udfs;
+    Ok(bind_stateful_udfs(expr.expr, &initialized_funcs).map(PyExpr::from)?)
+}
+
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {

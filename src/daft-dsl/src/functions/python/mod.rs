@@ -1,11 +1,13 @@
 #[cfg(feature = "python")]
 mod partial_udf;
 mod udf;
+#[cfg(feature = "python")]
+mod udf_runtime_binding;
 
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeRecursion};
+use common_error::{DaftError, DaftResult};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::datatypes::DataType;
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +47,8 @@ pub struct StatefulPythonUDF {
     pub stateful_partial_func: partial_udf::PyPartialUDF,
     pub num_expressions: usize,
     pub return_dtype: DataType,
+    #[cfg(feature = "python")]
+    pub runtime_binding: udf_runtime_binding::UDFRuntimeBinding,
 }
 
 #[cfg(feature = "python")]
@@ -94,6 +98,7 @@ pub fn stateful_udf(
             stateful_partial_func: partial_udf::PyPartialUDF(py_stateful_partial_func),
             num_expressions: expressions.len(),
             return_dtype,
+            runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Unbound,
         })),
         inputs: expressions.into(),
     })
@@ -113,6 +118,39 @@ pub fn stateful_udf(
         })),
         inputs: expressions.into(),
     })
+}
+
+/// Binds every StatefulPythonUDF expression to an initialized function provided by an actor
+#[cfg(feature = "python")]
+pub fn bind_stateful_udfs(
+    expr: ExprRef,
+    initialized_funcs: &HashMap<String, pyo3::Py<pyo3::PyAny>>,
+) -> DaftResult<ExprRef> {
+    expr.transform(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(stateful_py_udf)),
+            inputs,
+        } => {
+            let f = initialized_funcs
+                .get(stateful_py_udf.name.as_ref())
+                .ok_or_else(|| {
+                    DaftError::InternalError(format!(
+                        "Unable to find UDF to bind: {}",
+                        stateful_py_udf.name.as_ref()
+                    ))
+                })?;
+            let bound_expr = Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                    runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Bound(f.clone()),
+                    ..stateful_py_udf.clone()
+                })),
+                inputs: inputs.clone(),
+            };
+            Ok(Transformed::yes(bound_expr.into()))
+        }
+        _ => Ok(Transformed::no(e)),
+    })
+    .map(|transformed| transformed.data)
 }
 
 /// Helper function that extracts all PartialStatefulUDF python objects from a given expression tree
