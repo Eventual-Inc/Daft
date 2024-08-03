@@ -25,7 +25,7 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
