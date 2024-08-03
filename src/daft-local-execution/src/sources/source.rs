@@ -32,12 +32,3 @@ impl SourceActor {
         Ok(())
     }
 }
-pub fn run_source(source: Box<dyn Source>, sender: MultiSender) {
-    let mut actor = SourceActor::new(source, sender);
-    tokio::spawn(
-        async move {
-            let _ = actor.run().in_current_span().await;
-        }
-        .in_current_span(),
-    );
-}

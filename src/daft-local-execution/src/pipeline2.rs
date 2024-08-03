@@ -373,7 +373,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
         }
-        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
+        LocalPhysicalPlan::Concat(_) => {
             todo!("concat")
             // let sink = ConcatSink::new();
             // let left_child = physical_plan_to_pipeline(input, psets)?;

@@ -14,10 +14,13 @@ use crate::{
 
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
+    #[allow(dead_code)]
+
     fn name(&self) -> &'static str;
 }
 
 /// The number of rows that will trigger an intermediate operator to output its data.
+#[allow(dead_code)]
 fn get_output_threshold() -> usize {
     env::var("OUTPUT_THRESHOLD")
         .unwrap_or_else(|_| "1000".to_string())
@@ -143,13 +146,4 @@ impl IntermediateOpActor {
         }
         Ok(())
     }
-}
-
-pub fn run_intermediate_op(op: Arc<dyn IntermediateOperator>, send_to: MultiSender) -> MultiSender {
-    let (sender, receiver) = create_channel(*NUM_CPUS, send_to.in_order());
-    let mut actor = IntermediateOpActor::new(op, receiver, send_to);
-    tokio::spawn(async move {
-        let _ = actor.run_parallel().await;
-    });
-    sender
 }

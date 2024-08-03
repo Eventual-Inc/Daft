@@ -1,9 +1,9 @@
 [dependencies]
 async-stream = {workspace = true}
+async-trait = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
-
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
@@ -19,7 +19,7 @@ pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tracing = {workspace = true}
-async-trait = {workspace=true}
+
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python"]
 
