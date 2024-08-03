@@ -43,7 +43,7 @@ impl ActorPoolProject {
                 }
             )
         }) {
-            return Err(DaftError::InternalError("Cannot create ActorPoolProject from an expressions that don't contain a stateful Python UDF".to_string()));
+            return Err(DaftError::InternalError("Cannot create ActorPoolProject from expressions that don't contain a stateful Python UDF".to_string()));
         }
 
         Ok(ActorPoolProject {
