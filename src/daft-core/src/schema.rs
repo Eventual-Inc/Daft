@@ -90,6 +90,10 @@ impl Schema {
         self.fields.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
     pub fn union(&self, other: &Schema) -> DaftResult<Schema> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());

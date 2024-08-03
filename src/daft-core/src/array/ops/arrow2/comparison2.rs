@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
-use std::fmt::format;
 
-use crate::{schema::Schema, DataType, Series};
+use crate::{schema::Schema, DataType};
 
 use arrow2::array::Array;
 use common_error::DaftError;
@@ -49,7 +48,7 @@ pub fn build_dyn_multi_array_compare(
     }
     let combined_fn = Box::new(
         move |left: &[Box<dyn Array>], right: &[Box<dyn Array>], i: usize, j: usize| -> Ordering {
-            for (f, (l, r)) in fn_list.iter().zip(left.into_iter().zip(right.into_iter())) {
+            for (f, (l, r)) in fn_list.iter().zip(left.iter().zip(right.iter())) {
                 match f(l.as_ref(), r.as_ref(), i, j) {
                     std::cmp::Ordering::Equal => continue,
                     other => return other,
