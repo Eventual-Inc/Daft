@@ -33,7 +33,8 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(python::timestamp_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::decimal_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::series_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::udf))?;
+    parent.add_wrapped(wrap_pyfunction!(python::stateless_udf))?;
+    parent.add_wrapped(wrap_pyfunction!(python::stateful_udf))?;
     parent.add_wrapped(wrap_pyfunction!(python::eq))?;
     parent.add_wrapped(wrap_pyfunction!(python::resolve_expr))?;
 

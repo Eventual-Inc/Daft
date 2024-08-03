@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import pytest
 
 import daft
@@ -48,3 +49,34 @@ def test_parse_ok(name, sql):
     print(name)
     print(sql)
     print("--------------")
+
+
+def test_fizzbuzz_sql():
+    arr = np.arange(100)
+    df = daft.from_pydict({"a": arr})
+    catalog = SQLCatalog({"test": df})
+    # test case expression
+    expected = daft.from_pydict(
+        {
+            "a": arr,
+            "fizzbuzz": [
+                "FizzBuzz" if x % 15 == 0 else "Fizz" if x % 3 == 0 else "Buzz" if x % 5 == 0 else str(x)
+                for x in range(0, 100)
+            ],
+        }
+    ).collect()
+    df = daft.sql(
+        """
+    SELECT
+        a,
+        CASE
+            WHEN a % 15 = 0 THEN 'FizzBuzz'
+            WHEN a % 3 = 0 THEN 'Fizz'
+            WHEN a % 5 = 0 THEN 'Buzz'
+            ELSE CAST(a AS TEXT)
+        END AS fizzbuzz
+    FROM test
+    """,
+        catalog=catalog,
+    ).collect()
+    assert df.to_pydict() == expected.to_pydict()

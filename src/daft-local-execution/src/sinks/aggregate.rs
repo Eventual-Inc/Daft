@@ -67,7 +67,7 @@ impl BlockingSink for AggregateSink {
 }
 
 impl Source for AggregateSink {
-    fn get_data(&self) -> crate::sources::source::SourceStream {
+    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         if let AggregateState::Done(parts) = &self.state {
             stream::iter([Ok(parts.clone())]).boxed()
         } else {

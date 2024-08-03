@@ -172,7 +172,7 @@ impl PipelineNode for SourceNode {
         let op = self.source_op.clone();
         tokio::spawn(async move {
             let guard = op.lock().await;
-            let mut source_stream = guard.get_data();
+            let mut source_stream = guard.get_data(destination.in_order());
             while let Some(val) = source_stream.next().in_current_span().await {
                 let _ = destination.get_next_sender().send(val).await;
             }
@@ -309,7 +309,7 @@ impl PipelineNode for BlockingSinkNode {
         tokio::spawn(async move {
             let mut guard = op.lock().await;
             let source = guard.as_source();
-            let mut source_stream = source.get_data();
+            let mut source_stream = source.get_data(destination.in_order());
             while let Some(val) = source_stream.next().in_current_span().await {
                 let _ = destination.get_next_sender().send(val).await;
             }

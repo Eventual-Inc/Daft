@@ -1677,6 +1677,7 @@ name = "daft-dsl"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "common-py-serde",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -1702,7 +1703,6 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
- "simsimd",
  "snafu",
  "tiktoken-rs",
  "tokio",
@@ -1793,12 +1793,16 @@ dependencies = [
  "common-tracing",
  "common-treenode",
  "daft-core",
+ "daft-csv",
  "daft-dsl",
  "daft-io",
+ "daft-json",
  "daft-micropartition",
+ "daft-parquet",
  "daft-physical-plan",
  "daft-plan",
  "daft-scan",
+ "daft-stats",
  "daft-table",
  "dyn-clone",
  "futures",
@@ -1814,7 +1818,6 @@ name = "daft-micropartition"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
- "async-stream",
  "bincode",
  "common-error",
  "daft-core",
@@ -1826,7 +1829,6 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
- "futures",
  "parquet2",
  "pyo3",
  "snafu",
@@ -1851,6 +1853,7 @@ dependencies = [
  "async-stream",
  "bytes",
  "common-error",
+ "crossbeam-channel",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -4565,15 +4568,6 @@ dependencies = [
  "num-traits",
  "thiserror",
  "time",
-]
-
-[[package]]
-name = "simsimd"
-version = "4.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efc843bc8f12d9c8e6b734a0fe8918fc497b42f6ae0f347dbfdad5b5138ab9b4"
-dependencies = [
- "cc",
 ]
 
 [[package]]

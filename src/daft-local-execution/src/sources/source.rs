@@ -7,5 +7,5 @@ use futures::stream::BoxStream;
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
-    fn get_data(&self) -> SourceStream;
+    fn get_data(&self, maintain_order: bool) -> SourceStream;
 }

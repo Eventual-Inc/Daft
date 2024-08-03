@@ -65,7 +65,7 @@ impl BlockingSink for SortSink {
 }
 
 impl Source for SortSink {
-    fn get_data(&self) -> crate::sources::source::SourceStream {
+    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         if let SortState::Done(parts) = &self.state {
             stream::iter([Ok(parts.clone())]).boxed()
         } else {

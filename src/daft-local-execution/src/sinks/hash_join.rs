@@ -240,7 +240,7 @@ impl BlockingSink for HashJoinOperator {
 }
 
 impl Source for HashJoinOperator {
-    fn get_data(&self) -> crate::sources::source::SourceStream {
+    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         stream::empty().boxed()
     }
 }

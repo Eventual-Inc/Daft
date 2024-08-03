@@ -147,20 +147,42 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 // * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
 // * `return_dtype` - returned column's DataType
 #[pyfunction]
-pub fn udf(
+pub fn stateless_udf(
     py: Python,
-    func: &PyAny,
+    partial_stateless_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
 ) -> PyResult<PyExpr> {
-    use crate::functions::python::udf;
+    use crate::functions::python::stateless_udf;
 
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let func = func.to_object(py);
+    let partial_stateless_udf = partial_stateless_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: udf(func, &expressions_map, return_dtype.dtype)?.into(),
+        expr: stateless_udf(partial_stateless_udf, &expressions_map, return_dtype.dtype)?.into(),
+    })
+}
+
+// Create a UDF Expression using:
+// * `cls` - a Python class that has an __init__, and where __call__ takes as input an ordered list of Python Series to execute the user's UDF.
+// * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
+// * `return_dtype` - returned column's DataType
+#[pyfunction]
+pub fn stateful_udf(
+    py: Python,
+    partial_stateful_udf: &PyAny,
+    expressions: Vec<PyExpr>,
+    return_dtype: PyDataType,
+) -> PyResult<PyExpr> {
+    use crate::functions::python::stateful_udf;
+
+    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
+    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
+    let partial_stateful_udf = partial_stateful_udf.to_object(py);
+    let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    Ok(PyExpr {
+        expr: stateful_udf(partial_stateful_udf, &expressions_map, return_dtype.dtype)?.into(),
     })
 }
 

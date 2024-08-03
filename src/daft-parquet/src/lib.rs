@@ -51,6 +51,12 @@ pub enum Error {
         source: arrow2::error::Error,
     },
 
+    #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
+    UnableToReadParquetRowGroup {
+        path: String,
+        source: arrow2::error::Error,
+    },
+
     #[snafu(display("Unable to create page stream for parquet file {}: {}", path, source))]
     UnableToCreateParquetPageStream {
         path: String,
@@ -74,7 +80,12 @@ pub enum Error {
         path: String,
         source: arrow2::error::Error,
     },
-
+    #[snafu(display(
+        "Unable to create table from arrow chunk for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToCreateTableFromChunk { path: String, source: DaftError },
     #[snafu(display(
         "Unable to convert arrow schema to daft schema for file {}: {}",
         path,

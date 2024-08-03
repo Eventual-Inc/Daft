@@ -12,7 +12,7 @@ use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
 use daft_table::Table;
-use futures::{future::try_join_all, StreamExt};
+use futures::{future::try_join_all, stream::BoxStream, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
@@ -367,6 +367,13 @@ impl ParquetFileReader {
 
         read_planner.run_passes()?;
         read_planner.collect(io_client, io_stats)
+    }
+
+    pub async fn read_from_ranges_into_table_stream(
+        self,
+        _ranges: Arc<RangesContainer>,
+    ) -> BoxStream<'static, DaftResult<Table>> {
+        todo!("Implement streaming reads for remote parquet files")
     }
 
     pub async fn read_from_ranges_into_table(
