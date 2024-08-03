@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -198,6 +199,13 @@ pub fn stateful_udf(
         )?
         .into(),
     })
+}
+
+/// Extracts the `class PartialStatefulUDF` Python objects that are in the specified expression tree
+#[pyfunction]
+pub fn extract_partial_stateful_udf_py(expr: PyExpr) -> HashMap<String, Py<PyAny>> {
+    use crate::functions::python::extract_partial_stateful_udf_py;
+    extract_partial_stateful_udf_py(expr.expr)
 }
 
 #[pyclass(module = "daft.daft")]

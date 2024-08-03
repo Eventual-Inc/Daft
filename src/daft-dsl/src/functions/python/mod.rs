@@ -2,15 +2,16 @@
 mod partial_udf;
 mod udf;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::datatypes::DataType;
 use serde::{Deserialize, Serialize};
 
 use crate::{Expr, ExprRef};
 
-use super::FunctionEvaluator;
+use super::{FunctionEvaluator, FunctionExpr};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PythonUDF {
@@ -112,4 +113,27 @@ pub fn stateful_udf(
         })),
         inputs: expressions.into(),
     })
+}
+
+/// Helper function that extracts all PartialStatefulUDF python objects from a given expression tree
+#[cfg(feature = "python")]
+pub fn extract_partial_stateful_udf_py(expr: ExprRef) -> HashMap<String, pyo3::Py<pyo3::PyAny>> {
+    let mut py_partial_udfs = HashMap::new();
+    expr.apply(|child| {
+        if let Expr::Function {
+            func:
+                FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                    name,
+                    stateful_partial_func: py_partial_udf,
+                    ..
+                })),
+            ..
+        } = child.as_ref()
+        {
+            py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.0.clone());
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })
+    .unwrap();
+    py_partial_udfs
 }

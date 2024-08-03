@@ -310,34 +310,13 @@ fn physical_plan_to_partition_tasks(
             num_actors,
             ..
         }) => {
-            use daft_dsl::{
-                common_treenode::TreeNode,
-                functions::{
-                    python::{PythonUDF, StatefulPythonUDF},
-                    FunctionExpr,
-                },
-            };
+            use daft_dsl::functions::python::extract_partial_stateful_udf_py;
 
             // Extract any StatefulUDFs from the projection
-            let mut py_partial_udfs = HashMap::new();
-            projection.iter().for_each(|e| {
-                e.apply(|child| {
-                    if let Expr::Function {
-                        func:
-                            FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                                name,
-                                stateful_partial_func: py_partial_udf,
-                                ..
-                            })),
-                        ..
-                    } = child.as_ref()
-                    {
-                        py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.0.clone());
-                    }
-                    Ok(daft_dsl::common_treenode::TreeNodeRecursion::Continue)
-                })
-                .unwrap();
-            });
+            let py_partial_udfs: HashMap<String, pyo3::Py<pyo3::PyAny>> = projection
+                .iter()
+                .flat_map(|e| extract_partial_stateful_udf_py(e.clone()))
+                .collect();
 
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
