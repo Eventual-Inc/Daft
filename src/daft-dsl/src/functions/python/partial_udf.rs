@@ -4,7 +4,7 @@ use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{PyObject, Python};
 use serde::{Deserialize, Serialize};
 
-// This is a Rust wrapper on top of a Python PartialStatelessUDF to make it serde-able and hashable
+// This is a Rust wrapper on top of a Python PartialStatelessUDF or PartialStatefulUDF to make it serde-able and hashable
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyPartialUDF(
     #[serde(
