@@ -51,8 +51,8 @@ impl ProbeTable {
         let right_arrays = right
             .columns
             .iter()
-            .map(|s| s.to_arrow())
-            .collect::<Vec<_>>();
+            .map(|s| Ok(s.as_physical()?.to_arrow()))
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let iter = r_hashes.as_arrow().clone().into_iter();
 
@@ -127,8 +127,8 @@ impl ProbeTableBuilder {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| s.to_arrow())
-            .collect::<Vec<_>>();
+            .map(|s| Ok(s.as_physical()?.to_arrow()))
+            .collect::<DaftResult<Vec<_>>>()?;
         self.pt.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.pt.tables.last().unwrap().0.as_slice();
         // TODO: move probe table logic into that struct impl

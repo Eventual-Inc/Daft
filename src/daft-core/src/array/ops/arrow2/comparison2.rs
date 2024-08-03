@@ -1,32 +1,42 @@
 use std::cmp::Ordering;
+use std::fmt::format;
 
 use crate::{schema::Schema, DataType, Series};
 
 use arrow2::array::Array;
+use common_error::DaftError;
 use common_error::DaftResult;
 
 use arrow2::array::dyn_ord::build_array_compare2;
+use arrow2::array::dyn_ord::DynArrayComparator;
 
-fn build_dyn_compare(
+pub type MultiDynArrayComparator =
+    Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>;
+pub fn build_dyn_compare(
     left: &DataType,
     right: &DataType,
     nulls_equal: bool,
     // nan_equal: bool,
-) -> DaftResult<Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>> {
-    Ok(build_array_compare2(
-        &left.to_arrow()?,
-        &right.to_arrow()?,
-        nulls_equal,
-    )?)
+) -> DaftResult<DynArrayComparator> {
+    if left != right {
+        Err(DaftError::TypeError(format!(
+            "Types do not match when creating comparator {} vs {}",
+            left, right
+        )))
+    } else {
+        Ok(build_array_compare2(
+            &left.to_physical().to_arrow()?,
+            &right.to_physical().to_arrow()?,
+            nulls_equal,
+        )?)
+    }
 }
 
 pub fn build_dyn_multi_array_compare(
     schema: &Schema,
     nulls_equal: bool,
     nan_equal: bool,
-) -> DaftResult<
-    Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>,
-> {
+) -> DaftResult<MultiDynArrayComparator> {
     let mut fn_list = Vec::with_capacity(schema.len());
     for field in schema.fields.values() {
         fn_list.push(build_dyn_compare(
