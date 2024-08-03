@@ -144,7 +144,7 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
+) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_csv_single(
         &uri,
         convert_options,
@@ -333,7 +333,7 @@ async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Vec<Table>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -385,7 +385,8 @@ async fn stream_csv_single(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let filtered_tables = tables.map_ok(move |table| {
+    let filtered_tables = tables.map(move |table| {
+        let table = table?;
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
@@ -399,28 +400,19 @@ async fn stream_csv_single(
     });
 
     let mut remaining_rows = limit.map(|limit| limit as i64);
-    let tables = filtered_tables
-        .try_take_while(move |result| {
-            match (result, remaining_rows) {
-                // Limit has been met, early-terminate.
-                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                // Limit has not yet been met, update remaining limit slack and continue.
-                (Ok(table), Some(rows_left)) => {
-                    remaining_rows = Some(rows_left - table.len() as i64);
-                    futures::future::ready(Ok(true))
-                }
-                // (1) No limit, never early-terminate.
-                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+    let tables = filtered_tables.try_take_while(move |table| {
+        match remaining_rows {
+            // Limit has been met, early-terminate.
+            Some(rows_left) if rows_left <= 0 => futures::future::ready(Ok(false)),
+            // Limit has not yet been met, update remaining limit slack and continue.
+            Some(rows_left) => {
+                remaining_rows = Some(rows_left - table.len() as i64);
+                futures::future::ready(Ok(true))
             }
-        })
-        .map(|r| match r {
-            Ok(table) => table,
-            Err(e) => Err(e.into()),
-        })
-        // Chunk the tables into chunks of size max_chunks_in_flight.
-        .try_ready_chunks(max_chunks_in_flight)
-        .map_err(|e| DaftError::ComputeError(e.to_string()));
+            // No limit, never early-terminate.
+            None => futures::future::ready(Ok(true)),
+        }
+    });
     Ok(tables)
 }
 
