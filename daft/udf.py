@@ -3,9 +3,10 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-import types
+from abc import abstractmethod
 from typing import TYPE_CHECKING, Callable, Union
 
+from daft.daft import PyDataType
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import PySeries, Series
@@ -30,9 +31,7 @@ UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 
 
 @dataclasses.dataclass(frozen=True)
-class PartialUDF:
-    udf: UDF
-
+class BoundUDFArgs:
     # Arguments that UDF was called with, potentially symbolic (i.e. containing Expressions)
     bound_args: inspect.BoundArguments
 
@@ -70,79 +69,101 @@ class PartialUDF:
 
         return parsed_arg_keys
 
-    def __call__(self, evaluated_expressions: list[Series]) -> PySeries:
-        kwarg_keys = list(self.bound_args.kwargs.keys())
-        arg_keys = self.arg_keys()
-        pyvalues = {key: val for key, val in self.bound_args.arguments.items() if not isinstance(val, Expression)}
-        expressions = self.expressions()
-        assert len(evaluated_expressions) == len(
-            expressions
-        ), "Computed series must map 1:1 to the expressions that were evaluated"
-        function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
-
-        args = []
-        for name in arg_keys:
-            # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
-            if name == "self":
-                continue
-
-            assert name in pyvalues or name in function_parameter_name_to_index
-            if name in pyvalues:
-                args.append(pyvalues[name])
-            else:
-                args.append(evaluated_expressions[function_parameter_name_to_index[name]])
-
-        kwargs = {}
-        for name in kwarg_keys:
-            assert name in pyvalues or name in function_parameter_name_to_index
-            if name in pyvalues:
-                kwargs[name] = pyvalues[name]
-            else:
-                kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
-
-        # NOTE: We currently initialize the function once for every invocation of the PartialUDF.
-        # This is not ideal and we should cache initializations across calls for the same process.
-        func = self.udf.get_initialized_func()
-
-        try:
-            result = func(*args, **kwargs)
-        except Exception as user_function_exception:
-            raise RuntimeError(
-                f"User-defined function `{func.__name__}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)} error: {user_function_exception}"
-            ) from user_function_exception
-
-        # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
-        # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
-        # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
-        name = evaluated_expressions[0].name()
-
-        # Post-processing of results into a Series of the appropriate dtype
-        if isinstance(result, Series):
-            return result.rename(name).cast(self.udf.return_dtype)._series
-        elif isinstance(result, list):
-            if self.udf.return_dtype == DataType.python():
-                return Series.from_pylist(result, name=name, pyobj="force")._series
-            else:
-                return Series.from_pylist(result, name=name, pyobj="allow").cast(self.udf.return_dtype)._series
-        elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
-            return Series.from_numpy(result, name=name).cast(self.udf.return_dtype)._series
-        elif _PYARROW_AVAILABLE and isinstance(result, (pa.Array, pa.ChunkedArray)):
-            return Series.from_arrow(result, name=name).cast(self.udf.return_dtype)._series
-        else:
-            raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
-
     def __hash__(self) -> int:
         # Make the bound arguments hashable in the basic case when every argument is itself hashable.
         # NOTE: This will fail if any of the arguments are not hashable (e.g. dicts, Python classes that
-        # don't implement __hash__). In that case, Daft's Rust-side hasher will fall back to hashing the
-        # pickled UDF. See daft-dsl/src/python/partial_udf.rs
-        args = frozenset(self.bound_args.arguments.items())
-        return hash((self.udf, args))
+        # don't implement __hash__).
+        return hash(frozenset(self.bound_args.arguments.items()))
+
+
+def run_udf(
+    func: Callable, bound_args: BoundUDFArgs, evaluated_expressions: list[Series], py_return_dtype: PyDataType
+) -> PySeries:
+    """API to call from Rust code that will call an UDF (initialized, in the case of stateful UDFs) on the inputs"""
+    return_dtype = DataType._from_pydatatype(py_return_dtype)
+    kwarg_keys = list(bound_args.bound_args.kwargs.keys())
+    arg_keys = bound_args.arg_keys()
+    pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
+    expressions = bound_args.expressions()
+    assert len(evaluated_expressions) == len(
+        expressions
+    ), "Computed series must map 1:1 to the expressions that were evaluated"
+    function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
+
+    args = []
+    for name in arg_keys:
+        # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
+        if name == "self":
+            continue
+
+        assert name in pyvalues or name in function_parameter_name_to_index
+        if name in pyvalues:
+            args.append(pyvalues[name])
+        else:
+            args.append(evaluated_expressions[function_parameter_name_to_index[name]])
+
+    kwargs = {}
+    for name in kwarg_keys:
+        assert name in pyvalues or name in function_parameter_name_to_index
+        if name in pyvalues:
+            kwargs[name] = pyvalues[name]
+        else:
+            kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
+
+    try:
+        result = func(*args, **kwargs)
+    except Exception as user_function_exception:
+        raise RuntimeError(
+            f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)}"
+        ) from user_function_exception
+
+    # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
+    # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
+    # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
+    name = evaluated_expressions[0].name()
+
+    # Post-processing of results into a Series of the appropriate dtype
+    if isinstance(result, Series):
+        return result.rename(name).cast(return_dtype)._series
+    elif isinstance(result, list):
+        if return_dtype == DataType.python():
+            return Series.from_pylist(result, name=name, pyobj="force")._series
+        else:
+            return Series.from_pylist(result, name=name, pyobj="allow").cast(return_dtype)._series
+    elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
+        return Series.from_numpy(result, name=name).cast(return_dtype)._series
+    elif _PYARROW_AVAILABLE and isinstance(result, (pa.Array, pa.ChunkedArray)):
+        return Series.from_arrow(result, name=name).cast(return_dtype)._series
+    else:
+        raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
+
+
+class UDF:
+    @abstractmethod
+    def __call__(self, *args, **kwargs) -> Expression: ...
 
 
 @dataclasses.dataclass
-class UDF:
-    func: UserProvidedPythonFunction | type
+class PartialStatelessUDF:
+    """Partially bound stateless UDF"""
+
+    func: UserProvidedPythonFunction
+    return_dtype: DataType
+    bound_args: BoundUDFArgs
+
+
+@dataclasses.dataclass
+class PartialStatefulUDF:
+    """Partially bound stateful UDF"""
+
+    func_cls: Callable[[], UserProvidedPythonFunction]
+    return_dtype: DataType
+    bound_args: BoundUDFArgs
+
+
+@dataclasses.dataclass
+class StatelessUDF(UDF):
+    func: UserProvidedPythonFunction
     return_dtype: DataType
 
     def __post_init__(self):
@@ -154,42 +175,59 @@ class UDF:
         functools.update_wrapper(self, self.func)
 
     def __call__(self, *args, **kwargs) -> Expression:
-        bound_args = self.bind_func(*args, **kwargs)
-        partial_udf = PartialUDF(self, bound_args)
-        expressions = list(partial_udf.expressions().values())
-        return Expression.udf(
-            func=partial_udf,
+        bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
+        expressions = list(bound_args.expressions().values())
+        return Expression.stateless_udf(
+            partial=PartialStatelessUDF(self.func, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
         )
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
-        if isinstance(self.func, types.FunctionType):
-            sig = inspect.signature(self.func)
-            bound_args = sig.bind(*args, **kwargs)
-        elif isinstance(self.func, type):
-            sig = inspect.signature(self.func.__call__)
-            bound_args = sig.bind(
-                # Placeholder for `self`
-                None,
-                *args,
-                **kwargs,
-            )
-        else:
-            raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
+        sig = inspect.signature(self.func)
+        bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
         return bound_args
 
-    def get_initialized_func(self):
-        if isinstance(self.func, types.FunctionType):
-            return self.func
-        elif isinstance(self.func, type):
-            # NOTE: This potentially runs expensive initializations on the class
-            return self.func()
-        raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
-
     def __hash__(self) -> int:
         return hash((self.func, self.return_dtype))
+
+
+@dataclasses.dataclass
+class StatefulUDF(UDF):
+    cls: type
+    return_dtype: DataType
+
+    def __post_init__(self):
+        """Analogous to the @functools.wraps(self.cls) pattern
+
+        This will swap out identifiers on `self` to match `self.cls`. Most notably, this swaps out
+        self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.
+        """
+        functools.update_wrapper(self, self.cls)
+
+    def __call__(self, *args, **kwargs) -> Expression:
+        bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
+        expressions = list(bound_args.expressions().values())
+        return Expression.stateful_udf(
+            partial=PartialStatefulUDF(self.cls, self.return_dtype, bound_args),
+            expressions=expressions,
+            return_dtype=self.return_dtype,
+        )
+
+    def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
+        sig = inspect.signature(self.cls.__call__)
+        bound_args = sig.bind(
+            # Placeholder for `self`
+            None,
+            *args,
+            **kwargs,
+        )
+        bound_args.apply_defaults()
+        return bound_args
+
+    def __hash__(self) -> int:
+        return hash((self.cls, self.return_dtype))
 
 
 def udf(
@@ -230,9 +268,15 @@ def udf(
     """
 
     def _udf(f: UserProvidedPythonFunction | type) -> UDF:
-        return UDF(
-            func=f,
-            return_dtype=return_dtype,
-        )
+        if inspect.isclass(f):
+            return StatefulUDF(
+                cls=f,
+                return_dtype=return_dtype,
+            )
+        else:
+            return StatelessUDF(
+                func=f,
+                return_dtype=return_dtype,
+            )
 
     return _udf

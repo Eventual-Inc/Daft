@@ -73,9 +73,15 @@ impl Table {
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
         use daft_core::schema::Schema;
+        use daft_dsl::functions::python::PythonUDF;
 
         let udf = match func {
-            FunctionExpr::Python(udf) => udf,
+            FunctionExpr::Python(PythonUDF::Stateless(udf)) => udf,
+            FunctionExpr::Python(PythonUDF::Stateful(_)) => {
+                return Err(DaftError::ComputeError(
+                    "Cannot run stateful UDF in MapGroups".to_string(),
+                ))
+            }
             _ => {
                 return Err(DaftError::ComputeError(
                     "Trying to run non-UDF function in MapGroups!".to_string(),
