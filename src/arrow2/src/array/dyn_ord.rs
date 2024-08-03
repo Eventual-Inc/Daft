@@ -1,3 +1,4 @@
+use num_traits::Float;
 use ord::total_cmp;
 
 use std::cmp::Ordering;
@@ -43,6 +44,40 @@ fn compare_with_nulls<A: Array, F: FnOnce() -> Ordering>(
             }
         }
     }
+}
+
+#[allow(clippy::eq_op)]
+#[inline]
+fn cmp_float<F: Float>(l: &F, r: &F, nans_equal: bool) -> std::cmp::Ordering {
+    match (l.is_nan(), r.is_nan()) {
+        (false, false) => unsafe { l.partial_cmp(r).unwrap_unchecked() },
+        (true, true) => {
+            if nans_equal {
+                Ordering::Equal
+            } else {
+                Ordering::Less
+            }
+        }
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+    }
+}
+
+fn compare_dyn_floats<T: NativeType + Float>(
+    nulls_equal: bool,
+    nans_equal: bool,
+) -> DynArrayComparator {
+    Box::new(move |left, right, i, j| {
+        let left = left.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+        let right = right.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+        compare_with_nulls(left, right, i, j, nulls_equal, || {
+            cmp_float::<T>(
+                &unsafe { left.value_unchecked(i) },
+                &unsafe { right.value_unchecked(j) },
+                nans_equal,
+            )
+        })
+    })
 }
 
 fn compare_dyn_primitives<T: NativeType + Ord>(nulls_equal: bool) -> DynArrayComparator {
@@ -91,6 +126,7 @@ pub fn build_array_compare2(
     left: &DataType,
     right: &DataType,
     nulls_equal: bool,
+    nans_equal: bool,
 ) -> Result<DynArrayComparator> {
     use DataType::*;
     use IntervalUnit::*;
@@ -127,8 +163,8 @@ pub fn build_array_compare2(
         | (Duration(Nanosecond), Duration(Nanosecond)) => {
             compare_dyn_primitives::<i64>(nulls_equal)
         }
-        // (Float32, Float32) => compare_f32(left, right),
-        // (Float64, Float64) => compare_f64(left, right),
+        (Float32, Float32) => compare_dyn_floats::<f32>(nulls_equal, nans_equal),
+        (Float64, Float64) => compare_dyn_floats::<f64>(nulls_equal, nans_equal),
         (Decimal(_, _), Decimal(_, _)) => compare_dyn_primitives::<i128>(nulls_equal),
         (Utf8, Utf8) => compare_dyn_string::<i32>(nulls_equal),
         (LargeUtf8, LargeUtf8) => compare_dyn_string::<i64>(nulls_equal),

@@ -16,7 +16,7 @@ pub fn build_dyn_compare(
     left: &DataType,
     right: &DataType,
     nulls_equal: bool,
-    // nan_equal: bool,
+    nans_equal: bool,
 ) -> DaftResult<DynArrayComparator> {
     if left != right {
         Err(DaftError::TypeError(format!(
@@ -28,6 +28,7 @@ pub fn build_dyn_compare(
             &left.to_physical().to_arrow()?,
             &right.to_physical().to_arrow()?,
             nulls_equal,
+            nans_equal,
         )?)
     }
 }
@@ -35,7 +36,7 @@ pub fn build_dyn_compare(
 pub fn build_dyn_multi_array_compare(
     schema: &Schema,
     nulls_equal: bool,
-    nan_equal: bool,
+    nans_equal: bool,
 ) -> DaftResult<MultiDynArrayComparator> {
     let mut fn_list = Vec::with_capacity(schema.len());
     for field in schema.fields.values() {
@@ -43,7 +44,7 @@ pub fn build_dyn_multi_array_compare(
             &field.dtype,
             &field.dtype,
             nulls_equal,
-            // nan_equal,
+            nans_equal,
         )?);
     }
     let combined_fn = Box::new(
