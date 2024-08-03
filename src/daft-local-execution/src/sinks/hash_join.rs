@@ -14,10 +14,7 @@ use tracing::info_span;
 
 use crate::{intermediate_ops::intermediate_op::IntermediateOperator, sources::source::Source};
 
-use super::{
-    blocking_sink::{BlockingSink, BlockingSinkStatus},
-    sink::Sink,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{
     infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table,
 };
@@ -88,9 +85,8 @@ impl HashJoinState {
 }
 
 pub struct HashJoinOperator {
-    left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
-    join_type: JoinType,
+    _join_type: JoinType,
     join_mapper: Arc<JoinOutputMapper>,
     join_state: HashJoinState,
 }
@@ -137,11 +133,10 @@ impl HashJoinOperator {
             .zip(key_schema.fields.values())
             .map(|(e, f)| e.cast(&f.dtype))
             .collect::<Vec<_>>();
-
+        assert_eq!(join_type, JoinType::Inner);
         Ok(Self {
-            left_on: left_on.clone(),
             right_on,
-            join_type,
+            _join_type: join_type,
             join_mapper: Arc::new(join_mapper),
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
