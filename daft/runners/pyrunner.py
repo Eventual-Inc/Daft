@@ -11,6 +11,7 @@ from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, Sy
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, PartitionTask
 from daft.execution.native_executor import NativeExecutor
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
@@ -25,8 +26,9 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
-from daft.runners.runner import Runner
+from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
+from daft.udf import UserProvidedPythonFunction
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,97 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         pass
 
 
+class PyActorPool(ActorPool[MicroPartition]):
+    initialized_stateful_udfs_process_singleton: dict[str, UserProvidedPythonFunction] | None = None
+
+    def __init__(
+        self,
+        pool_id: str,
+        num_actors: int,
+        resource_request: ResourceRequest,
+        projection: ExpressionsProjection,
+    ):
+        self._pool_id = pool_id
+        self._num_actors = num_actors
+        self._resource_request = resource_request
+        self._executor: futures.ProcessPoolExecutor | None = None
+        self._projection = projection
+
+    @staticmethod
+    def initialize_actor_global_state(uninitialized_projection: ExpressionsProjection):
+        from daft.daft import extract_partial_stateful_udf_py
+
+        if PyActorPool.initialized_stateful_udfs_process_singleton is not None:
+            raise RuntimeError("Cannot initialize Python process actor twice.")
+        else:
+            partial_stateful_udfs = {
+                name: psu
+                for expr in uninitialized_projection
+                for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
+            }
+
+            logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
+
+            PyActorPool.initialized_stateful_udfs_process_singleton = {
+                name: partial_udf.func_cls() for name, partial_udf in partial_stateful_udfs.items()
+            }
+
+    @staticmethod
+    def build_partitions_with_stateful_project(
+        uninitialized_projection: ExpressionsProjection,
+        partition: MicroPartition,
+        partial_metadata: PartialPartitionMetadata,
+    ) -> list[MaterializedResult[MicroPartition]]:
+        # TODO: implement functionality to override placeholder expressions with initialized expressions
+        # initialized_projection = initialize_projection(uninitialized_projection, initialized_stateful_udfs)
+        initialized_projection = uninitialized_projection
+
+        new_part = partition.eval_expression_list(initialized_projection)
+        return [
+            PyMaterializedResult(new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata))
+        ]
+
+    def submit(
+        self,
+        instruction_stack: list[Instruction],
+        partitions: list[MicroPartition],
+        final_metadata: list[PartialPartitionMetadata],
+    ) -> futures.Future[list[MaterializedResult[MicroPartition]]]:
+        from daft.execution import execution_step
+
+        assert self._executor is not None, "Cannot submit to uninitialized PyActorPool"
+
+        # PyActorPools can only handle 1 to 1 projections (no fanouts/fan-ins) and only
+        # StatefulUDFProject instructions (no filters etc)
+        assert len(partitions) == 1
+        assert len(final_metadata) == 1
+        assert len(instruction_stack) == 1
+        instruction = instruction_stack[0]
+        assert isinstance(instruction, execution_step.StatefulUDFProject)
+        projection = instruction.projection
+        partition = partitions[0]
+        partial_metadata = final_metadata[0]
+
+        return self._executor.submit(
+            PyActorPool.build_partitions_with_stateful_project,
+            projection,
+            partition,
+            partial_metadata,
+        )
+
+    def __enter__(self) -> str:
+        self._executor = futures.ProcessPoolExecutor(
+            self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
+        )
+        return self._pool_id
+
+    def __exit__(self, type, value, tb):
+        # Shut down the executor
+        assert self._executor is not None, "Should have an executor when exiting context"
+        self._executor.shutdown()
+        self._executor = None
+
+
 class PyRunnerIO(runner_io.RunnerIO):
     def glob_paths_details(
         self,
@@ -120,6 +213,9 @@ class PyRunner(Runner[MicroPartition]):
 
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
         self._thread_pool = futures.ThreadPoolExecutor()
+
+        # Registry of active ActorPools
+        self._actor_pools: dict[str, PyActorPool] = {}
 
         # Global accounting of tasks and resources
         self._inflight_futures: dict[str, futures.Future] = {}
@@ -216,6 +312,13 @@ class PyRunner(Runner[MicroPartition]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: int, projection: ExpressionsProjection
+    ) -> PyActorPool:
+        actor_pool_id = f"py_actor_pool-{name}"
+        actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
+        return actor_pool
+
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
     ) -> Iterator[PyMaterializedResult]:
@@ -286,13 +389,24 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            future = self._thread_pool.submit(
-                                self.build_partitions,
-                                next_step.instructions,
-                                next_step.inputs,
-                                next_step.partial_metadatas,
-                                next_step.resource_request,
-                            )
+                            if next_step.executor_id is None:
+                                future = self._thread_pool.submit(
+                                    self.build_partitions,
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
+                                    next_step.resource_request,
+                                )
+                            else:
+                                actor_pool = self._actor_pools.get(next_step.executor_id)
+                                assert (
+                                    actor_pool is not None
+                                ), f"PyActorPool={next_step.executor_id} must outlive the tasks that need to be run on it."
+                                future = actor_pool.submit(
+                                    next_step.instructions,
+                                    next_step.inputs,
+                                    next_step.partial_metadatas,
+                                )
 
                             # Register the inflight task
                             assert (

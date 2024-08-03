@@ -310,14 +310,6 @@ fn physical_plan_to_partition_tasks(
             num_actors,
             ..
         }) => {
-            use daft_dsl::functions::python::extract_partial_stateful_udf_py;
-
-            // Extract any StatefulUDFs from the projection
-            let py_partial_udfs: HashMap<String, pyo3::Py<pyo3::PyAny>> = projection
-                .iter()
-                .flat_map(|e| extract_partial_stateful_udf_py(e.clone()))
-                .collect();
-
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
@@ -328,7 +320,6 @@ fn physical_plan_to_partition_tasks(
                         .iter()
                         .map(|expr| PyExpr::from(expr.clone()))
                         .collect::<Vec<_>>(),
-                    py_partial_udfs,
                     resource_request.clone(),
                     *num_actors,
                 ))?;

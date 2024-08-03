@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Generic, Iterator
 
+from daft.daft import ResourceRequest
+from daft.expressions import ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -13,6 +15,18 @@ from daft.runners.partitioning import (
 )
 from daft.runners.runner_io import RunnerIO
 from daft.table import MicroPartition
+
+
+class ActorPool(Generic[PartitionT]):
+    @abstractmethod
+    def __enter__(self) -> str:
+        """Create the actor pool and reserve resources, returning a string identifier"""
+        ...
+
+    @abstractmethod
+    def __exit__(self, type, value, tb):
+        """Tear down the actor pool and release resources"""
+        ...
 
 
 class Runner(Generic[PartitionT]):
@@ -54,5 +68,22 @@ class Runner(Generic[PartitionT]):
             builder: the builder for the LogicalPlan that is to be executed
             results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
                 that can be buffered before execution should pause and wait.
+        """
+        ...
+
+    @abstractmethod
+    def get_actor_pool(
+        self,
+        name: str,
+        resource_request: ResourceRequest,
+        num_actors: int,
+        projection: ExpressionsProjection,
+    ) -> ActorPool:
+        """Creates a pool of actors which can execute work
+        Args:
+            name: Name of the actor pool for debugging/observability
+            resource_request: Requested amount of resources for each actor
+            num_actors: Number of actors to spin up
+            partial_stateful_udf: A stateful UDF that has been "bound" to its arguments, so each actor can run it
         """
         ...

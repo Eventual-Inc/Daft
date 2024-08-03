@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 import pyarrow as pa
 
 from daft.context import get_context, set_execution_config
+from daft.expressions import ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -53,7 +54,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.runners.runner import Runner
+from daft.runners.runner import ActorPool, Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -874,6 +875,11 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
+
+    def get_actor_pool(
+        self, name: str, resource_request: ResourceRequest, num_actors: PartID, projection: ExpressionsProjection
+    ) -> ActorPool:
+        raise NotImplementedError("Actor pool for RayRunner not yet implemented")
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
