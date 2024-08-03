@@ -35,12 +35,6 @@ impl SortSink {
 }
 
 impl BlockingSink for SortSink {
-    // #[instrument(skip_all, name = "SortSink::sink")]
-    // fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-    //     assert_eq!(index, 0);
-    //     self.parts.push(input.clone());
-    //     Ok(SinkResultType::NeedMoreInput)
-    // }
     #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
         if let SortState::Building(parts) = &mut self.state {

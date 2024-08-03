@@ -18,7 +18,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{channel::create_channel, pipeline2::physical_plan_to_pipeline};
+use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline};
 
 #[cfg(feature = "python")]
 #[pyclass]

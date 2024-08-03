@@ -80,10 +80,6 @@ impl PipelineNode for IntermediateNode {
             .expect("we should only have 1 child");
         child.start(sender).await?;
 
-        // let child_futures = self.children.into_iter().map(|c| c.start(requires_order));
-        // let mut child_receivers = try_join_all(child_futures).await?;
-        // let receiver = child_receivers.pop().expect("we should only have 1 child here");
-
         let mut actor =
             IntermediateOpActor::new(self.intermediate_op.clone(), receiver, destination);
         // this should ideally be in the actor
@@ -158,18 +154,6 @@ impl PipelineNode for HashJoinNode {
         let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
         // this should ideally be in the actor
         spawn_compute_task(async move { actor.run_parallel().await });
-
-        // tokio::spawn(async move {
-        //     let span = info_span!("ProbeTable::probe");
-
-        //     // this should be a RWLock and run in concurrent workers
-        //     while let Some(val) = streaming_receiver.recv().await {
-        //         let result = span.in_scope(|| int_op.execute(&val?));
-        //         let sender = destination.get_next_sender();
-        //         sender.send(result).await.unwrap();
-        //     }
-        //     DaftResult::Ok(())
-        // });
 
         Ok(())
     }

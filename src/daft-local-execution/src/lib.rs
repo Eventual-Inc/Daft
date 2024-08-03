@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 mod channel;
 mod intermediate_ops;
-mod pipeline2;
+mod pipeline;
 mod run;
 mod sinks;
 mod sources;
