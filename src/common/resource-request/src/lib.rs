@@ -105,6 +105,14 @@ impl ResourceRequest {
             .iter()
             .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
     }
+
+    pub fn multiply(&self, factor: f64) -> Self {
+        Self::new_internal(
+            self.num_cpus.map(|x| x * factor),
+            self.num_gpus.map(|x| x * factor),
+            self.memory_bytes.map(|x| x * (factor as usize)),
+        )
+    }
 }
 
 impl Add for &ResourceRequest {
@@ -205,6 +213,10 @@ impl ResourceRequest {
 
     fn __add__(&self, other: &Self) -> Self {
         self + other
+    }
+
+    fn __mul__(&self, factor: f64) -> Self {
+        self.multiply(factor)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {

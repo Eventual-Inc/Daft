@@ -20,7 +20,7 @@ import pyarrow as pa
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest
+from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -1030,6 +1030,9 @@ class Expression:
 
     def _input_mapping(self) -> builtins.str | None:
         return self._expr._input_mapping()
+
+    def _bind_stateful_udfs(self, initialized_funcs: dict[builtins.str, Callable]) -> Expression:
+        return Expression._from_pyexpr(bind_stateful_udfs(self._expr, initialized_funcs))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
