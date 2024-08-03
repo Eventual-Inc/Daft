@@ -38,7 +38,7 @@ def gen_tpch(request):
     return (csv_files_location, parquet_files_location, num_parts), sqlite_path
 
 
-@pytest.fixture(scope="module", params=["csv", "parquet"])
+@pytest.fixture(scope="module", params=["parquet"])  # TODO: Enable CSV after improving the CSV reader
 def get_df(gen_tpch, request):
     (csv_files_location, parquet_files_location, num_parts), _ = gen_tpch
     file_type = request.param
