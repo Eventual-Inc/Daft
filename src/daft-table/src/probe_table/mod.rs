@@ -30,8 +30,26 @@ pub struct ProbeTable {
 }
 
 impl ProbeTable {
+    // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
+
+    const DEFAULT_SIZE: usize = 20;
+
+    fn new(schema: SchemaRef) -> DaftResult<Self> {
+        let hash_table =
+            HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
+                Self::DEFAULT_SIZE,
+                Default::default(),
+            );
+        let compare_fn = build_dyn_multi_array_compare(&schema, false, false)?;
+        Ok(Self {
+            schema,
+            hash_table,
+            tables: vec![],
+            compare_fn,
+        })
+    }
 
     pub fn probe<'a>(
         &'a self,
@@ -86,40 +104,12 @@ impl ProbeTable {
             })
             .flatten())
     }
-}
 
-pub struct ProbeTableBuilder {
-    pt: ProbeTable,
-}
-
-impl ProbeTableBuilder {
-    const DEFAULT_SIZE: usize = 20;
-    // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
-    const TABLE_IDX_SHIFT: usize = 36;
-    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
-
-    pub fn new(schema: SchemaRef) -> DaftResult<Self> {
-        let hash_table =
-            HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
-                Self::DEFAULT_SIZE,
-                Default::default(),
-            );
-        let compare_fn = build_dyn_multi_array_compare(&schema, false, false)?;
-        Ok(Self {
-            pt: ProbeTable {
-                schema,
-                hash_table,
-                tables: vec![],
-                compare_fn,
-            },
-        })
-    }
-
-    pub fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
         // we have to cast to the join key schema
-        assert_eq!(table.schema, self.pt.schema);
+        assert_eq!(table.schema, self.schema);
         let hashes = table.hash_rows()?;
-        let table_idx = self.pt.tables.len();
+        let table_idx = self.tables.len();
         let table_offset = table_idx << Self::TABLE_IDX_SHIFT;
 
         assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
@@ -129,19 +119,19 @@ impl ProbeTableBuilder {
             .iter()
             .map(|s| Ok(s.as_physical()?.to_arrow()))
             .collect::<DaftResult<Vec<_>>>()?;
-        self.pt.tables.push(ArrowTableEntry(current_arrays));
-        let current_array_refs = self.pt.tables.last().unwrap().0.as_slice();
+        self.tables.push(ArrowTableEntry(current_arrays));
+        let current_array_refs = self.tables.last().unwrap().0.as_slice();
         // TODO: move probe table logic into that struct impl
         for (i, h) in hashes.as_arrow().values_iter().enumerate() {
             let idx = table_offset | i;
-            let entry = self.pt.hash_table.raw_entry_mut().from_hash(*h, |other| {
+            let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j_idx = other.idx;
                     let j_table_idx = (j_idx >> Self::TABLE_IDX_SHIFT) as usize;
                     let j_row_idx = (j_idx & Self::LOWER_MASK) as usize;
 
                     if table_idx == j_table_idx {
-                        (self.pt.compare_fn)(
+                        (self.compare_fn)(
                             &current_array_refs,
                             &current_array_refs,
                             i,
@@ -149,17 +139,12 @@ impl ProbeTableBuilder {
                         )
                         .is_eq()
                     } else {
-                        let j_table = self.pt.tables.get(j_table_idx as usize).unwrap();
+                        let j_table = self.tables.get(j_table_idx as usize).unwrap();
 
                         let array_refs = j_table.0.as_slice();
 
-                        (self.pt.compare_fn)(
-                            &current_array_refs,
-                            &array_refs,
-                            i,
-                            j_row_idx as usize,
-                        )
-                        .is_eq()
+                        (self.compare_fn)(&current_array_refs, &array_refs, i, j_row_idx as usize)
+                            .is_eq()
                     }
                 }
             });
@@ -181,8 +166,20 @@ impl ProbeTableBuilder {
         }
         Ok(())
     }
+}
+
+pub struct ProbeTableBuilder(ProbeTable);
+
+impl ProbeTableBuilder {
+    pub fn new(schema: SchemaRef) -> DaftResult<Self> {
+        Ok(Self(ProbeTable::new(schema)?))
+    }
+
+    pub fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+        self.0.add_table(table)
+    }
 
     pub fn build(self) -> ProbeTable {
-        self.pt
+        self.0
     }
 }
