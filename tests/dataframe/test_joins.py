@@ -800,7 +800,6 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
         ),
     ],
 )
-@pytest.mark.skip()
 def test_join_semi_anti_different_names(join_strategy, join_type, expected, make_df, repartition_nparts):
     skip_invalid_join_strategies(join_strategy, join_type)
 
