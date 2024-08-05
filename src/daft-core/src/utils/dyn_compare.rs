@@ -11,6 +11,7 @@ use arrow2::array::dyn_ord::DynArrayComparator;
 
 pub type MultiDynArrayComparator =
     Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>;
+
 pub fn build_dyn_compare(
     left: &DataType,
     right: &DataType,

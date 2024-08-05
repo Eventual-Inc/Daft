@@ -1,13 +1,10 @@
 use std::collections::{hash_map::RawEntryMut, HashMap};
 
 use common_error::DaftResult;
-use daft_core::{
-    array::ops::{
-        arrow2::comparison2::{build_dyn_multi_array_compare, MultiDynArrayComparator},
-        as_arrow::AsArrow,
-    },
-    schema::SchemaRef,
-};
+
+use daft_core::utils::dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator};
+
+use daft_core::{array::ops::as_arrow::AsArrow, schema::SchemaRef};
 
 use crate::{
     ops::hash::{IdentityBuildHasher, IndexHash},
