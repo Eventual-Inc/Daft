@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{DataType, Field},
+    datatypes::{DataType, Field, TimeUnit},
     schema::Schema,
     series::Series,
 };
@@ -20,13 +20,20 @@ impl FunctionEvaluator for TimeEvaluator {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to time to be temporal, got {}",
-                    field.dtype
-                ))),
+                Ok(field) => match field.dtype {
+                    DataType::Time(_) => Ok(field),
+                    DataType::Timestamp(tu, _) => {
+                        let tu = match tu {
+                            TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                            _ => TimeUnit::Microseconds,
+                        };
+                        Ok(Field::new(field.name, DataType::Time(tu)))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to time to be time or timestamp, got {}",
+                        field.dtype
+                    ))),
+                },
                 Err(e) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(

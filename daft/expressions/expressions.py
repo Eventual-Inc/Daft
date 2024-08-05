@@ -1125,7 +1125,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
-            >>> col("data").url.upload("s3://my-bucket/my-folder")
+            >>> col("data").url.upload("s3://my-bucket/my-folder") # doctest: +SKIP
 
         Args:
             location: a folder location to upload data into
@@ -1449,7 +1449,31 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the time for a datetime column
 
         Example:
-            >>> col("x").dt.time()
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "x": [
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
+            ...             datetime.datetime(2021, 1, 1, 12, 1, 59),
+            ...             datetime.datetime(2021, 1, 1, 23, 59, 59),
+            ...         ],
+            ...     }
+            ... )
+            >>> df = df.with_column("time", df["x"].dt.time())
+            >>> df.show()
+            ╭───────────────────────────────┬────────────────────╮
+            │ x                             ┆ time               │
+            │ ---                           ┆ ---                │
+            │ Timestamp(Microseconds, None) ┆ Time(Microseconds) │
+            ╞═══════════════════════════════╪════════════════════╡
+            │ 2021-01-01 00:01:01           ┆ 00:01:01           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 12:01:59           ┆ 12:01:59           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 23:59:59           ┆ 23:59:59           │
+            ╰───────────────────────────────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a Time expression

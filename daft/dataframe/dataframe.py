@@ -808,7 +808,7 @@ class DataFrame:
 
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")
+        >>> df.write_lance("/tmp/lance/my_table.lance") # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -819,7 +819,7 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
 
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect() # doctest: +SKIP
         ╭───────╮
         │ a     │
         │ ---   │
@@ -839,7 +839,7 @@ class DataFrame:
 
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024) # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -1759,6 +1759,7 @@ class DataFrame:
     def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
+
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
@@ -1787,6 +1788,7 @@ class DataFrame:
             ╰───────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
+
         Args:
             func: A function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.

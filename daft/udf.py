@@ -254,11 +254,27 @@ def udf(
        :meth:`df.select() <daft.DataFrame.select>`, etc.)
 
     Example:
-        >>> @udf(return_dtype=DataType.int64())
-        >>> def add_constant(x: Series, c=10):
-        >>>     return [v + c for v in x.to_pylist()]
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64())
+        ... def add_constant(x: daft.Series, c=10):
+        ...     return [v + c for v in x.to_pylist()]
         >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
         >>> df = df.with_column("new_x", add_constant(df["x"], c=20))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ x     ┆ new_x │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 21    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 22    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 23    │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
     Args:
         return_dtype (DataType): Returned type of the UDF
