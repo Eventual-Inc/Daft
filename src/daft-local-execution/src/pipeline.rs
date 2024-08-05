@@ -26,6 +26,7 @@ use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 use futures::StreamExt;
@@ -363,41 +364,41 @@ pub fn physical_plan_to_pipeline(
             // let right_child = physical_plan_to_pipeline(other, psets)?;
             // PipelineNode::double_sink(sink, left_child, right_child)
         }
-        LocalPhysicalPlan::UnGroupedAggregate(_) => {
-            todo!("agg")
-            // let (first_stage_aggs, second_stage_aggs, final_exprs) =
-            //     populate_aggregation_stages(aggregations, schema, &[]);
-            // let first_stage_agg_op = AggregateOperator::new(
-            //     first_stage_aggs
-            //         .values()
-            //         .cloned()
-            //         .map(|e| Arc::new(Expr::Agg(e.clone())))
-            //         .collect(),
-            //     vec![],
-            // );
-            // let second_stage_agg_sink = AggregateSink::new(
-            //     second_stage_aggs
-            //         .values()
-            //         .cloned()
-            //         .map(|e| Arc::new(Expr::Agg(e.clone())))
-            //         .collect(),
-            //     vec![],
-            // );
-            // let final_stage_project = ProjectOperator::new(final_exprs);
+        LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
+            input,
+            aggregations,
+            schema,
+            ..
+        }) => {
+            let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                populate_aggregation_stages(aggregations, schema, &[]);
+            let first_stage_agg_op = AggregateOperator::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                vec![],
+            );
 
-            // let child_node = physical_plan_to_pipeline(input, psets)?;
-            // let intermediate_agg_op_node = PipelineNode::IntermediateOp {
-            //     intermediate_op: Arc::new(first_stage_agg_op),
-            //     children: vec![child_node],
-            // };
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
-            // let sink_node =
-            //     PipelineNode::single_sink(second_stage_agg_sink, intermediate_agg_op_node);
+            let second_stage_agg_sink = AggregateSink::new(
+                second_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                vec![],
+            );
+            let second_stage_node =
+                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            // PipelineNode::IntermediateOp {
-            //     intermediate_op: Arc::new(final_stage_project),
-            //     children: vec![sink_node],
-            // }
+            let final_stage_project = ProjectOperator::new(final_exprs);
+
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
