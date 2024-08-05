@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from concurrent import futures
@@ -26,7 +27,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
-from daft.runners.runner import ActorPool, Runner
+from daft.runners.runner import Runner
 from daft.table import MicroPartition
 from daft.udf import UserProvidedPythonFunction
 
@@ -96,7 +97,7 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         pass
 
 
-class PyActorPool(ActorPool[MicroPartition]):
+class PyActorPool:
     initialized_stateful_udfs_process_singleton: dict[str, UserProvidedPythonFunction] | None = None
 
     def __init__(
@@ -178,17 +179,17 @@ class PyActorPool(ActorPool[MicroPartition]):
             partial_metadata,
         )
 
-    def __enter__(self) -> str:
-        self._executor = futures.ProcessPoolExecutor(
-            self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
-        )
-        return self._pool_id
-
-    def __exit__(self, type, value, tb):
+    def teardown(self) -> None:
         # Shut down the executor
         assert self._executor is not None, "Should have an executor when exiting context"
         self._executor.shutdown()
         self._executor = None
+
+    def setup(self) -> str:
+        self._executor = futures.ProcessPoolExecutor(
+            self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
+        )
+        return self._pool_id
 
 
 class PyRunnerIO(runner_io.RunnerIO):
@@ -316,12 +317,32 @@ class PyRunner(Runner[MicroPartition]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
-    def get_actor_pool(
+    @contextlib.contextmanager
+    def actor_pool_context(
         self, name: str, resource_request: ResourceRequest, num_actors: int, projection: ExpressionsProjection
-    ) -> PyActorPool:
+    ) -> Iterator[str]:
         actor_pool_id = f"py_actor_pool-{name}"
-        actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
-        return actor_pool
+
+        total_resource_request = resource_request * num_actors
+        admitted = self._attempt_admit_task(total_resource_request)
+
+        if not admitted:
+            raise RuntimeError(
+                f"Not enough resources available to admit {num_actors} actors, each with resource request: {resource_request}"
+            )
+
+        try:
+            actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
+            pool_id = actor_pool.setup()
+
+            yield pool_id
+        # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
+        finally:
+            with self._resource_accounting_lock:
+                self._available_bytes_memory += total_resource_request.memory_bytes or 0
+                self._available_cpus += total_resource_request.num_cpus or 0.0
+                self._available_gpus += total_resource_request.num_gpus or 0.0
+            actor_pool.teardown()
 
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]

@@ -215,7 +215,7 @@ def actor_pool_project(
     # Keep track of materializations of the actor_pool tasks
     actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
-    with get_context().runner().get_actor_pool(
+    with get_context().runner().actor_pool_context(
         actor_pool_name,
         resource_request,
         num_actors,

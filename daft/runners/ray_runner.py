@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -54,7 +55,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.runners.runner import ActorPool, Runner
+from daft.runners.runner import Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -876,9 +877,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
-    def get_actor_pool(
+    @contextlib.contextmanager
+    def actor_pool_context(
         self, name: str, resource_request: ResourceRequest, num_actors: PartID, projection: ExpressionsProjection
-    ) -> ActorPool:
+    ) -> Iterator[str]:
         raise NotImplementedError("Actor pool for RayRunner not yet implemented")
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:

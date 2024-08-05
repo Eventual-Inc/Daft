@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from abc import abstractmethod
 from typing import Generic, Iterator
 
@@ -15,18 +16,6 @@ from daft.runners.partitioning import (
 )
 from daft.runners.runner_io import RunnerIO
 from daft.table import MicroPartition
-
-
-class ActorPool(Generic[PartitionT]):
-    @abstractmethod
-    def __enter__(self) -> str:
-        """Create the actor pool and reserve resources, returning a string identifier"""
-        ...
-
-    @abstractmethod
-    def __exit__(self, type, value, tb):
-        """Tear down the actor pool and release resources"""
-        ...
 
 
 class Runner(Generic[PartitionT]):
@@ -72,14 +61,20 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def get_actor_pool(
+    @contextlib.contextmanager
+    def actor_pool_context(
         self,
         name: str,
         resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
-    ) -> ActorPool:
-        """Creates a pool of actors which can execute work
+    ) -> Iterator[str]:
+        """Creates a pool of actors which can execute work, and yield a context in which the pool can be used.
+
+        Also yields a `str` ID which clients can use to refer to the actor pool when submitting tasks.
+
+        Note that attempting to do work outside this context will result in errors!
+
         Args:
             name: Name of the actor pool for debugging/observability
             resource_request: Requested amount of resources for each actor
