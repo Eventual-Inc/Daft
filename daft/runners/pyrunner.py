@@ -414,7 +414,7 @@ class PyRunner(Runner[MicroPartition]):
                             # update progress bar
                             pbar.mark_task_start(next_step)
 
-                            if next_step.executor_id is None:
+                            if next_step.actor_pool_id is None:
                                 future = self._thread_pool.submit(
                                     self.build_partitions,
                                     next_step.instructions,
@@ -423,10 +423,10 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.resource_request,
                                 )
                             else:
-                                actor_pool = self._actor_pools.get(next_step.executor_id)
+                                actor_pool = self._actor_pools.get(next_step.actor_pool_id)
                                 assert (
                                     actor_pool is not None
-                                ), f"PyActorPool={next_step.executor_id} must outlive the tasks that need to be run on it."
+                                ), f"PyActorPool={next_step.actor_pool_id} must outlive the tasks that need to be run on it."
                                 future = actor_pool.submit(
                                     next_step.instructions,
                                     next_step.inputs,

@@ -61,6 +61,7 @@ def test_pyactor_pool():
     assert result_data.partition().to_pydict() == {"x": [4, 4, 4]}
 
 
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
 def test_pyactor_pool_not_enough_resources():
     cpu_count = multiprocessing.cpu_count()
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])

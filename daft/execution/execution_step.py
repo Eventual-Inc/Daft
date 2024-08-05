@@ -45,7 +45,7 @@ class PartitionTask(Generic[PartitionT]):
 
     # Indicates that this PartitionTask must be executed on the executor with the supplied ID
     # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
-    executor_id: str | None
+    actor_pool_id: str | None
 
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
@@ -91,7 +91,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         inputs: list[PartitionT],
         partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
-        executor_id: str | None = None,
+        actor_pool_id: str | None = None,
     ) -> None:
         self.inputs = inputs
         if partial_metadatas is not None:
@@ -101,7 +101,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
-        self.executor_id = executor_id
+        self.actor_pool_id = actor_pool_id
 
     def add_instruction(
         self,
@@ -139,7 +139,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=1,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
-            executor_id=self.executor_id,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
@@ -160,7 +160,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
-            executor_id=self.executor_id,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def __str__(self) -> str:

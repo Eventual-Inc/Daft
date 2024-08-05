@@ -233,7 +233,7 @@ def actor_pool_project(
                         inputs=[next_ready_child.partition()],
                         partial_metadatas=[next_ready_child.partition_metadata()],
                         resource_request=resource_request,
-                        executor_id=actor_pool_id,
+                        actor_pool_id=actor_pool_id,
                     )
                     .add_instruction(
                         instruction=execution_step.StatefulUDFProject(projection),
