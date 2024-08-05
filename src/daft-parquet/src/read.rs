@@ -22,6 +22,7 @@ use futures::{
 };
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 
@@ -59,6 +60,17 @@ impl From<ParquetSchemaInferenceOptions>
         arrow2::io::parquet::read::schema::SchemaInferenceOptions {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
         }
+    }
+}
+
+pub struct ParallelLockStepIter {
+    pub iters: ArrowChunkIters,
+}
+impl Iterator for ParallelLockStepIter {
+    type Item = arrow2::error::Result<ArrowChunk>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iters.par_iter_mut().map(|iter| iter.next()).collect()
     }
 }
 
@@ -410,8 +422,14 @@ async fn stream_parquet_single(
         Ok((
             Arc::new(metadata),
             parquet_reader
-                .read_from_ranges_into_table_stream(ranges)
-                .await,
+                .read_from_ranges_into_table_stream(
+                    ranges,
+                    maintain_order,
+                    predicate.clone(),
+                    columns_to_return,
+                    num_rows_to_return,
+                )
+                .await?,
         ))
     }?;
 
@@ -1014,11 +1032,13 @@ mod tests {
     use common_error::DaftResult;
 
     use daft_io::{IOClient, IOConfig};
+    use futures::StreamExt;
 
     use super::read_parquet;
+    use super::stream_parquet;
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
-        let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
+        let file = "s3://daft-public-data/benchmarking/lineitem-parquet/108417bd-5bee-43d9-bf9a-d6faec6afb2d-0.parquet";
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1039,8 +1059,43 @@ mod tests {
             Default::default(),
             None,
         )?;
-        assert_eq!(table.len(), 100);
+        assert_eq!(table.len(), 18751674);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parquet_streaming_read_from_s3() -> DaftResult<()> {
+        let file = "s3://daft-public-data/benchmarking/lineitem-parquet/108417bd-5bee-43d9-bf9a-d6faec6afb2d-0.parquet";
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let runtime_handle = daft_io::get_runtime(true)?;
+        runtime_handle.block_on(async move {
+            let tables = stream_parquet(
+                file,
+                None,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                &Default::default(),
+                None,
+                None,
+                false,
+            )
+            .await?
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+            let total_tables_len = tables.iter().map(|t| t.len()).sum::<usize>();
+            assert_eq!(total_tables_len, 18751674);
+            Ok(())
+        })
     }
 }

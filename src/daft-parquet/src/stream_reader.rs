@@ -11,15 +11,12 @@ use daft_dsl::ExprRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
-use rayon::{
-    iter::IntoParallelRefMutIterator,
-    prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
-};
+use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
 use snafu::ResultExt;
 
 use crate::{
     file::{build_row_ranges, RowGroupRange},
-    read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
+    read::{ArrowChunk, ArrowChunkIters, ParallelLockStepIter, ParquetSchemaInferenceOptions},
     UnableToConvertSchemaToDaftSnafu,
 };
 
@@ -46,6 +43,66 @@ fn prune_fields_from_schema(
     } else {
         Ok(schema)
     }
+}
+
+pub(crate) fn arrow_column_iters_to_table_iter(
+    arr_iters: ArrowChunkIters,
+    row_range_start: usize,
+    schema_ref: SchemaRef,
+    uri: String,
+    predicate: Option<ExprRef>,
+    original_columns: Option<Vec<String>>,
+    original_num_rows: Option<usize>,
+) -> impl Iterator<Item = DaftResult<Table>> {
+    let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
+
+    // Keep track of the current index in the row group so we can throw away arrays that are not needed
+    // and slice arrays that are partially needed.
+    let mut index_so_far = 0;
+    let owned_schema_ref = schema_ref.clone();
+    par_lock_step_iter.into_iter().map(move |chunk| {
+        let chunk = chunk.with_context(|_| {
+            super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
+        })?;
+        let all_series = chunk
+            .into_iter()
+            .zip(owned_schema_ref.as_ref().fields.iter())
+            .filter_map(|(mut arr, (f_name, _))| {
+                if (index_so_far + arr.len()) < row_range_start {
+                    // No need to process arrays that are less than the start offset
+                    return None;
+                }
+                if index_so_far < row_range_start {
+                    // Slice arrays that are partially needed
+                    let offset = row_range_start.saturating_sub(index_so_far);
+                    arr = arr.sliced(offset, arr.len() - offset);
+                }
+                let series_result =
+                    Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
+                Some(series_result)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let len = all_series[0].len();
+        if all_series.iter().any(|s| s.len() != len) {
+            return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
+        }
+        index_so_far += len;
+
+        let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
+            .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
+        // Apply pushdowns if needed
+        if let Some(predicate) = &predicate {
+            table = table.filter(&[predicate.clone()])?;
+            if let Some(oc) = &original_columns {
+                table = table.get_columns(oc)?;
+            }
+            if let Some(nr) = original_num_rows {
+                table = table.head(nr)?;
+            }
+        }
+        Ok(table)
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -386,98 +443,40 @@ pub(crate) fn local_parquet_stream(
         })
         .unzip();
 
-    let uri = uri.to_string();
+    let owned_uri = uri.to_string();
+    let table_iters =
+        column_iters
+            .into_iter()
+            .zip(row_ranges)
+            .map(move |(rg_col_iter_result, rg_range)| {
+                let rg_col_iter = rg_col_iter_result?;
+                let table_iter = arrow_column_iters_to_table_iter(
+                    rg_col_iter,
+                    rg_range.start,
+                    schema_ref.clone(),
+                    owned_uri.clone(),
+                    predicate.clone(),
+                    original_columns.clone(),
+                    original_num_rows,
+                );
+                DaftResult::Ok(table_iter)
+            });
+
     rayon::spawn(move || {
         // Once a row group has been read into memory and we have the column iterators,
         // we can start processing them in parallel.
-        let par_column_iters = column_iters.zip(senders).zip(row_ranges).par_bridge();
+        let par_table_iters = table_iters.zip(senders).par_bridge();
 
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
-        par_column_iters.for_each(move |((rg_col_iter_result, tx), rg_range)| {
-            let rg_col_iter = match rg_col_iter_result {
-                Ok(iter) => iter,
+        par_table_iters.for_each(move |(table_iter_result, tx)| {
+            let table_iter = match table_iter_result {
+                Ok(t) => t,
                 Err(e) => {
-                    if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                        tx.try_send(Err(e.into()))
-                    {
-                        panic!("Parquet stream channel should not be full")
-                    }
+                    let _ = tx.send(Err(e));
                     return;
                 }
             };
-            let owned_schema_ref = schema_ref.clone();
-            let owned_predicate = predicate.clone();
-            let owned_original_columns = original_columns.clone();
-            let owned_uri = uri.clone();
-
-            struct ParallelLockStepIter {
-                iters: ArrowChunkIters,
-            }
-            impl Iterator for ParallelLockStepIter {
-                type Item = arrow2::error::Result<ArrowChunk>;
-
-                fn next(&mut self) -> Option<Self::Item> {
-                    self.iters.par_iter_mut().map(|iter| iter.next()).collect()
-                }
-            }
-            let par_lock_step_iter = ParallelLockStepIter { iters: rg_col_iter };
-
-            // Keep track of the current index in the row group so we can throw away arrays that are not needed
-            // and slice arrays that are partially needed.
-            let mut index_so_far = 0;
-            let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
-                let chunk = chunk.with_context(|_| {
-                    super::UnableToCreateChunkFromStreamingFileReaderSnafu {
-                        path: owned_uri.clone(),
-                    }
-                })?;
-                let all_series = chunk
-                    .into_iter()
-                    .zip(owned_schema_ref.fields.clone())
-                    .filter_map(|(mut arr, (f_name, _))| {
-                        if (index_so_far + arr.len()) < rg_range.start {
-                            // No need to process arrays that are less than the start offset
-                            return None;
-                        }
-                        if index_so_far < rg_range.start {
-                            // Slice arrays that are partially needed
-                            let offset = rg_range.start.saturating_sub(index_so_far);
-                            arr = arr.sliced(offset, arr.len() - offset);
-                        }
-                        let series_result =
-                            Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
-                        Some(series_result)
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-
-                let len = all_series[0].len();
-                if all_series.iter().any(|s| s.len() != len) {
-                    return Err(super::Error::ParquetColumnsDontHaveEqualRows {
-                        path: owned_uri.clone(),
-                    }
-                    .into());
-                }
-                index_so_far += len;
-
-                let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
-                    .with_context(|_| super::UnableToCreateTableFromChunkSnafu {
-                        path: owned_uri.clone(),
-                    })?;
-
-                // Apply pushdowns if needed
-                if let Some(predicate) = &owned_predicate {
-                    table = table.filter(&[predicate.clone()])?;
-                    if let Some(oc) = &owned_original_columns {
-                        table = table.get_columns(oc)?;
-                    }
-                    if let Some(nr) = original_num_rows {
-                        table = table.head(nr)?;
-                    }
-                }
-                DaftResult::Ok(table)
-            });
-
             for table_result in table_iter {
                 let table_err = table_result.is_err();
                 if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
