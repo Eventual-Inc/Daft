@@ -1,6 +1,7 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
 
+use core::slice;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
@@ -20,9 +21,15 @@ use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue};
 #[cfg(feature = "python")]
 pub mod ffi;
+mod growable;
 mod ops;
+mod probe_table;
 
-pub use ops::infer_join_schema;
+pub use growable::GrowableTable;
+pub use ops::{infer_join_schema, infer_join_schema_mapper, JoinOutputMapper};
+
+pub use probe_table::{ProbeTable, ProbeTableBuilder};
+
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
@@ -383,6 +390,22 @@ impl Table {
         )
     }
 
+    pub fn union(&self, other: &Table) -> DaftResult<Self> {
+        if self.num_rows != other.num_rows {
+            return Err(DaftError::ValueError(format!(
+                "Cannot union tables of length {} and {}",
+                self.num_rows, other.num_rows
+            )));
+        }
+        let unioned = self
+            .columns
+            .iter()
+            .chain(other.columns.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        Self::from_nonempty_columns(unioned)
+    }
+
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
         let i = self.schema.get_index(name.as_ref())?;
         Ok(self.columns.get(i).unwrap())
@@ -722,6 +745,14 @@ impl Display for Table {
 impl AsRef<Table> for Table {
     fn as_ref(&self) -> &Table {
         self
+    }
+}
+
+impl<'a> IntoIterator for &'a Table {
+    type Item = &'a Series;
+    type IntoIter = slice::Iter<'a, Series>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.columns.as_slice().iter()
     }
 }
 
