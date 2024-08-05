@@ -122,7 +122,7 @@ fn compare_dyn_boolean(nulls_equal: bool) -> DynArrayComparator {
     })
 }
 
-pub fn build_array_compare2(
+pub fn build_dyn_array_compare(
     left: &DataType,
     right: &DataType,
     nulls_equal: bool,
