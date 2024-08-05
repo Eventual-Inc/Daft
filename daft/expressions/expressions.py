@@ -25,6 +25,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
+from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import stateful_udf as _stateful_udf
@@ -1124,7 +1125,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
-            >>> col("data").url.upload("s3://my-bucket/my-folder")
+            >>> col("data").url.upload("s3://my-bucket/my-folder") # doctest: +SKIP
 
         Args:
             location: a folder location to upload data into
@@ -1448,7 +1449,31 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the time for a datetime column
 
         Example:
-            >>> col("x").dt.time()
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "x": [
+            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
+            ...             datetime.datetime(2021, 1, 1, 12, 1, 59),
+            ...             datetime.datetime(2021, 1, 1, 23, 59, 59),
+            ...         ],
+            ...     }
+            ... )
+            >>> df = df.with_column("time", df["x"].dt.time())
+            >>> df.show()
+            ╭───────────────────────────────┬────────────────────╮
+            │ x                             ┆ time               │
+            │ ---                           ┆ ---                │
+            │ Timestamp(Microseconds, None) ┆ Time(Microseconds) │
+            ╞═══════════════════════════════╪════════════════════╡
+            │ 2021-01-01 00:01:01           ┆ 00:01:01           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 12:01:59           ┆ 12:01:59           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021-01-01 23:59:59           ┆ 23:59:59           │
+            ╰───────────────────────────────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Returns:
             Expression: a Time expression
@@ -2771,6 +2796,37 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a Float64 expression with the type of the list values
         """
         return Expression._from_pyexpr(self._expr.list_max())
+
+    def sort(self, desc: bool | Expression = False) -> Expression:
+        """Sorts the inner lists of a list column.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 3], [4, 2], [6, 7, 1]]})
+            >>> df.select(df["a"].list.sort()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 3]      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [2, 4]      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1, 6, 7]   │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
+
+        Returns:
+            Expression: An expression with the sorted lists
+        """
+        if isinstance(desc, bool):
+            desc = Expression._to_expression(desc)
+        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

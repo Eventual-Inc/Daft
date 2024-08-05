@@ -213,6 +213,7 @@ List
    Expression.list.get
    Expression.list.slice
    Expression.list.chunk
+   Expression.list.sort
 
 Struct
 ######

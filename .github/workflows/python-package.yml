@@ -724,7 +724,7 @@ jobs:
       run: |
         source activate
         maturin develop
-        pytest --doctest-modules --continue-on-collection-errors daft/ || true
+        pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
 
 
   publish-coverage-reports:

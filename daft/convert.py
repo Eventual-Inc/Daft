@@ -22,7 +22,20 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
     """Creates a DataFrame from a list of dictionaries.
 
     Example:
+        >>> import daft
         >>> df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
+        >>> df.show()
+        ╭───────╮
+        │ foo   │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
 
     Args:
         data: List of dictionaries, where each key is a column name.
@@ -40,7 +53,20 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
     """Creates a DataFrame from a Python dictionary.
 
     Example:
+        >>> import daft
         >>> df = daft.from_pydict({"foo": [1, 2]})
+        >>> df.show()
+        ╭───────╮
+        │ foo   │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
 
     Args:
         data: Key -> Sequence[item] of data. Each Key is created as a column, and must have a value that is
@@ -59,8 +85,24 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
     """Creates a DataFrame from a pyarrow Table.
 
     Example:
+        >>> import pyarrow as pa
+        >>> import daft
         >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>> df = daft.from_arrow(t)
+        >>> df.show()
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3     ┆ baz  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
     Args:
         data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
@@ -78,8 +120,24 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
     """Creates a Daft DataFrame from a pandas DataFrame.
 
     Example:
+        >>> import pandas as pd
+        >>> import daft
         >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-        >>> df = daft.from_pandas(pd_df))
+        >>> df = daft.from_pandas(pd_df)
+        >>> df.show()
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3     ┆ baz  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
     Args:
         data: pandas DataFrame(s) that we wish to convert into a Daft DataFrame.
