@@ -12,25 +12,46 @@ from daft.table import MicroPartition
 @daft.udf(return_dtype=DataType.int64())
 class MyStatefulUDF:
     def __init__(self):
-        pass
+        self.state = 0
 
     def __call__(self, x):
-        return x
+        self.state += 1
+        return [i + self.state for i in x.to_pylist()]
 
 
 def test_pyactor_pool():
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
-    pool = PyActorPool("my-pool", 2, ResourceRequest(num_cpus=1), projection)
+    pool = PyActorPool("my-pool", 1, ResourceRequest(num_cpus=1), projection)
+    initial_partition = MicroPartition.from_pydict({"x": [1, 1, 1]})
+    ppm = PartialPartitionMetadata(num_rows=None, size_bytes=None)
+    instr = StatefulUDFProject(projection=projection)
 
     with pool as pool_id:
         assert pool_id == "my-pool"
 
         result = pool.submit(
-            instruction_stack=[StatefulUDFProject(projection=projection)],
-            partitions=[MicroPartition.from_pydict({"x": [1, 2, 3]})],
-            final_metadata=[PartialPartitionMetadata(num_rows=None, size_bytes=None)],
+            instruction_stack=[instr],
+            partitions=[initial_partition],
+            final_metadata=[ppm],
         )
         done, _ = wait([result], timeout=None)
         result_data = list(done)[0].result()[0]
+        assert result_data.partition().to_pydict() == {"x": [2, 2, 2]}
 
-        assert result_data.partition().to_pydict() == {"x": [1, 2, 3]}
+        result = pool.submit(
+            instruction_stack=[instr],
+            partitions=[initial_partition],
+            final_metadata=[ppm],
+        )
+        done, _ = wait([result], timeout=None)
+        result_data = list(done)[0].result()[0]
+        assert result_data.partition().to_pydict() == {"x": [3, 3, 3]}
+
+        result = pool.submit(
+            instruction_stack=[instr],
+            partitions=[initial_partition],
+            final_metadata=[ppm],
+        )
+        done, _ = wait([result], timeout=None)
+        result_data = list(done)[0].result()[0]
+        assert result_data.partition().to_pydict() == {"x": [4, 4, 4]}
