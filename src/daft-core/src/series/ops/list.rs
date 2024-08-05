@@ -1,6 +1,6 @@
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
-use crate::CountMode;
+use crate::{CountMode, IntoSeries};
 use common_error::DaftError;
 
 use common_error::DaftResult;
@@ -138,6 +138,21 @@ impl Series {
             DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
             dt => Err(DaftError::TypeError(format!(
                 "Max not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_sort(&self, desc: &Series) -> DaftResult<Series> {
+        let desc_arr = desc.bool()?;
+
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr)?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_sort(desc_arr)?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "List sort not implemented for {}",
                 dt
             ))),
         }

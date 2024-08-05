@@ -978,6 +978,11 @@ class SeriesListNamespace(SeriesNamespace):
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
 
+    def sort(self, desc: bool | Series = False) -> Series:
+        if isinstance(desc, bool):
+            desc = Series.from_pylist([desc], name="desc")
+        return Series._from_pyseries(self._series.list_sort(desc._series))
+
 
 class SeriesMapNamespace(SeriesNamespace):
     def get(self, key: Series) -> Series:
