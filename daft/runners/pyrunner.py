@@ -185,11 +185,10 @@ class PyActorPool:
         self._executor.shutdown()
         self._executor = None
 
-    def setup(self) -> str:
+    def setup(self) -> None:
         self._executor = futures.ProcessPoolExecutor(
             self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
         )
-        return self._pool_id
 
 
 class PyRunnerIO(runner_io.RunnerIO):
@@ -332,17 +331,16 @@ class PyRunner(Runner[MicroPartition]):
             )
 
         try:
-            actor_pool = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
-            pool_id = actor_pool.setup()
-
-            yield pool_id
+            self._actor_pools[actor_pool_id] = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
+            self._actor_pools[actor_pool_id].setup()
+            yield actor_pool_id
         # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
         finally:
             with self._resource_accounting_lock:
                 self._available_bytes_memory += total_resource_request.memory_bytes or 0
                 self._available_cpus += total_resource_request.num_cpus or 0.0
                 self._available_gpus += total_resource_request.num_gpus or 0.0
-            actor_pool.teardown()
+            self._actor_pools[actor_pool_id].teardown()
 
     def _physical_plan_to_partitions(
         self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
