@@ -705,6 +705,7 @@ mod fmt;
 pub mod indexable;
 mod iterator;
 
+pub mod dyn_ord;
 pub mod growable;
 pub mod ord;
 
