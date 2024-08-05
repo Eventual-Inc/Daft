@@ -4,7 +4,7 @@
 #![feature(iterator_try_reduce)]
 
 mod builder;
-mod display;
+pub mod display;
 mod logical_ops;
 mod logical_optimization;
 pub mod logical_plan;

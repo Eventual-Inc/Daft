@@ -124,7 +124,9 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[io.IOBase] = None) -> None:
+    def explain(
+        self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
+    ) -> Any:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -132,33 +134,49 @@ class DataFrame:
         Args:
             show_all (bool): Whether to show the optimized logical plan and the physical plan in addition to the
                 unoptimized logical plan.
+            format (str): The format to print the plan in. one of 'ascii' or 'mermaid'
             simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
                 of how each op is configured.
+
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
+        is_cached = self._result_cache is not None
+        if format == "mermaid":
+            from daft.dataframe.display import MermaidFormatter
+            from daft.utils import in_notebook
+
+            if file is not None:
+                text = MermaidFormatter(self.__builder, show_all, simple, is_cached)._repr_markdown_()
+                print(text, file=file)
+            if in_notebook():
+                return MermaidFormatter(self.__builder, show_all, simple, is_cached)
+            else:
+                return MermaidFormatter(self.__builder, show_all, simple, is_cached)._repr_markdown_()
+
         print_to_file = partial(print, file=file)
 
         if self._result_cache is not None:
             print_to_file("Result is cached and will skip computation\n")
-            print_to_file(self._builder.pretty_print(simple))
+            print_to_file(self._builder.pretty_print(simple, format=format))
 
             print_to_file("However here is the logical plan used to produce this result:\n", file=file)
 
         builder = self.__builder
         print_to_file("== Unoptimized Logical Plan ==\n")
-        print_to_file(builder.pretty_print(simple))
+        print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            print_to_file(physical_plan_scheduler.pretty_print(simple))
+            print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
             )
+        return None
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config

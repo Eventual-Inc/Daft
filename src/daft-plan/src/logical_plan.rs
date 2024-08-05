@@ -182,6 +182,29 @@ impl LogicalPlan {
         }
     }
 
+    pub fn children_ref(&self) -> Vec<&Self> {
+        match self {
+            Self::Source(..) => vec![],
+            Self::Project(Project { input, .. }) => vec![input],
+            Self::Filter(Filter { input, .. }) => vec![input],
+            Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Explode(Explode { input, .. }) => vec![input],
+            Self::Unpivot(Unpivot { input, .. }) => vec![input],
+            Self::Sort(Sort { input, .. }) => vec![input],
+            Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::Distinct(Distinct { input, .. }) => vec![input],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Pivot(Pivot { input, .. }) => vec![input],
+            Self::Concat(Concat { input, other }) => vec![input, other],
+            Self::Join(Join { left, right, .. }) => vec![left, right],
+            Self::Sink(Sink { input, .. }) => vec![input],
+            Self::Sample(Sample { input, .. }) => vec![input],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                vec![input]
+            }
+        }
+    }
+
     pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> LogicalPlan {
         match children {
             [input] => match self {

@@ -1,5 +1,6 @@
 use common_error::DaftResult;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -10,6 +11,7 @@ use {
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
+    daft_plan::display::PyDisplayFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
     pyo3::{
@@ -68,6 +70,10 @@ impl PhysicalPlanScheduler {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.plan().repr_ascii(simple))
+    }
+
+    pub fn display_as(&self, display_format: PyDisplayFormat) -> PyResult<String> {
+        Ok(self.plan().display_as(display_format.0))
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(

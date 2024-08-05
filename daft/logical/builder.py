@@ -68,17 +68,14 @@ class LogicalPlanBuilder:
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
-    def pretty_print(self, simple: bool = False) -> str:
+    def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """
         Pretty prints the current underlying logical plan.
         """
-        if simple:
-            return self._builder.repr_ascii(simple=True)
-        else:
-            return repr(self)
+        return self._builder.display_as({"simple": simple, "format": format})
 
     def __repr__(self) -> str:
-        return self._builder.repr_ascii(simple=False)
+        return self._builder.display_as({"simple": False, "format": "ascii"})
 
     def optimize(self) -> LogicalPlanBuilder:
         """

@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    display::DisplayFormat,
     logical_ops,
     logical_optimization::Optimizer,
     logical_plan::LogicalPlan,
@@ -480,6 +481,15 @@ impl LogicalPlanBuilder {
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
     }
+
+    pub fn display_as(&self, format: DisplayFormat) -> String {
+        use crate::display::mermaid::MermaidDisplay;
+
+        match format {
+            DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
+            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
+        }
+    }
 }
 
 /// A Python-facing wrapper of the LogicalPlanBuilder.
@@ -811,6 +821,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
+    }
+
+    pub fn display_as(&self, opts: crate::display::PyDisplayFormat) -> PyResult<String> {
+        Ok(self.builder.display_as(opts.0))
     }
 }
 

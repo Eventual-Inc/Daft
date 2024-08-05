@@ -33,14 +33,11 @@ class PhysicalPlanScheduler:
     def num_partitions(self) -> int:
         return self._scheduler.num_partitions()
 
-    def pretty_print(self, simple: bool = False) -> str:
+    def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """
         Pretty prints the current underlying physical plan.
         """
-        if simple:
-            return self._scheduler.repr_ascii(simple=True)
-        else:
-            return repr(self)
+        return self._scheduler.display_as({"simple": simple, "format": format})
 
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)

@@ -1,67 +1,9 @@
-pub mod mermaid;
-pub mod tree;
-
 use std::{
-    fmt::{self, Display, Write},
+    fmt::{self, Write},
     sync::Arc,
 };
 
-use mermaid::{MermaidDisplayOptions, SubgraphOptions};
-#[cfg(feature = "python")]
-use pyo3::{exceptions::PyValueError, FromPyObject, PyAny, PyResult};
-
-pub enum DisplayFormat {
-    Ascii { simple: bool },
-    Mermaid(MermaidDisplayOptions),
-}
-
-#[cfg(feature = "python")]
-pub struct PyDisplayFormat(pub DisplayFormat);
-
-#[cfg(feature = "python")]
-impl FromPyObject<'_> for PyDisplayFormat {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let format = ob.get_item("format")?.extract()?;
-        let simple = ob.get_item("simple")?.extract()?;
-
-        let format = match format {
-            "ascii" => DisplayFormat::Ascii { simple },
-            "mermaid" => {
-                let subgraph_id: Option<String> = ob
-                    .get_item("subgraph_id")
-                    .and_then(|i| i.extract::<String>())
-                    .ok();
-
-                let name: Option<String> =
-                    ob.get_item("name").and_then(|i| i.extract::<String>()).ok();
-
-                let subgraph_options = match (name, subgraph_id) {
-                    (Some(name), Some(subgraph_id)) => Some(SubgraphOptions { name, subgraph_id }),
-                    (None, Some(_)) | (Some(_), None) => {
-                        return Err(PyValueError::new_err(
-                            "Both 'name' and 'prefix' must be provided for subgraph options",
-                        ))
-                    }
-                    _ => None,
-                };
-
-                DisplayFormat::Mermaid(MermaidDisplayOptions {
-                    simple,
-                    subgraph_options,
-                })
-            }
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Unsupported display format: {}",
-                    format
-                )))
-            }
-        };
-        Ok(PyDisplayFormat(format))
-    }
-}
-
-pub(crate) trait TreeDisplay {
+pub trait TreeDisplay {
     // Required method: Get a list of lines representing this node. No trailing newlines.
     fn get_multiline_representation(&self) -> Vec<String>;
 
@@ -215,43 +157,3 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
         self.children()
     }
 }
-
-// Single node display.
-impl Display for crate::LogicalPlan {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
-        Ok(())
-    }
-}
-
-// Single node display.
-impl Display for crate::physical_plan::PhysicalPlan {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
-        Ok(())
-    }
-}
-
-// pub enum DisplayFormatType {
-//     Ascii { simple: bool },
-//     Tree,
-//     Mermaid,
-//     Graphviz,
-// }
-
-// pub trait DisplayAs {
-//     /// Format according to `DisplayFormatType`, used when verbose representation looks
-//     fn fmt_as(&self, fmt_type: &DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result;
-// }
-
-// impl DisplayAs for crate::LogicalPlan {
-//     fn fmt_as(&self, fmt_type: &DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-//         let s = match fmt_type {
-//             DisplayFormatType::Ascii { simple } => self.repr_ascii(*simple),
-//             DisplayFormatType::Tree => self.repr_indent(),
-//             DisplayFormatType::Mermaid => todo!(),
-//             DisplayFormatType::Graphviz => todo!(),
-//         };
-//         write!(f, "{}", s)
-//     }
-// }
