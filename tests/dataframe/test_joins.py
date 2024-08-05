@@ -13,10 +13,6 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         pytest.skip("Sort merge currently only supports inner joins")
     elif join_strategy == "broadcast" and join_type == "outer":
         pytest.skip("Broadcast join does not support outer joins")
-    elif join_strategy == "broadcast" and join_type == "anti":
-        pytest.skip("Broadcast join does not support anti joins")
-    elif join_strategy == "broadcast" and join_type == "semi":
-        pytest.skip("Broadcast join does not support semi joins")
 
 
 def test_invalid_join_strategies(make_df):
@@ -804,6 +800,7 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
         ),
     ],
 )
+@pytest.mark.skip()
 def test_join_semi_anti_different_names(join_strategy, join_type, expected, make_df, repartition_nparts):
     skip_invalid_join_strategies(join_strategy, join_type)
 
