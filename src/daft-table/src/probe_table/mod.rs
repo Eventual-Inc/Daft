@@ -110,7 +110,6 @@ impl ProbeTable {
             .collect::<DaftResult<Vec<_>>>()?;
         self.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.tables.last().unwrap().0.as_slice();
-        // TODO: move probe table logic into that struct impl
         for (i, h) in hashes.as_arrow().values_iter().enumerate() {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {

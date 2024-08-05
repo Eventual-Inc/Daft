@@ -6,7 +6,7 @@ use arrow2::array::Array;
 use common_error::DaftError;
 use common_error::DaftResult;
 
-use arrow2::array::dyn_ord::build_array_compare2;
+use arrow2::array::dyn_ord::build_dyn_array_compare;
 use arrow2::array::dyn_ord::DynArrayComparator;
 
 pub type MultiDynArrayComparator =
@@ -24,7 +24,7 @@ pub fn build_dyn_compare(
             left, right
         )))
     } else {
-        Ok(build_array_compare2(
+        Ok(build_dyn_array_compare(
             &left.to_physical().to_arrow()?,
             &right.to_physical().to_arrow()?,
             nulls_equal,

@@ -181,7 +181,7 @@ impl IntermediateOperator for HashJoinProber {
 
         // Left should only be created once per probe table
         let mut left_growable =
-            GrowableTable::new(&self.tables.iter().collect::<Vec<_>>(), false, 20);
+            GrowableTable::new(&self.tables.iter().collect::<Vec<_>>(), false, 20)?;
         // right should only be created morsel
 
         let right_input_tables = input.get_tables()?;
@@ -192,7 +192,7 @@ impl IntermediateOperator for HashJoinProber {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let mut right_growable =
-            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
+            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20)?;
 
         drop(_growables);
         {
@@ -242,63 +242,5 @@ impl BlockingSink for HashJoinOperator {
 impl Source for HashJoinOperator {
     fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         stream::empty().boxed()
-    }
-}
-
-impl IntermediateOperator for HashJoinOperator {
-    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        if let HashJoinState::Probing {
-            probe_table,
-            tables,
-        } = &self.join_state
-        {
-            let _span = info_span!("HashJoinOperator::execute").entered();
-            let _growables = info_span!("HashJoinOperator::build_growables").entered();
-
-            // Left should only be created once per probe table
-            let mut left_growable =
-                GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20);
-            // right should only be created morsel
-
-            let right_input_tables = input.get_tables()?;
-
-            let right_tables = right_input_tables
-                .iter()
-                .map(|t| self.join_mapper.map_right(t))
-                .collect::<DaftResult<Vec<_>>>()?;
-
-            let mut right_growable =
-                GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20);
-
-            drop(_growables);
-            {
-                let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
-                for (r_table_idx, table) in right_input_tables.iter().enumerate() {
-                    // we should emit one table at a time when this is streaming
-                    let join_keys = table.eval_expression_list(&self.right_on)?;
-                    let iter = probe_table.probe(&join_keys)?;
-
-                    for (l_table_idx, l_row_idx, right_idx) in iter {
-                        left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
-                        // we can perform run length compression for this to make this more efficient
-                        right_growable.extend(r_table_idx, right_idx as usize, 1);
-                    }
-                }
-            }
-            let left_table = left_growable.build()?;
-            let right_table = right_growable.build()?;
-
-            let final_table = left_table.union(&right_table)?;
-            Ok(Arc::new(MicroPartition::new_loaded(
-                final_table.schema.clone(),
-                Arc::new(vec![final_table]),
-                None,
-            )))
-        } else {
-            panic!("we should be in probing mode during execution");
-        }
-    }
-    fn name(&self) -> &'static str {
-        "HashJoin"
     }
 }
