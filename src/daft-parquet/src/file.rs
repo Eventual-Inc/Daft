@@ -420,17 +420,14 @@ impl ParquetFileReader {
                     .collect::<Vec<_>>();
                 let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
-                // for each col range in the needed_byte_ranges, get the range reader for that col
                 for range in needed_byte_ranges.into_iter() {
                     let range_reader = ranges.get_range_reader(range).await?;
                     range_readers.push(Box::pin(range_reader))
                 }
 
-                // collect decompressed iters for each col in the row group
                 let mut decompressed_iters = Vec::with_capacity(filtered_cols_idx.len());
                 let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
 
-                // for each range reader
                 for (col_idx, range_reader) in filtered_cols_idx.into_iter().zip(range_readers) {
                     let col = rg
                         .columns()
@@ -439,7 +436,6 @@ impl ParquetFileReader {
                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
                     num_values.push(col.metadata().num_values as usize);
 
-                    // get the compressed page stream for that col
                     let compressed_page_stream = get_owned_page_stream_from_column_start(
                         col,
                         range_reader,
@@ -454,7 +450,6 @@ impl ParquetFileReader {
                     })?;
                     let page_stream = streaming_decompression(compressed_page_stream);
                     let pinned_stream = Box::pin(page_stream);
-                    // add the stream iterator to the decompressed_iters
                     decompressed_iters.push(StreamIterator::new(pinned_stream, rt_handle.clone()))
                 }
                 let arr_iter = column_iter_to_arrays(
