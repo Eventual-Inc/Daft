@@ -2801,6 +2801,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """Sorts the inner lists of a list column.
 
         Example:
+            >>> import daft
             >>> df = daft.from_pydict({"a": [[1, 3], [4, 2], [6, 7, 1]]})
             >>> df.select(df["a"].list.sort()).show()
             ╭─────────────╮
@@ -2814,6 +2815,8 @@ class ExpressionListNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ [1, 6, 7]   │
             ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
