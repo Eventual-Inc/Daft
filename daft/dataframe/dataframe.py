@@ -146,13 +146,17 @@ class DataFrame:
             from daft.dataframe.display import MermaidFormatter
             from daft.utils import in_notebook
 
+            instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
             if file is not None:
-                text = MermaidFormatter(self.__builder, show_all, simple, is_cached)._repr_markdown_()
+                # if we are printing to a file, we print the markdown representation of the plan
+                text = instance._repr_markdown_()
                 print(text, file=file)
             if in_notebook():
-                return MermaidFormatter(self.__builder, show_all, simple, is_cached)
+                # if in a notebook, we return the class instance and let jupyter display it
+                return instance
             else:
-                return MermaidFormatter(self.__builder, show_all, simple, is_cached)._repr_markdown_()
+                # if we are not in a notebook, we return the raw markdown instead of the class instance
+                return repr(instance)
 
         print_to_file = partial(print, file=file)
 
