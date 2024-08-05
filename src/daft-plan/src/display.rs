@@ -231,27 +231,3 @@ impl Display for crate::physical_plan::PhysicalPlan {
         Ok(())
     }
 }
-
-// pub enum DisplayFormatType {
-//     Ascii { simple: bool },
-//     Tree,
-//     Mermaid,
-//     Graphviz,
-// }
-
-// pub trait DisplayAs {
-//     /// Format according to `DisplayFormatType`, used when verbose representation looks
-//     fn fmt_as(&self, fmt_type: &DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result;
-// }
-
-// impl DisplayAs for crate::LogicalPlan {
-//     fn fmt_as(&self, fmt_type: &DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-//         let s = match fmt_type {
-//             DisplayFormatType::Ascii { simple } => self.repr_ascii(*simple),
-//             DisplayFormatType::Tree => self.repr_indent(),
-//             DisplayFormatType::Mermaid => todo!(),
-//             DisplayFormatType::Graphviz => todo!(),
-//         };
-//         write!(f, "{}", s)
-//     }
-// }
