@@ -301,6 +301,12 @@ pub(crate) struct ParquetFileReader {
 }
 
 impl ParquetFileReader {
+    const CHUNK_SIZE: usize = 2048;
+    // Set to a very high number 256MB to guard against unbounded large
+    // downloads from remote storage, which likely indicates corrupted Parquet data
+    // See: https://github.com/Eventual-Inc/Daft/issues/1551
+    const MAX_HEADER_SIZE: usize = 256 * 1024 * 1024;
+
     fn new(
         uri: String,
         metadata: parquet2::metadata::FileMetaData,
@@ -380,7 +386,7 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-        let chunk_size = 2048;
+        let rt_handle = tokio::runtime::Handle::current();
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
         let schema_ref = Arc::new(daft_schema);
 
@@ -394,10 +400,8 @@ impl ParquetFileReader {
             let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
             let columns = rg.columns();
 
-            let len_fields = schema_ref.as_ref().fields.len();
-            let mut arr_iters = Vec::with_capacity(len_fields);
+            let mut arr_iters = Vec::with_capacity(self.arrow_schema.fields.len());
             for field in self.arrow_schema.fields.clone().into_iter() {
-                let rt_handle = tokio::runtime::Handle::current();
                 let filtered_cols_idx = columns
                     .iter()
                     .enumerate()
@@ -441,12 +445,8 @@ impl ParquetFileReader {
                         range_reader,
                         vec![],
                         Arc::new(|_, _| true),
-                        // Set to a very high number 256MB to guard against unbounded large
-                        // downloads from remote storage, which likely indicates corrupted Parquet data
-                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
-                        256 * 1024 * 1024,
+                        Self::MAX_HEADER_SIZE,
                     )
-                    .await
                     .with_context(|_| {
                         UnableToCreateParquetPageStreamSnafu::<String> {
                             path: self.uri.clone(),
@@ -461,7 +461,7 @@ impl ParquetFileReader {
                     decompressed_iters,
                     ptypes.iter().collect(),
                     field.clone(),
-                    Some(chunk_size),
+                    Some(Self::CHUNK_SIZE),
                     num_rows,
                     num_values,
                 )?;
@@ -485,7 +485,7 @@ impl ParquetFileReader {
             .iter()
             .map(|rg_range| {
                 let expected_num_chunks =
-                    f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
+                    f32::ceil(rg_range.num_rows as f32 / Self::CHUNK_SIZE as f32) as usize;
                 crossbeam_channel::bounded(expected_num_chunks)
             })
             .unzip();
@@ -595,12 +595,8 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        // Set to a very high number 256MB to guard against unbounded large
-                                        // downloads from remote storage, which likely indicates corrupted Parquet data
-                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
-                                        256 * 1024 * 1024,
+                                        Self::MAX_HEADER_SIZE,
                                     )
-                                    .await
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {
                                             path: owned_uri.clone(),
@@ -618,7 +614,7 @@ impl ParquetFileReader {
                                     decompressed_iters,
                                     ptypes.iter().collect(),
                                     field.clone(),
-                                    Some(2048),
+                                    Some(Self::CHUNK_SIZE),
                                     num_rows,
                                     num_values,
                                 );
@@ -782,12 +778,8 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        // Set to a very high number 256MB to guard against unbounded large
-                                        // downloads from remote storage, which likely indicates corrupted Parquet data
-                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
-                                        256 * 1024 * 1024,
+                                        Self::MAX_HEADER_SIZE,
                                     )
-                                    .await
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {
                                             path: owned_uri.clone(),

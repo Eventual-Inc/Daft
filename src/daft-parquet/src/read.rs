@@ -1036,9 +1036,11 @@ mod tests {
 
     use super::read_parquet;
     use super::stream_parquet;
+
+    const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
-        let file = "s3://daft-public-data/benchmarking/lineitem-parquet/108417bd-5bee-43d9-bf9a-d6faec6afb2d-0.parquet";
+        let file = PARQUET_FILE;
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1059,14 +1061,14 @@ mod tests {
             Default::default(),
             None,
         )?;
-        assert_eq!(table.len(), 18751674);
+        assert_eq!(table.len(), 100);
 
         Ok(())
     }
 
     #[test]
     fn test_parquet_streaming_read_from_s3() -> DaftResult<()> {
-        let file = "s3://daft-public-data/benchmarking/lineitem-parquet/108417bd-5bee-43d9-bf9a-d6faec6afb2d-0.parquet";
+        let file = PARQUET_FILE;
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1094,7 +1096,7 @@ mod tests {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
             let total_tables_len = tables.iter().map(|t| t.len()).sum::<usize>();
-            assert_eq!(total_tables_len, 18751674);
+            assert_eq!(total_tables_len, 100);
             Ok(())
         })
     }
