@@ -11,12 +11,15 @@ use daft_dsl::ExprRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
-use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
+use rayon::{
+    iter::IntoParallelRefMutIterator,
+    prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
+};
 use snafu::ResultExt;
 
 use crate::{
     file::{build_row_ranges, RowGroupRange},
-    read::{ArrowChunk, ArrowChunkIters, ParallelLockStepIter, ParquetSchemaInferenceOptions},
+    read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     UnableToConvertSchemaToDaftSnafu,
 };
 
@@ -54,6 +57,16 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
 ) -> impl Iterator<Item = DaftResult<Table>> {
+    pub struct ParallelLockStepIter {
+        pub iters: ArrowChunkIters,
+    }
+    impl Iterator for ParallelLockStepIter {
+        type Item = arrow2::error::Result<ArrowChunk>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iters.par_iter_mut().map(|iter| iter.next()).collect()
+        }
+    }
     let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
 
     // Keep track of the current index in the row group so we can throw away arrays that are not needed

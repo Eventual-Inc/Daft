@@ -401,14 +401,14 @@ impl ParquetFileReader {
             let columns = rg.columns();
 
             let mut arr_iters = Vec::with_capacity(self.arrow_schema.fields.len());
-            for field in self.arrow_schema.fields.clone().into_iter() {
+            for field in self.arrow_schema.fields.iter() {
                 let filtered_cols_idx = columns
                     .iter()
                     .enumerate()
                     .filter(|(_, x)| x.descriptor().path_in_schema[0] == field.name)
                     .map(|(i, _)| i)
                     .collect::<Vec<_>>();
-                let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
+
                 let needed_byte_ranges = filtered_cols_idx
                     .iter()
                     .map(|i| {
@@ -418,8 +418,8 @@ impl ParquetFileReader {
                         start as usize..end as usize
                     })
                     .collect::<Vec<_>>();
-                let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
+                let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
                 for range in needed_byte_ranges.into_iter() {
                     let range_reader = ranges.get_range_reader(range).await?;
                     range_readers.push(Box::pin(range_reader))
@@ -427,7 +427,7 @@ impl ParquetFileReader {
 
                 let mut decompressed_iters = Vec::with_capacity(filtered_cols_idx.len());
                 let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
-
+                let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
                 for (col_idx, range_reader) in filtered_cols_idx.into_iter().zip(range_readers) {
                     let col = rg
                         .columns()

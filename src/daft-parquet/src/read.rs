@@ -22,7 +22,6 @@ use futures::{
 };
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 
@@ -60,17 +59,6 @@ impl From<ParquetSchemaInferenceOptions>
         arrow2::io::parquet::read::schema::SchemaInferenceOptions {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
         }
-    }
-}
-
-pub struct ParallelLockStepIter {
-    pub iters: ArrowChunkIters,
-}
-impl Iterator for ParallelLockStepIter {
-    type Item = arrow2::error::Result<ArrowChunk>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iters.par_iter_mut().map(|iter| iter.next()).collect()
     }
 }
 
