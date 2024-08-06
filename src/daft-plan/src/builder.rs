@@ -4,7 +4,6 @@ use std::{
 };
 
 use crate::{
-    display::DisplayFormat,
     logical_ops,
     logical_optimization::Optimizer,
     logical_plan::LogicalPlan,
@@ -15,6 +14,7 @@ use crate::{
     source_info::SourceInfo,
     LogicalPlanRef, ResourceRequest,
 };
+use common_display::DisplayFormat;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::{
@@ -483,7 +483,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn display_as(&self, format: DisplayFormat) -> String {
-        use crate::display::mermaid::MermaidDisplay;
+        println!("Displaying as {:?}", format);
+        use common_display::mermaid::MermaidDisplay;
 
         match format {
             DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
@@ -823,8 +824,8 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.repr_ascii(simple))
     }
 
-    pub fn display_as(&self, opts: crate::display::PyDisplayFormat) -> PyResult<String> {
-        Ok(self.builder.display_as(opts.0))
+    pub fn display_as(&self, opts: common_display::DisplayFormat) -> PyResult<String> {
+        Ok(self.builder.display_as(opts))
     }
 }
 

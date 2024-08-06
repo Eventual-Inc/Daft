@@ -14,6 +14,7 @@ from daft.daft import (
     ScanOperatorHandle,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
+from daft.dataframe.display import make_display_options
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -72,10 +73,12 @@ class LogicalPlanBuilder:
         """
         Pretty prints the current underlying logical plan.
         """
-        return self._builder.display_as({"simple": simple, "format": format})
+        display_opts = make_display_options(simple, format)
+        return self._builder.display_as(display_opts)
 
     def __repr__(self) -> str:
-        return self._builder.display_as({"simple": False, "format": "ascii"})
+        display_opts = make_display_options(simple=False, format="ascii")
+        return self._builder.display_as(display_opts)
 
     def optimize(self) -> LogicalPlanBuilder:
         """

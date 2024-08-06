@@ -1,8 +1,8 @@
+use common_display::{tree::TreeDisplay, DisplayFormat};
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, ops::Add, sync::Arc};
 
 use crate::{
-    display::{DisplayFormat, TreeDisplay},
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
         UnknownClusteringConfig,
@@ -450,51 +450,6 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn children_ref(&self) -> Vec<&Self> {
-        match self {
-            Self::InMemoryScan(..) => vec![],
-            Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
-            Self::Project(Project { input, .. }) => vec![input],
-            Self::Filter(Filter { input, .. }) => vec![input],
-            Self::Limit(Limit { input, .. }) => vec![input],
-            Self::Explode(Explode { input, .. }) => vec![input],
-            Self::Unpivot(Unpivot { input, .. }) => vec![input],
-            Self::Sample(Sample { input, .. }) => vec![input],
-            Self::Sort(Sort { input, .. }) => vec![input],
-            Self::Split(Split { input, .. }) => vec![input],
-            Self::Coalesce(Coalesce { input, .. }) => vec![input],
-            Self::Flatten(Flatten { input }) => vec![input],
-            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input],
-            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input],
-            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input],
-            Self::ReduceMerge(ReduceMerge { input }) => vec![input],
-            Self::Aggregate(Aggregate { input, .. }) => vec![input],
-            Self::Pivot(Pivot { input, .. }) => vec![input],
-            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
-            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
-            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
-            #[cfg(feature = "python")]
-            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
-            #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input],
-            #[cfg(feature = "python")]
-            Self::LanceWrite(LanceWrite { input, .. }) => vec![input],
-            Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
-            Self::BroadcastJoin(BroadcastJoin {
-                broadcaster,
-                receiver,
-                ..
-            }) => vec![broadcaster, receiver],
-            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
-                vec![left, right]
-            }
-            Self::Concat(Concat { input, other }) => vec![input, other],
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                vec![input]
-            }
-        }
-    }
-
     pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> PhysicalPlan {
         match children {
             [input] => match self {
@@ -649,7 +604,7 @@ impl PhysicalPlan {
     }
 
     pub fn display_as(&self, format: DisplayFormat) -> String {
-        use crate::display::mermaid::MermaidDisplay;
+        use common_display::mermaid::MermaidDisplay;
 
         match format {
             DisplayFormat::Ascii { simple } => self.repr_ascii(simple),

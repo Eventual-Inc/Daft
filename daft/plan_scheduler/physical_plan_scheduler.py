@@ -7,6 +7,7 @@ from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.daft import (
     PyDaftExecutionConfig,
 )
+from daft.dataframe.display import make_display_options
 from daft.execution import physical_plan
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
@@ -37,7 +38,8 @@ class PhysicalPlanScheduler:
         """
         Pretty prints the current underlying physical plan.
         """
-        return self._scheduler.display_as({"simple": simple, "format": format})
+        display_opts = make_display_options(simple, format)
+        return self._scheduler.display_as(display_opts)
 
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)

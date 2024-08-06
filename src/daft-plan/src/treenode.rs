@@ -7,9 +7,11 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode, TreeNodeIterator};
 impl TreeNode for LogicalPlan {
     fn apply_children<F: FnMut(&Self) -> DaftResult<common_treenode::TreeNodeRecursion>>(
         &self,
-        f: F,
+        mut f: F,
     ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-        self.children_ref().into_iter().apply_until_stop(f)
+        self.children()
+            .into_iter()
+            .apply_until_stop(|node| f(node.as_ref()))
     }
 
     fn map_children<F: FnMut(Self) -> DaftResult<common_treenode::Transformed<Self>>>(
@@ -36,9 +38,11 @@ impl TreeNode for LogicalPlan {
 impl TreeNode for PhysicalPlan {
     fn apply_children<F: FnMut(&Self) -> DaftResult<common_treenode::TreeNodeRecursion>>(
         &self,
-        f: F,
+        mut f: F,
     ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-        self.children_ref().into_iter().apply_until_stop(f)
+        self.children()
+            .into_iter()
+            .apply_until_stop(|node| f(node.as_ref()))
     }
 
     #[allow(clippy::redundant_closure)]

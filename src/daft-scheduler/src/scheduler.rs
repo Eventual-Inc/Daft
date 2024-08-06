@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    common_display::DisplayFormat,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_plan::display::PyDisplayFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
     pyo3::{
@@ -72,8 +72,8 @@ impl PhysicalPlanScheduler {
         Ok(self.plan().repr_ascii(simple))
     }
 
-    pub fn display_as(&self, display_format: PyDisplayFormat) -> PyResult<String> {
-        Ok(self.plan().display_as(display_format.0))
+    pub fn display_as(&self, display_format: DisplayFormat) -> PyResult<String> {
+        Ok(self.plan().display_as(display_format))
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(

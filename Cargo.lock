@@ -1237,6 +1237,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-display"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-error",
+ "common-treenode",
+ "indexmap 2.2.6",
+ "pyo3",
+ "terminal_size",
+ "textwrap",
+]
+
+[[package]]
 name = "common-error"
 version = "0.2.0-dev0"
 dependencies = [
@@ -1554,6 +1566,7 @@ name = "daft"
 version = "0.2.0-dev0"
 dependencies = [
  "common-daft-config",
+ "common-display",
  "common-system-info",
  "common-tracing",
  "daft-compression",
@@ -1883,6 +1896,7 @@ version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-io-config",
  "common-py-serde",
@@ -1935,6 +1949,7 @@ name = "daft-scheduler"
 version = "0.2.0-dev0"
 dependencies = [
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-io-config",
  "daft-core",

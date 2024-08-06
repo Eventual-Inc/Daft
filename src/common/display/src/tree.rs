@@ -129,31 +129,3 @@ pub trait TreeDisplay {
         Ok(())
     }
 }
-
-impl TreeDisplay for crate::LogicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
-    }
-
-    fn get_name(&self) -> String {
-        self.name()
-    }
-
-    fn get_children(&self) -> Vec<Arc<Self>> {
-        self.children()
-    }
-}
-
-impl TreeDisplay for crate::physical_plan::PhysicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
-    }
-
-    fn get_name(&self) -> String {
-        self.name()
-    }
-
-    fn get_children(&self) -> Vec<Arc<Self>> {
-        self.children()
-    }
-}
