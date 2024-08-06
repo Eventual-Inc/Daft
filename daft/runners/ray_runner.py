@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 import pyarrow as pa
 
 from daft.context import get_context, set_execution_config
+from daft.expressions import ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -874,6 +876,12 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
+
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self, name: str, resource_request: ResourceRequest, num_actors: PartID, projection: ExpressionsProjection
+    ) -> Iterator[str]:
+        raise NotImplementedError("Actor pool for RayRunner not yet implemented")
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()

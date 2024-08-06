@@ -42,6 +42,11 @@ class PartitionTask(Generic[PartitionT]):
     num_results: int
     stage_id: int
     partial_metadatas: list[PartialPartitionMetadata]
+
+    # Indicates that this PartitionTask must be executed on the executor with the supplied ID
+    # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
+    actor_pool_id: str | None
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -86,6 +91,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         inputs: list[PartitionT],
         partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
+        actor_pool_id: str | None = None,
     ) -> None:
         self.inputs = inputs
         if partial_metadatas is not None:
@@ -95,6 +101,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
+        self.actor_pool_id = actor_pool_id
 
     def add_instruction(
         self,
@@ -132,6 +139,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=1,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
@@ -152,6 +160,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def __str__(self) -> str:
@@ -523,6 +532,23 @@ class Project(SingleOutputInstruction):
                 num_rows=input_meta.num_rows,
                 size_bytes=None,
                 boundaries=boundaries,
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class StatefulUDFProject(SingleOutputInstruction):
+    projection: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # UDFs can potentially change cardinality
+                size_bytes=None,
+                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
             )
         ]
 
