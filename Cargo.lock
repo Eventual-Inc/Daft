@@ -1882,6 +1882,7 @@ dependencies = [
  "daft-dsl",
  "daft-plan",
  "daft-scan",
+ "log",
  "strum 0.26.2",
 ]
 
