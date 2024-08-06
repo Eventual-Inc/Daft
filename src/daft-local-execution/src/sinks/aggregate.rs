@@ -49,6 +49,10 @@ impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<()> {
         if let AggregateState::Accumulating(parts) = &mut self.state {
+            assert!(
+                !parts.is_empty(),
+                "We can not finalize AggregateSink with no data"
+            );
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
