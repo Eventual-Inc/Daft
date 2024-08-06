@@ -14,6 +14,8 @@ pub use crate::logical_ops::*;
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),
+    #[cfg(feature = "python")]
+    ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -28,8 +30,6 @@ pub enum LogicalPlan {
     Sink(Sink),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
-    #[cfg(feature = "python")]
-    ActorPoolProject(ActorPoolProject),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
