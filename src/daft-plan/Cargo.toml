@@ -29,8 +29,6 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
-terminal_size = {version = "0.3.0"}
-textwrap = {version = "0.16.1"}
 
 [dev-dependencies]
 daft-functions = {path = "../daft-functions", default-features = false}
