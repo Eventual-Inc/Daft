@@ -14,7 +14,6 @@ pub use crate::logical_ops::*;
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),
-    #[cfg(feature = "python")]
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
@@ -44,7 +43,6 @@ impl LogicalPlan {
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ActorPoolProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -84,7 +82,6 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
                 let res = projection.iter().flat_map(get_required_columns).collect();
                 vec![res]
@@ -174,7 +171,6 @@ impl LogicalPlan {
         match self {
             Self::Source(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input.clone()],
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
@@ -202,7 +198,6 @@ impl LogicalPlan {
                 Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(), resource_request.clone(),
                 ).unwrap()),
-                #[cfg(feature = "python")]
                 Self::ActorPoolProject(ActorPoolProject {projection, resource_request, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), resource_request.clone(), *num_actors).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
@@ -248,7 +243,6 @@ impl LogicalPlan {
         let name = match self {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
@@ -272,7 +266,6 @@ impl LogicalPlan {
         match self {
             Self::Source(source) => source.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],

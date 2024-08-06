@@ -19,7 +19,6 @@ pub enum PhysicalPlan {
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
     Project(Project),
-    #[cfg(feature = "python")]
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
@@ -115,7 +114,6 @@ impl PhysicalPlan {
             Self::Project(Project {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ActorPoolProject {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
@@ -305,12 +303,8 @@ impl PhysicalPlan {
                 }
             }
             Self::Project(Project { input, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                // TODO(sammy), we need the schema to estimate the new size per row
-                input.approximate_stats()
-            }
-            #[cfg(feature = "python")]
-            Self::ActorPoolProject(ActorPoolProject { input, .. }) => {
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::ActorPoolProject(ActorPoolProject { input, .. }) => {
                 // TODO(sammy), we need the schema to estimate the new size per row
                 input.approximate_stats()
             }
@@ -421,7 +415,6 @@ impl PhysicalPlan {
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input.clone()],
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
@@ -473,7 +466,6 @@ impl PhysicalPlan {
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(),
                 ).unwrap()),
-                #[cfg(feature = "python")]
                 Self::ActorPoolProject(ActorPoolProject {projection, resource_request, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), resource_request.clone(), *num_actors).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
@@ -529,7 +521,6 @@ impl PhysicalPlan {
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
             Self::Project(..) => "Project",
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
@@ -570,7 +561,6 @@ impl PhysicalPlan {
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
-            #[cfg(feature = "python")]
             Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),

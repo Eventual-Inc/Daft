@@ -1,4 +1,6 @@
 use daft_core::DataType;
+
+#[cfg(feature = "python")]
 use pyo3::{types::PyModule, PyAny, PyResult};
 
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
@@ -10,7 +12,6 @@ use common_error::{DaftError, DaftResult};
 use super::super::FunctionEvaluator;
 use super::{StatefulPythonUDF, StatelessPythonUDF};
 use crate::functions::FunctionExpr;
-use daft_core::python::{PyDataType, PySeries};
 
 impl FunctionEvaluator for StatelessPythonUDF {
     fn fn_name(&self) -> &'static str {
@@ -38,11 +39,18 @@ impl FunctionEvaluator for StatelessPythonUDF {
         }
     }
 
+    #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         self.call_udf(inputs)
     }
+
+    #[cfg(not(feature = "python"))]
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+        panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
+    }
 }
 
+#[cfg(feature = "python")]
 fn run_udf(
     py: pyo3::Python,
     inputs: &[Series],
@@ -50,6 +58,8 @@ fn run_udf(
     bound_args: pyo3::Py<PyAny>,
     return_dtype: &DataType,
 ) -> DaftResult<Series> {
+    use daft_core::python::{PyDataType, PySeries};
+
     // Convert input Rust &[Series] to wrapped Python Vec<&PyAny>
     let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;
     let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
@@ -88,19 +98,7 @@ fn run_udf(
 }
 
 impl StatelessPythonUDF {
-    pub fn get_func_and_bound_args(
-        &self,
-        py: pyo3::Python,
-    ) -> DaftResult<(pyo3::Py<PyAny>, pyo3::Py<PyAny>)> {
-        // Extract the required Python objects to call our run_udf helper
-        let func = self.partial_func.0.getattr(py, pyo3::intern!(py, "func"))?;
-        let bound_args = self
-            .partial_func
-            .0
-            .getattr(py, pyo3::intern!(py, "bound_args"))?;
-        Ok((func, bound_args))
-    }
-
+    #[cfg(feature = "python")]
     pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
         use pyo3::Python;
 
@@ -114,27 +112,14 @@ impl StatelessPythonUDF {
 
         Python::with_gil(|py| {
             // Extract the required Python objects to call our run_udf helper
-            let (func, bound_args) = self.get_func_and_bound_args(py)?;
+            let func = self.partial_func.0.getattr(py, pyo3::intern!(py, "func"))?;
+            let bound_args = self
+                .partial_func
+                .0
+                .getattr(py, pyo3::intern!(py, "bound_args"))?;
+
             run_udf(py, inputs, func, bound_args, &self.return_dtype)
         })
-    }
-}
-
-impl StatefulPythonUDF {
-    pub fn get_func_and_bound_args(
-        &self,
-        py: pyo3::Python,
-    ) -> DaftResult<(pyo3::Py<PyAny>, pyo3::Py<PyAny>)> {
-        // Extract the required Python objects to call our run_udf helper
-        let func = self
-            .stateful_partial_func
-            .0
-            .getattr(py, pyo3::intern!(py, "func_cls"))?;
-        let bound_args = self
-            .stateful_partial_func
-            .0
-            .getattr(py, pyo3::intern!(py, "bound_args"))?;
-        Ok((func, bound_args))
     }
 }
 
@@ -164,6 +149,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
         }
     }
 
+    #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         use pyo3::Python;
 
@@ -177,7 +163,14 @@ impl FunctionEvaluator for StatefulPythonUDF {
 
         Python::with_gil(|py| {
             // Extract the required Python objects to call our run_udf helper
-            let (func, bound_args) = self.get_func_and_bound_args(py)?;
+            let func = self
+                .stateful_partial_func
+                .0
+                .getattr(py, pyo3::intern!(py, "func_cls"))?;
+            let bound_args = self
+                .stateful_partial_func
+                .0
+                .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
             // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
             // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
@@ -186,5 +179,10 @@ impl FunctionEvaluator for StatefulPythonUDF {
 
             run_udf(py, inputs, func, bound_args, &self.return_dtype)
         })
+    }
+
+    #[cfg(not(feature = "python"))]
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+        panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
     }
 }

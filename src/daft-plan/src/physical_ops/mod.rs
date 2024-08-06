@@ -1,4 +1,3 @@
-#[cfg(feature = "python")]
 mod actor_pool_project;
 mod agg;
 mod broadcast_join;
@@ -33,7 +32,6 @@ mod sort_merge_join;
 mod split;
 mod unpivot;
 
-#[cfg(feature = "python")]
 pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;

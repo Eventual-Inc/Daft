@@ -7,10 +7,8 @@ use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
 use indexmap::IndexSet;
 
-#[cfg(feature = "python")]
-use crate::logical_ops::ActorPoolProject;
 use crate::{
-    logical_ops::{Aggregate, Join, Pivot, Project, Source},
+    logical_ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
     LogicalPlan, ResourceRequest,
 };
@@ -238,7 +236,6 @@ impl PushDownProjection {
                     Ok(Transformed::No(plan))
                 }
             }
-            #[cfg(feature = "python")]
             LogicalPlan::ActorPoolProject(upstream_actor_pool_projection) => {
                 // Prune columns from the child ActorPoolProjection that are not used in this projection.
                 let required_columns = &plan.required_columns()[0];

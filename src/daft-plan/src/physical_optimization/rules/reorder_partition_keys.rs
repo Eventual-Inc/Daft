@@ -86,7 +86,6 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     )?);
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                #[cfg(feature = "python")]
                 PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject { input, projection, resource_request, clustering_spec: _, num_actors }) => {
                     let new_plan = PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject {
                         input: input.clone(),

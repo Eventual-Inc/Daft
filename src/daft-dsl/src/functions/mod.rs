@@ -35,9 +35,7 @@ use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "python")]
 pub mod python;
-#[cfg(feature = "python")]
 use python::PythonUDF;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -52,7 +50,6 @@ pub enum FunctionExpr {
     Struct(StructExpr),
     Json(JsonExpr),
     Image(ImageExpr),
-    #[cfg(feature = "python")]
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
 }
@@ -83,7 +80,6 @@ impl FunctionExpr {
             Struct(expr) => expr.get_evaluator(),
             Json(expr) => expr.get_evaluator(),
             Image(expr) => expr.get_evaluator(),
-            #[cfg(feature = "python")]
             Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }

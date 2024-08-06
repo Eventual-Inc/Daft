@@ -17,11 +17,10 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
 
-#[cfg(feature = "python")]
-use crate::logical_ops::ActorPoolProject as LogicalActorPoolProject;
 use crate::logical_ops::{
-    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
-    Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
+    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+    Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
     Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
     Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
@@ -112,7 +111,6 @@ pub(super) fn translate_single_logical_node(
             )?)
             .arced())
         }
-        #[cfg(feature = "python")]
         LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
             projection,
             resource_request,
