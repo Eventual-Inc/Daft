@@ -1,23 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    channel::{create_channel, spawn_compute_task},
     intermediate_ops::{
-        aggregate::AggregateOperator,
-        filter::FilterOperator,
-        intermediate_op::{IntermediateNode, IntermediateOpActor, IntermediateOperator},
+        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink,
-        blocking_sink::{BlockingSink, BlockingSinkNode, BlockingSinkStatus},
+        blocking_sink::BlockingSinkNode,
         hash_join::{HashJoinNode, HashJoinOperator},
         limit::LimitSink,
         sort::SortSink,
-        streaming_sink::{StreamSinkOutput, StreamingSink, StreamingSinkNode},
+        streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    NUM_CPUS,
 };
 
 use async_trait::async_trait;
@@ -29,8 +25,6 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
-use futures::StreamExt;
-use tracing::{info_span, Instrument};
 
 use crate::channel::MultiSender;
 
