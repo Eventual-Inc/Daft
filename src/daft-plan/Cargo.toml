@@ -33,6 +33,7 @@ textwrap = {version = "0.16.1"}
 
 [dev-dependencies]
 daft-functions = {path = "../daft-functions", default-features = false}
+pretty_assertions = {workspace = true}
 rstest = {workspace = true}
 
 [features]

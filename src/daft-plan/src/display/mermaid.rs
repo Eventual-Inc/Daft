@@ -197,6 +197,7 @@ mod test {
         functions::utf8::{endswith, startswith},
         lit,
     };
+    use pretty_assertions::assert_eq;
 
     use crate::{
         logical_ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
@@ -273,6 +274,7 @@ mod test {
             .build();
 
         let mermaid_repr = plan.repr_mermaid(Default::default());
+        println!("{}", mermaid_repr);
         let expected = r#"flowchart TD
 Limit0["Limit: 10"]
 Project1["Project: col(first_name)"]
@@ -291,7 +293,8 @@ Sort6["Sort: Sort by = (col(last_name), ascending)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
 Limit9["Limit: 1000"]
-Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name), lit('n'))"]
+Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
+lit('n'))"]
 Source11["PlaceHolder:
 Source ID = 0
 Num partitions = 0
@@ -340,7 +343,10 @@ Project1 --> Limit0"#;
             .limit(10, false)?
             .build();
 
-        let mermaid_repr = plan.repr_mermaid(Default::default());
+        let mermaid_repr = plan.repr_mermaid(MermaidDisplayOptions {
+            simple: true,
+            ..Default::default()
+        });
         let expected = r#"flowchart TD
 Limit0["Limit"]
 Project1["Project"]
