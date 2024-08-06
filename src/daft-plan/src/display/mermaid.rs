@@ -14,27 +14,32 @@ pub trait MermaidDisplay {
 
 #[derive(Debug, Clone, Default)]
 pub struct MermaidDisplayOptions {
-    // simple mode doesn't show the full display string of each node.
-    // This is useful for large trees.
-    // In simple mode, the display string is just the node's name.
+    /// simple mode doesn't show the full display string of each node.
+    /// This is useful for large trees.
+    /// In simple mode, the display string is just the node's name.
     pub simple: bool,
-    // subgraph_options is used to configure the subgraph.
+    /// subgraph_options is used to configure the subgraph.
+    /// Since some common displays (jupyter) don't support multiple mermaid graphs in a single cell, we need to use subgraphs.
+    /// The subgraph_options is used to both indicate that a subgraph should be used, and to configure the subgraph.
     pub subgraph_options: Option<SubgraphOptions>,
 }
 
+/// subrgaph <subgraph_id>["<name>"]
 #[derive(Debug, Clone)]
 pub struct SubgraphOptions {
+    /// The display text for the subgraph name.
     pub name: String,
+    /// The unique id for the subgraph.
     pub subgraph_id: String,
 }
 
 struct MermaidDisplayVisitor<T> {
     phantom: PhantomData<T>,
-    // each node should only appear once in the tree.
-    // the key is the node's `multiline_display` string, and the value is the node's id.
-    // This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
+    /// each node should only appear once in the tree.
+    /// the key is the node's `multiline_display` string, and the value is the node's id.
+    /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
     nodes: IndexMap<String, String>,
-    // node_count is used to generate unique ids for each node.
+    /// node_count is used to generate unique ids for each node.
     node_count: usize,
     output: Vec<String>,
     options: MermaidDisplayOptions,
@@ -43,6 +48,8 @@ struct MermaidDisplayVisitor<T> {
 impl<T> MermaidDisplayVisitor<T> {
     pub fn new(options: MermaidDisplayOptions) -> MermaidDisplayVisitor<T> {
         let mut output = Vec::new();
+        // if it's not a subgraph, we render the entire thing: `flowchart TD`
+        // otherwise we just build out the subgraph componenend `subgraph <subgraph_id>["<name>"]`
         match &options.subgraph_options {
             Some(SubgraphOptions { name, subgraph_id }) => {
                 output.push(format!(r#"subgraph {subgraph_id}["{name}"]"#));
