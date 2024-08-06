@@ -2,12 +2,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
+use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
 use indexmap::IndexSet;
 
 use crate::{
-    logical_ops::{Aggregate, Join, Pivot, Project, Source},
+    logical_ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
     LogicalPlan, ResourceRequest,
 };
@@ -226,6 +227,50 @@ impl PushDownProjection {
                     .into();
 
                     let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
+                    // Retry optimization now that the upstream node is different.
+                    let new_plan = self
+                        .try_optimize(new_plan.clone())?
+                        .or(Transformed::Yes(new_plan));
+                    Ok(new_plan)
+                } else {
+                    Ok(Transformed::No(plan))
+                }
+            }
+            LogicalPlan::ActorPoolProject(upstream_actor_pool_projection) => {
+                // Prune columns from the child ActorPoolProjection that are not used in this projection.
+                let required_columns = &plan.required_columns()[0];
+                if required_columns.len() < upstream_schema.names().len() {
+                    let pruned_upstream_projections = upstream_actor_pool_projection
+                        .projection
+                        .iter()
+                        .filter(|&e| required_columns.contains(e.name()))
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    // If all StatefulUDF expressions end up being pruned, the ActorPoolProject should essentially become
+                    // a no-op passthrough projection for the rest of the columns. In this case, we should just get rid of it
+                    // altogether since it serves no purpose.
+                    let all_projections_are_just_colexprs =
+                        pruned_upstream_projections.iter().all(|proj| {
+                            !proj.exists(|e| match e.as_ref() {
+                                Expr::Column(_) => false,
+                                // Check for existence of any non-ColumnExprs
+                                _ => true,
+                            })
+                        });
+                    let new_upstream = if all_projections_are_just_colexprs {
+                        upstream_plan.children()[0].clone()
+                    } else {
+                        LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                            upstream_actor_pool_projection.input.clone(),
+                            pruned_upstream_projections,
+                            upstream_actor_pool_projection.resource_request.clone(),
+                            upstream_actor_pool_projection.num_actors,
+                        )?)
+                        .arced()
+                    };
+                    let new_plan = Arc::new(plan.with_new_children(&[new_upstream]));
+
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -813,6 +858,119 @@ mod tests {
             .build();
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
+
+        Ok(())
+    }
+
+    /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
+    #[cfg(not(feature = "python"))]
+    #[test]
+    fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
+        use crate::logical_ops::ActorPoolProject;
+        use crate::logical_ops::Project;
+        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
+        use daft_dsl::functions::FunctionExpr;
+        use daft_dsl::Expr;
+        use std::default;
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Boolean),
+            Field::new("c", DataType::Int64),
+        ]);
+        let scan_node = dummy_scan_node(scan_op).build();
+        let mock_stateful_udf = Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                name: Arc::new("my-udf".to_string()),
+                num_expressions: 1,
+                return_dtype: DataType::Utf8,
+            })),
+            inputs: vec![col("c")],
+        }
+        .arced();
+
+        // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
+        let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            actor_pool_project,
+            vec![col("udf_results")],
+            default::Default::default(),
+        )?)
+        .arced();
+
+        let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq(project, expected_actor_pool_project)?;
+        Ok(())
+    }
+
+    /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
+    #[cfg(not(feature = "python"))]
+    #[test]
+    fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
+        use crate::logical_ops::ActorPoolProject;
+        use crate::logical_ops::Project;
+        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
+        use daft_dsl::functions::FunctionExpr;
+        use daft_dsl::Expr;
+        use std::default;
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Boolean),
+            Field::new("c", DataType::Int64),
+        ]);
+        let scan_node = dummy_scan_node(scan_op.clone()).build();
+        let mock_stateful_udf = Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                name: Arc::new("my-udf".to_string()),
+                num_expressions: 1,
+                return_dtype: DataType::Utf8,
+            })),
+            inputs: vec![col("c")],
+        }
+        .arced();
+
+        // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
+        let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            actor_pool_project,
+            vec![col("a")],
+            default::Default::default(),
+        )?)
+        .arced();
+
+        // Optimized plan will push the projection all the way down into the scan
+        let expected_scan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns {
+                limit: None,
+                partition_filters: None,
+                columns: Some(Arc::new(vec!["a".to_string()])),
+                filters: None,
+            },
+        )
+        .build();
+
+        assert_optimized_plan_eq(project, expected_scan)?;
         Ok(())
     }
 }

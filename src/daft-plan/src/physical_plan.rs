@@ -19,6 +19,7 @@ pub enum PhysicalPlan {
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
     Project(Project),
+    ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -111,6 +112,9 @@ impl PhysicalPlan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Project(Project {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::ActorPoolProject(ActorPoolProject {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.clustering_spec(),
@@ -299,7 +303,8 @@ impl PhysicalPlan {
                 }
             }
             Self::Project(Project { input, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::ActorPoolProject(ActorPoolProject { input, .. }) => {
                 // TODO(sammy), we need the schema to estimate the new size per row
                 input.approximate_stats()
             }
@@ -410,6 +415,7 @@ impl PhysicalPlan {
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input.clone()],
+            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input.clone()],
             Self::Filter(Filter { input, .. }) => vec![input.clone()],
             Self::Limit(Limit { input, .. }) => vec![input.clone()],
             Self::Explode(Explode { input, .. }) => vec![input.clone()],
@@ -453,7 +459,6 @@ impl PhysicalPlan {
     pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> PhysicalPlan {
         match children {
             [input] => match self {
-                #[cfg(feature = "python")]
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
@@ -461,6 +466,7 @@ impl PhysicalPlan {
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(),
                 ).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, resource_request, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), resource_request.clone(), *num_actors).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -486,8 +492,7 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
-                // we should really remove this catch-all
-                _ => panic!("Physical op {:?} has two inputs, but got one", self),
+                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
                 #[cfg(feature = "python")]
@@ -516,6 +521,7 @@ impl PhysicalPlan {
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
             Self::Project(..) => "Project",
+            Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
@@ -555,6 +561,7 @@ impl PhysicalPlan {
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
+            Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),

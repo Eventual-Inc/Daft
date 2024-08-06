@@ -1,3 +1,4 @@
+mod actor_pool_project;
 mod agg;
 mod concat;
 mod distinct;
@@ -15,6 +16,7 @@ mod sort;
 mod source;
 mod unpivot;
 
+pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
 pub use concat::Concat;
 pub use distinct::Distinct;

@@ -18,8 +18,9 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 use daft_scan::PhysicalScanInfo;
 
 use crate::logical_ops::{
-    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
-    Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
+    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+    Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
     Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
     Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
@@ -107,6 +108,21 @@ pub(super) fn translate_single_logical_node(
                 input_physical,
                 projection.clone(),
                 resource_request.clone(),
+            )?)
+            .arced())
+        }
+        LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
+            projection,
+            resource_request,
+            num_actors,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                input_physical,
+                projection.clone(),
+                resource_request.clone(),
+                *num_actors,
             )?)
             .arced())
         }

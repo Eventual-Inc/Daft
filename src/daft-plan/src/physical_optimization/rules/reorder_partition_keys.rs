@@ -86,6 +86,16 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     )?);
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
+                PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject { input, projection, resource_request, clustering_spec: _, num_actors }) => {
+                    let new_plan = PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject {
+                        input: input.clone(),
+                        projection: projection.clone(),
+                        resource_request: resource_request.clone(),
+                        num_actors: *num_actors,
+                        clustering_spec: new_spec.into(),
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
                 PhysicalPlan::Explode(Explode { input, to_explode, .. }) => {
                     // can't use try_new because we are setting the clustering spec ourselves
                     let new_plan = PhysicalPlan::Explode(Explode {
