@@ -5,18 +5,18 @@ use crate::{
     intermediate_ops::{
         aggregate::AggregateOperator,
         filter::FilterOperator,
-        intermediate_op::{IntermediateOpActor, IntermediateOperator},
+        intermediate_op::{IntermediateNode, IntermediateOpActor, IntermediateOperator},
         project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink,
-        blocking_sink::{BlockingSink, BlockingSinkStatus},
-        hash_join::HashJoinOperator,
+        blocking_sink::{BlockingSink, BlockingSinkNode, BlockingSinkStatus},
+        hash_join::{HashJoinNode, HashJoinOperator},
         limit::LimitSink,
         sort::SortSink,
-        streaming_sink::{StreamSinkOutput, StreamingSink},
+        streaming_sink::{StreamSinkOutput, StreamingSink, StreamingSinkNode},
     },
-    sources::{in_memory::InMemorySource, source::Source},
+    sources::in_memory::InMemorySource,
     NUM_CPUS,
 };
 
@@ -38,287 +38,6 @@ use crate::channel::MultiSender;
 pub trait PipelineNode: Sync + Send {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     async fn start(&mut self, destination: MultiSender) -> DaftResult<()>;
-}
-
-struct IntermediateNode {
-    intermediate_op: Arc<dyn IntermediateOperator>,
-    children: Vec<Box<dyn PipelineNode>>,
-}
-
-impl IntermediateNode {
-    fn new(
-        intermediate_op: Arc<dyn IntermediateOperator>,
-        children: Vec<Box<dyn PipelineNode>>,
-    ) -> Self {
-        IntermediateNode {
-            intermediate_op,
-            children,
-        }
-    }
-    fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
-    }
-}
-
-#[async_trait]
-impl PipelineNode for IntermediateNode {
-    fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children.iter().map(|v| v.as_ref()).collect()
-    }
-
-    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
-        assert_eq!(
-            self.children.len(),
-            1,
-            "we only support 1 child for Intermediate Node for now"
-        );
-
-        let (sender, receiver) = create_channel(*NUM_CPUS, destination.in_order());
-
-        let child = self
-            .children
-            .get_mut(0)
-            .expect("we should only have 1 child");
-        child.start(sender).await?;
-
-        let mut actor =
-            IntermediateOpActor::new(self.intermediate_op.clone(), receiver, destination);
-        // this should ideally be in the actor
-        spawn_compute_task(async move { actor.run_parallel().await });
-        Ok(())
-    }
-}
-
-struct HashJoinNode {
-    // use a RW lock
-    hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
-    left: Box<dyn PipelineNode>,
-    right: Box<dyn PipelineNode>,
-}
-
-impl HashJoinNode {
-    fn new(
-        op: HashJoinOperator,
-        left: Box<dyn PipelineNode>,
-        right: Box<dyn PipelineNode>,
-    ) -> Self {
-        HashJoinNode {
-            hash_join: Arc::new(tokio::sync::Mutex::new(op)),
-            left,
-            right,
-        }
-    }
-    fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
-    }
-}
-
-#[async_trait]
-impl PipelineNode for HashJoinNode {
-    fn children(&self) -> Vec<&dyn PipelineNode> {
-        vec![self.left.as_ref(), self.right.as_ref()]
-    }
-
-    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
-        let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
-        self.left.start(sender).await?;
-        let hash_join = self.hash_join.clone();
-
-        let probe_table_build = tokio::spawn(async move {
-            let span = info_span!("ProbeTable::sink");
-            let mut guard = hash_join.lock().await;
-            let sink = guard.as_sink();
-            while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val?))? {
-                    break;
-                }
-            }
-
-            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
-            DaftResult::Ok(())
-        });
-        // should wrap in context join handle
-
-        let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
-        // now we can start building the right side
-        self.right.start(right_sender).await?;
-
-        probe_table_build.await.unwrap()?;
-
-        let hash_join = self.hash_join.clone();
-        let destination = destination;
-        let probing_op = {
-            let guard = hash_join.lock().await;
-            guard.as_intermediate_op()
-        };
-
-        let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
-        // this should ideally be in the actor
-        spawn_compute_task(async move { actor.run_parallel().await });
-
-        Ok(())
-    }
-}
-
-struct SourceNode {
-    source_op: Arc<tokio::sync::Mutex<Box<dyn Source>>>,
-}
-
-#[async_trait]
-impl PipelineNode for SourceNode {
-    fn children(&self) -> Vec<&dyn PipelineNode> {
-        vec![]
-    }
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
-        let op = self.source_op.clone();
-        tokio::spawn(async move {
-            let guard = op.lock().await;
-            let mut source_stream = guard.get_data(destination.in_order());
-            while let Some(val) = source_stream.next().in_current_span().await {
-                let _ = destination.get_next_sender().send(val).await;
-            }
-            DaftResult::Ok(())
-        });
-        Ok(())
-    }
-}
-
-impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
-    fn from(value: Box<dyn Source>) -> Self {
-        Box::new(SourceNode {
-            source_op: Arc::new(tokio::sync::Mutex::new(value)),
-        })
-    }
-}
-
-struct StreamingSinkNode {
-    // use a RW lock
-    op: Arc<tokio::sync::Mutex<Box<dyn StreamingSink>>>,
-    children: Vec<Box<dyn PipelineNode>>,
-}
-
-impl StreamingSinkNode {
-    fn new(op: Box<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
-        StreamingSinkNode {
-            op: Arc::new(tokio::sync::Mutex::new(op)),
-            children,
-        }
-    }
-    fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
-    }
-}
-
-#[async_trait]
-impl PipelineNode for StreamingSinkNode {
-    fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children.iter().map(|v| v.as_ref()).collect()
-    }
-
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
-        // now we can start building the right side
-        let child = self
-            .children
-            .get_mut(0)
-            .expect("we should only have 1 child");
-        child.start(sender).await?;
-        let op = self.op.clone();
-        tokio::spawn(async move {
-            // this should be a RWLock and run in concurrent workers
-            let span = info_span!("StreamingSink::execute");
-
-            let mut sink = op.lock().await;
-            let mut is_active = true;
-            while is_active && let Some(val) = streaming_receiver.recv().await {
-                let val = val?;
-                loop {
-                    let result = span.in_scope(|| sink.execute(0, &val))?;
-                    match result {
-                        StreamSinkOutput::HasMoreOutput(mp) => {
-                            let sender = destination.get_next_sender();
-                            sender.send(Ok(mp)).await.unwrap();
-                        }
-                        StreamSinkOutput::NeedMoreInput(mp) => {
-                            if let Some(mp) = mp {
-                                let sender = destination.get_next_sender();
-                                sender.send(Ok(mp)).await.unwrap();
-                            }
-                            break;
-                        }
-                        StreamSinkOutput::Finished(mp) => {
-                            if let Some(mp) = mp {
-                                let sender = destination.get_next_sender();
-                                sender.send(Ok(mp)).await.unwrap();
-                            }
-                            is_active = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            DaftResult::Ok(())
-        });
-        Ok(())
-    }
-}
-
-struct BlockingSinkNode {
-    // use a RW lock
-    op: Arc<tokio::sync::Mutex<Box<dyn BlockingSink>>>,
-    child: Box<dyn PipelineNode>,
-}
-
-impl BlockingSinkNode {
-    fn new(op: Box<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
-        BlockingSinkNode {
-            op: Arc::new(tokio::sync::Mutex::new(op)),
-            child,
-        }
-    }
-    fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
-    }
-}
-
-#[async_trait]
-impl PipelineNode for BlockingSinkNode {
-    fn children(&self) -> Vec<&dyn PipelineNode> {
-        vec![self.child.as_ref()]
-    }
-
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, true);
-        // now we can start building the right side
-        let child = self.child.as_mut();
-        child.start(sender).await?;
-        let op = self.op.clone();
-        let sink_build = tokio::spawn(async move {
-            let span = info_span!("BlockingSinkNode::execute");
-            let mut guard = op.lock().await;
-            while let Some(val) = streaming_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val?))? {
-                    break;
-                }
-            }
-            info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
-            DaftResult::Ok(())
-        });
-        sink_build.await.unwrap()?;
-        let op = self.op.clone();
-
-        tokio::spawn(async move {
-            let mut guard = op.lock().await;
-            let source = guard.as_source();
-            let mut source_stream = source.get_data(destination.in_order());
-            while let Some(val) = source_stream.next().in_current_span().await {
-                let _ = destination.get_next_sender().send(val).await;
-            }
-            DaftResult::Ok(())
-        });
-
-        Ok(())
-    }
 }
 
 pub fn physical_plan_to_pipeline(
@@ -459,6 +178,8 @@ pub fn physical_plan_to_pipeline(
             let right_schema = right.schema();
             let left_node = physical_plan_to_pipeline(left, psets)?;
             let right_node = physical_plan_to_pipeline(right, psets)?;
+
+            // we should move to a builder pattern
             let sink = HashJoinOperator::new(
                 left_on.clone(),
                 right_on.clone(),

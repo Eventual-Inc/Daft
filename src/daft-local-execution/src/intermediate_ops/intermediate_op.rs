@@ -4,12 +4,15 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
+use async_trait::async_trait;
+
 use crate::{
     channel::{
-        create_single_channel, spawn_compute_task, MultiReceiver, MultiSender, SingleReceiver,
-        SingleSender,
+        create_channel, create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
+        SingleReceiver, SingleSender,
     },
-    DEFAULT_MORSEL_SIZE,
+    pipeline::PipelineNode,
+    DEFAULT_MORSEL_SIZE, NUM_CPUS,
 };
 
 pub trait IntermediateOperator: Send + Sync {
@@ -148,6 +151,55 @@ impl IntermediateOpActor {
             }
             curr_task_idx = (curr_task_idx + 1) % self.sender.buffer_size();
         }
+        Ok(())
+    }
+}
+
+pub(crate) struct IntermediateNode {
+    intermediate_op: Arc<dyn IntermediateOperator>,
+    children: Vec<Box<dyn PipelineNode>>,
+}
+
+impl IntermediateNode {
+    pub(crate) fn new(
+        intermediate_op: Arc<dyn IntermediateOperator>,
+        children: Vec<Box<dyn PipelineNode>>,
+    ) -> Self {
+        IntermediateNode {
+            intermediate_op,
+            children,
+        }
+    }
+    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
+}
+
+#[async_trait]
+impl PipelineNode for IntermediateNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        self.children.iter().map(|v| v.as_ref()).collect()
+    }
+
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+        assert_eq!(
+            self.children.len(),
+            1,
+            "we only support 1 child for Intermediate Node for now"
+        );
+
+        let (sender, receiver) = create_channel(*NUM_CPUS, destination.in_order());
+
+        let child = self
+            .children
+            .get_mut(0)
+            .expect("we should only have 1 child");
+        child.start(sender).await?;
+
+        let mut actor =
+            IntermediateOpActor::new(self.intermediate_op.clone(), receiver, destination);
+        // this should ideally be in the actor
+        spawn_compute_task(async move { actor.run_parallel().await });
         Ok(())
     }
 }

@@ -1,5 +1,13 @@
 use std::sync::Arc;
 
+use crate::{
+    channel::{create_channel, spawn_compute_task, MultiSender},
+    intermediate_ops::intermediate_op::{IntermediateOpActor, IntermediateOperator},
+    pipeline::PipelineNode,
+    sources::source::Source,
+    NUM_CPUS,
+};
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{
     datatypes::Field,
@@ -11,8 +19,6 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use futures::{stream, StreamExt};
 use tracing::info_span;
-
-use crate::{intermediate_ops::intermediate_op::IntermediateOperator, sources::source::Source};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{
@@ -84,7 +90,7 @@ impl HashJoinState {
     }
 }
 
-pub struct HashJoinOperator {
+pub(crate) struct HashJoinOperator {
     right_on: Vec<ExprRef>,
     _join_type: JoinType,
     join_mapper: Arc<JoinOutputMapper>,
@@ -92,7 +98,7 @@ pub struct HashJoinOperator {
 }
 
 impl HashJoinOperator {
-    pub fn new(
+    pub(crate) fn new(
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         join_type: JoinType,
@@ -142,11 +148,11 @@ impl HashJoinOperator {
         })
     }
 
-    pub fn as_sink(&mut self) -> &mut dyn BlockingSink {
+    fn as_sink(&mut self) -> &mut dyn BlockingSink {
         self
     }
 
-    pub fn as_intermediate_op(&self) -> Arc<dyn IntermediateOperator> {
+    fn as_intermediate_op(&self) -> Arc<dyn IntermediateOperator> {
         if let HashJoinState::Probing {
             probe_table,
             tables,
@@ -242,5 +248,76 @@ impl BlockingSink for HashJoinOperator {
 impl Source for HashJoinOperator {
     fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         stream::empty().boxed()
+    }
+}
+
+pub(crate) struct HashJoinNode {
+    // use a RW lock
+    hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
+    left: Box<dyn PipelineNode>,
+    right: Box<dyn PipelineNode>,
+}
+
+impl HashJoinNode {
+    pub(crate) fn new(
+        op: HashJoinOperator,
+        left: Box<dyn PipelineNode>,
+        right: Box<dyn PipelineNode>,
+    ) -> Self {
+        HashJoinNode {
+            hash_join: Arc::new(tokio::sync::Mutex::new(op)),
+            left,
+            right,
+        }
+    }
+    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
+}
+
+#[async_trait]
+impl PipelineNode for HashJoinNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        vec![self.left.as_ref(), self.right.as_ref()]
+    }
+
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+        let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
+        self.left.start(sender).await?;
+        let hash_join = self.hash_join.clone();
+
+        let probe_table_build = tokio::spawn(async move {
+            let span = info_span!("ProbeTable::sink");
+            let mut guard = hash_join.lock().await;
+            let sink = guard.as_sink();
+            while let Some(val) = pt_receiver.recv().await {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val?))? {
+                    break;
+                }
+            }
+
+            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
+            DaftResult::Ok(())
+        });
+        // should wrap in context join handle
+
+        let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
+        // now we can start building the right side
+        self.right.start(right_sender).await?;
+
+        probe_table_build.await.unwrap()?;
+
+        let hash_join = self.hash_join.clone();
+        let destination = destination;
+        let probing_op = {
+            let guard = hash_join.lock().await;
+            guard.as_intermediate_op()
+        };
+
+        let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
+        // this should ideally be in the actor
+        spawn_compute_task(async move { actor.run_parallel().await });
+
+        Ok(())
     }
 }
