@@ -1084,14 +1084,8 @@ impl Operator {
     }
 }
 
-/// Converts an expression with syntactic sugar into struct gets.
-/// Does left-associative parsing to to resolve ambiguity.
-///
-/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
-/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
-fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
-    use common_treenode::{Transformed, TransformedResult, TreeNode};
-
+// Calculates all the possible mappings from sugared string to a struct get expression.
+fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
     #[derive(PartialEq, Eq)]
     struct BfsState<'a> {
         name: String,
@@ -1139,6 +1133,18 @@ fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<Ex
         }
     }
 
+    str_to_get_expr
+}
+
+/// Converts an expression with syntactic sugar into struct gets.
+/// Does left-associative parsing to to resolve ambiguity.
+///
+/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
+/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
+fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    use common_treenode::{Transformed, TransformedResult, TreeNode};
+
+    let str_to_get_expr = calculate_struct_expr_map(schema);
     expr.transform(|e| match e.as_ref() {
         Expr::Column(name) => str_to_get_expr
             .get(name.as_ref())
@@ -1171,6 +1177,25 @@ fn expr_has_agg(expr: &ExprRef) -> bool {
             if_false,
             predicate,
         } => expr_has_agg(if_true) || expr_has_agg(if_false) || expr_has_agg(predicate),
+    }
+}
+
+// Finds the names of all the wildcard expressions in an expression tree.
+// Needs the schema because column names with stars must not count as wildcards
+fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> Vec<Arc<str>> {
+    match expr.as_ref() {
+        Expr::Column(name) => {
+            if !name.contains('*') || struct_expr_map.contains_key(name.as_ref()) {
+                Vec::new()
+            } else {
+                vec![name.clone()]
+            }
+        }
+        _ => expr
+            .children()
+            .into_iter()
+            .flat_map(|e| find_wildcards(e, struct_expr_map))
+            .collect(),
     }
 }
 
@@ -1231,6 +1256,14 @@ fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
     if expr_has_agg(&expr) {
         return Err(DaftError::ValueError(format!(
             "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+        )));
+    }
+    let struct_expr_map = calculate_struct_expr_map(schema);
+    let wildcards = find_wildcards(expr.clone(), &struct_expr_map);
+    let wildcard_count = wildcards.len();
+    if wildcard_count > 1 {
+        return Err(DaftError::ValueError(format!(
+            "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree (found {wildcard_count})"
         )));
     }
     let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
@@ -1468,6 +1501,57 @@ mod tests {
             substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
             struct_get(col("a.b"), "c")
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_wildcards() -> DaftResult<()> {
+        let schema = Schema::new(vec![
+            Field::new(
+                "a",
+                DataType::Struct(vec![Field::new("b.*", DataType::Int64)]),
+            ),
+            Field::new("c.*", DataType::Int64),
+        ])?;
+        let struct_expr_map = calculate_struct_expr_map(&schema);
+
+        let wildcards = find_wildcards(col("test"), &struct_expr_map);
+        assert!(wildcards.is_empty());
+
+        let wildcards = find_wildcards(col("*"), &struct_expr_map);
+        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "*");
+
+        let wildcards = find_wildcards(col("t*"), &struct_expr_map);
+        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "t*");
+
+        let wildcards = find_wildcards(col("a.*"), &struct_expr_map);
+        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "a.*");
+
+        let wildcards = find_wildcards(col("c.*"), &struct_expr_map);
+        assert!(wildcards.is_empty());
+
+        let wildcards = find_wildcards(col("a.b.*"), &struct_expr_map);
+        assert!(wildcards.is_empty());
+
+        let wildcards = find_wildcards(col("a.b*"), &struct_expr_map);
+        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "a.b*");
+
+        // nested expression
+        let wildcards = find_wildcards(col("t*").add(col("a.*")), &struct_expr_map);
+        assert!(wildcards.len() == 2);
+        assert!(wildcards.iter().any(|s| s.as_ref() == "t*"));
+        assert!(wildcards.iter().any(|s| s.as_ref() == "a.*"));
+
+        let wildcards = find_wildcards(col("t*").add(col("a")), &struct_expr_map);
+        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "t*");
+
+        // schema containing *
+        let schema = Schema::new(vec![Field::new("*", DataType::Int64)])?;
+        let struct_expr_map = calculate_struct_expr_map(&schema);
+
+        let wildcards = find_wildcards(col("*"), &struct_expr_map);
+        assert!(wildcards.is_empty());
 
         Ok(())
     }
