@@ -64,6 +64,10 @@ impl OperatorTaskState {
         if self.buffer.is_empty() {
             return None;
         }
+        assert!(
+            !self.buffer.is_empty(),
+            "We can not run concat with no data"
+        );
         let concated =
             MicroPartition::concat(&self.buffer.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
                 .map(Arc::new);

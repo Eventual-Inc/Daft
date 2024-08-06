@@ -50,6 +50,10 @@ impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<()> {
         if let SortState::Building(parts) = &mut self.state {
+            assert!(
+                !parts.is_empty(),
+                "We can not finalize SortSink with no data"
+            );
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let sorted = concated.sort(&self.sort_by, &self.descending)?;
