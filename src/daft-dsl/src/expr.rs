@@ -1225,7 +1225,8 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
 }
 
 /// Resolves and validates the expression with a schema, returning the new expression and its field.
-pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+/// May return multiple expressions if the expr contains a wildcard.
+fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
     // TODO(Kevin): Support aggregation expressions everywhere
     if expr_has_agg(&expr) {
         return Err(DaftError::ValueError(format!(
@@ -1233,6 +1234,19 @@ pub fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Fiel
         )));
     }
     let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
+    // TODO: wildcard support
+    Ok(vec![resolved_expr])
+}
+
+// Resolve a single expression, erroring if any kind of expansion happens.
+pub fn resolve_single_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+    let resolved_exprs = resolve_expr(expr.clone(), schema)?;
+    let num_exprs = resolved_exprs.len();
+    if num_exprs != 1 {
+        return Err(DaftError::ValueError(format!("Error resolving expression {expr}: expanded into {num_exprs} expressions when 1 was expected")));
+    }
+    // needs to take ownership
+    let resolved_expr = resolved_exprs.into_iter().next().unwrap();
     let resolved_field = resolved_expr.to_field(schema)?;
     Ok((resolved_expr, resolved_field))
 }
@@ -1241,8 +1255,13 @@ pub fn resolve_exprs(
     exprs: Vec<ExprRef>,
     schema: &Schema,
 ) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
-    let resolved_iter = exprs.into_iter().map(|e| resolve_expr(e, schema));
-    itertools::process_results(resolved_iter, |res| res.unzip())
+    // can't flat map because we need to deal with errors
+    let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> =
+        exprs.into_iter().map(|e| resolve_expr(e, schema)).collect();
+    let resolved_exprs: Vec<ExprRef> = resolved_exprs?.into_iter().flatten().collect();
+    let resolved_fields: DaftResult<Vec<Field>> =
+        resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
+    Ok((resolved_exprs, resolved_fields?))
 }
 
 /// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
