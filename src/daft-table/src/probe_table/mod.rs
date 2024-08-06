@@ -18,6 +18,8 @@ pub struct ProbeTable {
     hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn: MultiDynArrayComparator,
+    num_groups: usize,
+    num_rows: usize,
 }
 
 impl ProbeTable {
@@ -39,6 +41,8 @@ impl ProbeTable {
             hash_table,
             tables: vec![],
             compare_fn,
+            num_groups: 0,
+            num_rows: 0,
         })
     }
 
@@ -140,12 +144,14 @@ impl ProbeTable {
                         },
                         vec![idx as u64],
                     );
+                    self.num_groups += 1;
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     entry.get_mut().push(idx as u64);
                 }
             }
         }
+        self.num_rows += table.len();
         Ok(())
     }
 }
