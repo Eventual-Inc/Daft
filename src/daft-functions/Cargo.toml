@@ -21,6 +21,7 @@ python = [
   "dep:pyo3",
   "common-error/python",
   "daft-core/python",
+  "daft-io/python",
   "common-io-config/python"
 ]
 

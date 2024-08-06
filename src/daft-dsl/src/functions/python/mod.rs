@@ -42,7 +42,7 @@ pub struct StatefulPythonUDF {
     pub name: Arc<String>,
     #[cfg(feature = "python")]
     pub stateful_partial_func: partial_udf::PyPartialUDF,
-    num_expressions: usize,
+    pub num_expressions: usize,
     pub return_dtype: DataType,
 }
 

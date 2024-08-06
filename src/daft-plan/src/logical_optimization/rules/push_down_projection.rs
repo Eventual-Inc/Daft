@@ -858,6 +858,119 @@ mod tests {
             .build();
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
+
+        Ok(())
+    }
+
+    /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
+    #[cfg(not(feature = "python"))]
+    #[test]
+    fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
+        use crate::logical_ops::ActorPoolProject;
+        use crate::logical_ops::Project;
+        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
+        use daft_dsl::functions::FunctionExpr;
+        use daft_dsl::Expr;
+        use std::default;
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Boolean),
+            Field::new("c", DataType::Int64),
+        ]);
+        let scan_node = dummy_scan_node(scan_op).build();
+        let mock_stateful_udf = Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                name: Arc::new("my-udf".to_string()),
+                num_expressions: 1,
+                return_dtype: DataType::Utf8,
+            })),
+            inputs: vec![col("c")],
+        }
+        .arced();
+
+        // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
+        let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            actor_pool_project,
+            vec![col("udf_results")],
+            default::Default::default(),
+        )?)
+        .arced();
+
+        let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq(project, expected_actor_pool_project)?;
+        Ok(())
+    }
+
+    /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
+    #[cfg(not(feature = "python"))]
+    #[test]
+    fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
+        use crate::logical_ops::ActorPoolProject;
+        use crate::logical_ops::Project;
+        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
+        use daft_dsl::functions::FunctionExpr;
+        use daft_dsl::Expr;
+        use std::default;
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Boolean),
+            Field::new("c", DataType::Int64),
+        ]);
+        let scan_node = dummy_scan_node(scan_op.clone()).build();
+        let mock_stateful_udf = Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                name: Arc::new("my-udf".to_string()),
+                num_expressions: 1,
+                return_dtype: DataType::Utf8,
+            })),
+            inputs: vec![col("c")],
+        }
+        .arced();
+
+        // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
+        let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            scan_node.clone(),
+            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            default::Default::default(),
+            8,
+        )?)
+        .arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            actor_pool_project,
+            vec![col("a")],
+            default::Default::default(),
+        )?)
+        .arced();
+
+        // Optimized plan will push the projection all the way down into the scan
+        let expected_scan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns {
+                limit: None,
+                partition_filters: None,
+                columns: Some(Arc::new(vec!["a".to_string()])),
+                filters: None,
+            },
+        )
+        .build();
+
+        assert_optimized_plan_eq(project, expected_scan)?;
         Ok(())
     }
 }
