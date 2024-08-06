@@ -240,7 +240,6 @@ impl PushDownProjection {
             | LogicalPlan::Limit(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
-            | LogicalPlan::MonotonicallyIncreasingId(..)
             | LogicalPlan::Explode(..)
             | LogicalPlan::Unpivot(..) => {
                 // Get required columns from projection and upstream.
@@ -435,8 +434,8 @@ impl PushDownProjection {
                 // since Distinct implicitly requires all parent columns.
                 Ok(Transformed::No(plan))
             }
-            LogicalPlan::Pivot(_) => {
-                // Cannot push down past a Pivot because it changes the schema.
+            LogicalPlan::Pivot(_) | LogicalPlan::MonotonicallyIncreasingId(_) => {
+                // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::No(plan))
             }
             LogicalPlan::Sink(_) => {
@@ -798,6 +797,22 @@ mod tests {
 
         assert_optimized_plan_eq(plan, expected)?;
 
+        Ok(())
+    }
+
+    /// Projection does not push down past monotonically increasing id
+    #[test]
+    fn test_projection_no_pushdown_monotonically_increasing_id() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .add_monotonically_increasing_id(Some("id"))?
+            .select(vec![col("id")])?
+            .build();
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 }
