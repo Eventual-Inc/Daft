@@ -102,6 +102,10 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let other = translate(&concat.other)?;
             Ok(LocalPhysicalPlan::concat(input, other))
         }
+        LogicalPlan::Repartition(repartition) => {
+            log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
+            translate(&repartition.input)
+        }
         _ => todo!("{} not yet implemented", plan.name()),
     }
 }

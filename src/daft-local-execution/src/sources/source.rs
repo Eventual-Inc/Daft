@@ -3,9 +3,11 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
-use tracing::{instrument, Instrument};
 
-use crate::channel::MultiSender;
+use async_trait::async_trait;
+use tracing::Instrument;
+
+use crate::{channel::MultiSender, pipeline::PipelineNode};
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
@@ -13,32 +15,33 @@ pub trait Source: Send + Sync {
     fn get_data(&self, maintain_order: bool) -> SourceStream;
 }
 
-pub struct SourceActor {
-    source: Arc<dyn Source>,
-    sender: MultiSender,
+struct SourceNode {
+    source_op: Arc<tokio::sync::Mutex<Box<dyn Source>>>,
 }
 
-impl SourceActor {
-    pub fn new(source: Arc<dyn Source>, sender: MultiSender) -> Self {
-        Self { source, sender }
+#[async_trait]
+impl PipelineNode for SourceNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        vec![]
     }
-
-    #[instrument(level = "info", skip(self), name = "SourceActor::run")]
-    pub async fn run(&mut self, maintain_order: bool) -> DaftResult<()> {
-        let mut source_stream = self.source.get_data(maintain_order);
-        while let Some(val) = source_stream.next().in_current_span().await {
-            let _ = self.sender.get_next_sender().send(val).await;
-        }
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+        let op = self.source_op.clone();
+        tokio::spawn(async move {
+            let guard = op.lock().await;
+            let mut source_stream = guard.get_data(destination.in_order());
+            while let Some(val) = source_stream.next().in_current_span().await {
+                let _ = destination.get_next_sender().send(val).await;
+            }
+            DaftResult::Ok(())
+        });
         Ok(())
     }
 }
-pub fn run_source(source: Arc<dyn Source>, sender: MultiSender) {
-    let maintain_order = sender.in_order();
-    let mut actor = SourceActor::new(source, sender);
-    tokio::spawn(
-        async move {
-            let _ = actor.run(maintain_order).in_current_span().await;
-        }
-        .in_current_span(),
-    );
+
+impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
+    fn from(value: Box<dyn Source>) -> Self {
+        Box::new(SourceNode {
+            source_op: Arc::new(tokio::sync::Mutex::new(value)),
+        })
+    }
 }

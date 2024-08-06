@@ -59,6 +59,9 @@ impl ScanTaskSource {
             }
         }
     }
+    pub fn boxed(self) -> Box<dyn Source> {
+        Box::new(self) as Box<dyn Source>
+    }
 }
 
 impl Source for ScanTaskSource {

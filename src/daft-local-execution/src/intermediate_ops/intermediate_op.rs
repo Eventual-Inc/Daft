@@ -1,23 +1,35 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
+
+use async_trait::async_trait;
 
 use crate::{
     channel::{
         create_channel, create_single_channel, spawn_compute_task, MultiReceiver, MultiSender,
         SingleReceiver, SingleSender,
     },
+    pipeline::PipelineNode,
     DEFAULT_MORSEL_SIZE, NUM_CPUS,
 };
 
-pub trait IntermediateOperator: dyn_clone::DynClone + Send + Sync {
+pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
+    #[allow(dead_code)]
+
     fn name(&self) -> &'static str;
 }
 
-dyn_clone::clone_trait_object!(IntermediateOperator);
+/// The number of rows that will trigger an intermediate operator to output its data.
+#[allow(dead_code)]
+fn get_output_threshold() -> usize {
+    env::var("OUTPUT_THRESHOLD")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse()
+        .expect("OUTPUT_THRESHOLD must be a number")
+}
 
 /// State of an operator task, used to buffer data and output it when a threshold is reached.
 pub struct OperatorTaskState {
@@ -55,6 +67,10 @@ impl OperatorTaskState {
         if self.buffer.is_empty() {
             return None;
         }
+        assert!(
+            !self.buffer.is_empty(),
+            "We can not run concat with no data"
+        );
         let concated =
             MicroPartition::concat(&self.buffer.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
                 .map(Arc::new);
@@ -70,12 +86,12 @@ impl OperatorTaskState {
 pub struct IntermediateOpActor {
     sender: MultiSender,
     receiver: MultiReceiver,
-    op: Box<dyn IntermediateOperator>,
+    op: Arc<dyn IntermediateOperator>,
 }
 
 impl IntermediateOpActor {
     pub fn new(
-        op: Box<dyn IntermediateOperator>,
+        op: Arc<dyn IntermediateOperator>,
         receiver: MultiReceiver,
         sender: MultiSender,
     ) -> Self {
@@ -91,7 +107,7 @@ impl IntermediateOpActor {
     async fn run_single(
         mut receiver: SingleReceiver,
         sender: SingleSender,
-        op: Box<dyn IntermediateOperator>,
+        op: Arc<dyn IntermediateOperator>,
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
@@ -139,11 +155,51 @@ impl IntermediateOpActor {
     }
 }
 
-pub fn run_intermediate_op(op: Box<dyn IntermediateOperator>, send_to: MultiSender) -> MultiSender {
-    let (sender, receiver) = create_channel(*NUM_CPUS, send_to.in_order());
-    let mut actor = IntermediateOpActor::new(op, receiver, send_to);
-    tokio::spawn(async move {
-        let _ = actor.run_parallel().await;
-    });
-    sender
+pub(crate) struct IntermediateNode {
+    intermediate_op: Arc<dyn IntermediateOperator>,
+    children: Vec<Box<dyn PipelineNode>>,
+}
+
+impl IntermediateNode {
+    pub(crate) fn new(
+        intermediate_op: Arc<dyn IntermediateOperator>,
+        children: Vec<Box<dyn PipelineNode>>,
+    ) -> Self {
+        IntermediateNode {
+            intermediate_op,
+            children,
+        }
+    }
+    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
+}
+
+#[async_trait]
+impl PipelineNode for IntermediateNode {
+    fn children(&self) -> Vec<&dyn PipelineNode> {
+        self.children.iter().map(|v| v.as_ref()).collect()
+    }
+
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+        assert_eq!(
+            self.children.len(),
+            1,
+            "we only support 1 child for Intermediate Node for now"
+        );
+
+        let (sender, receiver) = create_channel(*NUM_CPUS, destination.in_order());
+
+        let child = self
+            .children
+            .get_mut(0)
+            .expect("we should only have 1 child");
+        child.start(sender).await?;
+
+        let mut actor =
+            IntermediateOpActor::new(self.intermediate_op.clone(), receiver, destination);
+        // this should ideally be in the actor
+        spawn_compute_task(async move { actor.run_parallel().await });
+        Ok(())
+    }
 }

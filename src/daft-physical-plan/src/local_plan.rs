@@ -191,7 +191,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &SchemaRef {
         match self {
             LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
             | LocalPhysicalPlan::Filter(Filter { schema, .. })
