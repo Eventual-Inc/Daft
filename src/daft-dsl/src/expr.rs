@@ -618,7 +618,10 @@ impl Expr {
         use Expr::*;
         match self {
             // no children
-            Column(..) | Literal(..) => self.clone(),
+            Column(..) | Literal(..) => {
+                assert!(children.is_empty(), "Should have no children");
+                self.clone()
+            }
             // 1 child
             Not(..) => Not(children.first().expect("Should have 1 child").clone()),
             Alias(.., name) => Alias(
@@ -658,11 +661,30 @@ impl Expr {
             },
             // N-ary
             Agg(agg_expr) => Agg(agg_expr.with_new_children(children)),
-            Function { func, .. } => Function {
-                func: func.clone(),
-                inputs: children,
-            },
-            ScalarFunction(sf) => ScalarFunction(sf.clone()),
+            Function {
+                func,
+                inputs: old_children,
+            } => {
+                assert!(
+                    children.len() == old_children.len(),
+                    "Should have same number of children"
+                );
+                Function {
+                    func: func.clone(),
+                    inputs: children,
+                }
+            }
+            ScalarFunction(sf) => {
+                assert!(
+                    children.len() == sf.inputs.len(),
+                    "Should have same number of children"
+                );
+
+                ScalarFunction(crate::functions::ScalarFunction {
+                    udf: sf.udf.clone(),
+                    inputs: children,
+                })
+            }
         }
     }
 
