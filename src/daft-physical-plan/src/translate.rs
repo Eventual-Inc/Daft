@@ -92,12 +92,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 .iter()
                 .map(|name| daft_dsl::col(name.clone()))
                 .collect::<Vec<ExprRef>>();
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                vec![],
-                col_exprs,
-                schema,
-            ))
+            Ok(LocalPhysicalPlan::distinct(input, col_exprs, schema))
         }
         LogicalPlan::Concat(concat) => {
             let input = translate(&concat.input)?;

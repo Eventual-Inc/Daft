@@ -29,6 +29,7 @@ pub enum LocalPhysicalPlan {
     // ReduceMerge(ReduceMerge),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
+    Distinct(Distinct),
     // Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
@@ -141,6 +142,20 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn distinct(
+        input: LocalPhysicalPlanRef,
+        group_by: Vec<ExprRef>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Distinct(Distinct {
+            input,
+            group_by,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
@@ -200,9 +215,10 @@ impl LocalPhysicalPlan {
             | LocalPhysicalPlan::HashAggregate(HashAggregate { schema, .. })
             | LocalPhysicalPlan::Sort(Sort { schema, .. })
             | LocalPhysicalPlan::HashJoin(HashJoin { schema, .. })
+            | LocalPhysicalPlan::Distinct(Distinct { schema, .. })
             | LocalPhysicalPlan::Concat(Concat { schema, .. }) => schema,
             LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
-            _ => todo!("{:?}", self),
+            _ => todo!("Schema not implemented for {:?}", self.name()),
         }
     }
 }
