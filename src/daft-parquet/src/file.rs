@@ -428,20 +428,16 @@ impl ParquetFileReader {
                                     .expect("Row Group index should be in bounds");
                                 let num_rows =
                                     rg.num_rows().min(row_range.start + row_range.num_rows);
-                                let columns = rg.columns();
-                                let filtered_cols_idx = columns
+                                let filtered_columns = rg
+                                    .columns()
                                     .iter()
-                                    .enumerate()
-                                    .filter(|(_, x)| x.descriptor().path_in_schema[0] == field.name)
-                                    .map(|(i, _)| i)
+                                    .filter(|x| x.descriptor().path_in_schema[0] == field.name)
                                     .collect::<Vec<_>>();
                                 let mut decompressed_iters =
-                                    Vec::with_capacity(filtered_cols_idx.len());
-                                let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
-                                let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
-
-                                for col_idx in filtered_cols_idx.into_iter() {
-                                    let col = columns.get(col_idx).unwrap();
+                                    Vec::with_capacity(filtered_columns.len());
+                                let mut ptypes = Vec::with_capacity(filtered_columns.len());
+                                let mut num_values = Vec::with_capacity(filtered_columns.len());
+                                for col in filtered_columns.into_iter() {
                                     num_values.push(col.metadata().num_values as usize);
                                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
 
