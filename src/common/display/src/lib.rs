@@ -3,6 +3,10 @@ use mermaid::MermaidDisplayOptions;
 pub mod mermaid;
 pub mod tree;
 
+pub trait Displayable {
+    fn multiline_display(&self) -> Vec<String>;
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
 // do not change the order of the variants, pyo3 matches from top to bottom,

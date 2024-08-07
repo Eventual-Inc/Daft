@@ -603,7 +603,7 @@ impl PhysicalPlan {
         s
     }
 
-    pub fn display_as(&self, format: DisplayFormat) -> String {
+    pub fn display_as(self: Arc<Self>, format: DisplayFormat) -> String {
         use common_display::mermaid::MermaidDisplay;
 
         match format {

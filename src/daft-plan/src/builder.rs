@@ -483,7 +483,6 @@ impl LogicalPlanBuilder {
     }
 
     pub fn display_as(&self, format: DisplayFormat) -> String {
-        println!("Displaying as {:?}", format);
         use common_display::mermaid::MermaidDisplay;
 
         match format {

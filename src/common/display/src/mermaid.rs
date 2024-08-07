@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
@@ -171,14 +171,14 @@ where
     }
 }
 
-impl<T> MermaidDisplay for T
+impl<T> MermaidDisplay for Arc<T>
 where
-    T: TreeDisplay + TreeNode,
+    T: TreeDisplay,
+    Arc<T>: TreeNode,
 {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
         let mut visitor = MermaidDisplayVisitor::new(options);
         let _ = self.visit(&mut visitor);
-
         visitor.build()
     }
 }
