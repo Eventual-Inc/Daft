@@ -1,4 +1,4 @@
-use std::{collections::HashMap, default, sync::Arc};
+use std::{collections::HashSet, default, iter, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{TreeNode, TreeNodeRewriter};
@@ -7,7 +7,7 @@ use daft_dsl::{
         python::{PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
-    optimization::requires_computation,
+    optimization::{get_required_columns, requires_computation},
     Expr, ExprRef,
 };
 
@@ -163,11 +163,6 @@ fn try_optimize_project(
         return Ok(Transformed::No(plan));
     }
 
-    let final_column_names = projection
-        .projection
-        .iter()
-        .map(|e| e.name())
-        .collect::<Vec<_>>();
     let (remaining, next_stages): (Vec<ExprRef>, Vec<ExprRef>) = {
         let mut remaining = Vec::new();
         let mut next_stages = Vec::new();
@@ -201,28 +196,38 @@ fn try_optimize_project(
         optimized_child_plan.unwrap().clone()
     };
 
-    // Conditionally build on the tree next with a stateless Project
-    let stateless_stages: HashMap<&str, &ExprRef> = next_stages
+    // Start building a chain of `child -> Optional<Project> -> ActorPoolProject -> ActorPoolProject -> ...`
+    let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) =
+        next_stages.into_iter().partition(has_stateful_udf);
+    let stateless_stages_names: HashSet<String> = stateless_stages
         .iter()
-        .filter(|&e| !has_stateful_udf(e))
-        .map(|stateless_expr| (stateless_expr.name(), stateless_expr))
+        .map(|e| e.name().to_string())
         .collect();
+
+    // Conditionally build on the tree next with a stateless Project
     let new_plan = if stateless_stages.is_empty() {
         new_plan_child.clone()
     } else {
+        // Stateless projection consists of stateless expressions, but also pass-through of any columns required by subsequent stateful ActorPoolProjects
+        let stateful_stages_columns_required: HashSet<String> = stateful_stages
+            .iter()
+            .flat_map(get_required_columns)
+            .collect();
+        let stateless_projection = stateless_stages
+            .into_iter()
+            .chain(stateful_stages_columns_required.iter().filter_map(|name| {
+                if stateless_stages_names.contains(name.as_str()) {
+                    None
+                } else {
+                    Some(Expr::Column(name.as_str().into()).arced())
+                }
+            }))
+            .collect();
+
         // NOTE: We set the resource request to default here because we want to avoid inheriting the resource request which is likely
         // intended for the stateful UDF only (e.g. GPUs). We should figure out a better way to do this, perhaps having it on the Expression-level?
-        let stateless_projection = final_column_names
-            .iter()
-            .map(|&name| {
-                if let Some(&stateless_expr) = stateless_stages.get(name) {
-                    stateless_expr.clone()
-                } else {
-                    Expr::Column(name.into()).arced()
-                }
-            })
-            .collect();
         let stateless_projection_resource_request = default::Default::default();
+
         LogicalPlan::Project(Project::try_new(
             new_plan_child.clone(),
             stateless_projection,
@@ -234,17 +239,26 @@ fn try_optimize_project(
     // Build on the tree with the necessary stateful ActorPoolProject nodes
     let new_plan = {
         let mut child = new_plan;
-        for stateful_expr in next_stages.iter().filter(|&e| has_stateful_udf(e)) {
-            let stateful_expr_name = stateful_expr.name();
-            let stateful_projection = final_column_names
+
+        for idx in 0..stateful_stages.len() {
+            let stateful_expr = stateful_stages[idx].clone();
+            let stateful_expr_name = stateful_expr.name().to_string();
+            let remaining_stateful_stages_columns_required: HashSet<String> = stateful_stages
+                .as_slice()[idx + 1..]
                 .iter()
-                .map(|&name| {
-                    if name == stateful_expr_name {
-                        stateful_expr.clone()
+                .flat_map(get_required_columns)
+                .collect();
+            let stateful_projection = remaining_stateful_stages_columns_required
+                .iter()
+                .chain(stateless_stages_names.iter())
+                .filter_map(|name| {
+                    if name == &stateful_expr_name {
+                        None
                     } else {
-                        Expr::Column(name.into()).arced()
+                        Some(Expr::Column(name.as_str().into()).arced())
                     }
                 })
+                .chain(iter::once(stateful_expr))
                 .collect();
             child = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 child,
@@ -271,4 +285,88 @@ fn has_stateful_udf(e: &ExprRef) -> bool {
             }
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::datatypes::Field;
+    use daft_dsl::{
+        col,
+        functions::{
+            python::{PythonUDF, StatefulPythonUDF},
+            FunctionExpr,
+        },
+        Expr,
+    };
+
+    use crate::{
+        logical_ops::ActorPoolProject,
+        logical_optimization::{
+            rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq,
+        },
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlan,
+    };
+
+    use super::SplitActorPoolProjects;
+
+    /// Helper that creates an optimizer with the SplitExprByStatefulUDF rule registered, optimizes
+    /// the provided plan with said optimizer, and compares the optimized plan with
+    /// the provided expected plan.
+    fn assert_optimized_plan_eq(
+        plan: Arc<LogicalPlan>,
+        expected: Arc<LogicalPlan>,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![Box::new(SplitActorPoolProjects {})],
+        )
+    }
+
+    #[test]
+    fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_plan = dummy_scan_node(scan_op);
+
+        // Add a Projection with StatefulUDF and resource request
+        let num_actors = 1;
+        let stateful_project_expr = Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                name: Arc::new("foo".to_string()),
+                num_expressions: 1,
+                return_dtype: daft_core::DataType::Binary,
+            })),
+            inputs: vec![col("a")],
+        }
+        .arced()
+        .alias("b");
+        let resource_request = crate::ResourceRequest {
+            num_cpus: Some(8.),
+            num_gpus: Some(1.),
+            memory_bytes: None,
+        };
+        let project_plan = scan_plan
+            .with_columns(
+                vec![stateful_project_expr.clone()],
+                resource_request.clone(),
+            )?
+            .build();
+
+        // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")])
+        let expected = scan_plan.select(vec![col("a")])?.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![col("a"), stateful_project_expr.clone()],
+            resource_request.clone(),
+            num_actors,
+        )?);
+
+        assert_optimized_plan_eq(project_plan, expected.arced())?;
+
+        Ok(())
+    }
 }
