@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::JoinStrategy;
+use daft_core::{JoinStrategy, JoinType};
 use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
@@ -68,6 +68,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Join(join) => {
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                 todo!("Only hash join is supported for now")
+            }
+            if join.join_type != JoinType::Inner {
+                todo!("Only inner join is supported for now")
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;

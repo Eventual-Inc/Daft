@@ -6,19 +6,13 @@ use tracing::instrument;
 
 use super::streaming_sink::{StreamSinkOutput, StreamingSink};
 
-#[derive(Clone)]
 pub struct LimitSink {
-    #[allow(dead_code)]
-    limit: usize,
     remaining: usize,
 }
 
 impl LimitSink {
     pub fn new(limit: usize) -> Self {
-        Self {
-            limit,
-            remaining: limit,
-        }
+        Self { remaining: limit }
     }
     pub fn boxed(self) -> Box<dyn StreamingSink> {
         Box::new(self)
