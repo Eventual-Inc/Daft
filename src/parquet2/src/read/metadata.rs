@@ -1,9 +1,9 @@
 use std::{
     cmp::min,
-    io::{Read, Seek, SeekFrom},
+    io::{self, BufReader, Read, Seek, SeekFrom},
 };
 
-use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
+use parquet_format_safe::{thrift::{self, protocol::{field_id, TCompactInputProtocol, TInputProtocol, TType}}, ColumnOrder, EncryptionAlgorithm, KeyValue, RowGroup, SchemaElement};
 use parquet_format_safe::FileMetaData as TFileMetaData;
 
 use super::super::{
@@ -37,6 +37,7 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
     read_metadata_with_size(reader, file_size)
 }
 
+
 /// Reads a [`FileMetaData`] from the reader, located at the end of the file, with known file size.
 pub fn read_metadata_with_size<R: Read + Seek>(
     reader: &mut R,
@@ -47,6 +48,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
             "A parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
+    println!("IN READ METADATA");
 
     // read and cache up to DEFAULT_FOOTER_READ_SIZE bytes from the end and process the footer
     let default_end_len = min(DEFAULT_FOOTER_READ_SIZE, file_size) as usize;
@@ -91,14 +93,97 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 
     // a highly nested but sparse struct could result in many allocations
     let max_size = reader.len() * 2 + 1024;
-
-    deserialize_metadata(reader, max_size)
+    let mut buff = Vec::with_capacity(reader.len());
+    buff.extend_from_slice(reader);
+    let mut reader = io::Cursor::new(buff);
+    println!("num rows: {}", deserialize_num_rows(&mut reader, max_size)?);
+    let curr_pos = reader.position();
+    println!("read N bytes: {curr_pos} out of {metadata_len}");
+    panic!("only printing num rows");
+    // deserialize_metadata(reader, max_size)
 }
 
 /// Parse loaded metadata bytes
-pub fn deserialize_metadata<R: Read>(reader: R, max_size: usize) -> Result<FileMetaData> {
-    let mut prot = TCompactInputProtocol::new(reader, max_size);
-    let metadata = TFileMetaData::read_from_in_protocol(&mut prot)?;
-
-    FileMetaData::try_from_thrift(metadata)
+pub fn deserialize_metadata<R: Read + Seek>(reader: R, max_size: usize) -> Result<FileMetaData> {
+    let mut rr = BufReader::new(reader);
+    let mut prot = TCompactInputProtocol::new(&mut rr, max_size);
+    let num_rows = partial_num_rows_deserialize(&mut prot)?;
+    panic!("only printing num rows");
+    // let metadata = TFileMetaData::read_from_in_protocol(&mut prot)?;
+    // FileMetaData::try_from_thrift(metadata)
 }
+
+
+pub fn deserialize_num_rows<R: Read + Seek>(reader: R, max_size: usize) -> Result<i64> {
+    let mut prot = TCompactInputProtocol::new(reader, max_size);
+    let num_rows = partial_num_rows_deserialize(&mut prot)?;
+    Ok(num_rows)
+}
+
+// impl ReadThrift for FileMetaData {
+fn partial_num_rows_deserialize<T: TInputProtocol>(i_prot: &mut T) -> thrift::Result<i64> {
+    
+      i_prot.read_struct_begin()?;
+      let mut f_1: Option<i32> = None;
+      let mut f_2: Option<Vec<SchemaElement>> = None;
+      let mut f_3: Option<i64> = None;
+      let mut f_4: Option<Vec<RowGroup>> = None;
+      let mut f_5: Option<Vec<KeyValue>> = None;
+      let mut f_6: Option<String> = None;
+      let mut f_7: Option<Vec<ColumnOrder>> = None;
+      let mut f_8: Option<EncryptionAlgorithm> = None;
+      let mut f_9: Option<Vec<u8>> = None;
+      loop {
+        let field_ident = i_prot.read_field_begin()?;
+        if field_ident.field_type == TType::Stop {
+          break;
+        }
+        let field_id = field_id(&field_ident)?;
+        println!("deserializing field_id: {field_id}");
+        match field_id {
+          1 => {
+            let val = i_prot.read_i32()?;
+            f_1 = Some(val);
+          },
+          2 => {
+            let val = i_prot.read_list()?;
+            f_2 = Some(val);
+          },
+          3 => {
+            let val = i_prot.read_i64()?;
+            return Ok(val);
+          },
+          4 => {
+            let val = i_prot.read_list()?;
+            f_4 = Some(val);
+          },
+          5 => {
+            let val = i_prot.read_list()?;
+            f_5 = Some(val);
+          },
+          6 => {
+            let val = i_prot.read_string()?;
+            f_6 = Some(val);
+          },
+          7 => {
+            let val = i_prot.read_list()?;
+            f_7 = Some(val);
+          },
+          8 => {
+            let val = EncryptionAlgorithm::read_from_in_protocol(i_prot)?;
+            f_8 = Some(val);
+          },
+          9 => {
+            let val = i_prot.read_bytes()?;
+            f_9 = Some(val);
+          },
+          _ => {
+            i_prot.skip(field_ident.field_type)?;
+          },
+        };
+        i_prot.read_field_end()?;
+      }
+      i_prot.read_struct_end()?;
+      panic!("We didn't decode num rows");
+}
+//   }
