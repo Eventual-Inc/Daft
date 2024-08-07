@@ -42,6 +42,33 @@ You may also find it necessary in certain situations to create an Expression wit
 
 When this Expression is evaluated, it will resolve to "the column named A" in whatever evaluation context it is used within!
 
+Refer to multiple columns using a wildcard
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can create expressions on multiple columns at once using a wildcard. The expression `col("*")` selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+
+.. code:: python
+
+    import daft
+    from daft import col
+
+    df = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
+    df.select(col("*") * 3).show()
+
+.. code:: none
+
+    ╭───────┬───────╮
+    │ A     ┆ B     │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 3     ┆ 12    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 6     ┆ 15    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 9     ┆ 18    │
+    ╰───────┴───────╯
+
 Literals
 ^^^^^^^^
 
