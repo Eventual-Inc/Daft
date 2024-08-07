@@ -22,8 +22,8 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    Distinct, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
+    Sort, UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 
@@ -168,6 +168,20 @@ pub fn physical_plan_to_pipeline(
 
             IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
                 .boxed()
+        }
+        LocalPhysicalPlan::Distinct(Distinct {
+            input,
+            group_by,
+            schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let local_distinct_spec =
+                AggregateSpec::new(vec![], group_by.clone(), input.schema().clone());
+            let local_distinct_node =
+                IntermediateNode::new(Arc::new(local_distinct_spec), vec![child_node]).boxed();
+            let global_distinct_sink = AggregateSink::new(vec![], group_by.clone(), schema.clone());
+            BlockingSinkNode::new(global_distinct_sink.boxed(), local_distinct_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
