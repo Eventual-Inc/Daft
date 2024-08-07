@@ -1,9 +1,13 @@
 use std::{collections::HashMap, default, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::TreeNode;
+use common_treenode::{TreeNode, TreeNodeRewriter};
 use daft_dsl::{
-    functions::{python::PythonUDF, FunctionExpr},
+    functions::{
+        python::{PythonUDF, StatefulPythonUDF},
+        FunctionExpr,
+    },
+    optimization::requires_computation,
     Expr, ExprRef,
 };
 
@@ -54,8 +58,97 @@ impl OptimizerRule for SplitActorPoolProjects {
     }
 }
 
-fn split_expr_by_stateful_udf(_expr: &ExprRef) -> (ExprRef, Vec<ExprRef>) {
-    todo!("Split an expression into Root and Subtree(s) by chopping off Stateful UDFs")
+struct SplitExprByStatefulUDF {
+    // Initialized to True, but once we encounter non-aliases this will be set to false
+    is_parsing_stateful_udf: bool,
+    next_exprs: Vec<ExprRef>,
+}
+
+impl SplitExprByStatefulUDF {
+    fn new() -> Self {
+        Self {
+            is_parsing_stateful_udf: true,
+            next_exprs: Vec::new(),
+        }
+    }
+}
+
+impl TreeNodeRewriter for SplitExprByStatefulUDF {
+    type Node = ExprRef;
+
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+        match node.as_ref() {
+            // Encountered alias: keep going if we are ignoring aliases
+            Expr::Alias { .. } if self.is_parsing_stateful_udf => {
+                Ok(common_treenode::Transformed::no(node))
+            }
+            // Encountered stateful UDF: chop off all children and add to self.next_exprs
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
+                inputs,
+            } => {
+                assert!(self.is_parsing_stateful_udf, "SplitExprByStatefulUDF.is_parsing_stateful_udf should be True if we encounter a stateful UDF expression");
+
+                let new_inputs = inputs.iter().map(|e| {
+                    if requires_computation(e.as_ref()) {
+                        // Truncate the child if it requires computation, and push it onto the stack to indicate that it needs computation in a different stage
+                        self.next_exprs.push(e.clone());
+                        Expr::Column(e.name().into()).arced()
+                    } else {
+                        e.clone()
+                    }
+                });
+                let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
+
+                Ok(common_treenode::Transformed::new(
+                    new_truncated_node,
+                    true,
+                    common_treenode::TreeNodeRecursion::Jump,
+                ))
+            }
+            expr => {
+                // Indicate that we are now parsing a stateless expression tree
+                self.is_parsing_stateful_udf = false;
+
+                // None of the direct children are stateful UDFs, so we keep going
+                if node.children().iter().all(|e| {
+                    !matches!(
+                        e.as_ref(),
+                        Expr::Function {
+                            func: FunctionExpr::Python(PythonUDF::Stateful(
+                                StatefulPythonUDF { .. }
+                            )),
+                            ..
+                        }
+                    )
+                }) {
+                    return Ok(common_treenode::Transformed::no(node));
+                }
+
+                // If any children are stateful UDFs, we truncate
+                let inputs = expr.children();
+                let new_inputs = inputs.iter().map(|e| {
+                    if matches!(
+                        e.as_ref(),
+                        Expr::Function {
+                            func: FunctionExpr::Python(PythonUDF::Stateful(
+                                StatefulPythonUDF { .. }
+                            )),
+                            ..
+                        }
+                    ) {
+                        self.next_exprs.push(e.clone());
+                        Expr::Column(e.name().into()).arced()
+                    } else {
+                        e.clone()
+                    }
+                });
+                let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
+
+                Ok(common_treenode::Transformed::yes(new_truncated_node))
+            }
+        }
+    }
 }
 
 fn try_optimize_project(
@@ -79,9 +172,10 @@ fn try_optimize_project(
         let mut remaining = Vec::new();
         let mut next_stages = Vec::new();
         for expr in projection.projection.iter() {
-            let (root, subtrees) = split_expr_by_stateful_udf(expr);
+            let mut rewriter = SplitExprByStatefulUDF::new();
+            let root = expr.clone().rewrite(&mut rewriter)?.data;
             next_stages.push(root);
-            remaining.extend(subtrees);
+            remaining.extend(rewriter.next_exprs);
         }
         (remaining, next_stages)
     };
