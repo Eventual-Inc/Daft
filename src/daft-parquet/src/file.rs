@@ -18,7 +18,6 @@ use parquet2::{
     read::get_owned_page_stream_from_column_start,
     FallibleStreamingIterator,
 };
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use snafu::ResultExt;
 
 use crate::{
@@ -386,94 +385,9 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-        let rt_handle = tokio::runtime::Handle::current();
-        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
-        let schema_ref = Arc::new(daft_schema);
-
-        let mut table_iters = Vec::with_capacity(self.row_ranges.len());
-        for row_range in self.row_ranges.iter() {
-            let rg = self
-                .metadata
-                .row_groups
-                .get(row_range.row_group_index)
-                .expect("Row Group index should be in bounds");
-            let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-            let columns = rg.columns();
-
-            let mut arr_iters = Vec::with_capacity(self.arrow_schema.fields.len());
-            for field in self.arrow_schema.fields.iter() {
-                let filtered_cols_idx = columns
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, x)| x.descriptor().path_in_schema[0] == field.name)
-                    .map(|(i, _)| i)
-                    .collect::<Vec<_>>();
-
-                let needed_byte_ranges = filtered_cols_idx
-                    .iter()
-                    .map(|i| {
-                        let c = columns.get(*i).unwrap();
-                        let (start, len) = c.byte_range();
-                        let end: u64 = start + len;
-                        start as usize..end as usize
-                    })
-                    .collect::<Vec<_>>();
-
-                let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
-                for range in needed_byte_ranges.into_iter() {
-                    let range_reader = ranges.get_range_reader(range)?;
-                    range_readers.push(Box::pin(range_reader))
-                }
-
-                let mut decompressed_iters = Vec::with_capacity(filtered_cols_idx.len());
-                let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
-                let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
-                for (col_idx, range_reader) in filtered_cols_idx.into_iter().zip(range_readers) {
-                    let col = rg
-                        .columns()
-                        .get(col_idx)
-                        .expect("Column index should be in bounds");
-                    ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-                    num_values.push(col.metadata().num_values as usize);
-
-                    let compressed_page_stream = get_owned_page_stream_from_column_start(
-                        col,
-                        range_reader,
-                        vec![],
-                        Arc::new(|_, _| true),
-                        Self::MAX_HEADER_SIZE,
-                    )
-                    .with_context(|_| {
-                        UnableToCreateParquetPageStreamSnafu::<String> {
-                            path: self.uri.clone(),
-                        }
-                    })?;
-                    let page_stream = streaming_decompression(compressed_page_stream);
-                    let pinned_stream = Box::pin(page_stream);
-                    decompressed_iters.push(StreamIterator::new(pinned_stream, rt_handle.clone()))
-                }
-                let arr_iter = column_iter_to_arrays(
-                    decompressed_iters,
-                    ptypes.iter().collect(),
-                    field.clone(),
-                    Some(Self::CHUNK_SIZE),
-                    num_rows,
-                    num_values,
-                )?;
-                arr_iters.push(arr_iter);
-            }
-
-            let table_iter = arrow_column_iters_to_table_iter(
-                arr_iters,
-                row_range.start,
-                schema_ref.clone(),
-                self.uri.clone(),
-                predicate.clone(),
-                original_columns.clone(),
-                original_num_rows,
-            );
-            table_iters.push(table_iter);
-        }
+        let daft_schema = Arc::new(daft_core::schema::Schema::try_from(
+            self.arrow_schema.as_ref(),
+        )?);
 
         let (senders, receivers): (Vec<_>, Vec<_>) = self
             .row_ranges
@@ -485,24 +399,127 @@ impl ParquetFileReader {
             })
             .unzip();
 
-        rayon::spawn(move || {
-            table_iters
-                .into_par_iter()
-                .zip(senders.into_par_iter())
-                .for_each(|(table_iter, tx)| {
-                    for table_result in table_iter {
-                        let is_err = table_result.is_err();
-                        if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                            tx.try_send(table_result)
-                        {
-                            panic!("Parquet stream channel should not be full")
-                        }
-                        if is_err {
-                            break;
-                        }
-                    }
+        let table_iter_handles =
+            self.row_ranges
+                .iter()
+                .zip(senders.into_iter())
+                .map(|(row_range, sender)| {
+                    let uri = self.uri.clone();
+                    let metadata = self.metadata.clone();
+                    let arrow_schema = self.arrow_schema.clone();
+                    let daft_schema = daft_schema.clone();
+                    let ranges = ranges.clone();
+                    let predicate = predicate.clone();
+                    let original_columns = original_columns.clone();
+                    let row_range = *row_range;
+
+                    tokio::task::spawn(async move {
+                        let arr_iter_handles = arrow_schema.fields.iter().map(|field| {
+                            let rt_handle = tokio::runtime::Handle::current();
+                            let ranges = ranges.clone();
+                            let uri = uri.clone();
+                            let field = field.clone();
+                            let metadata = metadata.clone();
+
+                            tokio::task::spawn(async move {
+                                let rg = metadata
+                                    .row_groups
+                                    .get(row_range.row_group_index)
+                                    .expect("Row Group index should be in bounds");
+                                let num_rows =
+                                    rg.num_rows().min(row_range.start + row_range.num_rows);
+                                let columns = rg.columns();
+                                let filtered_cols_idx = columns
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, x)| x.descriptor().path_in_schema[0] == field.name)
+                                    .map(|(i, _)| i)
+                                    .collect::<Vec<_>>();
+                                let mut decompressed_iters =
+                                    Vec::with_capacity(filtered_cols_idx.len());
+                                let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
+                                let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
+
+                                for col_idx in filtered_cols_idx.into_iter() {
+                                    let col = columns.get(col_idx).unwrap();
+                                    num_values.push(col.metadata().num_values as usize);
+                                    ptypes.push(col.descriptor().descriptor.primitive_type.clone());
+
+                                    let byte_range = {
+                                        let (start, len) = col.byte_range();
+                                        let end: u64 = start + len;
+                                        start as usize..end as usize
+                                    };
+                                    let range_reader =
+                                        Box::pin(ranges.get_range_reader(byte_range).await?);
+                                    let compressed_page_stream =
+                                        get_owned_page_stream_from_column_start(
+                                            col,
+                                            range_reader,
+                                            vec![],
+                                            Arc::new(|_, _| true),
+                                            Self::MAX_HEADER_SIZE,
+                                        )
+                                        .with_context(
+                                            |_| UnableToCreateParquetPageStreamSnafu::<String> {
+                                                path: uri.clone(),
+                                            },
+                                        )?;
+                                    let page_stream =
+                                        streaming_decompression(compressed_page_stream);
+                                    let pinned_stream = Box::pin(page_stream);
+                                    decompressed_iters
+                                        .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                }
+                                let arr_iter = column_iter_to_arrays(
+                                    decompressed_iters,
+                                    ptypes.iter().collect(),
+                                    field,
+                                    Some(Self::CHUNK_SIZE),
+                                    num_rows,
+                                    num_values,
+                                )?;
+                                Ok(arr_iter)
+                            })
+                        });
+
+                        let arr_iters = try_join_all(arr_iter_handles)
+                            .await
+                            .context(JoinSnafu { path: uri.clone() })?
+                            .into_iter()
+                            .collect::<DaftResult<Vec<_>>>()?;
+
+                        let table_iter = arrow_column_iters_to_table_iter(
+                            arr_iters,
+                            row_range.start,
+                            daft_schema,
+                            uri,
+                            predicate,
+                            original_columns,
+                            original_num_rows,
+                        );
+                        rayon::spawn(move || {
+                            for table_result in table_iter {
+                                let is_err = table_result.is_err();
+                                if let Err(crossbeam_channel::TrySendError::Full(_)) =
+                                    sender.try_send(table_result)
+                                {
+                                    panic!("Parquet stream channel should not be full")
+                                }
+                                if is_err {
+                                    break;
+                                }
+                            }
+                        });
+                        Ok(())
+                    })
                 });
-        });
+
+        let _ = try_join_all(table_iter_handles)
+            .await
+            .context(JoinSnafu { path: self.uri })?
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let combined_stream =
             futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
@@ -563,7 +580,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges.into_iter() {
-                                let range_reader = ranges.get_range_reader(range)?;
+                                let range_reader = ranges.get_range_reader(range).await?;
                                 range_readers.push(Box::pin(range_reader))
                             }
 
@@ -745,7 +762,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges.into_iter() {
-                                let range_reader = ranges.get_range_reader(range)?;
+                                let range_reader = ranges.get_range_reader(range).await?;
                                 range_readers.push(Box::pin(range_reader))
                             }
 
