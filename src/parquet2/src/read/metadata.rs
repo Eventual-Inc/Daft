@@ -104,11 +104,20 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 }
 
 /// Parse loaded metadata bytes
-pub fn deserialize_metadata<R: Read + Seek>(reader: R, max_size: usize) -> Result<FileMetaData> {
-    let mut rr = BufReader::new(reader);
-    let mut prot = TCompactInputProtocol::new(&mut rr, max_size);
+pub fn deserialize_metadata<R: Read>(reader: R, max_size: usize) -> Result<FileMetaData> {
+    let mut reader = reader;
+    let mut buf = Vec::new();
+    let n_bytes = reader.read_to_end(&mut buf)?;
+
+
+    let mut reader = io::Cursor::new(buf);
+    let mut prot = TCompactInputProtocol::new(&mut reader, max_size);
     let num_rows = partial_num_rows_deserialize(&mut prot)?;
+    let pos = reader.position();
+
+    println!("num rows: {num_rows}, decoded {pos} bytes out of {n_bytes}");
     panic!("only printing num rows");
+
     // let metadata = TFileMetaData::read_from_in_protocol(&mut prot)?;
     // FileMetaData::try_from_thrift(metadata)
 }
