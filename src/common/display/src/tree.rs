@@ -129,21 +129,3 @@ pub trait TreeDisplay {
         Ok(())
     }
 }
-
-impl<T> TreeDisplay for Arc<T>
-where
-    T: TreeDisplay,
-{
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.as_ref().get_multiline_representation()
-    }
-
-    fn get_name(&self) -> String {
-        self.as_ref().get_name()
-    }
-
-    fn get_children(&self) -> Vec<Arc<Self>> {
-        let t: Vec<Arc<T>> = self.as_ref().get_children();
-        t.into_iter().map(Arc::new).collect()
-    }
-}

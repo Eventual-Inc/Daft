@@ -142,9 +142,10 @@ where
 
 impl<T> TreeNodeVisitor for MermaidDisplayVisitor<T>
 where
-    T: TreeDisplay + TreeNode,
+    T: TreeDisplay,
+    Arc<T>: TreeNode,
 {
-    type Node = T;
+    type Node = Arc<T>;
 
     fn f_down(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
         // go from top to bottom, and add all nodes first.
