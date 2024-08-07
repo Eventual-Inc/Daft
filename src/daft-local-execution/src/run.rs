@@ -105,6 +105,7 @@ pub fn run_local(
         .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
+        let final_schema = physical_plan.schema();
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
         let (sender, mut receiver) = create_channel(1, true);
 

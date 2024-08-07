@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator,
+        aggregate::AggregateSpec, filter::FilterSpec, intermediate_op::IntermediateNode,
+        project::ProjectSpec,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -47,26 +47,30 @@ pub fn physical_plan_to_pipeline(
     use daft_physical_plan::PhysicalScan;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
-            let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            scan_task_source.boxed().into()
+            let scan_task_sources = scan_tasks
+                .iter()
+                .map(|st| ScanTaskSource::new(st.clone()).boxed())
+                .collect::<Vec<_>>();
+            scan_task_sources.into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone()).boxed().into()
+            let in_memory_source = InMemorySource::new(partitions.clone()).boxed();
+            vec![in_memory_source].into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
-            let proj_op = ProjectOperator::new(projection.clone());
+            let proj_spec = ProjectSpec::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(proj_spec), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
-            let filter_op = FilterOperator::new(predicate.clone());
+            let filter_spec = FilterSpec::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(filter_spec), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
@@ -109,13 +113,15 @@ pub fn physical_plan_to_pipeline(
                     .map(|e| Arc::new(Expr::Agg(e.clone())))
                     .collect(),
                 vec![],
+                schema.clone(),
             );
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project = ProjectOperator::new(final_exprs);
+            let final_stage_project_spec = ProjectSpec::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
+                .boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -145,21 +151,24 @@ pub fn physical_plan_to_pipeline(
                     .map(|e| Arc::new(Expr::Agg(e.clone())))
                     .collect(),
                 group_by.clone(),
+                schema.clone(),
             );
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project = ProjectOperator::new(final_exprs);
+            let final_stage_project_spec = ProjectSpec::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
+                .boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
             sort_by,
             descending,
+            schema,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), schema.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
             BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }

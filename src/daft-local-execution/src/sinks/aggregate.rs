@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -17,14 +18,16 @@ pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
     state: AggregateState,
+    schema: SchemaRef,
 }
 
 impl AggregateSink {
-    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>) -> Self {
+    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>, schema: SchemaRef) -> Self {
         Self {
             agg_exprs,
             group_by,
             state: AggregateState::Accumulating(vec![]),
+            schema,
         }
     }
 
@@ -47,10 +50,11 @@ impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if let AggregateState::Accumulating(parts) = &mut self.state {
-            assert!(
-                !parts.is_empty(),
-                "We can not finalize AggregateSink with no data"
-            );
+            if parts.is_empty() {
+                let empty = MicroPartition::empty(Some(self.schema.clone()));
+                self.state = AggregateState::Done(Arc::new(empty));
+                return Ok(());
+            }
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
