@@ -5,7 +5,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{resolve_aggexpr, resolve_exprs, resolve_single_expr, AggExpr, ExprRef};
+use daft_dsl::{resolve_exprs, resolve_single_aggexpr, resolve_single_expr, AggExpr, ExprRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
@@ -38,7 +38,7 @@ impl Pivot {
         let (value_column, value_col_field) =
             resolve_single_expr(value_column, &upstream_schema).context(CreationSnafu)?;
         let (aggregation, _) =
-            resolve_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
+            resolve_single_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
 
         let output_schema = {
             let value_col_dtype = value_col_field.dtype;

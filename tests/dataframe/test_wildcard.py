@@ -267,3 +267,43 @@ def test_wildcard_explode():
         "a": [1, 2, 3, 4, 5],
         "b": [6, 7, 8, 9, 10],
     }
+
+
+def test_wildcard_agg():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    res = df.sum("*").to_pydict()
+    assert res == {
+        "a": [6],
+        "b": [15],
+    }
+
+    res = df.agg(col("*").mean()).to_pydict()
+    assert res == {
+        "a": [2],
+        "b": [5],
+    }
+
+
+def test_wildcard_struct_agg():
+    df = daft.from_pydict(
+        {
+            "a": [
+                {"x": 1, "y": 2},
+                {"x": 3, "y": 4},
+            ],
+            "b": [5, 6],
+        }
+    )
+
+    res = df.sum("a.*", "b").to_pydict()
+    assert res == {
+        "x": [4],
+        "y": [6],
+        "b": [11],
+    }
