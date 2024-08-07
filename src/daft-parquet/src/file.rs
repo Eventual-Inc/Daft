@@ -421,7 +421,7 @@ impl ParquetFileReader {
 
                 let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
                 for range in needed_byte_ranges.into_iter() {
-                    let range_reader = ranges.get_range_reader(range).await?;
+                    let range_reader = ranges.get_range_reader(range)?;
                     range_readers.push(Box::pin(range_reader))
                 }
 
@@ -563,7 +563,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges.into_iter() {
-                                let range_reader = ranges.get_range_reader(range).await?;
+                                let range_reader = ranges.get_range_reader(range)?;
                                 range_readers.push(Box::pin(range_reader))
                             }
 
@@ -745,7 +745,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges.into_iter() {
-                                let range_reader = ranges.get_range_reader(range).await?;
+                                let range_reader = ranges.get_range_reader(range)?;
                                 range_readers.push(Box::pin(range_reader))
                             }
 
