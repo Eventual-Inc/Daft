@@ -1,8 +1,8 @@
+use common_display::{tree::TreeDisplay, DisplayFormat};
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, ops::Add, sync::Arc};
 
 use crate::{
-    display::TreeDisplay,
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
         UnknownClusteringConfig,
@@ -608,5 +608,14 @@ impl PhysicalPlan {
         let mut s = String::new();
         self.fmt_tree_indent_style(0, &mut s).unwrap();
         s
+    }
+
+    pub fn display_as(self: Arc<Self>, format: DisplayFormat) -> String {
+        use common_display::mermaid::MermaidDisplay;
+
+        match format {
+            DisplayFormat::Ascii { simple } => self.repr_ascii(simple),
+            DisplayFormat::Mermaid(opts) => self.repr_mermaid(opts),
+        }
     }
 }

@@ -1,5 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
+common-display = {path = "src/common/display", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
@@ -47,7 +48,8 @@ python = [
   "daft-table/python",
   "daft-functions/python",
   "common-daft-config/python",
-  "common-system-info/python"
+  "common-system-info/python",
+  "common-display/python"
 ]
 
 [lib]
@@ -98,6 +100,7 @@ tikv-jemallocator = {version = "0.5.4", features = [
 members = [
   "src/arrow2",
   "src/parquet2",
+  "src/common/display",
   "src/common/error",
   "src/common/io-config",
   "src/common/treenode",
@@ -145,6 +148,7 @@ jaq-parse = "1.0.0"
 jaq-std = "1.2.0"
 num-derive = "0.3.3"
 num-traits = "0.2"
+pretty_assertions = "1.4.0"
 rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"

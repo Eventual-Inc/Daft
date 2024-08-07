@@ -14,6 +14,7 @@ use crate::{
     source_info::SourceInfo,
     LogicalPlanRef, ResourceRequest,
 };
+use common_display::DisplayFormat;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::{
@@ -480,6 +481,15 @@ impl LogicalPlanBuilder {
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
     }
+
+    pub fn display_as(&self, format: DisplayFormat) -> String {
+        use common_display::mermaid::MermaidDisplay;
+
+        match format {
+            DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
+            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
+        }
+    }
 }
 
 /// A Python-facing wrapper of the LogicalPlanBuilder.
@@ -811,6 +821,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
+    }
+
+    pub fn display_as(&self, opts: common_display::DisplayFormat) -> PyResult<String> {
+        Ok(self.builder.display_as(opts))
     }
 }
 
