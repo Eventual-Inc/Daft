@@ -5,6 +5,7 @@ common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 itertools = {workspace = true}
+log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}

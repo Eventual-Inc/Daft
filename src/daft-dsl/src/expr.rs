@@ -1,4 +1,4 @@
-use common_treenode::TreeNode;
+use common_treenode::{Transformed, TransformedResult, TreeNode};
 use daft_core::{
     count_mode::CountMode,
     datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
@@ -1142,8 +1142,6 @@ fn transform_struct_gets(
     expr: ExprRef,
     struct_expr_map: &HashMap<String, ExprRef>,
 ) -> DaftResult<ExprRef> {
-    use common_treenode::{Transformed, TransformedResult};
-
     expr.transform(|e| match e.as_ref() {
         Expr::Column(name) => struct_expr_map
             .get(name.as_ref())
@@ -1194,10 +1192,17 @@ fn expr_has_agg(expr: &ExprRef) -> bool {
 fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> Vec<Arc<str>> {
     match expr.as_ref() {
         Expr::Column(name) => {
-            if !name.contains('*') || struct_expr_map.contains_key(name.as_ref()) {
-                Vec::new()
+            if name.contains('*') {
+                if struct_expr_map.contains_key(name.as_ref()) {
+                    log::warn!(
+                        "Warning: Column '{name}' contains *, preventing potential wildcard match"
+                    );
+                    Vec::new()
+                } else {
+                    vec![name.clone()]
+                }
             } else {
-                vec![name.clone()]
+                Vec::new()
             }
         }
         _ => expr
@@ -1252,8 +1257,6 @@ fn get_wildcard_matches(
 }
 
 fn replace_column_name(expr: ExprRef, old_name: &str, new_name: &str) -> DaftResult<ExprRef> {
-    use common_treenode::{Transformed, TransformedResult};
-
     expr.transform(|e| match e.as_ref() {
         Expr::Column(name) if name.as_ref() == old_name => Ok(Transformed::yes(col(new_name))),
         _ => Ok(Transformed::no(e)),
