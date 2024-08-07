@@ -1,3 +1,4 @@
+use common_treenode::TreeNode;
 use daft_core::{
     count_mode::CountMode,
     datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
@@ -1084,7 +1085,7 @@ impl Operator {
     }
 }
 
-// Calculates all the possible mappings from sugared string to a struct get expression.
+// Calculates all the possible struct get expressions in a schema.
 fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
     #[derive(PartialEq, Eq)]
     struct BfsState<'a> {
@@ -1136,17 +1137,15 @@ fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
     str_to_get_expr
 }
 
-/// Converts an expression with syntactic sugar into struct gets.
-/// Does left-associative parsing to to resolve ambiguity.
-///
-/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
-/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
-fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
-    use common_treenode::{Transformed, TransformedResult, TreeNode};
+// Helper function; use in case struct_expr_map has already been calculated.
+fn transform_struct_gets(
+    expr: ExprRef,
+    struct_expr_map: &HashMap<String, ExprRef>,
+) -> DaftResult<ExprRef> {
+    use common_treenode::{Transformed, TransformedResult};
 
-    let str_to_get_expr = calculate_struct_expr_map(schema);
     expr.transform(|e| match e.as_ref() {
-        Expr::Column(name) => str_to_get_expr
+        Expr::Column(name) => struct_expr_map
             .get(name.as_ref())
             .ok_or(DaftError::ValueError(format!(
                 "Column not found in schema: {name}"
@@ -1158,6 +1157,16 @@ fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<Ex
         _ => Ok(Transformed::no(e)),
     })
     .data()
+}
+
+/// Converts an expression with syntactic sugar into struct gets.
+/// Does left-associative parsing to to resolve ambiguity.
+///
+/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
+/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
+fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    let struct_expr_map = calculate_struct_expr_map(schema);
+    transform_struct_gets(expr, &struct_expr_map)
 }
 
 fn expr_has_agg(expr: &ExprRef) -> bool {
@@ -1197,6 +1206,59 @@ fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> 
             .flat_map(|e| find_wildcards(e, struct_expr_map))
             .collect(),
     }
+}
+
+// Calculates a list of all wildcard matches against a schema.
+fn get_wildcard_matches(
+    pattern: &str,
+    schema: &Schema,
+    struct_expr_map: &HashMap<String, ExprRef>,
+) -> DaftResult<Vec<String>> {
+    if pattern == "*" {
+        // return all top-level columns
+        return Ok(schema.fields.keys().cloned().collect());
+    }
+
+    if !pattern.ends_with(".*") {
+        return Err(DaftError::ValueError(format!(
+            "Unsupported wildcard format: {pattern}"
+        )));
+    }
+
+    // remove last two characters
+    let mut struct_name = pattern.to_string();
+    struct_name.pop();
+    struct_name.pop();
+
+    let Some(struct_expr) = struct_expr_map.get(&struct_name) else {
+        return Err(DaftError::ValueError(format!(
+            "Error matching wildcard {pattern}: struct {struct_name} not found"
+        )));
+    };
+
+    // get innermost struct from expr
+    let field = struct_expr.to_field(schema)?;
+    let DataType::Struct(subfields) = field.dtype else {
+        return Err(DaftError::ValueError(format!(
+            "Error matching wildcard {pattern}: {struct_name} has dtype {}, not struct",
+            field.dtype
+        )));
+    };
+
+    Ok(subfields
+        .into_iter()
+        .map(|f| format!("{}.{}", struct_name, f.name))
+        .collect())
+}
+
+fn replace_column_name(expr: ExprRef, old_name: &str, new_name: &str) -> DaftResult<ExprRef> {
+    use common_treenode::{Transformed, TransformedResult};
+
+    expr.transform(|e| match e.as_ref() {
+        Expr::Column(name) if name.as_ref() == old_name => Ok(Transformed::yes(col(new_name))),
+        _ => Ok(Transformed::no(e)),
+    })
+    .data()
 }
 
 fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
@@ -1263,12 +1325,22 @@ fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
     let wildcard_count = wildcards.len();
     if wildcard_count > 1 {
         return Err(DaftError::ValueError(format!(
-            "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree (found {wildcard_count})"
+            "Error resolving expression {}: cannot have multiple wildcard columns in one expression tree (found {:?})", expr, wildcards
         )));
     }
-    let resolved_expr = substitute_expr_getter_sugar(expr, schema)?;
-    // TODO: wildcard support
-    Ok(vec![resolved_expr])
+    let resolved_exprs: DaftResult<Vec<ExprRef>> = if wildcard_count == 1 {
+        let pattern = wildcards.first().unwrap();
+        get_wildcard_matches(pattern, schema, &struct_expr_map)?
+            .into_iter()
+            .map(|s| replace_column_name(expr.clone(), pattern, &s))
+            .collect()
+    } else {
+        Ok(vec![expr])
+    };
+    resolved_exprs?
+        .into_iter()
+        .map(|e| transform_struct_gets(e, &struct_expr_map))
+        .collect()
 }
 
 // Resolve a single expression, erroring if any kind of expansion happens.
