@@ -1,3 +1,4 @@
+use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     count_mode::CountMode,
     datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
@@ -65,7 +66,7 @@ pub enum Expr {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct ApproxPercentileParams {
     pub child: ExprRef,
-    pub percentiles: Vec<daft_core::utils::hashable_float_wrapper::FloatWrapper<f64>>,
+    pub percentiles: Vec<FloatWrapper<f64>>,
     pub force_list_output: bool,
 }
 
@@ -402,10 +403,7 @@ impl Expr {
     ) -> ExprRef {
         Expr::Agg(AggExpr::ApproxPercentile(ApproxPercentileParams {
             child: self,
-            percentiles: percentiles
-                .iter()
-                .map(|f| daft_core::utils::hashable_float_wrapper::FloatWrapper(*f))
-                .collect(),
+            percentiles: percentiles.iter().map(|f| FloatWrapper(*f)).collect(),
             force_list_output,
         }))
         .into()

@@ -10,6 +10,7 @@ mod trigonometry;
 
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
+use common_hashable_float_wrapper::FloatWrapper;
 use floor::FloorEvaluator;
 use log::LogEvaluator;
 use round::RoundEvaluator;
@@ -22,7 +23,6 @@ use trigonometry::Atan2Evaluator;
 use crate::functions::numeric::exp::ExpEvaluator;
 use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
 use crate::{Expr, ExprRef};
-use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 
 use super::FunctionEvaluator;
 

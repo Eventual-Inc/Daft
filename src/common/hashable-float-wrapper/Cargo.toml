@@ -1,0 +1,8 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+
+[package]
+edition = {workspace = true}
+name = "common-hashable-float-wrapper"
+version = {workspace = true}

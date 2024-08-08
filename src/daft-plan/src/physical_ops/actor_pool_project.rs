@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
     functions::{
@@ -12,9 +13,7 @@ use daft_dsl::{
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    partitioning::translate_clustering_spec, ClusteringSpec, PhysicalPlanRef, ResourceRequest,
-};
+use crate::{partitioning::translate_clustering_spec, ClusteringSpec, PhysicalPlanRef};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActorPoolProject {

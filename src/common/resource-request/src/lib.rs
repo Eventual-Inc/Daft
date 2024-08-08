@@ -1,9 +1,6 @@
-use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
+use common_hashable_float_wrapper::FloatWrapper;
 #[cfg(feature = "python")]
-use pyo3::{
-    pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo, Python,
-    ToPyObject,
-};
+use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyModule, PyResult, Python};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
 
@@ -215,4 +212,8 @@ impl ResourceRequest {
     }
 }
 
-impl_bincode_py_state_serialization!(ResourceRequest);
+#[cfg(feature = "python")]
+pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<ResourceRequest>()?;
+    Ok(())
+}

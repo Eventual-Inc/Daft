@@ -12,11 +12,12 @@ use crate::{
     },
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    LogicalPlanRef, ResourceRequest,
+    LogicalPlanRef,
 };
 use common_display::DisplayFormat;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
+use common_resource_request::ResourceRequest;
 use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},

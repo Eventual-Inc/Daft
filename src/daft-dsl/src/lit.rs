@@ -1,9 +1,9 @@
 use crate::expr::Expr;
 use crate::ExprRef;
 
+use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
-use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
     datatypes::{
