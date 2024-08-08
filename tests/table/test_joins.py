@@ -218,52 +218,9 @@ def test_table_join_no_columns(join_impl) -> None:
 
 
 @pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
-def test_table_join_single_column_name_conflicts(join_impl) -> None:
-    left_table = MicroPartition.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
-    right_table = MicroPartition.from_pydict({"x": [3, 2, 1, 0], "y": [6, 7, 8, 9]})
-
-    result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
-    assert result_table.column_names() == ["x", "y", "right.y"]
-    result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
-
-    assert result_sorted.get_column("right.y").to_pylist() == [9, 8, 7, 6]
-
-
-@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
-def test_table_join_single_column_name_conflicts_different_named_join(join_impl) -> None:
-    left_table = MicroPartition.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
-    right_table = MicroPartition.from_pydict({"y": [3, 2, 1, 0], "x": [6, 7, 8, 9]})
-
-    result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("y")])
-
-    # NOTE: right.y is not dropped because it has a different name from the corresponding left
-    # column it is joined on, left_table["x"]
-    assert result_table.column_names() == ["x", "y", "right.y", "right.x"]
-
-    result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
-    assert result_sorted.get_column("right.x").to_pylist() == [9, 8, 7, 6]
-
-
-@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
-def test_table_join_single_column_name_multiple_conflicts(join_impl) -> None:
-    left_table = MicroPartition.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
-    right_table = MicroPartition.from_pydict({"x": [3, 2, 1, 0], "y": [10, 11, 12, 13]})
-
-    result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
-    assert result_table.column_names() == ["x", "y", "right.y", "right.right.y"]
-    result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == [2, 3, 4, 5]
-
-    assert result_sorted.get_column("right.y").to_pylist() == [6, 7, 8, 9]
-    assert result_sorted.get_column("right.right.y").to_pylist() == [13, 12, 11, 10]
-
-
-@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
 def test_table_join_single_column_name_boolean(join_impl) -> None:
     left_table = MicroPartition.from_pydict({"x": [False, True, None], "y": [0, 1, 2]})
-    right_table = MicroPartition.from_pydict({"x": [None, True, False, None], "y": [0, 1, 2, 3]})
+    right_table = MicroPartition.from_pydict({"x": [None, True, False, None], "right.y": [0, 1, 2, 3]})
 
     result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]
@@ -275,7 +232,7 @@ def test_table_join_single_column_name_boolean(join_impl) -> None:
 @pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
 def test_table_join_single_column_name_null(join_impl) -> None:
     left_table = MicroPartition.from_pydict({"x": [None, None, None], "y": [0, 1, 2]})
-    right_table = MicroPartition.from_pydict({"x": [None, None, None, None], "y": [0, 1, 2, 3]})
+    right_table = MicroPartition.from_pydict({"x": [None, None, None, None], "right.y": [0, 1, 2, 3]})
 
     result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]

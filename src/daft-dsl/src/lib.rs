@@ -4,6 +4,7 @@
 mod arithmetic;
 mod expr;
 pub mod functions;
+pub mod join;
 mod lit;
 pub mod optimization;
 #[cfg(feature = "python")]
