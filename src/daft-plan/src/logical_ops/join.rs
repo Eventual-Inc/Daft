@@ -96,25 +96,21 @@ impl Join {
             let left_names = left.schema().names();
             let right_names = right.schema().names();
 
-            let mut new_field_names = left_names
-                .iter()
-                .cloned()
-                .chain(right_names.iter().cloned())
-                .collect::<HashSet<_>>();
+            let mut names_so_far: HashSet<String> = HashSet::from_iter(left_names);
 
             // rename right columns that have the same name as left columns and are not join keys
             // old_name -> new_name
             let right_rename_mapping: HashMap<_, _> = right_names
                 .iter()
                 .filter_map(|name| {
-                    if !new_field_names.contains(name) || common_join_keys.contains(name) {
+                    if !names_so_far.contains(name) || common_join_keys.contains(name) {
                         None
                     } else {
                         let mut new_name = name.clone();
-                        while new_field_names.contains(&new_name) {
+                        while names_so_far.contains(&new_name) {
                             new_name = format!("right.{}", new_name);
                         }
-                        new_field_names.insert(new_name.clone());
+                        names_so_far.insert(new_name.clone());
 
                         Some((name.clone(), new_name))
                     }

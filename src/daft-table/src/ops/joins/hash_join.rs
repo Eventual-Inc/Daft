@@ -198,12 +198,20 @@ pub(super) fn hash_left_right_join(
         (lkeys, rkeys, lidx, ridx)
     };
 
-    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
+    let common_join_keys = get_common_join_keys(left_on, right_on);
 
-    let mut join_series = left
-        .get_columns(common_join_keys.as_slice())?
-        .take(&lidx)?
-        .columns;
+    let mut join_series = if left_side {
+        left.get_columns(common_join_keys.collect::<Vec<_>>().as_slice())?
+            .take(&lidx)?
+            .columns
+    } else {
+        common_join_keys
+            .map(|name| {
+                let col_dtype = &left.schema.get_field(name.as_str())?.dtype;
+                right.get_column(name)?.take(&ridx)?.cast(col_dtype)
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    };
 
     drop(lkeys);
     drop(rkeys);
