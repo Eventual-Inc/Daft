@@ -31,7 +31,7 @@ memray_stats = defaultdict(dict)
 
 def pytest_terminal_summary(terminalreporter):
     if memray_stats:
-        for group, group_stats in memray_stats.items():
+        for group, group_stats in sorted(memray_stats.items()):
             terminalreporter.write_sep("-", f"Memray Stats for Group: {group}")
             for nodeid, stats in group_stats.items():
                 terminalreporter.write_line(
