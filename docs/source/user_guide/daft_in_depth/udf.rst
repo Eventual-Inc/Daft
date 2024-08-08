@@ -202,7 +202,7 @@ UDFs can also be parametrized with new resource requests after being initialized
 
 .. code:: python
 
-    RunModelWithTwoGPUs = RunModelWithOneGPU.with_resource_requests(num_gpus=2)
+    RunModelWithTwoGPUs = RunModelWithOneGPU.override_options(num_gpus=2)
     df = df.with_column(
         "image_classifications",
         RunModelWithTwoGPUs(df["images"]),

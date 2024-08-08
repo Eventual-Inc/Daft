@@ -4,7 +4,7 @@ import dataclasses
 import functools
 import inspect
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
@@ -138,6 +138,10 @@ def run_udf(
         raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
 
+# Marker that helps us differentiate whether a user provided the argument or not
+_UnsetMarker: Any = object()
+
+
 @dataclasses.dataclass
 class UDF:
     resource_request: ResourceRequest | None
@@ -145,8 +149,12 @@ class UDF:
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Expression: ...
 
-    def with_resource_requests(
-        self, num_cpus: float | None = None, num_gpus: float | None = None, memory_bytes: int | None = None
+    def override_options(
+        self,
+        *,
+        num_cpus: float | None = _UnsetMarker,
+        num_gpus: float | None = _UnsetMarker,
+        memory_bytes: int | None = _UnsetMarker,
     ) -> UDF:
         """Replace the resource requests for running each instance of your stateless UDF.
 
@@ -160,7 +168,7 @@ class UDF:
         >>>     return inputs
         >>>
         >>> # Parametrize the UDF to run with 4 CPUs
-        >>> example_stateless_udf_4CPU = example_stateless_udf.with_resource_requests(num_cpus=4)
+        >>> example_stateless_udf_4CPU = example_stateless_udf.override_options(num_cpus=4)
         >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3]})
         >>> df = df.with_column("bar", example_stateless_udf_4CPU(df["foo"]))
@@ -173,9 +181,20 @@ class UDF:
             memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
                 this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
         """
-        return dataclasses.replace(
-            self, resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes)
-        )
+        result = self
+
+        # Any changes to resource request
+        if not all((num_cpus is _UnsetMarker, num_gpus is _UnsetMarker, memory_bytes is _UnsetMarker)):
+            new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
+            if num_cpus is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_num_cpus(num_cpus)
+            if num_gpus is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_num_gpus(num_gpus)
+            if memory_bytes is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
+            result = dataclasses.replace(result, resource_request=new_resource_request)
+
+        return result
 
 
 @dataclasses.dataclass
@@ -343,7 +362,7 @@ def udf(
         ...     return x
         >>>
         >>> # Override the num_cpus to 8 instead
-        >>> udf_needs_8_cpus = udf_needs_4_cpus.with_resource_requests(num_cpus=8)
+        >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=8)
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3]})
         >>> df = df.with_column("new_x", udf_needs_8_cpus(df["x"]))

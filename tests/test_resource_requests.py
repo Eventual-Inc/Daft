@@ -46,7 +46,7 @@ def test_requesting_too_many_cpus(use_legacy_resource_requesting):
             resource_request=ResourceRequest(num_cpus=system_info.cpu_count() + 1),
         )
     else:
-        my_udf_parametrized = my_udf.with_resource_requests(num_cpus=system_info.cpu_count() + 1)
+        my_udf_parametrized = my_udf.override_options(num_cpus=system_info.cpu_count() + 1)
         df = df.with_column(
             "foo",
             my_udf_parametrized(col("id")),
@@ -66,7 +66,7 @@ def test_requesting_too_many_gpus(use_legacy_resource_requesting):
             "foo", my_udf(col("id")), resource_request=ResourceRequest(num_gpus=cuda_device_count() + 1)
         )
     else:
-        my_udf_parametrized = my_udf.with_resource_requests(num_gpus=cuda_device_count() + 1)
+        my_udf_parametrized = my_udf.override_options(num_gpus=cuda_device_count() + 1)
         df = df.with_column("foo", my_udf_parametrized(col("id")))
 
     with pytest.raises(RuntimeError):
@@ -86,7 +86,7 @@ def test_requesting_too_much_memory(use_legacy_resource_requesting):
             resource_request=ResourceRequest(memory_bytes=system_info.total_memory() + 1),
         )
     else:
-        my_udf_parametrized = my_udf.with_resource_requests(memory_bytes=system_info.total_memory() + 1)
+        my_udf_parametrized = my_udf.override_options(memory_bytes=system_info.total_memory() + 1)
         df = df.with_column(
             "foo",
             my_udf_parametrized(col("id")),
@@ -133,7 +133,7 @@ def test_with_column_rayrunner(use_legacy_resource_requesting):
             resource_request=ResourceRequest(num_cpus=1, memory_bytes=1_000_000, num_gpus=None),
         )
     else:
-        assert_resources_parametrized = assert_resources.with_resource_requests(
+        assert_resources_parametrized = assert_resources.override_options(
             num_cpus=1, memory_bytes=1_000_000, num_gpus=None
         )
         df = df.with_column(
@@ -171,8 +171,8 @@ def test_with_column_folded_rayrunner(use_legacy_resource_requesting):
             resource_request=ResourceRequest(num_cpus=1, memory_bytes=None, num_gpus=None),
         )
     else:
-        assert_resources_1 = assert_resources.with_resource_requests(num_cpus=1, memory_bytes=5_000_000, num_gpus=None)
-        assert_resources_2 = assert_resources.with_resource_requests(num_cpus=1, memory_bytes=None, num_gpus=None)
+        assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=5_000_000, num_gpus=None)
+        assert_resources_2 = assert_resources.override_options(num_cpus=1, memory_bytes=None, num_gpus=None)
         df = df.with_column(
             "more_memory_request",
             assert_resources_1(col("id"), **expected),
@@ -242,7 +242,7 @@ def test_with_column_rayrunner_gpu(num_gpus, use_legacy_resource_requesting):
             resource_request=ResourceRequest(num_gpus=num_gpus),
         )
     else:
-        assert_num_cuda_visible_devices_parametrized = assert_num_cuda_visible_devices.with_resource_requests(
+        assert_num_cuda_visible_devices_parametrized = assert_num_cuda_visible_devices.override_options(
             num_gpus=num_gpus
         )
         df = df.with_column(
@@ -272,8 +272,8 @@ def test_with_column_max_resources_rayrunner_gpu(use_legacy_resource_requesting)
             resource_request=ResourceRequest(num_gpus=1),
         )
     else:
-        assert_num_cuda_visible_devices_0 = assert_num_cuda_visible_devices.with_resource_requests(num_gpus=0)
-        assert_num_cuda_visible_devices_1 = assert_num_cuda_visible_devices.with_resource_requests(num_gpus=1)
+        assert_num_cuda_visible_devices_0 = assert_num_cuda_visible_devices.override_options(num_gpus=0)
+        assert_num_cuda_visible_devices_1 = assert_num_cuda_visible_devices.override_options(num_gpus=1)
         df = df.with_column(
             "0_gpu_col",
             assert_num_cuda_visible_devices_0(col("id"), num_gpus=1),
