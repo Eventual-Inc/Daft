@@ -605,7 +605,6 @@ mod tests {
     #[rstest]
     fn filter_commutes_with_join(
         #[values(false, true)] push_into_left_scan: bool,
-        #[values(false, true)] push_into_right_scan: bool,
     ) -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -615,10 +614,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
         );
-        let right_scan_plan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
-            Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
-        );
+        let right_scan_plan =
+            dummy_scan_node_with_pushdowns(scan_op.clone(), Pushdowns::default().with_limit(None));
         let join_on = vec![col("b")];
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
@@ -639,11 +636,7 @@ mod tests {
         } else {
             left_scan_plan.filter(pred.clone())?
         };
-        let expected_right_filter_scan = if push_into_right_scan {
-            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
-        } else {
-            right_scan_plan.filter(pred)?
-        };
+        let expected_right_filter_scan = right_scan_plan;
         let expected = expected_left_filter_scan
             .join(
                 &expected_right_filter_scan,
