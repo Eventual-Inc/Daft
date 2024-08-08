@@ -35,7 +35,8 @@ pub fn assert_optimized_plan_with_rules_eq(
     assert_eq!(
         optimized_plan,
         expected,
-        "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
+        "\n\nOptimized plan not equal to expected.\n\nBefore Optimization:\n{}\n\nOptimized:\n{}\n\nExpected:\n{}",
+        plan.repr_ascii(false),
         optimized_plan.repr_ascii(false),
         expected.repr_ascii(false)
     );

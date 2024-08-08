@@ -428,4 +428,56 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_multiple_with_column_serial() -> DaftResult<()> {
+        let resource_request = create_resource_request();
+        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let stacked_stateful_project_expr =
+            create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
+
+        // Add a Projection with StatefulUDF and resource request
+        let project_plan = scan_plan
+            .with_columns(
+                vec![stacked_stateful_project_expr.clone().alias("b")],
+                resource_request.clone(),
+            )?
+            .build();
+
+        //   ActorPoolProject([col("a"), foo(col("a")).alias("SOME_INTERMEDIATE_NAME")])
+        //   --> ActorPoolProject([col("a"), foo(col("SOME_INTERMEDIATE_NAME")).alias("b")])
+        let intermediate_name = "TODO_fix_this_intermediate_name";
+        let expected = scan_plan.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                create_stateful_udf(vec![col("a")])
+                    .clone()
+                    .alias(intermediate_name),
+            ],
+            // Actor pool project has the specified resource request, but the normal Project has the default resource request
+            resource_request.clone(),
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                create_stateful_udf(vec![col(intermediate_name)])
+                    .clone()
+                    .alias("b"),
+            ],
+            // Actor pool project has the specified resource request, but the normal Project has the default resource request
+            resource_request.clone(),
+            NUM_ACTORS,
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq(project_plan, expected)?;
+
+        Ok(())
+    }
 }
