@@ -1,6 +1,8 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
@@ -49,7 +51,8 @@ python = [
   "daft-functions/python",
   "common-daft-config/python",
   "common-system-info/python",
-  "common-display/python"
+  "common-display/python",
+  "common-resource-request/python"
 ]
 
 [lib]

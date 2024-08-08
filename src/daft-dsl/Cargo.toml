@@ -1,5 +1,6 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}

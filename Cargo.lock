@@ -1259,6 +1259,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-hashable-float-wrapper"
+version = "0.2.0-dev0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "common-io-config"
 version = "0.2.0-dev0"
 dependencies = [
@@ -1276,6 +1283,15 @@ dependencies = [
 name = "common-py-serde"
 version = "0.2.0-dev0"
 dependencies = [
+ "pyo3",
+ "serde",
+]
+
+[[package]]
+name = "common-resource-request"
+version = "0.2.0-dev0"
+dependencies = [
+ "common-hashable-float-wrapper",
  "pyo3",
  "serde",
 ]
@@ -1567,6 +1583,8 @@ version = "0.2.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-hashable-float-wrapper",
+ "common-resource-request",
  "common-system-info",
  "common-tracing",
  "daft-compression",
@@ -1618,6 +1636,7 @@ dependencies = [
  "comfy-table 7.1.1",
  "common-daft-config",
  "common-error",
+ "common-hashable-float-wrapper",
  "daft-minhash",
  "daft-sketch",
  "fastrand 2.1.0",
@@ -1690,6 +1709,7 @@ name = "daft-dsl"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "common-hashable-float-wrapper",
  "common-py-serde",
  "common-treenode",
  "daft-core",
@@ -1889,6 +1909,7 @@ name = "daft-physical-plan"
 version = "0.2.0-dev0"
 dependencies = [
  "common-error",
+ "common-resource-request",
  "daft-core",
  "daft-dsl",
  "daft-plan",
@@ -1907,6 +1928,7 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-py-serde",
+ "common-resource-request",
  "common-treenode",
  "daft-core",
  "daft-dsl",

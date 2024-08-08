@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
+use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
@@ -10,7 +11,7 @@ use indexmap::IndexSet;
 use crate::{
     logical_ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
-    LogicalPlan, ResourceRequest,
+    LogicalPlan,
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};

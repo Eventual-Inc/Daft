@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_resource_request::ResourceRequest;
 use daft_core::{schema::SchemaRef, JoinType};
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::{InMemoryInfo, ResourceRequest};
+use daft_plan::InMemoryInfo;
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;

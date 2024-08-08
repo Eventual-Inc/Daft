@@ -18,6 +18,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -41,6 +42,7 @@ python = [
   "common-error/python",
   "common-io-config/python",
   "common-daft-config/python",
+  "common-resource-request/python",
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
