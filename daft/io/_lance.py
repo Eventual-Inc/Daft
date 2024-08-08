@@ -17,10 +17,11 @@ if TYPE_CHECKING:
 
 
 def _lancedb_table_factory_function(
-    fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
+    fragment: "lance.LanceFragment", required_columns: Optional[List[str]], filters: Optional[str]
 ) -> Iterator["PyTable"]:
     return (
-        Table.from_arrow_record_batches([rb], rb.schema)._table for rb in fragment.to_batches(columns=required_columns)
+        Table.from_arrow_record_batches([rb], rb.schema)._table
+        for rb in fragment.to_batches(columns=required_columns, filter=filters)
     )
 
 
@@ -79,7 +80,7 @@ class LanceDBScanOperator(ScanOperator):
         return []
 
     def can_absorb_filter(self) -> bool:
-        return False
+        return True
 
     def can_absorb_limit(self) -> bool:
         return False
@@ -105,9 +106,11 @@ class LanceDBScanOperator(ScanOperator):
                 else pushdowns.columns + filter_required_column_names
             )
 
-        # TODO: figure out how to translate Pushdowns into LanceDB filters
         filters = None
-        fragments = self._ds.get_fragments(filter=filters)
+        if pushdowns.filters is not None:
+            filters = pushdowns.filters.to_sql()
+
+        fragments = self._ds.get_fragments()
         for i, fragment in enumerate(fragments):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
@@ -124,7 +127,7 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(fragment, required_columns),
+                func_args=(fragment, required_columns, filters),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,
