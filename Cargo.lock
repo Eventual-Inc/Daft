@@ -1262,7 +1262,6 @@ dependencies = [
 name = "common-hashable-float-wrapper"
 version = "0.2.0-dev0"
 dependencies = [
- "pyo3",
  "serde",
 ]
 
