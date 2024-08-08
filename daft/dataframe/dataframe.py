@@ -1246,9 +1246,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
-        if resource_request is None:
-            resource_request = ResourceRequest()
-        else:
+        if resource_request is not None:
             warnings.warn(
                 "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
                 "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
@@ -1292,11 +1290,9 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if resource_request is None:
-            resource_request = ResourceRequest()
-        else:
+        if resource_request is not None:
             warnings.warn(
-                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+                "Specifying resource_request through `with_columns` will be deprecated from Daft version >= 0.3.0! "
                 "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
                 "Check the Daft documentation for more details."
             )

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
-use daft_dsl::ExprRef;
+use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use itertools::Itertools;
 
 use crate::{
@@ -29,8 +29,8 @@ impl Project {
         })
     }
 
-    pub fn resource_request(&self) -> ResourceRequest {
-        todo!("get resource requests from the expressions");
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     // does not re-create clustering spec, unlike try_new
@@ -56,6 +56,13 @@ impl Project {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
+        if let Some(resource_request) = self.resource_request() {
+            let multiline_display = resource_request.multiline_display();
+            res.push(format!(
+                "Resource request = {{ {} }}",
+                multiline_display.join(", ")
+            ));
+        }
         res
     }
 }

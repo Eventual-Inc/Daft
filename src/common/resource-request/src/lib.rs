@@ -119,10 +119,12 @@ impl ResourceRequest {
         Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
     }
 
-    pub fn max_all(resource_requests: &[&Self]) -> Self {
+    pub fn max_all<ResourceRequestAsRef: AsRef<Self>>(
+        resource_requests: &[ResourceRequestAsRef],
+    ) -> Self {
         resource_requests
             .iter()
-            .fold(Default::default(), |acc, e| acc.max(e))
+            .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
     }
 }
 
@@ -151,6 +153,12 @@ impl Hash for ResourceRequest {
         self.num_cpus.map(FloatWrapper).hash(state);
         self.num_gpus.map(FloatWrapper).hash(state);
         self.memory_bytes.hash(state)
+    }
+}
+
+impl AsRef<ResourceRequest> for ResourceRequest {
+    fn as_ref(&self) -> &ResourceRequest {
+        self
     }
 }
 

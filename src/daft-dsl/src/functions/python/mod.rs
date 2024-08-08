@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::datatypes::DataType;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{Expr, ExprRef};
 
-use super::FunctionEvaluator;
+use super::{FunctionEvaluator, FunctionExpr};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PythonUDF {
@@ -123,4 +125,110 @@ pub fn stateful_udf(
         })),
         inputs: expressions.into(),
     })
+}
+
+/// Replaces resource_requests on UDF expressions in the provided expression tree
+pub fn replace_udf_resource_request(
+    expr: ExprRef,
+    override_resource_request: &ResourceRequest,
+) -> ExprRef {
+    expr.transform(|e| match e.as_ref() {
+        Expr::Function {
+            func:
+                FunctionExpr::Python(PythonUDF::Stateful(
+                    original @ StatefulPythonUDF {
+                        resource_request, ..
+                    },
+                )),
+            inputs,
+        } => {
+            if let Some(existing_rr) = resource_request
+                && existing_rr == override_resource_request
+            {
+                return Ok(Transformed::no(e));
+            }
+            let new_expr = Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                    resource_request: Some(override_resource_request.clone()),
+                    ..original.clone()
+                })),
+                inputs: inputs.clone(),
+            };
+            Ok(Transformed::yes(new_expr.arced()))
+        }
+        Expr::Function {
+            func:
+                FunctionExpr::Python(PythonUDF::Stateless(
+                    original @ StatelessPythonUDF {
+                        resource_request, ..
+                    },
+                )),
+            inputs,
+        } => {
+            if let Some(existing_rr) = resource_request
+                && existing_rr == override_resource_request
+            {
+                return Ok(Transformed::no(e));
+            }
+            let new_expr = Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
+                    resource_request: Some(override_resource_request.clone()),
+                    ..original.clone()
+                })),
+                inputs: inputs.clone(),
+            };
+            Ok(Transformed::yes(new_expr.arced()))
+        }
+        _ => Ok(Transformed::no(e)),
+    })
+    .unwrap()
+    .data
+}
+
+/// Generates a ResourceRequest by inspecting an iterator of expressions.
+/// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
+pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
+    let merged_resource_requests = exprs
+        .iter()
+        .filter_map(|expr| {
+            let mut resource_requests = Vec::new();
+            expr.apply(|e| match e.as_ref() {
+                Expr::Function {
+                    func:
+                        FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
+                            resource_request,
+                            ..
+                        })),
+                    ..
+                }
+                | Expr::Function {
+                    func:
+                        FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                            resource_request,
+                            ..
+                        })),
+                    ..
+                } => {
+                    if let Some(rr) = resource_request {
+                        resource_requests.push(rr.clone())
+                    }
+                    Ok(TreeNodeRecursion::Continue)
+                }
+                _ => Ok(TreeNodeRecursion::Continue),
+            })
+            .unwrap();
+            if resource_requests.is_empty() {
+                None
+            } else {
+                Some(ResourceRequest::max_all(resource_requests.as_slice()))
+            }
+        })
+        .collect_vec();
+    if merged_resource_requests.is_empty() {
+        None
+    } else {
+        Some(ResourceRequest::max_all(
+            merged_resource_requests.as_slice(),
+        ))
+    }
 }

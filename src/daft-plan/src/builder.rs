@@ -22,7 +22,7 @@ use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, functions::python::replace_udf_resource_request, ExprRef};
 use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -140,9 +140,21 @@ impl LogicalPlanBuilder {
     pub fn with_columns(
         &self,
         columns: Vec<ExprRef>,
-        _resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> DaftResult<Self> {
-        // TODO: use resource_request to parametrize any UDFs in the new expression columns
+        // TODO: This should be deprecated in Daft >= v0.3
+        //
+        // Here we use resource_request to parametrize any UDFs in the new expression columns
+        // In the future, the ability to pass ResourceRequests into with_column(s) will be deprecated. Users will parametrize their UDFs directly instead.
+        let columns = if let Some(rr) = resource_request {
+            columns
+                .into_iter()
+                .map(|expr| replace_udf_resource_request(expr, &rr))
+                .collect()
+        } else {
+            columns
+        };
+
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -552,7 +564,7 @@ impl PyLogicalPlanBuilder {
     pub fn with_columns(
         &self,
         columns: Vec<PyExpr>,
-        resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> PyResult<Self> {
         Ok(self
             .builder

@@ -5,7 +5,7 @@ use common_treenode::TreeNode;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
     functions::{
-        python::{PythonUDF, StatefulPythonUDF},
+        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     resolve_exprs, Expr, ExprRef,
@@ -44,9 +44,8 @@ impl ActorPoolProject {
         })
     }
 
-    pub fn resource_request(&self) -> ResourceRequest {
-        // TODO: Grab and merge resource requests across all UDFs
-        todo!();
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -82,11 +81,11 @@ impl ActorPoolProject {
                 .join(", ")
         ));
         res.push(format!("Num actors = {}", self.num_actors,));
-        let resource_request = self.resource_request().multiline_display();
-        if !resource_request.is_empty() {
+        if let Some(resource_request) = self.resource_request() {
+            let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
-                resource_request.join(", ")
+                multiline_display.join(", ")
             ));
         }
         res
