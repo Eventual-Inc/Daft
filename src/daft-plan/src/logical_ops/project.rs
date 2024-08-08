@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_resource_request::ResourceRequest;
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{optimization, resolve_exprs, AggExpr, ApproxPercentileParams, Expr, ExprRef};
@@ -9,7 +10,7 @@ use snafu::ResultExt;
 
 use crate::logical_optimization::Transformed;
 use crate::logical_plan::{CreationSnafu, Result};
-use crate::{LogicalPlan, ResourceRequest};
+use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Project {

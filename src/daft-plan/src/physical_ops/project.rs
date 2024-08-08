@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_resource_request::ResourceRequest;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 use crate::{
     partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,
-    ResourceRequest,
 };
 use serde::{Deserialize, Serialize};
 

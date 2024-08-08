@@ -13,7 +13,6 @@ pub mod physical_ops;
 mod physical_optimization;
 mod physical_plan;
 mod physical_planner;
-mod resource_request;
 mod sink_info;
 pub mod source_info;
 #[cfg(test)]
@@ -30,7 +29,6 @@ pub use physical_planner::{
     logical_to_physical, populate_aggregation_stages, AdaptivePlanner, MaterializedResults,
     QueryStageOutput,
 };
-pub use resource_request::ResourceRequest;
 pub use sink_info::{OutputFileInfo, SinkInfo};
 pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 
@@ -57,7 +55,6 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<JsonSourceConfig>()?;
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<DatabaseSourceConfig>()?;
-    parent.add_class::<ResourceRequest>()?;
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;
     parent.add_class::<PyStorageConfig>()?;

@@ -9,8 +9,8 @@ use crate::{
 
 use super::as_arrow::AsArrow;
 use super::{full::FullNull, DaftIsIn};
-use crate::utils::hashable_float_wrapper::FloatWrapper;
 use common_error::DaftResult;
+use common_hashable_float_wrapper::FloatWrapper;
 use std::collections::{BTreeSet, HashSet};
 
 macro_rules! collect_to_set_and_check_membership {

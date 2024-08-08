@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
@@ -14,7 +15,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{CreationSnafu, Result},
-    LogicalPlan, ResourceRequest,
+    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

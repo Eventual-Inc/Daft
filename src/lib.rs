@@ -74,6 +74,7 @@ pub mod pylib {
 
         common_daft_config::register_modules(_py, m)?;
         common_system_info::register_modules(_py, m)?;
+        common_resource_request::register_modules(_py, m)?;
         daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
         daft_local_execution::register_modules(_py, m)?;
