@@ -1241,7 +1241,8 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new column.
@@ -1285,7 +1286,8 @@ class DataFrame:
 
         Args:
             columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new columns.
