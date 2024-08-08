@@ -19,7 +19,6 @@ use crate::{partitioning::translate_clustering_spec, ClusteringSpec, PhysicalPla
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub clustering_spec: Arc<ClusteringSpec>,
     pub num_actors: usize,
 }
@@ -28,7 +27,6 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         num_actors: usize,
     ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
@@ -48,10 +46,14 @@ impl ActorPoolProject {
         Ok(ActorPoolProject {
             input,
             projection,
-            resource_request,
             clustering_spec,
             num_actors,
         })
+    }
+
+    pub fn resource_request(&self) -> ResourceRequest {
+        // TODO: Grab and merge resource requests across all UDFs
+        todo!();
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -91,7 +93,7 @@ impl ActorPoolProject {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
-        let resource_request = self.resource_request.multiline_display();
+        let resource_request = self.resource_request().multiline_display();
         if !resource_request.is_empty() {
             res.push(format!(
                 "Resource request = {{ {} }}",

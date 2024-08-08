@@ -133,15 +133,16 @@ impl LogicalPlanBuilder {
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn with_columns(
         &self,
         columns: Vec<ExprRef>,
-        resource_request: ResourceRequest,
+        _resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
+        // TODO: use resource_request to parametrize any UDFs in the new expression columns
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -170,7 +171,7 @@ impl LogicalPlanBuilder {
         );
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -191,7 +192,7 @@ impl LogicalPlanBuilder {
             .collect::<Vec<_>>();
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 

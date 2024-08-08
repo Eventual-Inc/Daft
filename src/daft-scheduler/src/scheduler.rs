@@ -291,12 +291,11 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::Project(Project {
-            input,
-            projection,
-            resource_request,
-            ..
-        }) => {
+        PhysicalPlan::Project(
+            project @ Project {
+                input, projection, ..
+            },
+        ) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let projection_pyexprs: Vec<PyExpr> = projection
                 .iter()
@@ -305,17 +304,22 @@ fn physical_plan_to_partition_tasks(
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "project"))?
-                .call1((upstream_iter, projection_pyexprs, resource_request.clone()))?;
+                .call1((
+                    upstream_iter,
+                    projection_pyexprs,
+                    project.resource_request(),
+                ))?;
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::ActorPoolProject(ActorPoolProject {
-            input,
-            projection,
-            resource_request,
-            num_actors,
-            ..
-        }) => {
+        PhysicalPlan::ActorPoolProject(
+            app @ ActorPoolProject {
+                input,
+                projection,
+                num_actors,
+                ..
+            },
+        ) => {
             use daft_dsl::{
                 common_treenode::TreeNode,
                 functions::{
@@ -356,7 +360,7 @@ fn physical_plan_to_partition_tasks(
                         .map(|expr| PyExpr::from(expr.clone()))
                         .collect::<Vec<_>>(),
                     py_partial_udfs,
-                    resource_request.clone(),
+                    app.resource_request(),
                     *num_actors,
                 ))?;
             Ok(py_iter.into())

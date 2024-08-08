@@ -606,12 +606,7 @@ mod tests {
                 exprs.rotate_left(1);
             }
             Ok(Transformed::Yes(
-                LogicalPlan::from(Project::try_new(
-                    project.input.clone(),
-                    exprs,
-                    project.resource_request.clone(),
-                )?)
-                .into(),
+                LogicalPlan::from(Project::try_new(project.input.clone(), exprs)?).into(),
             ))
         }
     }

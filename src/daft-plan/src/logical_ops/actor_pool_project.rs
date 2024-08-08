@@ -23,7 +23,6 @@ pub struct ActorPoolProject {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub projected_schema: SchemaRef,
     pub num_actors: usize,
 }
@@ -32,7 +31,6 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         num_actors: usize,
     ) -> Result<Self> {
         let (projection, fields) =
@@ -41,10 +39,14 @@ impl ActorPoolProject {
         Ok(ActorPoolProject {
             input,
             projection,
-            resource_request,
             projected_schema,
             num_actors,
         })
+    }
+
+    pub fn resource_request(&self) -> ResourceRequest {
+        // TODO: Grab and merge resource requests across all UDFs
+        todo!();
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -80,7 +82,7 @@ impl ActorPoolProject {
                 .join(", ")
         ));
         res.push(format!("Num actors = {}", self.num_actors,));
-        let resource_request = self.resource_request.multiline_display();
+        let resource_request = self.resource_request().multiline_display();
         if !resource_request.is_empty() {
             res.push(format!(
                 "Resource request = {{ {} }}",

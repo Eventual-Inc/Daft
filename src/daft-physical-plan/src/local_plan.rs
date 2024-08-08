@@ -100,13 +100,11 @@ impl LocalPhysicalPlan {
     pub(crate) fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::Project(Project {
             input,
             projection,
-            resource_request,
             schema,
             plan_stats: PlanStats {},
         })
@@ -227,7 +225,6 @@ pub struct PhysicalScan {
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
