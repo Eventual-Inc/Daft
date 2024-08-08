@@ -21,9 +21,7 @@ use futures::{stream, StreamExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use daft_table::{
-    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table,
-};
+use daft_table::{GrowableTable, ProbeTable, ProbeTableBuilder, Table};
 
 enum HashJoinState {
     Building {
@@ -65,7 +63,7 @@ impl HashJoinState {
             panic!("add_tables can only be used during the Building Phase")
         }
     }
-    fn finalize(&mut self, join_mapper: &JoinOutputMapper) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<()> {
         if let Self::Building {
             probe_table_builder,
             tables,
@@ -74,14 +72,10 @@ impl HashJoinState {
         {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
             let pt = ptb.build();
-            let mapped_tables = tables
-                .iter()
-                .map(|t| join_mapper.map_left(t))
-                .collect::<DaftResult<Vec<_>>>()?;
 
             *self = Self::Probing {
                 probe_table: Arc::new(pt),
-                tables: Arc::new(mapped_tables),
+                tables: Arc::new(tables.clone()),
             };
             Ok(())
         } else {
@@ -93,7 +87,6 @@ impl HashJoinState {
 pub(crate) struct HashJoinOperator {
     right_on: Vec<ExprRef>,
     _join_type: JoinType,
-    join_mapper: Arc<JoinOutputMapper>,
     join_state: HashJoinState,
 }
 
@@ -126,9 +119,6 @@ impl HashJoinOperator {
         )?
         .into();
 
-        let join_mapper =
-            infer_join_schema_mapper(left_schema, right_schema, &left_on, &right_on, join_type)?;
-
         let left_on = left_on
             .into_iter()
             .zip(key_schema.fields.values())
@@ -143,7 +133,6 @@ impl HashJoinOperator {
         Ok(Self {
             right_on,
             _join_type: join_type,
-            join_mapper: Arc::new(join_mapper),
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
     }
@@ -162,7 +151,6 @@ impl HashJoinOperator {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
-                join_mapper: self.join_mapper.clone(),
             })
         } else {
             panic!("can't call as_intermediate_op when not in probing state")
@@ -174,7 +162,6 @@ struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
     right_on: Vec<ExprRef>,
-    join_mapper: Arc<JoinOutputMapper>,
 }
 
 impl IntermediateOperator for HashJoinProber {
@@ -192,13 +179,8 @@ impl IntermediateOperator for HashJoinProber {
 
         let right_input_tables = input.get_tables()?;
 
-        let right_tables = right_input_tables
-            .iter()
-            .map(|t| self.join_mapper.map_right(t))
-            .collect::<DaftResult<Vec<_>>>()?;
-
         let mut right_growable =
-            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20)?;
+            GrowableTable::new(&right_input_tables.iter().collect::<Vec<_>>(), false, 20)?;
 
         drop(_growables);
         {
@@ -237,7 +219,7 @@ impl BlockingSink for HashJoinOperator {
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
     fn finalize(&mut self) -> DaftResult<()> {
-        self.join_state.finalize(&self.join_mapper)?;
+        self.join_state.finalize()?;
         Ok(())
     }
     fn as_source(&mut self) -> &mut dyn Source {

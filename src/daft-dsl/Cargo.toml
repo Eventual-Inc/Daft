@@ -4,6 +4,7 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}

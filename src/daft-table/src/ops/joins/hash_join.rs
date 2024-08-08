@@ -6,9 +6,12 @@ use daft_core::{
     datatypes::{BooleanArray, UInt64Array},
     DataType, IntoSeries, JoinType,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::{
+    join::{get_common_join_keys, infer_join_schema},
+    ExprRef,
+};
 
-use crate::{infer_join_schema, Table};
+use crate::Table;
 use common_error::DaftResult;
 
 use daft_core::array::ops::as_arrow::AsArrow;
@@ -88,8 +91,10 @@ pub(super) fn hash_inner_join(
         }
     };
 
+    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
+
     let mut join_series = left
-        .get_columns(lkeys.column_names().as_slice())?
+        .get_columns(common_join_keys.as_slice())?
         .take(&lidx)?
         .columns;
 
@@ -97,8 +102,7 @@ pub(super) fn hash_inner_join(
     drop(rkeys);
 
     let num_rows = lidx.len();
-    join_series =
-        add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
+    join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
     Table::new_with_size(join_schema, join_series, num_rows)
 }
@@ -194,34 +198,18 @@ pub(super) fn hash_left_right_join(
         (lkeys, rkeys, lidx, ridx)
     };
 
-    let mut join_series = if left_side {
-        left.get_columns(lkeys.column_names().as_slice())?
-            .take(&lidx)?
-            .columns
-    } else {
-        lkeys
-            .column_names()
-            .iter()
-            .zip(rkeys.column_names().iter())
-            .map(|(l, r)| {
-                let join_col = if l == r {
-                    let col_dtype = left.get_column(l)?.data_type();
-                    right.get_column(r)?.take(&ridx)?.cast(col_dtype)?
-                } else {
-                    left.get_column(l)?.take(&lidx)?
-                };
+    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
 
-                Ok(join_col)
-            })
-            .collect::<DaftResult<Vec<_>>>()?
-    };
+    let mut join_series = left
+        .get_columns(common_join_keys.as_slice())?
+        .take(&lidx)?
+        .columns;
 
     drop(lkeys);
     drop(rkeys);
 
     let num_rows = lidx.len();
-    join_series =
-        add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
+    join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
     Table::new_with_size(join_schema, join_series, num_rows)
 }
@@ -406,12 +394,11 @@ pub(super) fn hash_outer_join(
         }
     };
 
-    let mut join_series = if lkeys
-        .column_names()
-        .iter()
-        .zip(rkeys.column_names().iter())
-        .any(|(l, r)| l == r)
-    {
+    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
+
+    let mut join_series = if common_join_keys.is_empty() {
+        vec![]
+    } else {
         let join_key_predicate = BooleanArray::from((
             "join_key_predicate",
             arrow2::array::BooleanArray::from_trusted_len_values_iter(
@@ -427,33 +414,22 @@ pub(super) fn hash_outer_join(
         ))
         .into_series();
 
-        lkeys
-            .column_names()
-            .iter()
-            .zip(rkeys.column_names().iter())
-            .map(|(l, r)| {
-                if l == r {
-                    let lcol = left.get_column(l)?.take(&lidx)?;
-                    let rcol = right.get_column(r)?.take(&ridx)?;
+        common_join_keys
+            .into_iter()
+            .map(|name| {
+                let lcol = left.get_column(&name)?.take(&lidx)?;
+                let rcol = right.get_column(&name)?.take(&ridx)?;
 
-                    lcol.if_else(&rcol, &join_key_predicate)
-                } else {
-                    left.get_column(l)?.take(&lidx)
-                }
+                lcol.if_else(&rcol, &join_key_predicate)
             })
             .collect::<DaftResult<Vec<_>>>()?
-    } else {
-        left.get_columns(lkeys.column_names().as_slice())?
-            .take(&lidx)?
-            .columns
     };
 
     drop(lkeys);
     drop(rkeys);
 
     let num_rows = lidx.len();
-    join_series =
-        add_non_join_key_columns(left, right, lidx, ridx, left_on, right_on, join_series)?;
+    join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
     Table::new_with_size(join_schema, join_series, num_rows)
 }

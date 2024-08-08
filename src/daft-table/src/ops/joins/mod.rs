@@ -1,18 +1,14 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::HashSet;
 
 use daft_core::{
-    array::growable::make_growable,
-    datatypes::Field,
-    schema::{Schema, SchemaRef},
-    utils::supertype::try_get_supertype,
-    JoinType, Series,
+    array::growable::make_growable, utils::supertype::try_get_supertype, JoinType, Series,
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::ExprRef;
+use daft_dsl::{
+    join::{get_common_join_keys, infer_join_schema},
+    ExprRef,
+};
 use hash_join::hash_semi_anti_join;
 
 use crate::Table;
@@ -45,301 +41,35 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
     ))
 }
 
-pub fn infer_join_schema(
-    left: &SchemaRef,
-    right: &SchemaRef,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
-    how: JoinType,
-) -> DaftResult<SchemaRef> {
-    if left_on.len() != right_on.len() {
-        return Err(DaftError::ValueError(format!(
-            "Length of left_on does not match length of right_on for Join {} vs {}",
-            left_on.len(),
-            right_on.len()
-        )));
-    }
-    if matches!(how, JoinType::Anti | JoinType::Semi) {
-        return Ok(left.clone());
-    }
-
-    let lfields = left_on
-        .iter()
-        .map(|e| e.to_field(left))
-        .collect::<DaftResult<Vec<_>>>()?;
-    let rfields = right_on
-        .iter()
-        .map(|e| e.to_field(right))
-        .collect::<DaftResult<Vec<_>>>()?;
-
-    // Left Join Keys are first
-    let mut join_fields = lfields
-        .iter()
-        .map(|f| left.get_field(&f.name).cloned())
-        .collect::<DaftResult<Vec<_>>>()?;
-
-    let left_names = lfields.iter().map(|e| e.name.as_str());
-    let right_names = rfields.iter().map(|e| e.name.as_str());
-
-    let mut names_so_far = HashSet::new();
-
-    join_fields.iter().for_each(|f| {
-        names_so_far.insert(f.name.clone());
-    });
-
-    // Then Add Left Table non-join-key columns
-    for field in left.fields.values() {
-        if names_so_far.contains(&field.name) {
-            continue;
-        } else {
-            join_fields.push(field.clone());
-            names_so_far.insert(field.name.clone());
-        }
-    }
-
-    let zipped_names: Vec<_> = left_names.zip(right_names).collect();
-    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
-
-    // Then Add Right Table non-join-key columns
-
-    for field in right.fields.values() {
-        // Skip fields if they were used in the join and have the same name as the corresponding left field
-        match right_to_left_keys.get(field.name.as_str()) {
-            Some(val) if val.eq(&field.name.as_str()) => {
-                continue;
-            }
-            _ => (),
-        }
-
-        let mut curr_name = field.name.clone();
-        while names_so_far.contains(&curr_name) {
-            curr_name = "right.".to_string() + curr_name.as_str();
-        }
-        join_fields.push(field.rename(curr_name.clone()));
-        names_so_far.insert(curr_name.clone());
-    }
-    let schema = Schema::new(join_fields)?;
-    Ok(Arc::new(schema))
-}
-
-struct JoinOutputColumn {
-    pub is_right: bool,
-    pub index: usize,
-    pub field: Field,
-}
-
-pub struct JoinOutputMapper {
-    mapping: Vec<JoinOutputColumn>,
-    left_schema: SchemaRef,
-    right_schema: SchemaRef,
-}
-
-impl JoinOutputMapper {
-    fn try_new(mapping: Vec<JoinOutputColumn>) -> DaftResult<Self> {
-        let left_schema = Schema::new(
-            mapping
-                .iter()
-                .filter(|jc| !jc.is_right)
-                .map(|jc| jc.field.clone())
-                .collect::<Vec<_>>(),
-        )?
-        .into();
-        let right_schema = Schema::new(
-            mapping
-                .iter()
-                .filter(|jc| jc.is_right)
-                .map(|jc| jc.field.clone())
-                .collect::<Vec<_>>(),
-        )?
-        .into();
-        Ok(JoinOutputMapper {
-            mapping,
-            left_schema,
-            right_schema,
-        })
-    }
-
-    pub fn map_left(&self, table: &Table) -> DaftResult<Table> {
-        let out = self
-            .mapping
-            .iter()
-            .filter(|jc| !jc.is_right)
-            .map(|jc| DaftResult::Ok(table.get_column_by_index(jc.index)?.rename(&jc.field.name)))
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        Table::new_with_size(self.left_schema.clone(), out, table.num_rows)
-    }
-
-    pub fn map_right(&self, table: &Table) -> DaftResult<Table> {
-        let out = self
-            .mapping
-            .iter()
-            .filter(|jc| jc.is_right)
-            .map(|jc| DaftResult::Ok(table.get_column_by_index(jc.index)?.rename(&jc.field.name)))
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        Table::new_with_size(self.right_schema.clone(), out, table.num_rows)
-    }
-}
-
-pub fn infer_join_schema_mapper(
-    left: &SchemaRef,
-    right: &SchemaRef,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
-    how: JoinType,
-) -> DaftResult<JoinOutputMapper> {
-    if left_on.len() != right_on.len() {
-        return Err(DaftError::ValueError(format!(
-            "Length of left_on does not match length of right_on for Join {} vs {}",
-            left_on.len(),
-            right_on.len()
-        )));
-    }
-    if matches!(how, JoinType::Anti | JoinType::Semi) {
-        return JoinOutputMapper::try_new(
-            left.fields
-                .values()
-                .enumerate()
-                .map(|(i, f)| JoinOutputColumn {
-                    is_right: false,
-                    index: i,
-                    field: f.clone(),
-                })
-                .collect(),
-        );
-    }
-    let mut result = vec![];
-    let mut names_so_far = HashSet::new();
-
-    let lfields = left_on
-        .iter()
-        .map(|e| e.to_field(left))
-        .collect::<DaftResult<Vec<_>>>()?;
-    let rfields = right_on
-        .iter()
-        .map(|e| e.to_field(right))
-        .collect::<DaftResult<Vec<_>>>()?;
-
-    for lf in lfields.iter() {
-        let name = &lf.name;
-        let index = left.get_index(name)?;
-        let field = left.get_field(name)?.clone();
-        result.push(JoinOutputColumn {
-            is_right: false,
-            index,
-            field,
-        });
-        names_so_far.insert(name.clone());
-    }
-
-    let left_names = lfields.iter().map(|e| e.name.as_str());
-    let right_names = rfields.iter().map(|e| e.name.as_str());
-
-    // Then Add Left Table non-join-key columns
-    for (index, field) in left.fields.values().enumerate() {
-        if names_so_far.contains(&field.name) {
-            continue;
-        } else {
-            result.push(JoinOutputColumn {
-                is_right: false,
-                index,
-                field: field.clone(),
-            });
-            names_so_far.insert(field.name.clone());
-        }
-    }
-
-    let zipped_names: Vec<_> = left_names.zip(right_names).collect();
-    let right_to_left_keys: HashMap<&str, &str> = HashMap::from_iter(zipped_names.iter().copied());
-
-    // Then Add Right Table non-join-key columns
-
-    for (index, field) in right.fields.values().enumerate() {
-        // Skip fields if they were used in the join and have the same name as the corresponding left field
-        match right_to_left_keys.get(field.name.as_str()) {
-            Some(val) if val.eq(&field.name.as_str()) => {
-                continue;
-            }
-            _ => (),
-        }
-
-        let mut curr_name = field.name.clone();
-        while names_so_far.contains(&curr_name) {
-            curr_name = "right.".to_string() + curr_name.as_str();
-        }
-
-        names_so_far.insert(curr_name.clone());
-
-        let new_field = field.rename(curr_name.clone());
-        result.push(JoinOutputColumn {
-            is_right: true,
-            index,
-            field: new_field,
-        });
-    }
-    JoinOutputMapper::try_new(result)
-}
-
 fn add_non_join_key_columns(
     left: &Table,
     right: &Table,
     lidx: Series,
     ridx: Series,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
     mut join_series: Vec<Series>,
 ) -> DaftResult<Vec<Series>> {
-    let mut names_so_far = join_series
+    let join_keys = join_series
         .iter()
         .map(|s| s.name().to_string())
         .collect::<HashSet<_>>();
 
     // TODO(Clark): Parallelize with rayon.
     for field in left.schema.fields.values() {
-        if names_so_far.contains(&field.name) {
+        if join_keys.contains(&field.name) {
             continue;
         } else {
             join_series.push(left.get_column(&field.name)?.take(&lidx)?);
-            names_so_far.insert(field.name.clone());
         }
     }
 
     drop(lidx);
 
-    // Zip the names of the left and right expressions into a HashMap
-    let left_names = left_on
-        .iter()
-        .map(|e| e.to_field(&left.schema).map(|f| f.name))
-        .collect::<DaftResult<Vec<_>>>()?;
-    let right_names = right_on
-        .iter()
-        .map(|e| e.to_field(&right.schema).map(|f| f.name))
-        .collect::<DaftResult<Vec<_>>>()?;
-    let right_to_left_keys: HashMap<String, String> =
-        HashMap::from_iter(left_names.into_iter().zip(right_names));
-
-    // TODO(Clark): Parallelize with Rayon.
     for field in right.schema.fields.values() {
-        // Skip fields if they were used in the join and have the same name as the corresponding left field
-        match right_to_left_keys.get(&field.name) {
-            Some(val) if val.eq(&field.name) => {
-                continue;
-            }
-            _ => (),
+        if join_keys.contains(&field.name) {
+            continue;
+        } else {
+            join_series.push(right.get_column(&field.name)?.take(&ridx)?);
         }
-
-        let mut curr_name = field.name.clone();
-        while names_so_far.contains(&curr_name) {
-            curr_name = "right.".to_string() + curr_name.as_str();
-        }
-        join_series.push(
-            right
-                .get_column(&field.name)?
-                .rename(curr_name.clone())
-                .take(&ridx)?,
-        );
-        names_so_far.insert(curr_name);
     }
 
     Ok(join_series)
@@ -427,19 +157,18 @@ impl Table {
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
         let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
-        let mut join_series = Vec::with_capacity(ltable.num_columns());
+        let mut join_series = get_common_join_keys(left_on, right_on)
+            .map(|name| {
+                let lcol = self.get_column(&name)?;
+                let rcol = right.get_column(&name)?;
 
-        for (l, r) in ltable
-            .column_names()
-            .iter()
-            .zip(rtable.column_names().iter())
-        {
-            if l == r {
-                let lcol = self.get_column(l)?;
-                let rcol = right.get_column(r)?;
-
-                let mut growable =
-                    make_growable(l, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
+                let mut growable = make_growable(
+                    name.as_str(),
+                    lcol.data_type(),
+                    vec![lcol, rcol],
+                    false,
+                    lcol.len(),
+                );
 
                 for (li, ri) in lidx.u64()?.into_iter().zip(ridx.u64()?) {
                     match (li, ri) {
@@ -449,18 +178,15 @@ impl Table {
                     }
                 }
 
-                join_series.push(growable.build()?);
-            } else {
-                join_series.push(self.get_column(l)?.take(&lidx)?);
-            }
-        }
+                growable.build()
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
 
         drop(ltable);
         drop(rtable);
 
         let num_rows = lidx.len();
-        join_series =
-            add_non_join_key_columns(self, right, lidx, ridx, left_on, right_on, join_series)?;
+        join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
 
         Table::new_with_size(join_schema, join_series, num_rows)
     }
