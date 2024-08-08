@@ -6,7 +6,7 @@ import inspect
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Callable, Union
 
-from daft.daft import PyDataType
+from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import PySeries, Series
@@ -166,6 +166,7 @@ class StatelessUDF(UDF):
     name: str
     func: UserProvidedPythonFunction
     return_dtype: DataType
+    resource_request: ResourceRequest | None
 
     def __post_init__(self):
         """Analogous to the @functools.wraps(self.func) pattern
@@ -183,7 +184,28 @@ class StatelessUDF(UDF):
             partial=PartialStatelessUDF(self.func, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
+            resource_request=self.resource_request,
         )
+
+    def with_resource_requests(self, num_cpus: float | None = None, num_gpus: float | None = None) -> StatelessUDF:
+        """Replace the resource requests for running each instance of your stateless UDF.
+
+        For instance, if your stateless UDF requires 4 CPUs to run, you can configure it like so:
+
+        >>> import daft
+        >>>
+        >>> @daft.udf(return_dtype=daft.DataType.string())
+        >>> def example_stateless_udf():
+        >>>     # You will have access to 4 CPUs here if you configure your UDF correctly!
+        >>>     return inputs
+        >>>
+        >>> # Parametrize the UDF to run with 4 CPUs
+        >>> example_stateless_udf_4CPU = example_stateless_udf.with_resource_requests(num_cpus=4)
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
+        >>> df = df.with_column("bar", example_stateless_udf_4CPU(df["foo"]))
+        """
+        return dataclasses.replace(self, resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus))
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
         sig = inspect.signature(self.func)
@@ -200,6 +222,7 @@ class StatefulUDF(UDF):
     name: str
     cls: type
     return_dtype: DataType
+    resource_request: ResourceRequest | None
 
     def __post_init__(self):
         """Analogous to the @functools.wraps(self.cls) pattern
@@ -217,7 +240,33 @@ class StatefulUDF(UDF):
             partial=PartialStatefulUDF(self.cls, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
+            resource_request=self.resource_request,
         )
+
+    def with_resource_requests(self, num_cpus: float | None = None, num_gpus: float | None = None) -> StatefulUDF:
+        """Replace the resource requests for running each instance of your stateful UDF.
+
+        For instance, if your stateful UDF requires a GPU to run, you can configure it like so:
+
+        >>> import daft
+        >>>
+        >>> @daft.udf(return_dtype=daft.DataType.string())
+        >>> class ExampleIdentityStatefulUDF():
+        >>>
+        >>>     def __init__(self):
+        >>>         pass
+        >>>
+        >>>     def __call__(self, inputs):
+        >>>         # You will have access to 1 GPU here if you configure your UDF correctly!
+        >>>         return inputs
+        >>>
+        >>> # Parametrize the UDF to run with 1 GPU
+        >>> ExampleIdentityStatefulUDF_SingleGPU = ExampleIdentityStatefulUDF.with_resource_requests(num_gpus=1)
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
+        >>> df = df.with_column("bar", ExampleIdentityStatefulUDF_SingleGPU(df["foo"]))
+        """
+        return dataclasses.replace(self, resource_request=ResourceRequest(num_cpus=num_cpus, num_gpus=num_gpus))
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
         sig = inspect.signature(self.cls.__call__)
@@ -299,12 +348,14 @@ def udf(
                 name=name,
                 cls=f,
                 return_dtype=return_dtype,
+                resource_request=None,
             )
         else:
             return StatelessUDF(
                 name=name,
                 func=f,
                 return_dtype=return_dtype,
+                resource_request=None,
             )
 
     return _udf

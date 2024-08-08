@@ -5,6 +5,7 @@ mod udf;
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_resource_request::ResourceRequest;
 use daft_core::datatypes::DataType;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,7 @@ pub struct StatelessPythonUDF {
     partial_func: partial_udf::PyPartialUDF,
     num_expressions: usize,
     pub return_dtype: DataType,
+    pub resource_request: Option<ResourceRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -44,6 +46,7 @@ pub struct StatefulPythonUDF {
     pub stateful_partial_func: partial_udf::PyPartialUDF,
     pub num_expressions: usize,
     pub return_dtype: DataType,
+    pub resource_request: Option<ResourceRequest>,
 }
 
 #[cfg(feature = "python")]
@@ -52,6 +55,7 @@ pub fn stateless_udf(
     py_partial_stateless_udf: pyo3::PyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
+    resource_request: Option<ResourceRequest>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
@@ -59,6 +63,7 @@ pub fn stateless_udf(
             partial_func: partial_udf::PyPartialUDF(py_partial_stateless_udf),
             num_expressions: expressions.len(),
             return_dtype,
+            resource_request,
         })),
         inputs: expressions.into(),
     })
@@ -69,12 +74,14 @@ pub fn stateless_udf(
     name: &str,
     expressions: &[ExprRef],
     return_dtype: DataType,
+    resource_request: Option<ResourceRequest>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
             name: name.to_string().into(),
             num_expressions: expressions.len(),
             return_dtype,
+            resource_request,
         })),
         inputs: expressions.into(),
     })
@@ -86,6 +93,7 @@ pub fn stateful_udf(
     py_stateful_partial_func: pyo3::PyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
+    resource_request: Option<ResourceRequest>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -93,6 +101,7 @@ pub fn stateful_udf(
             stateful_partial_func: partial_udf::PyPartialUDF(py_stateful_partial_func),
             num_expressions: expressions.len(),
             return_dtype,
+            resource_request,
         })),
         inputs: expressions.into(),
     })
@@ -103,12 +112,14 @@ pub fn stateful_udf(
     name: &str,
     expressions: &[ExprRef],
     return_dtype: DataType,
+    resource_request: Option<ResourceRequest>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
             name: name.to_string().into(),
             num_expressions: expressions.len(),
             return_dtype,
+            resource_request,
         })),
         inputs: expressions.into(),
     })

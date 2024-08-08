@@ -1214,7 +1214,7 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1246,13 +1246,22 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
+        if resource_request is None:
+            resource_request = ResourceRequest()
+        else:
+            warnings.warn(
+                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
+
         return self.with_columns({column_name: expr}, resource_request)
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1283,8 +1292,14 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if not isinstance(resource_request, ResourceRequest):
-            raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
+        if resource_request is None:
+            resource_request = ResourceRequest()
+        else:
+            warnings.warn(
+                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
 
         new_columns = [col.alias(name) for name, col in columns.items()]
 
