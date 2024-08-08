@@ -299,16 +299,14 @@ mod tests {
             python::{PythonUDF, StatefulPythonUDF},
             FunctionExpr,
         },
-        Expr,
+        Expr, ExprRef,
     };
 
     use crate::{
-        logical_ops::ActorPoolProject,
-        logical_optimization::{
-            rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq,
-        },
+        logical_ops::{ActorPoolProject, Project},
+        logical_optimization::test::assert_optimized_plan_with_rules_eq,
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
+        LogicalPlan, ResourceRequest,
     };
 
     use super::SplitActorPoolProjects;
@@ -327,31 +325,40 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
-        let scan_plan = dummy_scan_node(scan_op);
-
-        // Add a Projection with StatefulUDF and resource request
-        let num_actors = 1;
-        let stateful_project_expr = Expr::Function {
+    fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("foo".to_string()),
                 num_expressions: 1,
                 return_dtype: daft_core::DataType::Binary,
             })),
-            inputs: vec![col("a")],
+            inputs,
         }
         .arced()
-        .alias("b");
-        let resource_request = crate::ResourceRequest {
+    }
+
+    fn create_resource_request() -> ResourceRequest {
+        crate::ResourceRequest {
             num_cpus: Some(8.),
             num_gpus: Some(1.),
             memory_bytes: None,
-        };
+        }
+    }
+
+    // TODO: need to figure out how users will pass this in
+    static NUM_ACTORS: usize = 1;
+
+    #[test]
+    fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
+        let resource_request = create_resource_request();
+        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let stateful_project_expr = create_stateful_udf(vec![col("a")]);
+
+        // Add a Projection with StatefulUDF and resource request
         let project_plan = scan_plan
             .with_columns(
-                vec![stateful_project_expr.clone()],
+                vec![stateful_project_expr.clone().alias("b")],
                 resource_request.clone(),
             )?
             .build();
@@ -360,12 +367,64 @@ mod tests {
         let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
-            vec![col("a"), stateful_project_expr.clone()],
+            vec![col("a"), stateful_project_expr.clone().alias("b")],
+            // Actor pool project has the specified resource request, but the normal Project has the default resource request
             resource_request.clone(),
-            num_actors,
-        )?);
+            NUM_ACTORS,
+        )?)
+        .arced();
 
-        assert_optimized_plan_eq(project_plan, expected.arced())?;
+        assert_optimized_plan_eq(project_plan, expected)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_with_column_parallel() -> DaftResult<()> {
+        let resource_request = create_resource_request();
+        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let stateful_project_expr = create_stateful_udf(vec![col("a")]);
+
+        // Add a Projection with StatefulUDF and resource request
+        let project_plan = scan_plan
+            .with_columns(
+                vec![
+                    stateful_project_expr.clone().alias("b"),
+                    stateful_project_expr.clone().alias("c"),
+                ],
+                resource_request.clone(),
+            )?
+            .build();
+
+        // Project([col("a")])
+        //   --> ActorPoolProject([col("a"), foo(col("a")).alias("SOME_FACTORED_NAME")])
+        //   --> Project([col("a"), col("SOME_FACTORED_NAME").alias("b"), foo(col("SOME_FACTORED_NAME")).alias("c")])
+        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Binary }))(a)";
+        let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                stateful_project_expr.clone().alias(factored_column_name),
+            ],
+            // Actor pool project has the specified resource request, but the normal Project has the default resource request
+            resource_request.clone(),
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![
+                col("a"),
+                col(factored_column_name).alias("b"),
+                col(factored_column_name).alias("c"),
+            ],
+            resource_request.clone(),
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq(project_plan, expected)?;
 
         Ok(())
     }

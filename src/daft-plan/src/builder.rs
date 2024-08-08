@@ -169,6 +169,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
+
         Ok(logical_plan.into())
     }
 
