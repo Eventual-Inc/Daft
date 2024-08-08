@@ -26,6 +26,33 @@ def my_udf(c):
 
 
 ###
+# Test behavior of overriding options
+###
+
+
+def test_partial_resource_request_overrides():
+    new_udf = my_udf.override_options(num_cpus=1.0)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
+
+    new_udf = new_udf.override_options(num_gpus=8.0)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus == 8.0
+    assert new_udf.resource_request.memory_bytes is None
+
+    new_udf = new_udf.override_options(num_gpus=None)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
+
+    new_udf = new_udf.override_options(memory_bytes=100)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes == 100
+
+
+###
 # Assert PyRunner behavior for GPU requests:
 # Fail if requesting more GPUs than is available, but otherwise we do not modify anything
 # about local task execution (tasks have access to all GPUs available on the host,

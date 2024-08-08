@@ -32,13 +32,6 @@ impl ResourceRequest {
         Self::new_internal(Some(1.0), None, None)
     }
 
-    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
-        Self {
-            num_cpus,
-            ..self.clone()
-        }
-    }
-
     pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> Self {
         Self {
             num_cpus: self.num_cpus.or(num_cpus),
@@ -46,23 +39,9 @@ impl ResourceRequest {
         }
     }
 
-    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
-        Self {
-            num_gpus,
-            ..self.clone()
-        }
-    }
-
     pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> Self {
         Self {
             num_gpus: self.num_gpus.or(num_gpus),
-            ..self.clone()
-        }
-    }
-
-    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
-        Self {
-            memory_bytes,
             ..self.clone()
         }
     }
@@ -201,6 +180,27 @@ impl ResourceRequest {
     #[getter]
     pub fn get_memory_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.memory_bytes)
+    }
+
+    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
+        ResourceRequest {
+            num_cpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
+        ResourceRequest {
+            num_gpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
+        ResourceRequest {
+            memory_bytes,
+            ..self.clone()
+        }
     }
 
     fn __add__(&self, other: &Self) -> Self {
