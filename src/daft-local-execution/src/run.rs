@@ -18,7 +18,9 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{channel::create_channel, pipeline::physical_plan_to_pipeline};
+use crate::{
+    channel::create_channel, pipeline::physical_plan_to_pipeline, Error, WorkerSet, NUM_CPUS,
+};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -103,15 +105,35 @@ pub fn run_local(
         .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
+        let final_schema = physical_plan.schema();
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
 
-        let (sender, mut receiver) = create_channel(1, true);
-        pipeline.start(sender).await?;
+        let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
+        let mut worker_set = WorkerSet::new();
+        pipeline.start(sender, &mut worker_set).await.unwrap();
+
         let mut result = vec![];
-        while let Some(val) = receiver.recv().await {
-            result.push(val);
+        while let Some(part) = receiver.recv().await {
+            result.push(Ok(part));
         }
-        DaftResult::Ok(result.into_iter())
+        while let Some(result) = worker_set.join_next().await {
+            match result {
+                Ok(Err(e)) => {
+                    worker_set.shutdown().await;
+                    return DaftResult::Err(e);
+                }
+                Err(e) => {
+                    worker_set.shutdown().await;
+                    return DaftResult::Err(Error::JoinError { source: e }.into());
+                }
+                _ => {}
+            }
+        }
+        if result.is_empty() {
+            let empty_mp = Arc::new(MicroPartition::empty(Some(final_schema.clone())));
+            result.push(Ok(empty_mp));
+        }
+        Ok(result.into_iter())
     });
     Ok(Box::new(res?))
 }

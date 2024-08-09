@@ -6,7 +6,7 @@ mod run;
 mod sinks;
 mod sources;
 
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 pub use run::NativeExecutor;
 use snafu::Snafu;
 
@@ -16,6 +16,8 @@ lazy_static! {
 }
 
 const DEFAULT_MORSEL_SIZE: usize = 1000;
+
+pub type WorkerSet = tokio::task::JoinSet<DaftResult<()>>;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

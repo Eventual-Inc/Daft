@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::JoinStrategy;
+use daft_core::{JoinStrategy, JoinType};
 use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
@@ -70,6 +70,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                 todo!("Only hash join is supported for now")
             }
+            if join.join_type != JoinType::Inner {
+                todo!("Only inner join is supported for now")
+            }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
             Ok(LocalPhysicalPlan::hash_join(
@@ -90,12 +93,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 .iter()
                 .map(|name| daft_dsl::col(name.clone()))
                 .collect::<Vec<ExprRef>>();
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                vec![],
-                col_exprs,
-                schema,
-            ))
+            Ok(LocalPhysicalPlan::distinct(input, col_exprs, schema))
         }
         LogicalPlan::Concat(concat) => {
             let input = translate(&concat.input)?;

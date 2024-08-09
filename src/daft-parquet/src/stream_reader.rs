@@ -395,8 +395,8 @@ pub(crate) fn local_parquet_stream(
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
         par_column_iters.for_each(move |((rg_col_iter_result, tx), rg_range)| {
-            let rg_col_iter = match rg_col_iter_result {
-                Ok(iter) => iter,
+            let rg_col_iters = match rg_col_iter_result {
+                Ok(iters) => iters,
                 Err(e) => {
                     if let Err(crossbeam_channel::TrySendError::Full(_)) =
                         tx.try_send(Err(e.into()))
@@ -406,6 +406,14 @@ pub(crate) fn local_parquet_stream(
                     return;
                 }
             };
+            if rg_col_iters.is_empty() {
+                let empty_table =
+                    Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(empty_table) {
+                    panic!("Parquet stream channel should not be full")
+                }
+                return;
+            }
             let owned_schema_ref = schema_ref.clone();
             let owned_predicate = predicate.clone();
             let owned_original_columns = original_columns.clone();
@@ -421,7 +429,9 @@ pub(crate) fn local_parquet_stream(
                     self.iters.par_iter_mut().map(|iter| iter.next()).collect()
                 }
             }
-            let par_lock_step_iter = ParallelLockStepIter { iters: rg_col_iter };
+            let par_lock_step_iter = ParallelLockStepIter {
+                iters: rg_col_iters,
+            };
 
             // Keep track of the current index in the row group so we can throw away arrays that are not needed
             // and slice arrays that are partially needed.
@@ -451,7 +461,7 @@ pub(crate) fn local_parquet_stream(
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                let len = all_series[0].len();
+                let len = all_series.first().map(|s| s.len()).unwrap_or(0);
                 if all_series.iter().any(|s| s.len() != len) {
                     return Err(super::Error::ParquetColumnsDontHaveEqualRows {
                         path: owned_uri.clone(),
