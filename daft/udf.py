@@ -255,6 +255,7 @@ class StatefulUDF(UDF):
     name: str
     cls: type
     return_dtype: DataType
+    init_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
     def __post_init__(self):
         """Analogous to the @functools.wraps(self.cls) pattern
@@ -273,7 +274,14 @@ class StatefulUDF(UDF):
             expressions=expressions,
             return_dtype=self.return_dtype,
             resource_request=self.resource_request,
+            init_args=self.init_args,
         )
+
+    def with_init_args(self, *args, **kwargs) -> StatefulUDF:
+        """Replace initialization arguments for the UDF when calling __init__ at runtime
+        on each instance of the UDF.
+        """
+        return dataclasses.replace(self, init_args=(args, kwargs))
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
         sig = inspect.signature(self.cls.__call__)

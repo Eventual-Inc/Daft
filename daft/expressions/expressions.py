@@ -249,9 +249,12 @@ class Expression:
         expressions: builtins.list[Expression],
         return_dtype: DataType,
         resource_request: ResourceRequest | None,
+        init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateful_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request)
+            _stateful_udf(
+                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, init_args
+            )
         )
 
     def __bool__(self) -> bool:
