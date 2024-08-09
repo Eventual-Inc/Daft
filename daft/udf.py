@@ -163,9 +163,9 @@ class UDF:
         >>> import daft
         >>>
         >>> @daft.udf(return_dtype=daft.DataType.string())
-        >>> def example_stateless_udf():
-        >>>     # You will have access to 4 CPUs here if you configure your UDF correctly!
-        >>>     return inputs
+        ... def example_stateless_udf(inputs):
+        ...     # You will have access to 4 CPUs here if you configure your UDF correctly!
+        ...     return inputs
         >>>
         >>> # Parametrize the UDF to run with 4 CPUs
         >>> example_stateless_udf_4CPU = example_stateless_udf.override_options(num_cpus=4)
@@ -345,28 +345,54 @@ def udf(
     You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 4 CPUs to run. On a
     machine/cluster with 8 CPUs, Daft will be able to run up to 2 instances of this UDF at once, giving you a concurrency of 2!
 
-        >>>  import daft
-        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
-        ... def udf_needs_4_cpus(x: daft.Series):
-        ...     return x
-        >>>
-        >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.with_column("new_x", udf_needs_4_cpus(df["x"]))
-        >>> df.show()
+    >>> import daft
+    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
+    ... def udf_needs_4_cpus(x: daft.Series):
+    ...     return x
+    >>>
+    >>> df = daft.from_pydict({"x": [1, 2, 3]})
+    >>> df = df.with_column("new_x", udf_needs_4_cpus(df["x"]))
+    >>> df.show()
+    ╭───────┬───────╮
+    │ x     ┆ new_x │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 1     ┆ 1     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3     │
+    ╰───────┴───────╯
+    <BLANKLINE>
+    (Showing first 3 of 3 rows)
 
     Your UDFs' resources can also be overridden before you call it like so:
 
-        >>>  import daft
-        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
-        ... def udf_needs_4_cpus(x: daft.Series):
-        ...     return x
-        >>>
-        >>> # Override the num_cpus to 8 instead
-        >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=8)
-        >>>
-        >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.with_column("new_x", udf_needs_8_cpus(df["x"]))
-        >>> df.show()
+    >>> import daft
+    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
+    ... def udf_needs_4_cpus(x: daft.Series):
+    ...     return x
+    >>>
+    >>> # Override the num_cpus to 8 instead
+    >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=8)
+    >>>
+    >>> df = daft.from_pydict({"x": [1, 2, 3]})
+    >>> df = df.with_column("new_x", udf_needs_8_cpus(df["x"]))
+    >>> df.show()
+    ╭───────┬───────╮
+    │ x     ┆ new_x │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 1     ┆ 1     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3     │
+    ╰───────┴───────╯
+    <BLANKLINE>
+    (Showing first 3 of 3 rows)
 
     Args:
         return_dtype (DataType): Returned type of the UDF
