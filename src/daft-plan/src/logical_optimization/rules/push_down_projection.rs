@@ -821,10 +821,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -837,6 +837,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
@@ -846,7 +847,6 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
@@ -873,10 +873,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -889,6 +889,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
