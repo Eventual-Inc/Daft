@@ -1,4 +1,4 @@
-use std::{collections::HashSet, default, iter, sync::Arc};
+use std::{collections::HashSet, iter, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{TreeNode, TreeNodeRewriter};
@@ -46,11 +46,9 @@ impl OptimizerRule for SplitActorPoolProjects {
         let num_actors = 1;
 
         match plan.as_ref() {
-            LogicalPlan::Project(projection) => try_optimize_project(
-                projection,
-                plan.clone(),
-                num_actors,
-            ),
+            LogicalPlan::Project(projection) => {
+                try_optimize_project(projection, plan.clone(), num_actors)
+            }
             // TODO: Figure out how to split other nodes as well such as Filter, Agg etc
             _ => Ok(Transformed::No(plan)),
         }
@@ -179,16 +177,10 @@ fn try_optimize_project(
         plan.children()[0].clone()
     } else {
         // Recursively run the rule on the new child Project
-        let new_project = Project::try_new(
-            plan.children()[0].clone(),
-            remaining,
-        )?;
+        let new_project = Project::try_new(plan.children()[0].clone(), remaining)?;
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
-        let optimized_child_plan = try_optimize_project(
-            &new_project,
-            new_child_project.clone(),
-            num_actors,
-        )?;
+        let optimized_child_plan =
+            try_optimize_project(&new_project, new_child_project.clone(), num_actors)?;
         optimized_child_plan.unwrap().clone()
     };
 
@@ -341,20 +333,16 @@ mod tests {
     // TODO: need to figure out how users will pass this in
     static NUM_ACTORS: usize = 1;
 
-    // #[cfg(not(feature = "python"))]
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
-        let resource_request = create_resource_request();
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stateful_project_expr = create_stateful_udf(vec![col("a")]);
 
         // Add a Projection with StatefulUDF and resource request
         let project_plan = scan_plan
-            .with_columns(
-                vec![stateful_project_expr.clone().alias("b")],
-                None,
-            )?
+            .with_columns(vec![stateful_project_expr.clone().alias("b")], None)?
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")])
@@ -371,14 +359,18 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_parallel() -> DaftResult<()> {
-        let resource_request = create_resource_request();
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stateful_project_expr = create_stateful_udf(vec![col("a")]);
 
         // Add a Projection with StatefulUDF and resource request
+        // NOTE: Our common-subtree elimination will build this as 2 project nodes:
+        // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
+        //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
+        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Binary, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }) }))(a)";
         let project_plan = scan_plan
             .with_columns(
                 vec![
@@ -389,10 +381,9 @@ mod tests {
             )?
             .build();
 
-        // Project([col("a")])
-        //   --> ActorPoolProject([col("a"), foo(col("a")).alias("SOME_FACTORED_NAME")])
-        //   --> Project([col("a"), col("SOME_FACTORED_NAME").alias("b"), foo(col("SOME_FACTORED_NAME")).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Binary }))(a)";
+        // Project([col("a").alias("a")])
+        //   --> ActorPoolProject([col("a"), foo(col("a")).alias(factored_columns_name)])
+        //   --> Project([col("a"), col(factored_columns_name).alias("b"), foo(col(factored_columns_name)).alias("c")])
         let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
@@ -420,18 +411,15 @@ mod tests {
 
     #[test]
     fn test_multiple_with_column_serial() -> DaftResult<()> {
-        let resource_request = create_resource_request();
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr =
             create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
 
         // Add a Projection with StatefulUDF and resource request
+        // Project([col("a"), foo(foo(col("a"))).alias("b")])
         let project_plan = scan_plan
-            .with_columns(
-                vec![stacked_stateful_project_expr.clone().alias("b")],
-                None,
-            )?
+            .with_columns(vec![stacked_stateful_project_expr.clone().alias("b")], None)?
             .build();
 
         //   ActorPoolProject([col("a"), foo(col("a")).alias("SOME_INTERMEDIATE_NAME")])
