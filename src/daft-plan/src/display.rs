@@ -57,7 +57,7 @@ impl TreeDisplay for crate::LogicalPlan {
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
-        self.arc_children().into_iter().map(|x| x as _).collect()
+        self.children().into_iter().map(|x| x as _).collect()
     }
 }
 
@@ -71,7 +71,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
-        self.arc_children().into_iter().map(|x| x as _).collect()
+        self.children().into_iter().map(|x| x as _).collect()
     }
 }
 

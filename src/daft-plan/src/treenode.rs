@@ -7,13 +7,10 @@ use common_treenode::DynTreeNode;
 impl DynTreeNode for LogicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {
         self.children()
-            .into_iter()
-            .map(|x| x.clone().arced())
-            .collect()
     }
 
     fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
-        let old_children = self.arc_children();
+        let old_children = self.children();
         if children.len() != old_children.len() {
             panic!("LogicalPlan::with_new_arc_children: Wrong number of children")
         } else if children.is_empty()
@@ -32,13 +29,10 @@ impl DynTreeNode for LogicalPlan {
 impl DynTreeNode for PhysicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {
         self.children()
-            .into_iter()
-            .map(|x| x.clone().arced())
-            .collect()
     }
 
     fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
-        let old_children = self.arc_children();
+        let old_children = self.children();
         if children.len() != old_children.len() {
             panic!("PhysicalPlan::with_new_arc_children: Wrong number of children")
         } else if children.is_empty()
