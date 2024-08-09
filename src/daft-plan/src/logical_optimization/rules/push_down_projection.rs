@@ -853,14 +853,12 @@ mod tests {
         let project = LogicalPlan::Project(Project::try_new(
             actor_pool_project,
             vec![col("udf_results")],
-            default::Default::default(),
         )?)
         .arced();
 
         let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
@@ -900,16 +898,11 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
-        let project = LogicalPlan::Project(Project::try_new(
-            actor_pool_project,
-            vec![col("a")],
-            default::Default::default(),
-        )?)
-        .arced();
+        let project =
+            LogicalPlan::Project(Project::try_new(actor_pool_project, vec![col("a")])?).arced();
 
         // Optimized plan will push the projection all the way down into the scan
         let expected_scan = dummy_scan_node_with_pushdowns(
