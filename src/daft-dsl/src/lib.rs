@@ -10,17 +10,19 @@ pub mod optimization;
 mod pyobject;
 #[cfg(feature = "python")]
 pub mod python;
+mod resolve_expr;
 mod treenode;
 pub use common_treenode;
 pub use expr::binary_op;
 pub use expr::col;
-pub use expr::{
-    is_partition_compatible, resolve_aggexpr, resolve_aggexprs, resolve_expr, resolve_exprs,
-};
+pub use expr::is_partition_compatible;
 pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator};
 pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+pub use resolve_expr::{
+    resolve_aggexprs, resolve_exprs, resolve_single_aggexpr, resolve_single_expr,
+};
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {

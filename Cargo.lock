@@ -1715,6 +1715,7 @@ dependencies = [
  "daft-core",
  "daft-sketch",
  "itertools 0.11.0",
+ "log",
  "pyo3",
  "serde",
  "serde_json",

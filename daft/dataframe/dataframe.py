@@ -982,6 +982,10 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
+            if (item == "*" or item.endswith(".*")) and item not in schema.column_names():
+                # does not account for weird column names
+                # like if struct "a" has a field named "*", then a.* will wrongly fail
+                raise ValueError("Wildcard expressions are not supported in DataFrame.__getitem__")
             expr, _ = resolve_expr(col(item)._expr, schema._schema)
             return Expression._from_pyexpr(expr)
         elif isinstance(item, Iterable):
