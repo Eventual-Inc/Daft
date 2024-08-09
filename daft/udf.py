@@ -266,6 +266,15 @@ class StatefulUDF(UDF):
         functools.update_wrapper(self, self.cls)
 
     def __call__(self, *args, **kwargs) -> Expression:
+        # Validate that initialization arguments are provided if the __init__ signature indicates that there are
+        # parameters without defaults
+        init_sig = inspect.signature(self.cls.__init__)  # type: ignore
+        if any(param.default is param.empty for param in init_sig.parameters.values()) and self.init_args is None:
+            raise ValueError(
+                "Cannot call StatefulUDF without initialization arguments. Please either specify default arguments in your __init__ or provide "
+                "initialization arguments using `.with_init_args(...)`."
+            )
+
         bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
         expressions = list(bound_args.expressions().values())
         return Expression.stateful_udf(
