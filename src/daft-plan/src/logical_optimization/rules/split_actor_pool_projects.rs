@@ -7,9 +7,10 @@ use daft_dsl::{
         python::{PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
-    optimization::{get_required_columns, requires_computation},
+    optimization::requires_computation,
     Expr, ExprRef,
 };
+use itertools::Itertools;
 
 use crate::{
     logical_ops::{ActorPoolProject, Project},
@@ -99,7 +100,7 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                         );
                         self.monotonically_increasing_expr_identifier += 1;
 
-                        // Truncate the child if it requires computation, and push it onto the stack to indicate that it needs computation in a different stage
+                        // Truncate the child and push it onto the stack to indicate that it needs computation in a different stage
                         self.next_exprs
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
                         Expr::Column(intermediate_expr_name.as_str().into()).arced()
@@ -194,6 +195,26 @@ fn try_optimize_project(
         (remaining, next_stages)
     };
 
+    println!(
+        "Optimizing: {}",
+        projection
+            .projection
+            .iter()
+            .map(|e| e.as_ref().to_string())
+            .join(", ")
+    );
+    println!(
+        "Remaining: {}",
+        remaining.iter().map(|e| e.as_ref().to_string()).join(", ")
+    );
+    println!(
+        "Next Stages: {}",
+        next_stages
+            .iter()
+            .map(|e| e.as_ref().to_string())
+            .join(", ")
+    );
+
     // Start building the tree back up starting from the children
     let new_plan_child = if remaining
         .iter()
@@ -213,6 +234,7 @@ fn try_optimize_project(
         )?;
         optimized_child_plan.unwrap().clone()
     };
+    println!("New child:\n{}", new_plan_child.repr_ascii(false));
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ...`
     let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) =
@@ -222,47 +244,43 @@ fn try_optimize_project(
         .map(|e| e.name().to_string())
         .collect();
 
-    // Build the new stateless Project
+    // Build the new stateless Project: [...stateless_projections, ...all columns that came before it]
+    let stateless_projection = stateless_stages
+        .into_iter()
+        .chain(
+            new_plan_child
+                .schema()
+                .fields
+                .iter()
+                .filter_map(|(name, _)| {
+                    if stateless_stages_names.contains(name) {
+                        None
+                    } else {
+                        Some(Expr::Column(name.clone().into()).arced())
+                    }
+                }),
+        )
+        .collect();
     let new_plan = {
-        // Stateless projection consists of stateless expressions, but also pass-through of any columns required by subsequent stateful ActorPoolProjects
-        let stateful_stages_columns_required: HashSet<String> = stateful_stages
-            .iter()
-            .flat_map(get_required_columns)
-            .collect();
-        let stateless_projection = stateless_stages
-            .into_iter()
-            .chain(stateful_stages_columns_required.iter().filter_map(|name| {
-                if stateless_stages_names.contains(name.as_str()) {
-                    None
-                } else {
-                    Some(Expr::Column(name.as_str().into()).arced())
-                }
-            }))
-            .collect();
-
         LogicalPlan::Project(Project::try_new(
             new_plan_child.clone(),
             stateless_projection,
         )?)
         .arced()
     };
+    println!("With new project:\n{}", new_plan.repr_ascii(false));
 
-    // Build on the tree with the necessary stateful ActorPoolProject nodes
+    // Iteratively build ActorPoolProject nodes: [StatefulUDF, ...all columns that came before it]
     let new_plan = {
         let mut child = new_plan;
 
-        for idx in 0..stateful_stages.len() {
-            let stateful_expr = stateful_stages[idx].clone();
+        for stateful_expr in stateful_stages {
             let stateful_expr_name = stateful_expr.name().to_string();
-            let remaining_stateful_stages_columns_required: HashSet<String> = stateful_stages
-                .as_slice()[idx + 1..]
+            let stateful_projection = child
+                .schema()
+                .fields
                 .iter()
-                .flat_map(get_required_columns)
-                .collect();
-            let stateful_projection = remaining_stateful_stages_columns_required
-                .iter()
-                .chain(stateless_stages_names.iter())
-                .filter_map(|name| {
+                .filter_map(|(name, _)| {
                     if name == &stateful_expr_name {
                         None
                     } else {
@@ -280,8 +298,24 @@ fn try_optimize_project(
         }
         child
     };
+    println!(
+        "With new actor pool projects:\n{}",
+        new_plan.repr_ascii(false)
+    );
 
-    Ok(Transformed::Yes(new_plan))
+    // One final project to select just the columns we need
+    // This will help us do the necessary column pruning via projection pushdowns
+    let final_selection_project = LogicalPlan::Project(Project::try_new(
+        new_plan,
+        projection
+            .projection
+            .iter()
+            .map(|e| Expr::Column(e.name().into()).arced())
+            .collect(),
+    )?)
+    .arced();
+
+    Ok(Transformed::Yes(final_selection_project))
 }
 
 #[inline]
@@ -341,7 +375,7 @@ mod tests {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("foo".to_string()),
-                num_expressions: 1,
+                num_expressions: inputs.len(),
                 return_dtype: daft_core::DataType::Binary,
                 resource_request: Some(create_resource_request()),
             })),
@@ -485,7 +519,68 @@ mod tests {
         .arced();
 
         assert_optimized_plan_eq(project_plan, expected)?;
+        Ok(())
+    }
 
+    #[test]
+    fn test_multiple_with_column_serial_multiarg() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", daft_core::DataType::Utf8),
+            Field::new("b", daft_core::DataType::Utf8),
+        ]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let stacked_stateful_project_expr = create_stateful_udf(vec![
+            create_stateful_udf(vec![col("a")]),
+            create_stateful_udf(vec![col("b")]),
+        ]);
+
+        // Add a Projection with StatefulUDF and resource request
+        // Project([foo(foo(col("a")), foo(col("b"))).alias("c")])
+        let project_plan = scan_plan
+            .select(vec![stacked_stateful_project_expr.clone().alias("c")])?
+            .build();
+
+        //   Project([col("a"), col("b")])
+        //   --> ActorPoolProject([col("b"), foo(col("a")).alias("__SplitExprByStatefulUDF_0-0_stateful_child__")])
+        //   --> ActorPoolProject([col("__SplitExprByStatefulUDF_0-0_stateful_child__"), foo(col("b")).alias("__SplitExprByStatefulUDF_0-1_stateful_child__")])
+        //   --> ActorPoolProject([foo(col("__SplitExprByStatefulUDF_0-0_stateful_child__"), col("__SplitExprByStatefulUDF_0-1_stateful_child__")).alias("c")])
+        let intermediate_name_0 = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let intermediate_name_1 = "__SplitExprByStatefulUDF_0-1_stateful_child__";
+        let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("b"),
+                create_stateful_udf(vec![col("a")])
+                    .clone()
+                    .alias(intermediate_name_0),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col(intermediate_name_0),
+                create_stateful_udf(vec![col("b")])
+                    .clone()
+                    .alias(intermediate_name_1),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                create_stateful_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
+                    .clone()
+                    .alias("c"),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq(project_plan, expected)?;
         Ok(())
     }
 }
