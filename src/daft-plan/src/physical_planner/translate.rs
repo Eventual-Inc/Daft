@@ -98,22 +98,15 @@ pub(super) fn translate_single_logical_node(
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
-        LogicalPlan::Project(LogicalProject {
-            projection,
-            resource_request,
-            ..
-        }) => {
+        LogicalPlan::Project(LogicalProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Project(Project::try_new(
-                input_physical,
-                projection.clone(),
-                resource_request.clone(),
-            )?)
-            .arced())
+            Ok(
+                PhysicalPlan::Project(Project::try_new(input_physical, projection.clone())?)
+                    .arced(),
+            )
         }
         LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
             projection,
-            resource_request,
             num_actors,
             ..
         }) => {
@@ -121,7 +114,6 @@ pub(super) fn translate_single_logical_node(
             Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 input_physical,
                 projection.clone(),
-                resource_request.clone(),
                 *num_actors,
             )?)
             .arced())
@@ -341,11 +333,7 @@ pub(super) fn translate_single_logical_node(
                         groupby.clone(),
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(
-                        second_stage_agg.into(),
-                        final_exprs,
-                        Default::default(),
-                    )?)
+                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
                 }
             };
             Ok(result_plan.arced())
@@ -416,11 +404,7 @@ pub(super) fn translate_single_logical_node(
                         group_by_with_pivot,
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(
-                        second_stage_agg.into(),
-                        final_exprs,
-                        Default::default(),
-                    )?)
+                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
                 }
             };
 

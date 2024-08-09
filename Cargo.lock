@@ -1711,6 +1711,7 @@ dependencies = [
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
+ "common-resource-request",
  "common-treenode",
  "daft-core",
  "daft-sketch",

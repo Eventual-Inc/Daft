@@ -175,17 +175,35 @@ Resource Requests
 
 Sometimes, you may want to request for specific resources for your UDF. For example, some UDFs need one GPU to run as they will load a model onto the GPU.
 
-Custom resources can be requested when you call :meth:`df.with_column() <daft.DataFrame.with_column>`:
+To do so, you can create your UDF and assign it a resource request:
 
 .. code:: python
 
-    from daft import ResourceRequest
+    @daft.udf(return_dtype=daft.DataType.int64(), num_gpus=1)
+    class RunModelWithOneGPU:
 
-    # Runs the UDF `func` with the specified resource requests
+        def __init__(self):
+            # Perform expensive initializations
+            self._model = create_model()
+
+        def __call__(self, features_col):
+            return self._model(features_col)
+
+.. code:: python
+
     df = df.with_column(
         "image_classifications",
-        RunModel(df["images"]),
-        resource_request=ResourceRequest(num_gpus=1, num_cpus=8),
+        RunModelWithOneGPU(df["images"]),
     )
 
 In the above example, if Daft ran on a Ray cluster consisting of 8 GPUs and 64 CPUs, Daft would be able to run 8 replicas of your UDF in parallel, thus massively increasing the throughput of your UDF!
+
+UDFs can also be parametrized with new resource requests after being initialized.
+
+.. code:: python
+
+    RunModelWithTwoGPUs = RunModelWithOneGPU.override_options(num_gpus=2)
+    df = df.with_column(
+        "image_classifications",
+        RunModelWithTwoGPUs(df["images"]),
+    )

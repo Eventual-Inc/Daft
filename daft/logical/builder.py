@@ -123,7 +123,9 @@ class LogicalPlanBuilder:
         builder = self._builder.select(to_select_pyexprs)
         return LogicalPlanBuilder(builder)
 
-    def with_columns(self, columns: list[Expression], custom_resource_request: ResourceRequest) -> LogicalPlanBuilder:
+    def with_columns(
+        self, columns: list[Expression], custom_resource_request: ResourceRequest | None
+    ) -> LogicalPlanBuilder:
         column_pyexprs = [expr._expr for expr in columns]
         builder = self._builder.with_columns(column_pyexprs, custom_resource_request)
         return LogicalPlanBuilder(builder)

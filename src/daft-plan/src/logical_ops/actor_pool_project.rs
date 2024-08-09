@@ -5,7 +5,7 @@ use common_treenode::TreeNode;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
     functions::{
-        python::{PythonUDF, StatefulPythonUDF},
+        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     resolve_exprs, Expr, ExprRef,
@@ -23,7 +23,6 @@ pub struct ActorPoolProject {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub projected_schema: SchemaRef,
     pub num_actors: usize,
 }
@@ -32,7 +31,6 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         num_actors: usize,
     ) -> Result<Self> {
         let (projection, fields) =
@@ -41,10 +39,13 @@ impl ActorPoolProject {
         Ok(ActorPoolProject {
             input,
             projection,
-            resource_request,
             projected_schema,
             num_actors,
         })
+    }
+
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -80,11 +81,11 @@ impl ActorPoolProject {
                 .join(", ")
         ));
         res.push(format!("Num actors = {}", self.num_actors,));
-        let resource_request = self.resource_request.multiline_display();
-        if !resource_request.is_empty() {
+        if let Some(resource_request) = self.resource_request() {
+            let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
-                resource_request.join(", ")
+                multiline_display.join(", ")
             ));
         }
         res

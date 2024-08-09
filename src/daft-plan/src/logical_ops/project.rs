@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_resource_request::ResourceRequest;
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{optimization, resolve_exprs, AggExpr, ApproxPercentileParams, Expr, ExprRef};
@@ -17,29 +16,23 @@ pub struct Project {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub projected_schema: SchemaRef,
 }
 
 impl Project {
-    pub(crate) fn try_new(
-        input: Arc<LogicalPlan>,
-        projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
-    ) -> Result<Self> {
+    pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
             resolve_exprs(projection, &input.schema()).context(CreationSnafu)?;
 
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
-            Self::try_factor_subexpressions(input, projection, &resource_request)?;
+            Self::try_factor_subexpressions(input, projection)?;
 
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
 
         Ok(Self {
             input: factored_input,
             projection: factored_projection,
-            resource_request,
             projected_schema,
         })
     }
@@ -54,7 +47,6 @@ impl Project {
     fn try_factor_subexpressions(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
-        resource_request: &ResourceRequest,
     ) -> Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
@@ -78,8 +70,7 @@ impl Project {
                 })
                 .collect::<Vec<_>>();
 
-            let plan: LogicalPlan =
-                Self::try_new(input, child_projection, resource_request.clone())?.into();
+            let plan: LogicalPlan = Self::try_new(input, child_projection)?.into();
             plan.into()
         };
         Ok((input, projection))
@@ -495,7 +486,7 @@ mod tests {
 
         let a8 = binary_op(Operator::Plus, a4.clone(), a4.clone());
         let expressions = vec![a8.alias("x")];
-        let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
+        let result_projection = Project::try_new(source.clone(), expressions)?;
 
         let a4_col = col(a4_colname.clone());
         let expected_result_projection =
@@ -542,7 +533,7 @@ mod tests {
             a2.clone().alias("x"),
             binary_op(Operator::Plus, a2.clone(), col("a")).alias("y"),
         ];
-        let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
+        let result_projection = Project::try_new(source.clone(), expressions)?;
 
         let a2_col = col(a2_colname.clone());
         let expected_result_projection = vec![
@@ -580,7 +571,7 @@ mod tests {
             col("a").alias("w"),
             col("a").alias("z"),
         ];
-        let result_projection = Project::try_new(source, expressions.clone(), Default::default())?;
+        let result_projection = Project::try_new(source, expressions.clone())?;
 
         assert_eq!(result_projection.projection, expressions);
 
