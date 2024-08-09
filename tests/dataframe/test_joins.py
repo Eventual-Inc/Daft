@@ -832,3 +832,28 @@ def test_join_semi_anti_different_names(join_strategy, join_type, expected, make
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "id_left") == sort_arrow_table(
         pa.Table.from_pydict(expected), "id_left"
     )
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
+def test_join_true_join_keys(join_type, make_df):
+    from daft import col
+
+    daft_df = make_df(
+        {
+            "id": [1, 2, 3],
+            "values": ["a", "b", "c"],
+        }
+    )
+    daft_df2 = make_df(
+        {
+            "id": [2.0, 2.5, 3.0, 4.0],
+            "values": ["a2", "b2", "c2", "d2"],
+        }
+    )
+
+    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").str.left(1)], how=join_type)
+
+    assert result.schema().column_names() == ["id", "values", "right.values"]
+    assert result.schema()["id"].dtype == daft_df.schema()["id"].dtype
+    assert result.schema()["values"].dtype == daft_df.schema()["values"].dtype
+    assert result.schema()["right.values"].dtype == daft_df2.schema()["values"].dtype

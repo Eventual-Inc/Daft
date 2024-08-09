@@ -7,6 +7,23 @@ use indexmap::IndexSet;
 
 use crate::{Expr, ExprRef};
 
+/// Get the columns between the two sides of the join that should be merged in the order of the join keys.
+/// Join keys should only be merged if they are column expressions.
+pub fn get_common_join_keys<'a>(
+    left_on: &'a [ExprRef],
+    right_on: &'a [ExprRef],
+) -> impl Iterator<Item = String> + 'a {
+    left_on.iter().zip(right_on.iter()).filter_map(|(l, r)| {
+        if let (Expr::Column(l_name), Expr::Column(r_name)) = (&**l, &**r)
+            && l_name == r_name
+        {
+            Some(l_name.clone().to_string())
+        } else {
+            None
+        }
+    })
+}
+
 /// Infer the schema of a join operation
 ///
 /// This function assumes that the only common field names between the left and right schemas are the join fields,
@@ -62,19 +79,32 @@ pub fn infer_join_schema(
     }
 }
 
-/// Get the columns between the two sides of the join that should be merged in the order of the join keys.
-/// Join keys should only be merged if they are column expressions.
-pub fn get_common_join_keys<'a>(
-    left_on: &'a [ExprRef],
-    right_on: &'a [ExprRef],
-) -> impl Iterator<Item = String> + 'a {
-    left_on.iter().zip(right_on.iter()).filter_map(|(l, r)| {
-        if let (Expr::Column(l_name), Expr::Column(r_name)) = (&**l, &**r)
-            && l_name == r_name
-        {
-            Some(l_name.clone().to_string())
-        } else {
-            None
-        }
-    })
+#[cfg(test)]
+mod tests {
+    use crate::col;
+
+    use super::*;
+
+    #[test]
+    fn test_get_common_join_keys() {
+        let left_on: &[ExprRef] = &[
+            col("a"),
+            col("b_left"),
+            col("c").alias("c_new"),
+            col("d").alias("d_new"),
+            col("e").add(col("f")),
+        ];
+
+        let right_on: &[ExprRef] = &[
+            col("a"),
+            col("b_right"),
+            col("c"),
+            col("d").alias("d_new"),
+            col("e"),
+        ];
+
+        let common_join_keys = get_common_join_keys(left_on, right_on).collect::<Vec<_>>();
+
+        assert_eq!(common_join_keys, vec!["a"]);
+    }
 }
