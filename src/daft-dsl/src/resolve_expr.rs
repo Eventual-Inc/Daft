@@ -15,7 +15,8 @@ use std::{
 };
 
 // Calculates all the possible struct get expressions in a schema.
-fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
+// For each sugared string, calculates all possible corresponding expressions, in order of priority.
+fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
     #[derive(PartialEq, Eq)]
     struct BfsState<'a> {
         name: String,
@@ -45,11 +46,13 @@ fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
         });
     }
 
-    let mut str_to_get_expr: HashMap<String, ExprRef> = HashMap::new();
+    let mut str_to_get_expr: HashMap<String, Vec<ExprRef>> = HashMap::new();
 
     while let Some(BfsState { name, expr, field }) = pq.pop() {
-        if !str_to_get_expr.contains_key(&name) {
-            str_to_get_expr.insert(name.clone(), expr.clone());
+        if let Some(expr_vec) = str_to_get_expr.get_mut(&name) {
+            expr_vec.push(expr.clone());
+        } else {
+            str_to_get_expr.insert(name.clone(), vec![expr.clone()]);
         }
 
         if let DataType::Struct(children) = &field.dtype {
@@ -73,7 +76,7 @@ fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, ExprRef> {
 /// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
 fn transform_struct_gets(
     expr: ExprRef,
-    struct_expr_map: &HashMap<String, ExprRef>,
+    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
 ) -> DaftResult<ExprRef> {
     expr.transform(|e| match e.as_ref() {
         Expr::Column(name) => struct_expr_map
@@ -81,9 +84,12 @@ fn transform_struct_gets(
             .ok_or(DaftError::ValueError(format!(
                 "Column not found in schema: {name}"
             )))
-            .map(|get_expr| match get_expr.as_ref() {
-                Expr::Column(_) => Transformed::no(e),
-                _ => Transformed::yes(get_expr.clone()),
+            .map(|expr_vec| {
+                let get_expr = expr_vec.first().unwrap();
+                match get_expr.as_ref() {
+                    Expr::Column(_) => Transformed::no(e),
+                    _ => Transformed::yes(get_expr.clone()),
+                }
             }),
         _ => Ok(Transformed::no(e)),
     })
@@ -92,7 +98,7 @@ fn transform_struct_gets(
 
 // Finds the names of all the wildcard expressions in an expression tree.
 // Needs the schema because column names with stars must not count as wildcards
-fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> Vec<Arc<str>> {
+fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, Vec<ExprRef>>) -> Vec<Arc<str>> {
     match expr.as_ref() {
         Expr::Column(name) => {
             if name.contains('*') {
@@ -120,7 +126,7 @@ fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> 
 fn get_wildcard_matches(
     pattern: &str,
     schema: &Schema,
-    struct_expr_map: &HashMap<String, ExprRef>,
+    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
 ) -> DaftResult<Vec<String>> {
     if pattern == "*" {
         // return all top-level columns
@@ -136,18 +142,23 @@ fn get_wildcard_matches(
     // remove last two characters
     let struct_name = &pattern[..pattern.len() - 2];
 
-    let Some(struct_expr) = struct_expr_map.get(struct_name) else {
+    let Some(struct_expr_vec) = struct_expr_map.get(struct_name) else {
         return Err(DaftError::ValueError(format!(
             "Error matching wildcard {pattern}: struct {struct_name} not found"
         )));
     };
 
-    // get innermost struct from expr
-    let field = struct_expr.to_field(schema)?;
-    let DataType::Struct(subfields) = field.dtype else {
+    // find any field that is a struct
+    let mut struct_iter =
+        struct_expr_vec
+            .iter()
+            .filter_map(|e| match e.to_field(schema).map(|f| f.dtype) {
+                Ok(DataType::Struct(subfields)) => Some(subfields),
+                _ => None,
+            });
+    let Some(subfields) = struct_iter.next() else {
         return Err(DaftError::ValueError(format!(
-            "Error matching wildcard {pattern}: {struct_name} has dtype {}, not struct",
-            field.dtype
+            "Error matching wildcard {pattern}: no column matching {struct_name} is a struct"
         )));
     };
 
@@ -169,7 +180,7 @@ fn replace_column_name(expr: ExprRef, old_name: &str, new_name: &str) -> DaftRes
 fn expand_wildcards(
     expr: ExprRef,
     schema: &Schema,
-    struct_expr_map: &HashMap<String, ExprRef>,
+    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
 ) -> DaftResult<Vec<ExprRef>> {
     let wildcards = find_wildcards(expr.clone(), struct_expr_map);
     match wildcards.as_slice() {

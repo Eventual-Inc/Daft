@@ -164,14 +164,18 @@ def test_wildcard_not_a_struct():
                 {"x": 3, "y": 4},
             ],
             "b": [5, 6],
+            "a.y": [7, 8],
         }
     )
 
-    with pytest.raises(DaftCoreException, match="b has dtype Int64, not struct"):
+    with pytest.raises(DaftCoreException, match="no column matching b is a struct"):
         df.select(col("b.*")).collect()
 
-    with pytest.raises(DaftCoreException, match="a.x has dtype Int64, not struct"):
+    with pytest.raises(DaftCoreException, match="no column matching a.x is a struct"):
         df.select(col("a.x.*")).collect()
+
+    with pytest.raises(DaftCoreException, match="no column matching a.y is a struct"):
+        df.select(col("a.y.*")).collect()
 
 
 # incredibly cursed
@@ -236,6 +240,32 @@ def test_wildcard_left_associative():
 
     res = df.select("a.b.*").to_pydict()
     assert res == {"e": [5, 6]}
+
+
+def test_wildcard_multiple_matches_one_struct():
+    df = daft.from_pydict(
+        {
+            "a.b": [1, 2],
+            "a": [
+                {"b": {"c": 3}},
+                {"b": {"c": 4}},
+            ],
+            "d.e": [
+                {"f": 5},
+                {"f": 6},
+            ],
+            "d": [
+                {"e": 7},
+                {"e": 8},
+            ],
+        }
+    )
+
+    res = df.select("a.b.*").to_pydict()
+    assert res == {"c": [3, 4]}
+
+    res = df.select("d.e.*").to_pydict()
+    assert res == {"f": [5, 6]}
 
 
 @pytest.mark.skip(reason="Sorting by wildcard columns is not supported")
