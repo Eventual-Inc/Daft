@@ -130,19 +130,29 @@ pub struct Optimizer {
 impl Optimizer {
     pub fn new(config: OptimizerConfig) -> Self {
         // Default rule batches.
-        let rule_batches: Vec<RuleBatch> = vec![RuleBatch::new(
-            vec![
-                Box::new(DropRepartition::new()),
-                Box::new(PushDownFilter::new()),
-                Box::new(PushDownProjection::new()),
-                Box::new(PushDownLimit::new()),
-            ],
-            // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
-            // at the current node, which would require another batch application in order to have a chance to push
-            // that Filter node through upstream nodes.
-            // TODO(Clark): Refine this fixed-point policy.
-            RuleExecutionStrategy::FixedPoint(Some(3)),
-        )];
+        let rule_batches: Vec<RuleBatch> = vec![
+            RuleBatch::new(
+                vec![
+                    Box::new(DropRepartition::new()),
+                    Box::new(PushDownFilter::new()),
+                    Box::new(PushDownProjection::new()),
+                ],
+                // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
+                // at the current node, which would require another batch application in order to have a chance to push
+                // that Filter node through upstream nodes.
+                // TODO(Clark): Refine this fixed-point policy.
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+            RuleBatch::new(
+                vec![
+                    // This needs to be separate from PushDownProjection because otherwise the limit and
+                    // projection just keep swapping places, preventing optimization
+                    // (see https://github.com/Eventual-Inc/Daft/issues/2616)
+                    Box::new(PushDownLimit::new()),
+                ],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+        ];
         Self::with_rule_batches(rule_batches, config)
     }
 
