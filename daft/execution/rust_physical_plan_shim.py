@@ -65,9 +65,14 @@ def empty_scan(
 
 
 def project(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT], projection: list[PyExpr], resource_request: ResourceRequest
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    projection: list[PyExpr],
+    resource_request: ResourceRequest | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    resource_request = (
+        ResourceRequest(num_cpus=1, num_gpus=None, memory_bytes=None) if resource_request is None else resource_request
+    )
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.Project(expr_projection),
@@ -79,10 +84,13 @@ def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     projection: list[PyExpr],
     partial_stateful_udfs: dict[str, PartialStatefulUDF],
-    resource_request: ResourceRequest,
+    resource_request: ResourceRequest | None,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    resource_request = (
+        ResourceRequest(num_cpus=1, num_gpus=None, memory_bytes=None) if resource_request is None else resource_request
+    )
     return physical_plan.actor_pool_project(
         child_plan=input,
         projection=expr_projection,
