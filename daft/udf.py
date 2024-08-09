@@ -269,7 +269,10 @@ class StatefulUDF(UDF):
         # Validate that initialization arguments are provided if the __init__ signature indicates that there are
         # parameters without defaults
         init_sig = inspect.signature(self.cls.__init__)  # type: ignore
-        if any(param.default is param.empty for param in init_sig.parameters.values()) and self.init_args is None:
+        if (
+            any(param.default is param.empty for param in init_sig.parameters.values() if param.name != "self")
+            and self.init_args is None
+        ):
             raise ValueError(
                 "Cannot call StatefulUDF without initialization arguments. Please either specify default arguments in your __init__ or provide "
                 "initialization arguments using `.with_init_args(...)`."
@@ -290,6 +293,13 @@ class StatefulUDF(UDF):
         """Replace initialization arguments for the UDF when calling __init__ at runtime
         on each instance of the UDF.
         """
+        init_sig = inspect.signature(self.cls.__init__)  # type: ignore
+        init_sig.bind(
+            # Placeholder for `self`
+            None,
+            *args,
+            **kwargs,
+        )
         return dataclasses.replace(self, init_args=(args, kwargs))
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:

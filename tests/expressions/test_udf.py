@@ -97,6 +97,19 @@ def test_class_udf_init_args_no_default():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
+def test_class_udf_init_args_bad_args():
+    @udf(return_dtype=DataType.string())
+    class RepeatN:
+        def __init__(self, initial_n):
+            self.n = initial_n
+
+        def __call__(self, data):
+            return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    with pytest.raises(TypeError, match="missing a required argument: 'initial_n'"):
+        RepeatN.with_init_args(wrong=5)
+
+
 def test_udf_kwargs():
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
