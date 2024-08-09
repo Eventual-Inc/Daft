@@ -1,47 +1,96 @@
-use std::{
-    fmt::{self, Write},
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
 pub trait TreeDisplay {
-    // Required method: Get a list of lines representing this node. No trailing newlines.
+    /// Display the current node in the tree.
+    /// If not implemented, it will default to the `get_name` method in `Compact` mode.
+    /// and `get_multiline_representation` in `Default` mode.
+    fn node_display(&self, t: crate::DisplayFormatType) -> String {
+        match t {
+            // If in `Compact` mode, only display the name of the node.
+            crate::DisplayFormatType::Compact => self.get_name(),
+            crate::DisplayFormatType::Default => self.get_multiline_representation().join(", "),
+        }
+    }
+
+    /// Required method: Get a list of lines representing this node. No trailing newlines.
+    /// The multiline representation should contain information about the node itself,
+    /// **but not its children.**
     fn get_multiline_representation(&self) -> Vec<String>;
 
     // Required method: Get the human-readable name of this node.
     fn get_name(&self) -> String;
 
     // Required method: Get the children of the self node.
-    fn get_children(&self) -> Vec<Arc<Self>>;
+    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>>;
+}
+
+impl TreeDisplay for Arc<dyn TreeDisplay> {
+    fn get_multiline_representation(&self) -> Vec<String> {
+        self.as_ref().get_multiline_representation()
+    }
+
+    fn get_name(&self) -> String {
+        self.as_ref().get_name()
+    }
+
+    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+        self.as_ref().get_children()
+    }
+}
+
+pub struct AsciiTreeBuilder {
+    pub simple: bool,
+}
+
+impl AsciiTreeBuilder {
+    pub fn new(simple: bool) -> Self {
+        Self { simple }
+    }
 
     // Print the whole tree represented by this node.
-    fn fmt_tree(&self, s: &mut String, simple: bool) -> fmt::Result {
-        self.fmt_tree_gitstyle(0, s, simple)
+    fn fmt_tree<'a, W: fmt::Write + 'a, T: TreeDisplay>(
+        &self,
+        node: &T,
+        s: &'a mut W,
+        simple: bool,
+    ) -> fmt::Result {
+        let t = if simple {
+            crate::DisplayFormatType::Compact
+        } else {
+            crate::DisplayFormatType::Default
+        };
+        self.fmt_tree_gitstyle(node, 0, s, t)
     }
 
     // Print the tree recursively, and illustrate the tree structure with a single line per node + indentation.
-    fn fmt_tree_indent_style(&self, indent: usize, s: &mut String) -> fmt::Result {
+    fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
+        &self,
+        node: &T,
+        indent: usize,
+        s: &'a mut W,
+    ) -> fmt::Result {
         // Print the current node.
         if indent > 0 {
             writeln!(s)?;
             write!(s, "{:indent$}", "", indent = 2 * indent)?;
         }
-        let node_str = self.get_multiline_representation().join(", ");
+        let node_str = node.get_multiline_representation().join(", ");
         write!(s, "{node_str}")?;
 
         // Recursively handle children.
-        let children = self.get_children();
+        let children = node.get_children();
         match &children[..] {
             // No children - stop printing.
             [] => Ok(()),
             // One child.
             [child] => {
                 // Child tree.
-                child.fmt_tree_indent_style(indent + 1, s)
+                self.fmt_tree_indent_style(child, indent + 1, s)
             }
             // Two children.
             [left, right] => {
-                left.fmt_tree_indent_style(indent + 1, s)?;
-                right.fmt_tree_indent_style(indent + 1, s)
+                self.fmt_tree_indent_style(left, indent + 1, s)?;
+                self.fmt_tree_indent_style(right, indent + 1, s)
             }
             _ => unreachable!("Max two child nodes expected, got {}", children.len()),
         }
@@ -49,14 +98,20 @@ pub trait TreeDisplay {
 
     // Print the tree recursively, and illustrate the tree structure in the same style as `git log --graph`.
     // `depth` is the number of forks in this node's ancestors.
-    fn fmt_tree_gitstyle(&self, depth: usize, s: &mut String, simple: bool) -> fmt::Result {
+    fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
+        &self,
+        node: &T,
+        depth: usize,
+        s: &'a mut W,
+        t: crate::DisplayFormatType,
+    ) -> fmt::Result {
         // Print the current node.
         // e.g. | | * <node contents line 1>
         //      | | | <node contents line 2>
-        let lines = if simple {
-            vec![self.get_name()]
-        } else {
-            self.get_multiline_representation()
+
+        let lines = match t {
+            crate::DisplayFormatType::Compact => vec![node.get_name()],
+            crate::DisplayFormatType::Default => node.get_multiline_representation(),
         };
         use terminal_size::{terminal_size, Width};
         let size = terminal_size();
@@ -87,7 +142,7 @@ pub trait TreeDisplay {
         }
 
         // Recursively handle children.
-        let children = self.get_children();
+        let children = node.get_children();
         match &children[..] {
             // No children - stop printing.
             [] => Ok(()),
@@ -98,7 +153,7 @@ pub trait TreeDisplay {
                 writeln!(s, "|")?;
 
                 // Child tree.
-                child.fmt_tree_gitstyle(depth, s, simple)
+                self.fmt_tree_gitstyle(child, depth, s, t)
             }
             // Two children - print legs, print right child indented, print left child.
             [left, right] => {
@@ -107,20 +162,20 @@ pub trait TreeDisplay {
                 writeln!(s, "|\\")?;
 
                 // Right child tree, indented.
-                right.fmt_tree_gitstyle(depth + 1, s, simple)?;
+                self.fmt_tree_gitstyle(right, depth + 1, s, t)?;
 
                 // Legs, e.g. | | |
                 self.fmt_depth(depth, s)?;
                 writeln!(s, "|")?;
 
                 // Left child tree.
-                left.fmt_tree_gitstyle(depth, s, simple)
+                self.fmt_tree_gitstyle(left, depth, s, t)
             }
             _ => unreachable!("Max two child nodes expected, got {}", children.len()),
         }
     }
 
-    fn fmt_depth(&self, depth: usize, s: &mut String) -> fmt::Result {
+    fn fmt_depth<'a, W: fmt::Write + 'a>(&self, depth: usize, s: &'a mut W) -> fmt::Result {
         // Print leading pipes for forks in ancestors that will be printed later.
         // e.g. "| | "
         for _ in 0..depth {
@@ -129,3 +184,27 @@ pub trait TreeDisplay {
         Ok(())
     }
 }
+
+pub trait AsciiTreeDisplay: TreeDisplay {
+    // // Print the whole tree represented by this node.
+    fn fmt_tree<'a, W: fmt::Write + 'a>(&self, w: &'a mut W, simple: bool) -> fmt::Result
+    where
+        Self: Sized,
+    {
+        let builder = AsciiTreeBuilder::new(simple);
+        builder.fmt_tree(self, w, simple)
+    }
+    fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
+        &self,
+        indent: usize,
+        s: &'a mut W,
+    ) -> fmt::Result
+    where
+        Self: Sized,
+    {
+        let builder = AsciiTreeBuilder::new(false);
+        builder.fmt_tree_indent_style(self, indent, s)
+    }
+}
+
+impl<T: TreeDisplay> AsciiTreeDisplay for T {}

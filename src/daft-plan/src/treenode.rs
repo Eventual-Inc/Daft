@@ -7,14 +7,13 @@ use common_treenode::DynTreeNode;
 impl DynTreeNode for LogicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {
         self.children()
+            .into_iter()
+            .map(|x| x.clone().arced())
+            .collect()
     }
 
-    fn with_new_arc_children(
-        &self,
-        arc_self: Arc<Self>,
-        children: Vec<Arc<Self>>,
-    ) -> DaftResult<Arc<Self>> {
-        let old_children = arc_self.children();
+    fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
+        let old_children = self.arc_children();
         if children.len() != old_children.len() {
             panic!("LogicalPlan::with_new_arc_children: Wrong number of children")
         } else if children.is_empty()
@@ -23,9 +22,9 @@ impl DynTreeNode for LogicalPlan {
                 .zip(old_children.iter())
                 .any(|(c1, c2)| !Arc::ptr_eq(c1, c2))
         {
-            Ok(arc_self.with_new_children(&children).arced())
+            Ok(self.with_new_children(&children).arced())
         } else {
-            Ok(arc_self)
+            Ok(self.clone())
         }
     }
 }
@@ -33,14 +32,13 @@ impl DynTreeNode for LogicalPlan {
 impl DynTreeNode for PhysicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {
         self.children()
+            .into_iter()
+            .map(|x| x.clone().arced())
+            .collect()
     }
 
-    fn with_new_arc_children(
-        &self,
-        arc_self: Arc<Self>,
-        children: Vec<Arc<Self>>,
-    ) -> DaftResult<Arc<Self>> {
-        let old_children = arc_self.children();
+    fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
+        let old_children = self.arc_children();
         if children.len() != old_children.len() {
             panic!("PhysicalPlan::with_new_arc_children: Wrong number of children")
         } else if children.is_empty()
@@ -49,9 +47,9 @@ impl DynTreeNode for PhysicalPlan {
                 .zip(old_children.iter())
                 .any(|(c1, c2)| !Arc::ptr_eq(c1, c2))
         {
-            Ok(arc_self.with_new_children(&children).arced())
+            Ok(self.with_new_children(&children).arced())
         } else {
-            Ok(arc_self)
+            Ok(self.clone())
         }
     }
 }

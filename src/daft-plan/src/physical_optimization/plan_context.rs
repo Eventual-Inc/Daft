@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_treenode::ConcreteTreeNode;
 
 use crate::PhysicalPlanRef;
-
+use common_treenode::DynTreeNode;
 // This struct allows providing context or state to go along
 // with visiting TreeNodes.
 pub(super) struct PlanContext<T: Sized> {
@@ -31,7 +31,11 @@ impl<T> PlanContext<T> {
 
 impl<T: Default> PlanContext<T> {
     pub fn new_default(plan: PhysicalPlanRef) -> Self {
-        let children = plan.children().into_iter().map(Self::new_default).collect();
+        let children = plan
+            .arc_children()
+            .into_iter()
+            .map(Self::new_default)
+            .collect();
         Self::new(plan, Default::default(), children)
     }
 }

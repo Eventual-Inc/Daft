@@ -1,12 +1,9 @@
-use std::{marker::PhantomData, sync::Arc};
-
-use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use indexmap::IndexMap;
+use std::fmt;
 
-use crate::tree::TreeDisplay;
+use crate::{tree::TreeDisplay, DisplayFormatType};
 
-pub trait MermaidDisplay {
+pub trait MermaidDisplay: TreeDisplay {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;
 }
 
@@ -33,153 +30,125 @@ pub struct SubgraphOptions {
     pub subgraph_id: String,
 }
 
-struct MermaidDisplayVisitor<T> {
-    phantom: PhantomData<T>,
+impl<T: TreeDisplay> MermaidDisplay for T {
+    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
+        let mut s = String::new();
+        let display_type = match options.simple {
+            true => DisplayFormatType::Compact,
+            false => DisplayFormatType::Default,
+        };
+
+        let mut visitor =
+            MermaidDisplayVisitor::new(&mut s, display_type, options.subgraph_options);
+
+        let _ = visitor.fmt(self);
+        s
+    }
+}
+
+pub struct MermaidDisplayVisitor<'a, W> {
+    output: &'a mut W,
+    t: DisplayFormatType,
     /// each node should only appear once in the tree.
     /// the key is the node's `multiline_display` string, and the value is the node's id.
     /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
     nodes: IndexMap<String, String>,
     /// node_count is used to generate unique ids for each node.
     node_count: usize,
-    output: Vec<String>,
-    options: MermaidDisplayOptions,
+    subgraph_options: Option<SubgraphOptions>,
 }
 
-impl<T> MermaidDisplayVisitor<T> {
-    pub fn new(options: MermaidDisplayOptions) -> MermaidDisplayVisitor<T> {
-        let mut output = Vec::new();
-        // if it's not a subgraph, we render the entire thing: `flowchart TD`
-        // otherwise we just build out the subgraph componenend `subgraph <subgraph_id>["<name>"]`
-        match &options.subgraph_options {
-            Some(SubgraphOptions { name, subgraph_id }) => {
-                output.push(format!(r#"subgraph {subgraph_id}["{name}"]"#));
-            }
-            None => {
-                output.push("flowchart TD".to_string());
-            }
-        }
-
-        MermaidDisplayVisitor {
-            phantom: PhantomData,
+impl<'a, W> MermaidDisplayVisitor<'a, W> {
+    pub fn new(
+        w: &'a mut W,
+        t: DisplayFormatType,
+        subgraph_options: Option<SubgraphOptions>,
+    ) -> Self {
+        Self {
+            output: w,
+            t,
             nodes: IndexMap::new(),
             node_count: 0,
-            output,
-            options,
+            subgraph_options,
         }
-    }
-
-    /// Build the mermaid chart.
-    /// Example:
-    /// ```mermaid
-    /// flowchart TD
-    /// Limit0["Limit: 10"]
-    /// Filter1["Filter: col(first_name) == lit('hello')"]
-    /// Source2["Source: ..."]
-    /// Limit0 --> Filter1
-    /// Filter1 --> Source2
-    /// ```
-    fn build(mut self) -> String {
-        if self.options.subgraph_options.is_some() {
-            self.output.push("end".to_string());
-        }
-        self.output.join("\n")
     }
 }
 
-impl<T> MermaidDisplayVisitor<T>
+impl<'a, W> MermaidDisplayVisitor<'a, W>
 where
-    T: TreeDisplay,
+    W: fmt::Write,
 {
-    fn add_node(&mut self, node: &T) {
+    fn add_node<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result {
         let name = node.get_name();
-        let display = self.display_for_node(node);
+        let display = self.display_for_node(node)?;
         let node_id = self.node_count;
         self.node_count += 1;
 
-        let id = match &self.options.subgraph_options {
+        let id = match &self.subgraph_options {
             Some(SubgraphOptions { subgraph_id, .. }) => format!("{subgraph_id}{name}{node_id}"),
             None => format!("{name}{node_id}"),
         };
-
-        self.nodes.insert(display.clone(), id.clone());
-
-        if self.options.simple {
-            self.output.push(format!(r#"{}["{}"]"#, id, name));
-        } else {
-            self.output.push(format!(r#"{}["{}"]"#, id, display));
+        if display.is_empty() {
+            return Err(fmt::Error);
         }
+        writeln!(self.output, r#"{}["{}"]"#, id, display)?;
+
+        self.nodes.insert(display, id);
+        Ok(())
     }
 
-    fn display_for_node(&self, node: &T) -> String {
+    fn display_for_node<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
         // Ideally, a node should be able to uniquely identify itself.
-        // For now, we'll just use the disaplay string.
-
-        let lines = node.get_multiline_representation();
-        let mut display: Vec<String> = Vec::with_capacity(lines.len());
+        // For now, we'll just use the display string.
+        let line = node.node_display(self.t);
         let max_chars = 80;
 
-        for line in lines {
-            let sublines = textwrap::wrap(&line, max_chars);
-            let sublines = sublines.iter().map(|s| s.to_string());
+        let sublines = textwrap::wrap(&line, max_chars);
 
-            display.extend(sublines);
-        }
-
-        display.join("\n").replace('\"', "'")
+        Ok(sublines.join("\n").replace('\"', "'"))
     }
 
     // Get the id of a node that has already been added.
-    fn get_node_id(&self, node: &T) -> String {
-        let display = self.display_for_node(node);
-        // SAFETY: Since this is only called after all nodes have been added, we can safely unwrap.
-        self.nodes.get(&display).cloned().unwrap()
+    fn get_node_id<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
+        let display = self.display_for_node(node)?;
+        // SAFETY: Since this is only called after the parent node have been added, we can safely unwrap.
+        Ok(self.nodes.get(&display).cloned().unwrap())
     }
 
-    fn add_edge(&mut self, parent: String, child: String) {
-        self.output.push(format!(r#"{child} --> {parent}"#));
-    }
-}
-
-impl<T> TreeNodeVisitor for MermaidDisplayVisitor<T>
-where
-    T: TreeDisplay,
-    Arc<T>: TreeNode,
-{
-    type Node = Arc<T>;
-
-    fn f_down(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
-        // go from top to bottom, and add all nodes first.
-        // order doesn't matter here, because mermaid uses the edges to determine the order.
-        self.add_node(node);
-        Ok(TreeNodeRecursion::Continue)
+    fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
+        writeln!(self.output, r#"{child} --> {parent}"#)
     }
 
-    fn f_up(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
-        // now that all nodes are added, we can add edges between them.
-        // We want to do this from bottom to top so that the ordering of the mermaid chart is correct.
-        let node_id = self.get_node_id(node);
-
+    fn fmt_node<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result
+    where
+        D: Sized,
+    {
+        self.add_node(node)?;
         let children = node.get_children();
         if children.is_empty() {
-            return Ok(TreeNodeRecursion::Continue);
+            return Ok(());
         }
+
         for child in children {
-            let child_id = self.get_node_id(&child);
-            self.add_edge(node_id.clone(), child_id);
+            self.fmt_node(&child)?;
+            self.add_edge(self.get_node_id(node)?, self.get_node_id(&child)?)?;
         }
 
-        Ok(TreeNodeRecursion::Continue)
+        Ok(())
     }
-}
 
-impl<T> MermaidDisplay for Arc<T>
-where
-    T: TreeDisplay,
-    Arc<T>: TreeNode,
-{
-    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
-        let mut visitor = MermaidDisplayVisitor::new(options);
-        let _ = self.visit(&mut visitor);
-        visitor.build()
+    pub fn fmt<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result {
+        match &self.subgraph_options {
+            Some(SubgraphOptions { name, subgraph_id }) => {
+                writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+                self.fmt_node(node)?;
+                writeln!(self.output, "end")?;
+            }
+            None => {
+                writeln!(self.output, "flowchart TD")?;
+                self.fmt_node(node)?;
+            }
+        }
+        Ok(())
     }
 }

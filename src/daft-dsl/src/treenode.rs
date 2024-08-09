@@ -29,10 +29,9 @@ impl DynTreeNode for Expr {
     }
 
     fn with_new_arc_children(
-        &self,
-        arc_self: Arc<Self>,
+        self: &Arc<Self>,
         new_children: Vec<Arc<Self>>,
     ) -> DaftResult<Arc<Self>> {
-        with_new_children_if_necessary(arc_self, new_children)
+        with_new_children_if_necessary(self.clone(), new_children)
     }
 }

@@ -3,8 +3,10 @@ use mermaid::MermaidDisplayOptions;
 pub mod mermaid;
 pub mod tree;
 
-pub trait Displayable {
-    fn multiline_display(&self) -> Vec<String>;
+#[derive(Debug, Clone, Copy)]
+pub enum DisplayFormatType {
+    Default,
+    Compact,
 }
 
 #[derive(Debug, Clone)]

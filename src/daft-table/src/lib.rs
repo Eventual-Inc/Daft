@@ -769,7 +769,7 @@ mod test {
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
         let b = Float64Array::from(("b", vec![1., 2., 3.])).into_series();
-        let schema = Schema::new(vec![
+        let _schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
         ])?;

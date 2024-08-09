@@ -9,6 +9,7 @@ use crate::{
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
+use common_treenode::DynTreeNode;
 
 /// Optimization rules for pushing Limits further into the logical plan.
 #[derive(Default, Debug)]
@@ -38,9 +39,8 @@ impl OptimizerRule for PushDownLimit {
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
                     LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
-                        let new_limit = plan
-                            .with_new_children(&[input.children()[0].clone()])
-                            .into();
+                        let new_limit =
+                            plan.with_new_arc_children(vec![input.arc_children()[0].clone()])?;
                         Ok(Transformed::Yes(
                             input.with_new_children(&[new_limit]).into(),
                         ))

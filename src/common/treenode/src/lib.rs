@@ -840,11 +840,7 @@ pub trait DynTreeNode {
     fn arc_children(&self) -> Vec<Arc<Self>>;
 
     /// Constructs a new node with the specified children.
-    fn with_new_arc_children(
-        &self,
-        arc_self: Arc<Self>,
-        new_children: Vec<Arc<Self>>,
-    ) -> Result<Arc<Self>>;
+    fn with_new_arc_children(self: &Arc<Self>, new_children: Vec<Arc<Self>>) -> Result<Arc<Self>>;
 }
 
 /// Blanket implementation for any `Arc<T>` where `T` implements [`DynTreeNode`]
@@ -866,9 +862,7 @@ impl<T: DynTreeNode + ?Sized> TreeNode for Arc<T> {
             // Propagate up `new_children.transformed` and `new_children.tnr`
             // along with the node containing transformed children.
             if new_children.transformed {
-                let arc_self = Arc::clone(&self);
-                new_children
-                    .map_data(|new_children| self.with_new_arc_children(arc_self, new_children))
+                new_children.map_data(|new_children| self.with_new_arc_children(new_children))
             } else {
                 Ok(Transformed::new(self, false, new_children.tnr))
             }

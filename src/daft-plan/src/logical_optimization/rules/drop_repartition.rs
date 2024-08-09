@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use crate::LogicalPlan;
+use common_treenode::DynTreeNode;
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
@@ -35,7 +36,7 @@ impl OptimizerRule for DropRepartition {
                 // Drop upstream Repartition for back-to-back Repartitions.
                 //
                 // Repartition1-Repartition2 -> Repartition1
-                plan.with_new_children(&[child_plan.children()[0].clone()])
+                plan.with_new_children(&[child_plan.arc_children()[0].clone()])
                     .into()
             }
             _ => return Ok(Transformed::No(plan)),
