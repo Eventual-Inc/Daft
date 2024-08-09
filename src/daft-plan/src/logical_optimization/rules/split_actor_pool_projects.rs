@@ -24,8 +24,8 @@ pub struct SplitActorPoolProjects {}
 /// Implement SplitActorPoolProjects as an OptimizerRule which will:
 ///
 /// 1. Go top-down from the root of the LogicalPlan
-/// 2. Whenever it sees a Project, it will iteratively split it into the necessary Project/ActorPoolProject sequences,
-///     depending on the underlying Expressions' layouts of StatefulPythonUDFs.
+/// 2. Whenever it sees a Project with StatefulUDF(s), it will iteratively split it into a chain of sequences like so:
+///     `(Project -> ActorPoolProject -> ActorPoolProject -> ...) -> (Project -> ActorPoolProject -> ActorPoolProject -> ...) -> ...`
 ///
 /// The general idea behind the splitting is that this is a greedy algorithm which will:
 /// * Skim off the top of every expression in the projection to generate "stages" for every expression
@@ -47,7 +47,7 @@ impl OptimizerRule for SplitActorPoolProjects {
 
         match plan.as_ref() {
             LogicalPlan::Project(projection) => {
-                try_optimize_project(projection, plan.clone(), num_actors)
+                try_optimize_project(projection, plan.clone(), num_actors, 0)
             }
             // TODO: Figure out how to split other nodes as well such as Filter, Agg etc
             _ => Ok(Transformed::No(plan)),
@@ -59,13 +59,17 @@ struct SplitExprByStatefulUDF {
     // Initialized to True, but once we encounter non-aliases this will be set to false
     is_parsing_stateful_udf: bool,
     next_exprs: Vec<ExprRef>,
+    stage_id: usize,
+    monotonically_increasing_expr_identifier: usize,
 }
 
 impl SplitExprByStatefulUDF {
-    fn new() -> Self {
+    fn new(stage_id: usize) -> Self {
         Self {
             is_parsing_stateful_udf: true,
             next_exprs: Vec::new(),
+            stage_id,
+            monotonically_increasing_expr_identifier: 0,
         }
     }
 }
@@ -88,9 +92,17 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
 
                 let new_inputs = inputs.iter().map(|e| {
                     if requires_computation(e.as_ref()) {
+                        // Give the new child a deterministic name
+                        let intermediate_expr_name = format!(
+                            "__SplitExprByStatefulUDF_{}-{}_stateful_child__",
+                            self.stage_id, self.monotonically_increasing_expr_identifier
+                        );
+                        self.monotonically_increasing_expr_identifier += 1;
+
                         // Truncate the child if it requires computation, and push it onto the stack to indicate that it needs computation in a different stage
-                        self.next_exprs.push(e.clone());
-                        Expr::Column(e.name().into()).arced()
+                        self.next_exprs
+                            .push(e.clone().alias(intermediate_expr_name.as_str()));
+                        Expr::Column(intermediate_expr_name.as_str().into()).arced()
                     } else {
                         e.clone()
                     }
@@ -102,6 +114,10 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                     true,
                     common_treenode::TreeNodeRecursion::Jump,
                 ))
+            }
+            Expr::Column(_) => {
+                self.next_exprs.push(node.clone());
+                Ok(common_treenode::Transformed::no(node))
             }
             expr => {
                 // Indicate that we are now parsing a stateless expression tree
@@ -134,8 +150,14 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                             ..
                         }
                     ) {
-                        self.next_exprs.push(e.clone());
-                        Expr::Column(e.name().into()).arced()
+                        let intermediate_expr_name = format!(
+                            "__SplitExprByStatefulUDF_{}-{}_stateful__",
+                            self.stage_id, self.monotonically_increasing_expr_identifier
+                        );
+                        self.monotonically_increasing_expr_identifier += 1;
+                        self.next_exprs
+                            .push(e.clone().alias(intermediate_expr_name.as_str()));
+                        Expr::Column(intermediate_expr_name.as_str().into()).arced()
                     } else {
                         e.clone()
                     }
@@ -152,6 +174,7 @@ fn try_optimize_project(
     projection: &Project,
     plan: Arc<LogicalPlan>,
     num_actors: usize,
+    recursive_count: usize,
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
     // Simple common case: no stateful UDFs at all and we have no transformations
     let has_stateful_udfs = projection.projection.iter().any(has_stateful_udf);
@@ -163,7 +186,7 @@ fn try_optimize_project(
         let mut remaining = Vec::new();
         let mut next_stages = Vec::new();
         for expr in projection.projection.iter() {
-            let mut rewriter = SplitExprByStatefulUDF::new();
+            let mut rewriter = SplitExprByStatefulUDF::new(recursive_count);
             let root = expr.clone().rewrite(&mut rewriter)?.data;
             next_stages.push(root);
             remaining.extend(rewriter.next_exprs);
@@ -172,19 +195,26 @@ fn try_optimize_project(
     };
 
     // Start building the tree back up starting from the children
-    let new_plan_child = if remaining.is_empty() {
+    let new_plan_child = if remaining
+        .iter()
+        .all(|e| matches!(e.as_ref(), Expr::Column(_)))
+    {
         // Nothing remaining, we're done splitting and should wire the new node up with the child of the Project
         plan.children()[0].clone()
     } else {
         // Recursively run the rule on the new child Project
         let new_project = Project::try_new(plan.children()[0].clone(), remaining)?;
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
-        let optimized_child_plan =
-            try_optimize_project(&new_project, new_child_project.clone(), num_actors)?;
+        let optimized_child_plan = try_optimize_project(
+            &new_project,
+            new_child_project.clone(),
+            num_actors,
+            recursive_count + 1,
+        )?;
         optimized_child_plan.unwrap().clone()
     };
 
-    // Start building a chain of `child -> Optional<Project> -> ActorPoolProject -> ActorPoolProject -> ...`
+    // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ...`
     let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) =
         next_stages.into_iter().partition(has_stateful_udf);
     let stateless_stages_names: HashSet<String> = stateless_stages
@@ -192,10 +222,8 @@ fn try_optimize_project(
         .map(|e| e.name().to_string())
         .collect();
 
-    // Conditionally build on the tree next with a stateless Project
-    let new_plan = if stateless_stages.is_empty() {
-        new_plan_child.clone()
-    } else {
+    // Build the new stateless Project
+    let new_plan = {
         // Stateless projection consists of stateless expressions, but also pass-through of any columns required by subsequent stateful ActorPoolProjects
         let stateful_stages_columns_required: HashSet<String> = stateful_stages
             .iter()
@@ -422,10 +450,12 @@ mod tests {
             .with_columns(vec![stacked_stateful_project_expr.clone().alias("b")], None)?
             .build();
 
-        //   ActorPoolProject([col("a"), foo(col("a")).alias("SOME_INTERMEDIATE_NAME")])
-        //   --> ActorPoolProject([col("a"), foo(col("SOME_INTERMEDIATE_NAME")).alias("b")])
-        let intermediate_name = "TODO_fix_this_intermediate_name";
-        let expected = scan_plan.build();
+        //   Project([col("a")])
+        //   --> ActorPoolProject([col("a"), foo(col("a")).alias("__SplitExprByStatefulUDF_0-0_stateful_child__")])
+        //   --> Project([col("a"), col("__SplitExprByStatefulUDF_0-0_stateful_child__")])
+        //   --> ActorPoolProject([col("a"), foo(col("__SplitExprByStatefulUDF_0-0_stateful_child__")).alias("b")])
+        let intermediate_name = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
@@ -435,6 +465,11 @@ mod tests {
                     .alias(intermediate_name),
             ],
             NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![col("a"), col(intermediate_name)],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
