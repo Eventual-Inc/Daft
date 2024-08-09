@@ -86,8 +86,11 @@ fn transform_struct_gets(
             )))
             .map(|expr_vec| {
                 let get_expr = expr_vec.first().unwrap();
+                if expr_vec.len() > 1 {
+                    log::warn!("Warning: Multiple matches found for col({name}), choosing left-associatively");
+                }
                 match get_expr.as_ref() {
-                    Expr::Column(_) => Transformed::no(e),
+                    Expr::Column(_) => Transformed::no(e.clone()),
                     _ => Transformed::yes(get_expr.clone()),
                 }
             }),
@@ -139,7 +142,7 @@ fn get_wildcard_matches(
         )));
     }
 
-    // remove last two characters
+    // remove last two characters (should always be ".*")
     let struct_name = &pattern[..pattern.len() - 2];
 
     let Some(struct_expr_vec) = struct_expr_map.get(struct_name) else {
@@ -149,18 +152,24 @@ fn get_wildcard_matches(
     };
 
     // find any field that is a struct
-    let mut struct_iter =
+    let mut possible_structs =
         struct_expr_vec
             .iter()
             .filter_map(|e| match e.to_field(schema).map(|f| f.dtype) {
                 Ok(DataType::Struct(subfields)) => Some(subfields),
                 _ => None,
             });
-    let Some(subfields) = struct_iter.next() else {
+    let Some(subfields) = possible_structs.next() else {
         return Err(DaftError::ValueError(format!(
             "Error matching wildcard {pattern}: no column matching {struct_name} is a struct"
         )));
     };
+
+    if possible_structs.next().is_some() {
+        log::warn!(
+            "Warning: Multiple matches found for col({pattern}), choosing left-associatively"
+        );
+    }
 
     Ok(subfields
         .into_iter()
