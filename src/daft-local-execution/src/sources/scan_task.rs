@@ -83,6 +83,10 @@ impl Source for ScanTaskSource {
             }
         })
     }
+
+    fn name(&self) -> &'static str {
+        "ScanTask"
+    }
 }
 
 async fn stream_scan_task(

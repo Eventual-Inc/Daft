@@ -30,13 +30,16 @@ pub trait StreamingSink: Send + Sync {
 pub(crate) struct StreamingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn StreamingSink>>>,
+    name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
 }
 
 impl StreamingSinkNode {
     pub(crate) fn new(op: Box<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
+        let name = op.name();
         StreamingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
+            name,
             children,
         }
     }
@@ -49,6 +52,10 @@ impl StreamingSinkNode {
 impl PipelineNode for StreamingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children.iter().map(|v| v.as_ref()).collect()
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 
     async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {

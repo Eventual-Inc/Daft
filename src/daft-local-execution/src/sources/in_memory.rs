@@ -24,4 +24,7 @@ impl Source for InMemorySource {
     fn get_data(&self, maintain_order: bool) -> SourceStream {
         stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
+    fn name(&self) -> &'static str {
+        "InMemory"
+    }
 }

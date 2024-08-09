@@ -249,6 +249,9 @@ impl Source for HashJoinOperator {
     fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
         stream::empty().boxed()
     }
+    fn name(&self) -> &'static str {
+        "HashJoinSource"
+    }
 }
 
 pub(crate) struct HashJoinNode {
@@ -279,6 +282,10 @@ impl HashJoinNode {
 impl PipelineNode for HashJoinNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.left.as_ref(), self.right.as_ref()]
+    }
+
+    fn name(&self) -> &'static str {
+        "HashJoin"
     }
 
     async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {

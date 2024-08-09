@@ -1822,6 +1822,7 @@ version = "0.2.0-dev0"
 dependencies = [
  "async-stream",
  "async-trait",
+ "common-display",
  "common-error",
  "common-tracing",
  "daft-core",

@@ -181,6 +181,10 @@ impl PipelineNode for IntermediateNode {
         self.children.iter().map(|v| v.as_ref()).collect()
     }
 
+    fn name(&self) -> &'static str {
+        self.intermediate_op.name()
+    }
+
     async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
         assert_eq!(
             self.children.len(),

@@ -31,13 +31,16 @@ pub trait BlockingSink: Send + Sync {
 pub(crate) struct BlockingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn BlockingSink>>>,
+    name: &'static str,
     child: Box<dyn PipelineNode>,
 }
 
 impl BlockingSinkNode {
     pub(crate) fn new(op: Box<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
+        let name = op.name();
         BlockingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
+            name,
             child,
         }
     }
@@ -50,6 +53,10 @@ impl BlockingSinkNode {
 impl PipelineNode for BlockingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.child.as_ref()]
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 
     async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {

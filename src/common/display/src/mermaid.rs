@@ -60,7 +60,7 @@ impl MermaidDisplayBuilder {
         }
     }
 
-    fn add_node(&mut self, name: &str, display: &str) -> String {
+    pub fn add_node(&mut self, name: &str, display: &str) -> String {
         let node_id = self.node_count;
         self.node_count += 1;
         let id = match &self.options.subgraph_options {
@@ -76,7 +76,7 @@ impl MermaidDisplayBuilder {
         id
     }
 
-    fn add_edge(&mut self, parent_id: String, child_id: String) {
+    pub fn add_edge(&mut self, parent_id: String, child_id: String) {
         self.output.push(format!(r#"{child_id} --> {parent_id}"#));
     }
 
@@ -90,7 +90,7 @@ impl MermaidDisplayBuilder {
     /// Limit0 --> Filter1
     /// Filter1 --> Source2
     /// ```
-    fn build(mut self) -> String {
+    pub fn build(mut self) -> String {
         if self.options.subgraph_options.is_some() {
             self.output.push("end".to_string());
         }

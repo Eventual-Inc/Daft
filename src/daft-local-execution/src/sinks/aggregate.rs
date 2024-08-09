@@ -78,4 +78,7 @@ impl Source for AggregateSink {
             panic!("as_source must be in Done phase")
         }
     }
+    fn name(&self) -> &'static str {
+        "AggregateResult"
+    }
 }

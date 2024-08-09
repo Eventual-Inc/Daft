@@ -13,9 +13,11 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
     fn get_data(&self, maintain_order: bool) -> SourceStream;
+    fn name(&self) -> &'static str;
 }
 
 struct SourceNode {
+    name: &'static str,
     source_op: Arc<tokio::sync::Mutex<Box<dyn Source>>>,
 }
 
@@ -23,6 +25,9 @@ struct SourceNode {
 impl PipelineNode for SourceNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
+    }
+    fn name(&self) -> &'static str {
+        self.name
     }
     async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
         let op = self.source_op.clone();
@@ -40,7 +45,9 @@ impl PipelineNode for SourceNode {
 
 impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
     fn from(value: Box<dyn Source>) -> Self {
+        let name = value.name();
         Box::new(SourceNode {
+            name,
             source_op: Arc::new(tokio::sync::Mutex::new(value)),
         })
     }

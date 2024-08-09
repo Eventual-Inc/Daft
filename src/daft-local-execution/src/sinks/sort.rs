@@ -76,4 +76,7 @@ impl Source for SortSink {
             panic!("get_data should be in done phase");
         }
     }
+    fn name(&self) -> &'static str {
+        "SortResult"
+    }
 }
