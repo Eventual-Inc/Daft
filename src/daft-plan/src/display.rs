@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_display::tree::TreeDisplay;
+use common_treenode::DynTreeNode;
 
 impl TreeDisplay for crate::LogicalPlan {
     fn get_multiline_representation(&self) -> Vec<String> {
@@ -56,10 +57,7 @@ impl TreeDisplay for crate::LogicalPlan {
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
-        self.children()
-            .into_iter()
-            .map(|x| Arc::new(x.clone()) as _)
-            .collect()
+        self.arc_children().into_iter().map(|x| x as _).collect()
     }
 }
 
@@ -73,10 +71,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
-        self.children()
-            .into_iter()
-            .map(|x| Arc::new(x.clone()) as _)
-            .collect()
+        self.arc_children().into_iter().map(|x| x as _).collect()
     }
 }
 
