@@ -90,26 +90,6 @@ fn transform_struct_gets(
     .data()
 }
 
-fn expr_has_agg(expr: &ExprRef) -> bool {
-    use Expr::*;
-
-    match expr.as_ref() {
-        Agg(_) => true,
-        Column(_) | Literal(_) => false,
-        Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => expr_has_agg(e),
-        BinaryOp { left, right, .. } => expr_has_agg(left) || expr_has_agg(right),
-        Function { inputs, .. } => inputs.iter().any(expr_has_agg),
-        ScalarFunction(func) => func.inputs.iter().any(expr_has_agg),
-        IsIn(l, r) | FillNull(l, r) => expr_has_agg(l) || expr_has_agg(r),
-        Between(v, l, u) => expr_has_agg(v) || expr_has_agg(l) || expr_has_agg(u),
-        IfElse {
-            if_true,
-            if_false,
-            predicate,
-        } => expr_has_agg(if_true) || expr_has_agg(if_false) || expr_has_agg(predicate),
-    }
-}
-
 // Finds the names of all the wildcard expressions in an expression tree.
 // Needs the schema because column names with stars must not count as wildcards
 fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, ExprRef>) -> Vec<Arc<str>> {
@@ -154,11 +134,9 @@ fn get_wildcard_matches(
     }
 
     // remove last two characters
-    let mut struct_name = pattern.to_string();
-    struct_name.pop();
-    struct_name.pop();
+    let struct_name = &pattern[..pattern.len() - 2];
 
-    let Some(struct_expr) = struct_expr_map.get(&struct_name) else {
+    let Some(struct_expr) = struct_expr_map.get(struct_name) else {
         return Err(DaftError::ValueError(format!(
             "Error matching wildcard {pattern}: struct {struct_name} not found"
         )));
@@ -188,17 +166,15 @@ fn replace_column_name(expr: ExprRef, old_name: &str, new_name: &str) -> DaftRes
 }
 
 // Duplicate an expression tree for each wildcard match.
-fn duplicate_wildcards(
+fn expand_wildcards(
     expr: ExprRef,
     schema: &Schema,
     struct_expr_map: &HashMap<String, ExprRef>,
 ) -> DaftResult<Vec<ExprRef>> {
     let wildcards = find_wildcards(expr.clone(), struct_expr_map);
-    let wildcard_count = wildcards.len();
-    match wildcard_count {
-        0 => Ok(vec![expr]),
-        1 => {
-            let pattern = wildcards.first().unwrap();
+    match wildcards.as_slice() {
+        [] => Ok(vec![expr]),
+        [pattern] => {
             get_wildcard_matches(pattern, schema, struct_expr_map)?
                 .into_iter()
                 .map(|s| replace_column_name(expr.clone(), pattern, &s))
@@ -264,13 +240,13 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
 /// May return multiple expressions if the expr contains a wildcard.
 fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
     // TODO(Kevin): Support aggregation expressions everywhere
-    if expr_has_agg(&expr) {
+    if expr.has_agg() {
         return Err(DaftError::ValueError(format!(
             "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
         )));
     }
     let struct_expr_map = calculate_struct_expr_map(schema);
-    duplicate_wildcards(expr, schema, &struct_expr_map)?
+    expand_wildcards(expr, schema, &struct_expr_map)?
         .into_iter()
         .map(|e| transform_struct_gets(e, &struct_expr_map))
         .collect()
@@ -279,14 +255,14 @@ fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
 // Resolve a single expression, erroring if any kind of expansion happens.
 pub fn resolve_single_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
     let resolved_exprs = resolve_expr(expr.clone(), schema)?;
-    let num_exprs = resolved_exprs.len();
-    if num_exprs != 1 {
-        return Err(DaftError::ValueError(format!("Error resolving expression {expr}: expanded into {num_exprs} expressions when 1 was expected")));
+    match resolved_exprs.as_slice() {
+        [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
+        _ => Err(DaftError::ValueError(format!(
+            "Error resolving expression {}: expanded into {} expressions when 1 was expected",
+            expr,
+            resolved_exprs.len()
+        ))),
     }
-    // needs to take ownership
-    let resolved_expr = resolved_exprs.into_iter().next().unwrap();
-    let resolved_field = resolved_expr.to_field(schema)?;
-    Ok((resolved_expr, resolved_field))
 }
 
 pub fn resolve_exprs(
@@ -305,10 +281,10 @@ pub fn resolve_exprs(
 /// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
 fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<AggExpr>> {
     let struct_expr_map = calculate_struct_expr_map(schema);
-    duplicate_wildcards(expr, schema, &struct_expr_map)?.into_iter().map(|expr| {
+    expand_wildcards(expr, schema, &struct_expr_map)?.into_iter().map(|expr| {
         let agg_expr = extract_agg_expr(&expr)?;
 
-        let has_nested_agg = agg_expr.children().iter().any(expr_has_agg);
+        let has_nested_agg = agg_expr.children().iter().any(|e| e.has_agg());
 
         if has_nested_agg {
             return Err(DaftError::ValueError(format!(
@@ -327,14 +303,14 @@ fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<AggExpr>> {
 
 pub fn resolve_single_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
     let resolved_exprs = resolve_aggexpr(expr.clone(), schema)?;
-    let num_exprs = resolved_exprs.len();
-    if num_exprs != 1 {
-        return Err(DaftError::ValueError(format!("Error resolving expression {expr}: expanded into {num_exprs} expressions when 1 was expected")));
+    match resolved_exprs.as_slice() {
+        [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
+        _ => Err(DaftError::ValueError(format!(
+            "Error resolving expression {}: expanded into {} expressions when 1 was expected",
+            expr,
+            resolved_exprs.len()
+        ))),
     }
-    // needs to take ownership
-    let resolved_expr = resolved_exprs.into_iter().next().unwrap();
-    let resolved_field = resolved_expr.to_field(schema)?;
-    Ok((resolved_expr, resolved_field))
 }
 
 pub fn resolve_aggexprs(

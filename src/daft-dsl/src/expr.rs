@@ -944,6 +944,16 @@ impl Expr {
             .ok()
             .and_then(|_| String::from_utf8(buffer).ok())
     }
+
+    pub fn has_agg(&self) -> bool {
+        use Expr::*;
+
+        match self {
+            Agg(_) => true,
+            Column(_) | Literal(_) => false,
+            _ => self.children().into_iter().any(|e| e.has_agg()),
+        }
+    }
 }
 
 impl Display for Expr {
