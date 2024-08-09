@@ -4,56 +4,14 @@ use std::{
 };
 
 use common_display::tree::TreeDisplay;
-use common_treenode::DynTreeNode;
 
 impl TreeDisplay for crate::LogicalPlan {
     fn get_multiline_representation(&self) -> Vec<String> {
-        match self {
-            Self::Source(source) => source.multiline_display(),
-            Self::Project(projection) => projection.multiline_display(),
-            Self::ActorPoolProject(projection) => projection.multiline_display(),
-            Self::Filter(crate::logical_ops::Filter { predicate, .. }) => {
-                vec![format!("Filter: {predicate}")]
-            }
-            Self::Limit(crate::logical_ops::Limit { limit, .. }) => vec![format!("Limit: {limit}")],
-            Self::Explode(explode) => explode.multiline_display(),
-            Self::Unpivot(unpivot) => unpivot.multiline_display(),
-            Self::Sort(sort) => sort.multiline_display(),
-            Self::Repartition(repartition) => repartition.multiline_display(),
-            Self::Distinct(_) => vec!["Distinct".to_string()],
-            Self::Aggregate(aggregate) => aggregate.multiline_display(),
-            Self::Pivot(pivot) => pivot.multiline_display(),
-            Self::Concat(_) => vec!["Concat".to_string()],
-            Self::Join(join) => join.multiline_display(),
-            Self::Sink(sink) => sink.multiline_display(),
-            Self::Sample(sample) => {
-                vec![format!("Sample: {fraction}", fraction = sample.fraction)]
-            }
-            Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
-        }
+        self.multiline_display()
     }
 
     fn get_name(&self) -> String {
-        let name = match self {
-            Self::Source(..) => "Source",
-            Self::Project(..) => "Project",
-            Self::ActorPoolProject(..) => "ActorPoolProject",
-            Self::Filter(..) => "Filter",
-            Self::Limit(..) => "Limit",
-            Self::Explode(..) => "Explode",
-            Self::Unpivot(..) => "Unpivot",
-            Self::Sort(..) => "Sort",
-            Self::Repartition(..) => "Repartition",
-            Self::Distinct(..) => "Distinct",
-            Self::Aggregate(..) => "Aggregate",
-            Self::Pivot(..) => "Pivot",
-            Self::Concat(..) => "Concat",
-            Self::Join(..) => "Join",
-            Self::Sink(..) => "Sink",
-            Self::Sample(..) => "Sample",
-            Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
-        };
-        name.to_string()
+        self.name()
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
