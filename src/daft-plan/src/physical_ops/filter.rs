@@ -22,3 +22,4 @@ impl Filter {
         res
     }
 }
+crate::impl_default_tree_display!(Filter);

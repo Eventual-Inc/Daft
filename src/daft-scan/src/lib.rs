@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use common_display::DisplayAs;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::Field,
@@ -315,6 +316,28 @@ impl DataSource {
     }
 }
 
+impl DisplayAs for DataSource {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact | common_display::DisplayLevel::Default => {
+                match self {
+                    Self::File { path, .. } => {
+                        format!("File {{{path}}}")
+                    }
+                    Self::Database { path, .. } => format!("Database {{{path}}}"),
+                    #[cfg(feature = "python")]
+                    Self::PythonFactoryFunction {
+                        module, func_name, ..
+                    } => {
+                        format!("{}:{}", module, func_name)
+                    }
+                }
+            }
+            common_display::DisplayLevel::Verbose => self.multiline_display().join("\n"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
@@ -562,6 +585,39 @@ impl ScanTask {
             res.push(format!("Statistics = {}", statistics));
         }
         res
+    }
+}
+
+impl DisplayAs for ScanTask {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => format!(
+                "{{{sources}}}",
+                sources = self
+                    .sources
+                    .iter()
+                    .map(|s| s.display_as(common_display::DisplayLevel::Compact))
+                    .join(", ")
+            )
+            .trim_start()
+            .to_string(),
+            common_display::DisplayLevel::Default => {
+                format!(
+                    "ScanTask {{
+Sources = [
+{sources}
+]
+}}
+",
+                    sources = self
+                        .sources
+                        .iter()
+                        .map(|s| s.display_as(common_display::DisplayLevel::Default))
+                        .join(", "),
+                )
+            }
+            common_display::DisplayLevel::Verbose => todo!(),
+        }
     }
 }
 
@@ -823,5 +879,32 @@ impl Pushdowns {
             res.push(format!("Limit pushdown = {}", limit));
         }
         res
+    }
+}
+impl DisplayAs for Pushdowns {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => {
+                let mut s = String::new();
+                s.push_str("Pushdowns {");
+                let mut sub_items = vec![];
+                if let Some(columns) = &self.columns {
+                    sub_items.push(format!("projection: [{}]", columns.join(", ")));
+                }
+                if let Some(filters) = &self.filters {
+                    sub_items.push(format!("filter: {}", filters));
+                }
+                if let Some(pfilters) = &self.partition_filters {
+                    sub_items.push(format!("partition_filter: {}", pfilters));
+                }
+                if let Some(limit) = self.limit {
+                    sub_items.push(format!("limit: {}", limit));
+                }
+                s.push_str(&sub_items.join(", "));
+                s.push_str("}");
+                s
+            }
+            _ => self.multiline_display().join("\n"),
+        }
     }
 }

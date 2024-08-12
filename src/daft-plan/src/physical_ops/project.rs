@@ -71,6 +71,8 @@ impl Project {
     }
 }
 
+crate::impl_default_tree_display!(Project);
+
 #[cfg(test)]
 mod tests {
     use common_daft_config::DaftExecutionConfig;

@@ -1,7 +1,7 @@
 use daft_dsl::{AggExpr, ExprRef};
 use itertools::Itertools;
 
-use crate::physical_plan::PhysicalPlanRef;
+use crate::{impl_default_tree_display, physical_plan::PhysicalPlanRef};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -44,3 +44,5 @@ impl Aggregate {
         res
     }
 }
+
+impl_default_tree_display!(Aggregate);

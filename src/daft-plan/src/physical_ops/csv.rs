@@ -32,3 +32,5 @@ impl TabularWriteCsv {
         res
     }
 }
+
+crate::impl_default_tree_display!(TabularWriteCsv);

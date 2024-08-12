@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use common_display::DisplayAs;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -295,6 +296,16 @@ impl Display for Schema {
                 .as_slice(),
         );
         writeln!(f, "{table}")
+    }
+}
+
+impl DisplayAs for Schema {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.short_string(),
+            common_display::DisplayLevel::Default => self.truncated_table_string(),
+            common_display::DisplayLevel::Verbose => self.to_string(),
+        }
     }
 }
 

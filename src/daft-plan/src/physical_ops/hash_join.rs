@@ -1,3 +1,4 @@
+use common_display::tree::TreeDisplay;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
@@ -55,5 +56,18 @@ impl HashJoin {
             }
         }
         res
+    }
+}
+
+impl TreeDisplay for HashJoin {
+    fn description(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.get_name(),
+            _ => self.multiline_display().join("\n"),
+        }
+    }
+
+    fn get_children(&self) -> Vec<std::sync::Arc<dyn TreeDisplay>> {
+        vec![self.left.clone(), self.right.clone()]
     }
 }

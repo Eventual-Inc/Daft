@@ -1,4 +1,5 @@
 use crate::{source_info::InMemoryInfo, ClusteringSpec};
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -33,5 +34,32 @@ impl InMemoryScan {
             self.clustering_spec.multiline_display().join(", ")
         ));
         res
+    }
+}
+impl TreeDisplay for InMemoryScan {
+    fn description(&self, level: DisplayLevel) -> String {
+        match level {
+            DisplayLevel::Compact => self.get_name(),
+            DisplayLevel::Default => {
+                format!(
+                    "InMemoryScan:
+Schema = {},
+Size bytes = {},
+Clustering spec = {{ {} }}",
+                    self.schema.short_string(),
+                    self.in_memory_info.size_bytes,
+                    self.clustering_spec.multiline_display().join(", ")
+                )
+            }
+            DisplayLevel::Verbose => todo!(),
+        }
+    }
+
+    fn get_name(&self) -> String {
+        "InMemoryScan".to_string()
+    }
+
+    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+        vec![]
     }
 }

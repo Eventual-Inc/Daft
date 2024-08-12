@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
@@ -33,3 +35,5 @@ impl Limit {
         res
     }
 }
+
+crate::impl_default_tree_display!(Limit);

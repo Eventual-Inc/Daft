@@ -33,3 +33,5 @@ impl IcebergWrite {
         res
     }
 }
+
+crate::impl_default_tree_display!(IcebergWrite);

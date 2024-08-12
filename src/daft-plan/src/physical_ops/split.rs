@@ -35,3 +35,5 @@ impl Split {
         res
     }
 }
+
+crate::impl_default_tree_display!(Split);

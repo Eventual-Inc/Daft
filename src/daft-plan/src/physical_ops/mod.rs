@@ -64,3 +64,24 @@ pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
 pub use split::Split;
 pub use unpivot::Unpivot;
+
+#[macro_export]
+/// Implement the `common_display::tree::TreeDisplay` trait for the given struct
+/// using the `get_name` method as the compact description and the `multiline_display` method for the default and verbose descriptions.
+macro_rules! impl_default_tree_display {
+    ($($struct:ident),+) => {
+        $(
+            impl common_display::tree::TreeDisplay for $struct {
+                fn description(&self, level: common_display::DisplayLevel) -> String {
+                    match level {
+                        common_display::DisplayLevel::Compact => self.get_name(),
+                        _ => self.multiline_display().join("\n"),
+                    }
+                }
+                fn get_children(&self) -> Vec<std::sync::Arc<dyn common_display::tree::TreeDisplay>> {
+                    vec![self.input.clone()]
+                }
+            }
+        )+
+    };
+}

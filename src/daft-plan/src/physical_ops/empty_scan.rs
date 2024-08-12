@@ -1,4 +1,5 @@
 use crate::ClusteringSpec;
+use common_display::tree::TreeDisplay;
 use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -26,5 +27,22 @@ impl EmptyScan {
             self.clustering_spec.multiline_display().join(", ")
         ));
         res
+    }
+}
+
+impl TreeDisplay for EmptyScan {
+    fn description(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.get_name(),
+            _ => self.multiline_display().join("\n"),
+        }
+    }
+
+    fn get_name(&self) -> String {
+        "EmptyScan".to_string()
+    }
+
+    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+        vec![]
     }
 }

@@ -7,6 +7,8 @@ pub trait TreeDisplay {
     ///
     /// For example, a `level` of `DisplayLevel::Compact` might only show the name of the node,
     /// while a `level` of `DisplayLevel::Default` might show all available details.
+    ///
+    /// **Important**. Implementers do not need to worry about the formatting of the output.
     fn description(&self, level: crate::DisplayLevel) -> String;
 
     /// Get a unique identifier for this node.
@@ -19,8 +21,10 @@ pub trait TreeDisplay {
         s
     }
 
-    /// Required method: Get the human-readable name of this node.
-    fn get_name(&self) -> String;
+    /// Get the human-readable name of this node.
+    fn get_name(&self) -> String {
+        std::any::type_name::<Self>().to_string()
+    }
 
     /// Required method: Get the children of the self node.
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>>;

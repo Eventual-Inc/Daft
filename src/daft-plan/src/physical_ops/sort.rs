@@ -43,3 +43,5 @@ impl Sort {
         res
     }
 }
+
+crate::impl_default_tree_display!(Sort);

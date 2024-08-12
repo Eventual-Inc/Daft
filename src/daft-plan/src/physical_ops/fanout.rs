@@ -94,3 +94,5 @@ impl FanoutByRange {
         res
     }
 }
+
+crate::impl_default_tree_display!(FanoutByHash, FanoutRandom, FanoutByRange);

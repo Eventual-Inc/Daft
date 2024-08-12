@@ -16,3 +16,4 @@ impl Flatten {
         vec!["Flatten".to_string()]
     }
 }
+crate::impl_default_tree_display!(Flatten);
