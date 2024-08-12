@@ -95,7 +95,7 @@ pub fn run_local(
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     let final_schema = physical_plan.schema();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let (tx, rx) = crossbeam_channel::unbounded();
+    let (tx, rx) = create_single_channel(1);
 
     let handle = std::thread::spawn(move || {
         refresh_chrome_trace();

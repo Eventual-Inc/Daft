@@ -1825,7 +1825,6 @@ dependencies = [
  "async-trait",
  "common-error",
  "common-tracing",
- "crossbeam-channel",
  "daft-core",
  "daft-csv",
  "daft-dsl",
