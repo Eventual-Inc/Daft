@@ -158,6 +158,7 @@ full = [
   "arrow",
   "io_csv",
   "io_csv_async",
+  "io_flight",
   "io_json",
   "io_ipc",
   "io_ipc_write_async",
@@ -179,6 +180,7 @@ io_csv_async = ["io_csv_read_async"]
 io_csv_read = ["csv", "lexical-core"]
 io_csv_read_async = ["csv-async", "lexical-core", "futures"]
 io_csv_write = ["csv-core", "streaming-iterator", "lexical-core"]
+io_flight = ["arrow-format/flight-data"]
 io_ipc = ["arrow-format"]
 io_ipc_compression = ["lz4", "zstd"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
