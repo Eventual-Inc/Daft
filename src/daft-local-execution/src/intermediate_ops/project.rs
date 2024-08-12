@@ -12,7 +12,7 @@ use super::{
 
 #[derive(Clone)]
 pub struct ProjectSpec {
-    pub projection: Vec<ExprRef>,
+    projection: Vec<ExprRef>,
 }
 
 impl ProjectSpec {

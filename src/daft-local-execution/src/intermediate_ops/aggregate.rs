@@ -12,8 +12,8 @@ use super::{
 
 #[derive(Clone)]
 pub struct AggregateSpec {
-    pub agg_exprs: Vec<ExprRef>,
-    pub group_by: Vec<ExprRef>,
+    agg_exprs: Vec<ExprRef>,
+    group_by: Vec<ExprRef>,
 }
 
 impl AggregateSpec {

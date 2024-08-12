@@ -12,7 +12,7 @@ use super::{
 
 #[derive(Clone)]
 pub struct FilterSpec {
-    pub predicate: ExprRef,
+    predicate: ExprRef,
 }
 
 impl FilterSpec {

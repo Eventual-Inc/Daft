@@ -22,8 +22,8 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Distinct, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
-    Sort, UnGroupedAggregate,
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 
@@ -94,20 +94,18 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, &[]);
+
+            let first_stage_agg_spec = AggregateSpec::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                vec![],
+            );
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node = if first_stage_aggs.is_empty() {
-                child_node
-            } else {
-                let first_stage_agg_spec = AggregateSpec::new(
-                    first_stage_aggs
-                        .values()
-                        .cloned()
-                        .map(|e| Arc::new(Expr::Agg(e.clone())))
-                        .collect(),
-                    vec![],
-                );
-                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed()
-            };
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed();
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -134,20 +132,17 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, group_by);
+            let first_stage_agg_spec = AggregateSpec::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by.clone(),
+            );
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node = if first_stage_aggs.is_empty() {
-                child_node
-            } else {
-                let first_stage_agg_spec = AggregateSpec::new(
-                    first_stage_aggs
-                        .values()
-                        .cloned()
-                        .map(|e| Arc::new(Expr::Agg(e.clone())))
-                        .collect(),
-                    group_by.clone(),
-                );
-                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed()
-            };
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed();
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -164,16 +159,6 @@ pub fn physical_plan_to_pipeline(
 
             IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
                 .boxed()
-        }
-        LocalPhysicalPlan::Distinct(Distinct {
-            input, group_by, ..
-        }) => {
-            let child_node = physical_plan_to_pipeline(input, psets)?;
-            let local_distinct_spec = AggregateSpec::new(vec![], group_by.clone());
-            let local_distinct_node =
-                IntermediateNode::new(Arc::new(local_distinct_spec), vec![child_node]).boxed();
-            let global_distinct_sink = AggregateSink::new(vec![], group_by.clone());
-            BlockingSinkNode::new(global_distinct_sink.boxed(), local_distinct_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
