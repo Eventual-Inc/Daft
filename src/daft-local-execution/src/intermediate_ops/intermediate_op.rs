@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env, sync::{atomic::AtomicU64, Arc}, time::Instant};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -87,6 +87,62 @@ pub struct IntermediateOpActor {
     sender: MultiSender,
     receiver: MultiReceiver,
     op: Arc<dyn IntermediateOperator>,
+    rt_context: Arc<RuntimeStatsContext>,
+}
+
+
+#[derive(Default)]
+struct RuntimeStatsContext {
+    name: String,
+    rows_received: AtomicU64,
+    rows_emitted: AtomicU64,
+    cpu_us: AtomicU64,
+}
+
+#[derive(Debug)]
+struct RuntimeStats {
+    rows_received: u64,
+    rows_emitted: u64,
+    cpu_us: u64,
+
+}
+
+impl RuntimeStatsContext {
+
+    fn new(name: String) -> Self {
+        Self { name:name, rows_received: AtomicU64::new(0), rows_emitted: AtomicU64::new(0), cpu_us: AtomicU64::new(0)}
+    }
+    fn in_span<F: FnOnce() -> T, T>(&self, span: &tracing::Span, f: F) -> T {
+        let _enter = span.enter();
+        let start = Instant::now();
+        let result = f();
+        let total = start.elapsed();
+        let micros = total.as_micros() as u64;
+        self.cpu_us.fetch_add(micros, std::sync::atomic::Ordering::Relaxed);
+        result
+    }
+
+    fn mark_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn mark_rows_emitted(&self, rows: u64) {
+        self.rows_emitted.fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn reset(&self) {
+        self.rows_received.store(0, std::sync::atomic::Ordering::Release);
+        self.rows_emitted.store(0, std::sync::atomic::Ordering::Release);
+        self.cpu_us.store(0, std::sync::atomic::Ordering::Release);
+    }
+
+    fn result(&self) -> RuntimeStats {
+        RuntimeStats {
+            rows_received: self.rows_received.load(std::sync::atomic::Ordering::Relaxed),
+            rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
+            cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
+        }
+    }
 }
 
 impl IntermediateOpActor {
@@ -95,10 +151,12 @@ impl IntermediateOpActor {
         receiver: MultiReceiver,
         sender: MultiSender,
     ) -> Self {
+        let name = op.name().to_string();
         Self {
             op,
             receiver,
             sender,
+            rt_context: Arc::new(RuntimeStatsContext::new(name))
         }
     }
 
@@ -108,20 +166,27 @@ impl IntermediateOpActor {
         mut receiver: SingleReceiver,
         sender: SingleSender,
         op: Arc<dyn IntermediateOperator>,
+        rt_context: Arc<RuntimeStatsContext>,
+
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
 
         while let Some(morsel) = receiver.recv().await {
-            let result = span.in_scope(|| op.execute(&morsel?))?;
-
+            let morsel = morsel?;
+            rt_context.mark_rows_received(morsel.len() as u64);
+            let result = rt_context.in_span(&span, || op.execute(&morsel))?;
             state.add(result);
             if let Some(part) = state.try_clear() {
-                let _ = sender.send(part).await;
+                let part = part?;
+                rt_context.mark_rows_emitted(part.len() as u64);
+                let _ = sender.send(Ok(part)).await;
             }
         }
         if let Some(part) = state.clear() {
-            let _ = sender.send(part).await;
+            let part = part?;
+            rt_context.mark_rows_emitted(part.len() as u64);
+            let _ = sender.send(Ok(part)).await;
         }
         Ok(())
     }
@@ -144,7 +209,7 @@ impl IntermediateOpActor {
                 let (task_sender, task_receiver) = create_single_channel(1);
                 let op = self.op.clone();
                 let next_sender = self.sender.get_next_sender();
-                spawn_compute_task(Self::run_single(task_receiver, next_sender, op));
+                spawn_compute_task(Self::run_single(task_receiver, next_sender, op, self.rt_context.clone()));
                 let _ = task_sender.send(morsel).await;
 
                 inner_task_senders.push(task_sender);
@@ -152,6 +217,13 @@ impl IntermediateOpActor {
             curr_task_idx = (curr_task_idx + 1) % self.sender.buffer_size();
         }
         Ok(())
+    }
+}
+
+
+impl Drop for RuntimeStatsContext {
+    fn drop(&mut self) {
+        println!("{}={:?}", self.name, self.result());
     }
 }
 
