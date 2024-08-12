@@ -4,9 +4,9 @@ import dataclasses
 import functools
 import inspect
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable, Union
 
-from daft.daft import PyDataType
+from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.series import PySeries, Series
@@ -138,9 +138,63 @@ def run_udf(
         raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
 
+# Marker that helps us differentiate whether a user provided the argument or not
+_UnsetMarker: Any = object()
+
+
+@dataclasses.dataclass
 class UDF:
+    resource_request: ResourceRequest | None
+
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Expression: ...
+
+    def override_options(
+        self,
+        *,
+        num_cpus: float | None = _UnsetMarker,
+        num_gpus: float | None = _UnsetMarker,
+        memory_bytes: int | None = _UnsetMarker,
+    ) -> UDF:
+        """Replace the resource requests for running each instance of your stateless UDF.
+
+        For instance, if your stateless UDF requires 4 CPUs to run, you can configure it like so:
+
+        >>> import daft
+        >>>
+        >>> @daft.udf(return_dtype=daft.DataType.string())
+        ... def example_stateless_udf(inputs):
+        ...     # You will have access to 4 CPUs here if you configure your UDF correctly!
+        ...     return inputs
+        >>>
+        >>> # Parametrize the UDF to run with 4 CPUs
+        >>> example_stateless_udf_4CPU = example_stateless_udf.override_options(num_cpus=4)
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
+        >>> df = df.with_column("bar", example_stateless_udf_4CPU(df["foo"]))
+
+        Args:
+            num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
+                machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time).
+            num_gpus: Number of GPUs to allocate each running instance of your UDF. This is used for placement and also for allocating
+                the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
+            memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
+                this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+        """
+        result = self
+
+        # Any changes to resource request
+        if not all((num_cpus is _UnsetMarker, num_gpus is _UnsetMarker, memory_bytes is _UnsetMarker)):
+            new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
+            if num_cpus is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_num_cpus(num_cpus)
+            if num_gpus is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_num_gpus(num_gpus)
+            if memory_bytes is not _UnsetMarker:
+                new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
+            result = dataclasses.replace(result, resource_request=new_resource_request)
+
+        return result
 
 
 @dataclasses.dataclass
@@ -183,6 +237,7 @@ class StatelessUDF(UDF):
             partial=PartialStatelessUDF(self.func, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
+            resource_request=self.resource_request,
         )
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
@@ -217,6 +272,7 @@ class StatefulUDF(UDF):
             partial=PartialStatefulUDF(self.cls, self.return_dtype, bound_args),
             expressions=expressions,
             return_dtype=self.return_dtype,
+            resource_request=self.resource_request,
         )
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
@@ -237,6 +293,9 @@ class StatefulUDF(UDF):
 def udf(
     *,
     return_dtype: DataType,
+    num_cpus: float | None = None,
+    num_gpus: float | None = None,
+    memory_bytes: int | None = None,
 ) -> Callable[[UserProvidedPythonFunction | type], UDF]:
     """Decorator to convert a Python function into a UDF
 
@@ -280,8 +339,70 @@ def udf(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
+    Resource Requests
+    -----------------
+
+    You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 4 CPUs to run. On a
+    machine/cluster with 8 CPUs, Daft will be able to run up to 2 instances of this UDF at once, giving you a concurrency of 2!
+
+    >>> import daft
+    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
+    ... def udf_needs_2_cpus(x: daft.Series):
+    ...     return x
+    >>>
+    >>> df = daft.from_pydict({"x": [1, 2, 3]})
+    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+    >>> df.show()
+    ╭───────┬───────╮
+    │ x     ┆ new_x │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 1     ┆ 1     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3     │
+    ╰───────┴───────╯
+    <BLANKLINE>
+    (Showing first 3 of 3 rows)
+
+    Your UDFs' resources can also be overridden before you call it like so:
+
+    >>> import daft
+    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
+    ... def udf_needs_4_cpus(x: daft.Series):
+    ...     return x
+    >>>
+    >>> # Override the num_cpus to 2 instead
+    >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
+    >>>
+    >>> df = daft.from_pydict({"x": [1, 2, 3]})
+    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+    >>> df.show()
+    ╭───────┬───────╮
+    │ x     ┆ new_x │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 1     ┆ 1     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3     │
+    ╰───────┴───────╯
+    <BLANKLINE>
+    (Showing first 3 of 3 rows)
+
     Args:
         return_dtype (DataType): Returned type of the UDF
+        num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
+            machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time). The default `None`
+            indicates that Daft is free to allocate as many instances of the UDF as it wants to.
+        num_gpus: Number of GPUs to allocate each running instance of your UDF. This is used for placement and also for allocating
+            the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
+        memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
+            this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
 
     Returns:
         Callable[[UserProvidedPythonFunction], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -294,17 +415,29 @@ def udf(
             name = name + "."
         name = name + getattr(f, "__qualname__")  # type: ignore[call-overload]
 
+        resource_request = (
+            None
+            if num_cpus is None and num_gpus is None and memory_bytes is None
+            else ResourceRequest(
+                num_cpus=num_cpus,
+                num_gpus=num_gpus,
+                memory_bytes=memory_bytes,
+            )
+        )
+
         if inspect.isclass(f):
             return StatefulUDF(
                 name=name,
                 cls=f,
                 return_dtype=return_dtype,
+                resource_request=resource_request,
             )
         else:
             return StatelessUDF(
                 name=name,
                 func=f,
                 return_dtype=return_dtype,
+                resource_request=resource_request,
             )
 
     return _udf

@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
-use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
@@ -121,15 +120,8 @@ impl PushDownProjection {
                     .collect();
 
                 // Make a new projection node with the merged projections.
-                let new_plan: LogicalPlan = Project::try_new(
-                    upstream_projection.input.clone(),
-                    merged_projection,
-                    ResourceRequest::max_all(&[
-                        &upstream_projection.resource_request,
-                        &projection.resource_request,
-                    ]),
-                )?
-                .into();
+                let new_plan: LogicalPlan =
+                    Project::try_new(upstream_projection.input.clone(), merged_projection)?.into();
                 let new_plan: Arc<LogicalPlan> = new_plan.into();
 
                 // Root node is changed, look at it again.
@@ -195,7 +187,6 @@ impl PushDownProjection {
                     let new_upstream: LogicalPlan = Project::try_new(
                         upstream_projection.input.clone(),
                         pruned_upstream_projections,
-                        upstream_projection.resource_request.clone(),
                     )?
                     .into();
 
@@ -265,7 +256,6 @@ impl PushDownProjection {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                             upstream_actor_pool_projection.input.clone(),
                             pruned_upstream_projections,
-                            upstream_actor_pool_projection.resource_request.clone(),
                             upstream_actor_pool_projection.num_actors,
                         )?)
                         .arced()
@@ -310,12 +300,7 @@ impl PushDownProjection {
                         .map(col)
                         .collect::<Vec<_>>();
 
-                    Project::try_new(
-                        grand_upstream_plan.clone(),
-                        pushdown_column_exprs,
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(grand_upstream_plan.clone(), pushdown_column_exprs)?.into()
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
@@ -348,20 +333,10 @@ impl PushDownProjection {
                     .map(col)
                     .collect::<Vec<_>>();
                 let new_left_subprojection: LogicalPlan = {
-                    Project::try_new(
-                        concat.input.clone(),
-                        pushdown_column_exprs.clone(),
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(concat.input.clone(), pushdown_column_exprs.clone())?.into()
                 };
                 let new_right_subprojection: LogicalPlan = {
-                    Project::try_new(
-                        concat.other.clone(),
-                        pushdown_column_exprs.clone(),
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(concat.other.clone(), pushdown_column_exprs.clone())?.into()
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[
@@ -429,12 +404,8 @@ impl PushDownProjection {
                             .into_iter()
                             .map(col)
                             .collect::<Vec<_>>();
-                        let new_project: LogicalPlan = Project::try_new(
-                            join.left.clone(),
-                            pushdown_column_exprs,
-                            Default::default(),
-                        )?
-                        .into();
+                        let new_project: LogicalPlan =
+                            Project::try_new(join.left.clone(), pushdown_column_exprs)?.into();
                         Some(new_project.into())
                     } else {
                         None
@@ -447,12 +418,8 @@ impl PushDownProjection {
                             .into_iter()
                             .map(col)
                             .collect::<Vec<_>>();
-                        let new_project: LogicalPlan = Project::try_new(
-                            join.right.clone(),
-                            pushdown_column_exprs,
-                            Default::default(),
-                        )?
-                        .into();
+                        let new_project: LogicalPlan =
+                            Project::try_new(join.right.clone(), pushdown_column_exprs)?.into();
                         Some(new_project.into())
                     } else {
                         None
@@ -508,12 +475,7 @@ impl PushDownProjection {
                     .map(|s| col(s.as_str()))
                     .collect::<Vec<_>>();
 
-                Project::try_new(
-                    upstream_plan.clone(),
-                    pushdown_column_exprs,
-                    Default::default(),
-                )?
-                .into()
+                Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
             let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
@@ -546,12 +508,7 @@ impl PushDownProjection {
                         .map(|s| col(s.as_str()))
                         .collect::<Vec<_>>();
 
-                    Project::try_new(
-                        join.right.clone(),
-                        pushdown_column_exprs,
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(join.right.clone(), pushdown_column_exprs)?.into()
                 };
 
                 let new_join = plan
@@ -587,12 +544,7 @@ impl PushDownProjection {
                     .map(|s| col(s.as_str()))
                     .collect::<Vec<_>>();
 
-                Project::try_new(
-                    upstream_plan.clone(),
-                    pushdown_column_exprs,
-                    Default::default(),
-                )?
-                .into()
+                Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
             let new_pivot = plan.with_new_children(&[new_subprojection.into()]);
@@ -869,10 +821,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -885,6 +837,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
@@ -894,21 +847,18 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
             actor_pool_project,
             vec![col("udf_results")],
-            default::Default::default(),
         )?)
         .arced();
 
         let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
@@ -923,10 +873,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -939,6 +889,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
@@ -948,16 +899,11 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
-        let project = LogicalPlan::Project(Project::try_new(
-            actor_pool_project,
-            vec![col("a")],
-            default::Default::default(),
-        )?)
-        .arced();
+        let project =
+            LogicalPlan::Project(Project::try_new(actor_pool_project, vec![col("a")])?).arced();
 
         // Optimized plan will push the projection all the way down into the scan
         let expected_scan = dummy_scan_node_with_pushdowns(
