@@ -6,20 +6,17 @@ mod run;
 mod sinks;
 mod sources;
 
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::Snafu;
-use tokio::sync::Mutex;
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
 pub struct ExecutionRuntimeHandle {
-    pub worker_set: Arc<Mutex<tokio::task::JoinSet<DaftResult<()>>>>,
+    pub worker_set: tokio::task::JoinSet<DaftResult<()>>,
 }
 
 impl Default for ExecutionRuntimeHandle {
@@ -31,25 +28,22 @@ impl Default for ExecutionRuntimeHandle {
 impl ExecutionRuntimeHandle {
     pub fn new() -> Self {
         Self {
-            worker_set: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
+            worker_set: tokio::task::JoinSet::new(),
         }
     }
     pub async fn spawn(
-        &self,
+        &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
     ) {
-        let mut guard = self.worker_set.lock().await;
-        guard.spawn(task);
+        self.worker_set.spawn(task);
     }
 
-    pub async fn join_next(&self) -> Option<Result<DaftResult<()>, tokio::task::JoinError>> {
-        let mut guard = self.worker_set.lock().await;
-        guard.join_next().await
+    pub async fn join_next(&mut self) -> Option<Result<DaftResult<()>, tokio::task::JoinError>> {
+        self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&self) {
-        let mut guard = self.worker_set.lock().await;
-        guard.shutdown().await;
+    pub async fn shutdown(&mut self) {
+        self.worker_set.shutdown().await;
     }
 }
 
