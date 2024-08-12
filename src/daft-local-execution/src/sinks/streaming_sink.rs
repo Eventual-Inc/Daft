@@ -7,7 +7,7 @@ use tracing::info_span;
 use crate::{
     channel::{create_channel, MultiSender},
     pipeline::PipelineNode,
-    NUM_CPUS, WORKER_SET,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 pub enum StreamSinkOutput {
@@ -51,49 +51,55 @@ impl PipelineNode for StreamingSinkNode {
         self.children.iter().map(|v| v.as_ref()).collect()
     }
 
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+    async fn start(
+        &mut self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         let child = self
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender).await?;
+        child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
-        WORKER_SET.lock().await.spawn(async move {
-            // this should be a RWLock and run in concurrent workers
-            let span = info_span!("StreamingSink::execute");
+        runtime_handle
+            .spawn(async move {
+                // this should be a RWLock and run in concurrent workers
+                let span = info_span!("StreamingSink::execute");
 
-            let mut sink = op.lock().await;
-            let mut is_active = true;
-            while is_active && let Some(val) = streaming_receiver.recv().await {
-                loop {
-                    let result = span.in_scope(|| sink.execute(0, &val))?;
-                    match result {
-                        StreamSinkOutput::HasMoreOutput(mp) => {
-                            let sender = destination.get_next_sender();
-                            sender.send(mp).await.unwrap();
-                        }
-                        StreamSinkOutput::NeedMoreInput(mp) => {
-                            if let Some(mp) = mp {
+                let mut sink = op.lock().await;
+                let mut is_active = true;
+                while is_active && let Some(val) = streaming_receiver.recv().await {
+                    loop {
+                        let result = span.in_scope(|| sink.execute(0, &val))?;
+                        match result {
+                            StreamSinkOutput::HasMoreOutput(mp) => {
                                 let sender = destination.get_next_sender();
                                 sender.send(mp).await.unwrap();
                             }
-                            break;
-                        }
-                        StreamSinkOutput::Finished(mp) => {
-                            if let Some(mp) = mp {
-                                let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
+                            StreamSinkOutput::NeedMoreInput(mp) => {
+                                if let Some(mp) = mp {
+                                    let sender = destination.get_next_sender();
+                                    sender.send(mp).await.unwrap();
+                                }
+                                break;
                             }
-                            is_active = false;
-                            break;
+                            StreamSinkOutput::Finished(mp) => {
+                                if let Some(mp) = mp {
+                                    let sender = destination.get_next_sender();
+                                    sender.send(mp).await.unwrap();
+                                }
+                                is_active = false;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            DaftResult::Ok(())
-        });
+                DaftResult::Ok(())
+            })
+            .await;
         Ok(())
     }
 }

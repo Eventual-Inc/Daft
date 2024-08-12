@@ -9,22 +9,54 @@ mod sources;
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::Snafu;
+use tokio::sync::Mutex;
 
-use lazy_static::lazy_static;
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
-    pub static ref WORKER_SET: Arc<Mutex<WorkerSet>> = Arc::new(Mutex::new(WorkerSet::new()));
+}
+
+pub struct ExecutionRuntimeHandle {
+    pub worker_set: Arc<Mutex<tokio::task::JoinSet<DaftResult<()>>>>,
+}
+
+impl Default for ExecutionRuntimeHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExecutionRuntimeHandle {
+    pub fn new() -> Self {
+        Self {
+            worker_set: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
+        }
+    }
+    pub async fn spawn(
+        &self,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
+    ) {
+        let mut guard = self.worker_set.lock().await;
+        guard.spawn(task);
+    }
+
+    pub async fn join_next(&self) -> Option<Result<DaftResult<()>, tokio::task::JoinError>> {
+        let mut guard = self.worker_set.lock().await;
+        guard.join_next().await
+    }
+
+    pub async fn shutdown(&self) {
+        let mut guard = self.worker_set.lock().await;
+        guard.shutdown().await;
+    }
 }
 
 const DEFAULT_MORSEL_SIZE: usize = 1000;
 
-pub type WorkerSet = tokio::task::JoinSet<DaftResult<()>>;
-
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tokio::sync::Mutex;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

@@ -20,7 +20,9 @@ use {
 };
 
 use crate::{
-    channel::create_channel, pipeline::physical_plan_to_pipeline, Error, NUM_CPUS, WORKER_SET,
+    channel::{create_channel, create_single_channel, SingleReceiver},
+    pipeline::physical_plan_to_pipeline,
+    Error, ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 #[cfg(feature = "python")]
@@ -95,7 +97,7 @@ pub fn run_local(
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     let final_schema = physical_plan.schema();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let (tx, rx) = crossbeam_channel::unbounded();
+    let (tx, rx) = create_single_channel(1);
 
     let handle = std::thread::spawn(move || {
         refresh_chrome_trace();
@@ -112,21 +114,21 @@ pub fn run_local(
 
         runtime.block_on(async {
             let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
-            pipeline.start(sender).await?;
+            let mut runtime_handle = ExecutionRuntimeHandle::default();
+            pipeline.start(sender, &mut runtime_handle).await?;
 
             while let Some(part) = receiver.recv().await {
-                let _ = tx.send(part);
+                let _ = tx.send(part).await;
             }
 
-            let mut worker_set = WORKER_SET.lock().await;
-            while let Some(result) = worker_set.join_next().await {
+            while let Some(result) = runtime_handle.join_next().await {
                 match result {
                     Ok(Err(e)) => {
-                        worker_set.shutdown().await;
+                        runtime_handle.shutdown().await;
                         return DaftResult::Err(e);
                     }
                     Err(e) => {
-                        worker_set.shutdown().await;
+                        runtime_handle.shutdown().await;
                         return DaftResult::Err(Error::JoinError { source: e }.into());
                     }
                     _ => {}
@@ -137,7 +139,7 @@ pub fn run_local(
     });
 
     struct ReceiverIterator {
-        rx: crossbeam_channel::Receiver<Arc<MicroPartition>>,
+        rx: SingleReceiver,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
         has_output: bool,
         schema: SchemaRef,
@@ -147,12 +149,12 @@ pub fn run_local(
         type Item = DaftResult<Arc<MicroPartition>>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.rx.recv() {
-                Ok(part) => {
+            match self.rx.blocking_recv() {
+                Some(part) => {
                     self.has_output = true;
                     Some(Ok(part))
                 }
-                Err(_) => {
+                None => {
                     if let Some(h) = self.handle.take() {
                         match h.join() {
                             Ok(Ok(())) => {

@@ -12,7 +12,7 @@ use crate::{
         SingleSender,
     },
     pipeline::PipelineNode,
-    NUM_CPUS, WORKER_SET,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 pub trait IntermediateOpSpec: Send + Sync {
@@ -74,17 +74,23 @@ impl IntermediateNode {
         Ok(())
     }
 
-    pub async fn spawn_workers(&self, destination: &mut MultiSender) -> Vec<SingleSender> {
+    pub async fn spawn_workers(
+        &self,
+        destination: &mut MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> Vec<SingleSender> {
         let num_senders = destination.buffer_size();
         let mut worker_senders = Vec::with_capacity(num_senders);
         for _ in 0..num_senders {
             let (worker_sender, worker_receiver) = create_single_channel(1);
             let destination_sender = destination.get_next_sender();
-            WORKER_SET.lock().await.spawn(Self::run_worker(
-                self.intermediate_op_spec.clone(),
-                worker_receiver,
-                destination_sender,
-            ));
+            runtime_handle
+                .spawn(Self::run_worker(
+                    self.intermediate_op_spec.clone(),
+                    worker_receiver,
+                    destination_sender,
+                ))
+                .await;
             worker_senders.push(worker_sender);
         }
         worker_senders
@@ -114,7 +120,11 @@ impl PipelineNode for IntermediateNode {
         self.children.iter().map(|v| v.as_ref()).collect()
     }
 
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+    async fn start(
+        &mut self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         assert_eq!(
             self.children.len(),
             1,
@@ -125,13 +135,12 @@ impl PipelineNode for IntermediateNode {
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender).await?;
+        child.start(sender, runtime_handle).await?;
 
-        let worker_senders = self.spawn_workers(&mut destination).await;
-        WORKER_SET
-            .lock()
-            .await
-            .spawn(Self::send_to_workers(receiver, worker_senders));
+        let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
+        runtime_handle
+            .spawn(Self::send_to_workers(receiver, worker_senders))
+            .await;
         Ok(())
     }
 }

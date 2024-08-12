@@ -9,7 +9,7 @@ use crate::{
     channel::{create_channel, MultiSender},
     pipeline::PipelineNode,
     sources::source::Source,
-    NUM_CPUS, WORKER_SET,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 pub enum BlockingSinkStatus {
@@ -52,29 +52,35 @@ impl PipelineNode for BlockingSinkNode {
         vec![self.child.as_ref()]
     }
 
-    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
+    async fn start(
+        &mut self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, true);
         // now we can start building the right side
         let child = self.child.as_mut();
-        child.start(sender).await?;
+        child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
-        WORKER_SET.lock().await.spawn(async move {
-            let span = info_span!("BlockingSinkNode::execute");
-            let mut guard = op.lock().await;
-            while let Some(val) = streaming_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val))? {
-                    break;
+        runtime_handle
+            .spawn(async move {
+                let span = info_span!("BlockingSinkNode::execute");
+                let mut guard = op.lock().await;
+                while let Some(val) = streaming_receiver.recv().await {
+                    if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val))? {
+                        break;
+                    }
                 }
-            }
-            info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
+                info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
 
-            let source = guard.as_source();
-            let mut source_stream = source.get_data(destination.in_order());
-            while let Some(val) = source_stream.next().in_current_span().await {
-                let _ = destination.get_next_sender().send(val?).await;
-            }
-            DaftResult::Ok(())
-        });
+                let source = guard.as_source();
+                let mut source_stream = source.get_data(destination.in_order());
+                while let Some(val) = source_stream.next().in_current_span().await {
+                    let _ = destination.get_next_sender().send(val?).await;
+                }
+                DaftResult::Ok(())
+            })
+            .await;
 
         Ok(())
     }
