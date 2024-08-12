@@ -487,6 +487,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 /// * Time32 and Time64: precision lost when going to higher interval
 /// * Timestamp and Date{32|64}: precision lost when going to higher interval
 /// * Temporal to/from backing primitive: zero-copy with data type change
+///
 /// Unsupported Casts
 /// * To or from `StructArray`
 /// * List to primitive
