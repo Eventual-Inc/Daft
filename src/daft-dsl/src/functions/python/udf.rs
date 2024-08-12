@@ -151,7 +151,10 @@ impl FunctionEvaluator for StatefulPythonUDF {
 
     #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        use pyo3::Python;
+        use pyo3::{
+            types::{PyDict, PyTuple},
+            Python,
+        };
 
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
@@ -175,7 +178,27 @@ impl FunctionEvaluator for StatefulPythonUDF {
             // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
             // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
             // Either that, or the code-path to evaluate a StatefulUDF should bypass `evaluate` entirely and do its own thing.
-            let func = func.call0(py)?;
+            let func = match &self.init_args {
+                None => func.call0(py)?,
+                Some(init_args) => {
+                    let init_args = init_args
+                        .0
+                        .as_ref(py)
+                        .downcast::<PyTuple>()
+                        .expect("init_args should be a Python tuple");
+                    let (args, kwargs) = (
+                        init_args
+                            .get_item(0)?
+                            .downcast::<PyTuple>()
+                            .expect("init_args[0] should be a tuple of *args"),
+                        init_args
+                            .get_item(1)?
+                            .downcast::<PyDict>()
+                            .expect("init_args[1] should be a dict of **kwargs"),
+                    );
+                    func.call(py, args, Some(kwargs))?
+                }
+            };
 
             run_udf(py, inputs, func, bound_args, &self.return_dtype)
         })

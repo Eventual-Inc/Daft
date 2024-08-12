@@ -255,6 +255,7 @@ class StatefulUDF(UDF):
     name: str
     cls: type
     return_dtype: DataType
+    init_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
     def __post_init__(self):
         """Analogous to the @functools.wraps(self.cls) pattern
@@ -265,6 +266,18 @@ class StatefulUDF(UDF):
         functools.update_wrapper(self, self.cls)
 
     def __call__(self, *args, **kwargs) -> Expression:
+        # Validate that initialization arguments are provided if the __init__ signature indicates that there are
+        # parameters without defaults
+        init_sig = inspect.signature(self.cls.__init__)  # type: ignore
+        if (
+            any(param.default is param.empty for param in init_sig.parameters.values() if param.name != "self")
+            and self.init_args is None
+        ):
+            raise ValueError(
+                "Cannot call StatefulUDF without initialization arguments. Please either specify default arguments in your __init__ or provide "
+                "initialization arguments using `.with_init_args(...)`."
+            )
+
         bound_args = BoundUDFArgs(self.bind_func(*args, **kwargs))
         expressions = list(bound_args.expressions().values())
         return Expression.stateful_udf(
@@ -273,7 +286,54 @@ class StatefulUDF(UDF):
             expressions=expressions,
             return_dtype=self.return_dtype,
             resource_request=self.resource_request,
+            init_args=self.init_args,
         )
+
+    def with_init_args(self, *args, **kwargs) -> StatefulUDF:
+        """Replace initialization arguments for the Stateful UDF when calling __init__ at runtime
+        on each instance of the UDF.
+
+        Example:
+
+        >>> import daft
+        >>>
+        >>> @daft.udf(return_dtype=daft.DataType.string())
+        ... class MyInitializedClass:
+        ...     def __init__(self, text=" world"):
+        ...         self.text = text
+        ...
+        ...     def __call__(self, data):
+        ...         return [x + self.text for x in data.to_pylist()]
+        >>>
+        >>> # Create a customized version of MyInitializedClass by overriding the init args
+        >>> MyInitializedClass_CustomInitArgs = MyInitializedClass.with_init_args(text=" my old friend")
+        >>>
+        >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
+        >>> df = df.with_column("bar_world", MyInitializedClass(df["foo"]))
+        >>> df = df.with_column("bar_custom", MyInitializedClass_CustomInitArgs(df["foo"]))
+        >>> df.show()
+        ╭───────┬─────────────┬─────────────────────╮
+        │ foo   ┆ bar_world   ┆ bar_custom          │
+        │ ---   ┆ ---         ┆ ---                 │
+        │ Utf8  ┆ Utf8        ┆ Utf8                │
+        ╞═══════╪═════════════╪═════════════════════╡
+        │ hello ┆ hello world ┆ hello my old friend │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello ┆ hello world ┆ hello my old friend │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello ┆ hello world ┆ hello my old friend │
+        ╰───────┴─────────────┴─────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+        """
+        init_sig = inspect.signature(self.cls.__init__)  # type: ignore
+        init_sig.bind(
+            # Placeholder for `self`
+            None,
+            *args,
+            **kwargs,
+        )
+        return dataclasses.replace(self, init_args=(args, kwargs))
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
         sig = inspect.signature(self.cls.__call__)
@@ -296,7 +356,7 @@ def udf(
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
-) -> Callable[[UserProvidedPythonFunction | type], UDF]:
+) -> Callable[[UserProvidedPythonFunction | type], StatelessUDF | StatefulUDF]:
     """Decorator to convert a Python function into a UDF
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
@@ -408,7 +468,7 @@ def udf(
         Callable[[UserProvidedPythonFunction], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
     """
 
-    def _udf(f: UserProvidedPythonFunction | type) -> UDF:
+    def _udf(f: UserProvidedPythonFunction | type) -> StatelessUDF | StatefulUDF:
         # Grab a name for the UDF. It **should** be unique.
         name = getattr(f, "__module__", "")  # type: ignore[call-overload]
         if name:

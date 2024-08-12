@@ -1,5 +1,5 @@
 #[cfg(feature = "python")]
-mod partial_udf;
+mod pyobj_serde;
 mod udf;
 
 use std::sync::Arc;
@@ -35,7 +35,7 @@ impl PythonUDF {
 pub struct StatelessPythonUDF {
     pub name: Arc<String>,
     #[cfg(feature = "python")]
-    partial_func: partial_udf::PyPartialUDF,
+    partial_func: pyobj_serde::PyObjectWrapper,
     num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
@@ -45,10 +45,12 @@ pub struct StatelessPythonUDF {
 pub struct StatefulPythonUDF {
     pub name: Arc<String>,
     #[cfg(feature = "python")]
-    pub stateful_partial_func: partial_udf::PyPartialUDF,
+    pub stateful_partial_func: pyobj_serde::PyObjectWrapper,
     pub num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
+    #[cfg(feature = "python")]
+    pub init_args: Option<pyobj_serde::PyObjectWrapper>,
 }
 
 #[cfg(feature = "python")]
@@ -62,7 +64,7 @@ pub fn stateless_udf(
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
             name: name.to_string().into(),
-            partial_func: partial_udf::PyPartialUDF(py_partial_stateless_udf),
+            partial_func: pyobj_serde::PyObjectWrapper(py_partial_stateless_udf),
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
@@ -96,14 +98,16 @@ pub fn stateful_udf(
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
+    init_args: Option<pyo3::PyObject>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
             name: name.to_string().into(),
-            stateful_partial_func: partial_udf::PyPartialUDF(py_stateful_partial_func),
+            stateful_partial_func: pyobj_serde::PyObjectWrapper(py_stateful_partial_func),
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
+            init_args: init_args.map(pyobj_serde::PyObjectWrapper),
         })),
         inputs: expressions.into(),
     })
