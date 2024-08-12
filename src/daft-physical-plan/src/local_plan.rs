@@ -272,13 +272,6 @@ pub struct HashAggregate {
 }
 
 #[derive(Debug)]
-pub struct Distinct {
-    pub input: LocalPhysicalPlanRef,
-    pub group_by: Vec<ExprRef>,
-    pub schema: SchemaRef,
-    pub plan_stats: PlanStats,
-}
-#[derive(Debug)]
 
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
