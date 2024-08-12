@@ -12,7 +12,7 @@ use crate::{
         SingleSender,
     },
     pipeline::PipelineNode,
-    WorkerSet, NUM_CPUS,
+    NUM_CPUS, WORKER_SET,
 };
 
 pub trait IntermediateOpSpec: Send + Sync {
@@ -74,17 +74,13 @@ impl IntermediateNode {
         Ok(())
     }
 
-    pub fn spawn_workers(
-        &self,
-        worker_set: &mut WorkerSet,
-        destination: &mut MultiSender,
-    ) -> Vec<SingleSender> {
+    pub async fn spawn_workers(&self, destination: &mut MultiSender) -> Vec<SingleSender> {
         let num_senders = destination.buffer_size();
         let mut worker_senders = Vec::with_capacity(num_senders);
         for _ in 0..num_senders {
             let (worker_sender, worker_receiver) = create_single_channel(1);
             let destination_sender = destination.get_next_sender();
-            worker_set.spawn(Self::run_worker(
+            WORKER_SET.lock().await.spawn(Self::run_worker(
                 self.intermediate_op_spec.clone(),
                 worker_receiver,
                 destination_sender,
@@ -118,11 +114,7 @@ impl PipelineNode for IntermediateNode {
         self.children.iter().map(|v| v.as_ref()).collect()
     }
 
-    async fn start(
-        &mut self,
-        mut destination: MultiSender,
-        worker_set: &mut WorkerSet,
-    ) -> DaftResult<()> {
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
         assert_eq!(
             self.children.len(),
             1,
@@ -133,10 +125,13 @@ impl PipelineNode for IntermediateNode {
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender, worker_set).await?;
+        child.start(sender).await?;
 
-        let worker_senders = self.spawn_workers(worker_set, &mut destination);
-        worker_set.spawn(Self::send_to_workers(receiver, worker_senders));
+        let worker_senders = self.spawn_workers(&mut destination).await;
+        WORKER_SET
+            .lock()
+            .await
+            .spawn(Self::send_to_workers(receiver, worker_senders));
         Ok(())
     }
 }

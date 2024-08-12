@@ -6,6 +6,8 @@ mod run;
 mod sinks;
 mod sources;
 
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 pub use run::NativeExecutor;
 use snafu::Snafu;
@@ -13,6 +15,7 @@ use snafu::Snafu;
 use lazy_static::lazy_static;
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+    pub static ref WORKER_SET: Arc<Mutex<WorkerSet>> = Arc::new(Mutex::new(WorkerSet::new()));
 }
 
 const DEFAULT_MORSEL_SIZE: usize = 1000;
@@ -21,6 +24,7 @@ pub type WorkerSet = tokio::task::JoinSet<DaftResult<()>>;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

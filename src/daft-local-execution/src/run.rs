@@ -6,8 +6,9 @@ use std::{
     },
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_tracing::refresh_chrome_trace;
+use daft_core::schema::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
 
@@ -19,7 +20,7 @@ use {
 };
 
 use crate::{
-    channel::create_channel, pipeline::physical_plan_to_pipeline, Error, WorkerSet, NUM_CPUS,
+    channel::create_channel, pipeline::physical_plan_to_pipeline, Error, NUM_CPUS, WORKER_SET,
 };
 
 #[cfg(feature = "python")]
@@ -92,48 +93,91 @@ pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-    refresh_chrome_trace();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .max_blocking_threads(10)
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("Executor-Worker-{}", id)
+    let final_schema = physical_plan.schema();
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let (tx, rx) = crossbeam_channel::unbounded();
+
+    let handle = std::thread::spawn(move || {
+        refresh_chrome_trace();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .max_blocking_threads(10)
+            .thread_name_fn(|| {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("Executor-Worker-{}", id)
+            })
+            .build()
+            .expect("Failed to create tokio runtime");
+
+        runtime.block_on(async {
+            let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
+            pipeline.start(sender).await?;
+
+            while let Some(part) = receiver.recv().await {
+                let _ = tx.send(part);
+            }
+
+            let mut worker_set = WORKER_SET.lock().await;
+            while let Some(result) = worker_set.join_next().await {
+                match result {
+                    Ok(Err(e)) => {
+                        worker_set.shutdown().await;
+                        return DaftResult::Err(e);
+                    }
+                    Err(e) => {
+                        worker_set.shutdown().await;
+                        return DaftResult::Err(Error::JoinError { source: e }.into());
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
         })
-        .build()
-        .expect("Failed to create tokio runtime");
+    });
 
-    let res = runtime.block_on(async {
-        let final_schema = physical_plan.schema();
-        let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
+    struct ReceiverIterator {
+        rx: crossbeam_channel::Receiver<Arc<MicroPartition>>,
+        handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+        has_output: bool,
+        schema: SchemaRef,
+    }
 
-        let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
-        let mut worker_set = WorkerSet::new();
-        pipeline.start(sender, &mut worker_set).await.unwrap();
+    impl Iterator for ReceiverIterator {
+        type Item = DaftResult<Arc<MicroPartition>>;
 
-        let mut result = vec![];
-        while let Some(part) = receiver.recv().await {
-            result.push(Ok(part));
-        }
-        while let Some(result) = worker_set.join_next().await {
-            match result {
-                Ok(Err(e)) => {
-                    worker_set.shutdown().await;
-                    return DaftResult::Err(e);
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.rx.recv() {
+                Ok(part) => {
+                    self.has_output = true;
+                    Some(Ok(part))
                 }
-                Err(e) => {
-                    worker_set.shutdown().await;
-                    return DaftResult::Err(Error::JoinError { source: e }.into());
+                Err(_) => {
+                    if let Some(h) = self.handle.take() {
+                        match h.join() {
+                            Ok(Ok(())) => {
+                                if self.has_output {
+                                    None
+                                } else {
+                                    let empty_mp = MicroPartition::empty(Some(self.schema.clone()));
+                                    Some(Ok(Arc::new(empty_mp)))
+                                }
+                            }
+                            Ok(Err(e)) => Some(Err(e)),
+                            Err(_) => Some(Err(DaftError::InternalError("Join error".to_string()))),
+                        }
+                    } else {
+                        None
+                    }
                 }
-                _ => {}
             }
         }
-        if result.is_empty() {
-            let empty_mp = Arc::new(MicroPartition::empty(Some(final_schema.clone())));
-            result.push(Ok(empty_mp));
-        }
-        Ok(result.into_iter())
-    });
-    Ok(Box::new(res?))
+    }
+
+    Ok(Box::new(ReceiverIterator {
+        rx,
+        handle: Some(handle),
+        has_output: false,
+        schema: final_schema.clone(),
+    }))
 }

@@ -9,7 +9,7 @@ use crate::{
     channel::{create_channel, MultiSender},
     pipeline::PipelineNode,
     sources::source::Source,
-    WorkerSet, NUM_CPUS,
+    NUM_CPUS, WORKER_SET,
 };
 use async_trait::async_trait;
 pub enum BlockingSinkStatus {
@@ -52,17 +52,13 @@ impl PipelineNode for BlockingSinkNode {
         vec![self.child.as_ref()]
     }
 
-    async fn start(
-        &mut self,
-        mut destination: MultiSender,
-        worker_set: &mut WorkerSet,
-    ) -> DaftResult<()> {
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, true);
         // now we can start building the right side
         let child = self.child.as_mut();
-        child.start(sender, worker_set).await?;
+        child.start(sender).await?;
         let op = self.op.clone();
-        worker_set.spawn(async move {
+        WORKER_SET.lock().await.spawn(async move {
             let span = info_span!("BlockingSinkNode::execute");
             let mut guard = op.lock().await;
             while let Some(val) = streaming_receiver.recv().await {

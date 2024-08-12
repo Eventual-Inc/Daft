@@ -10,7 +10,7 @@ use crate::{
     },
     pipeline::PipelineNode,
     sources::source::Source,
-    WorkerSet, NUM_CPUS,
+    NUM_CPUS, WORKER_SET,
 };
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -295,13 +295,9 @@ impl PipelineNode for HashJoinNode {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
 
-    async fn start(
-        &mut self,
-        mut destination: MultiSender,
-        worker_set: &mut WorkerSet,
-    ) -> DaftResult<()> {
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
-        self.left.start(sender, worker_set).await?;
+        self.left.start(sender).await?;
         let hash_join = self.hash_join.clone();
 
         let probe_table_build = tokio::spawn(async move {
@@ -321,7 +317,7 @@ impl PipelineNode for HashJoinNode {
 
         let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
-        self.right.start(right_sender, worker_set).await?;
+        self.right.start(right_sender).await?;
 
         probe_table_build.await.unwrap()?;
 
@@ -332,11 +328,14 @@ impl PipelineNode for HashJoinNode {
         };
 
         let node = IntermediateNode::new(Arc::new(spec), vec![]);
-        let worker_senders = node.spawn_workers(worker_set, &mut destination);
-        worker_set.spawn(IntermediateNode::send_to_workers(
-            streaming_receiver,
-            worker_senders,
-        ));
+        let worker_senders = node.spawn_workers(&mut destination).await;
+        WORKER_SET
+            .lock()
+            .await
+            .spawn(IntermediateNode::send_to_workers(
+                streaming_receiver,
+                worker_senders,
+            ));
         Ok(())
     }
 }

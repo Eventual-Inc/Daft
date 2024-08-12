@@ -7,7 +7,7 @@ use tracing::info_span;
 use crate::{
     channel::{create_channel, MultiSender},
     pipeline::PipelineNode,
-    WorkerSet, NUM_CPUS,
+    NUM_CPUS, WORKER_SET,
 };
 use async_trait::async_trait;
 pub enum StreamSinkOutput {
@@ -51,20 +51,16 @@ impl PipelineNode for StreamingSinkNode {
         self.children.iter().map(|v| v.as_ref()).collect()
     }
 
-    async fn start(
-        &mut self,
-        mut destination: MultiSender,
-        worker_set: &mut WorkerSet,
-    ) -> DaftResult<()> {
+    async fn start(&mut self, mut destination: MultiSender) -> DaftResult<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         let child = self
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender, worker_set).await?;
+        child.start(sender).await?;
         let op = self.op.clone();
-        worker_set.spawn(async move {
+        WORKER_SET.lock().await.spawn(async move {
             // this should be a RWLock and run in concurrent workers
             let span = info_span!("StreamingSink::execute");
 
