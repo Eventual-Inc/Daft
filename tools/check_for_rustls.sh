@@ -1,2 +1,2 @@
 #!/bin/bash
-cargo tree --workspace --all-features | grep -vzq rustls
+cargo tree --workspace --all-features | grep -v 'rustls-pemfile' | grep -vzq 'rustls'

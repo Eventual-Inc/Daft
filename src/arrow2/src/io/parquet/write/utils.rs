@@ -131,7 +131,7 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().inspect(|x| {
+        self.iter.next().inspect(|_| {
             self.remaining -= 1;
         })
     }
