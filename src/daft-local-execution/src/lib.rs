@@ -10,7 +10,6 @@ use common_error::{{DaftError, DaftResult}, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::Snafu;
-use tokio::sync::Mutex;
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
