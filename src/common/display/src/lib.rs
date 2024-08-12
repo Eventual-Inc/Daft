@@ -4,7 +4,7 @@ pub mod mermaid;
 pub mod tree;
 
 #[derive(Debug, Clone, Copy)]
-pub enum DisplayFormatType {
+pub enum DisplayLevel {
     Default,
     Compact,
 }

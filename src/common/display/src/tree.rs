@@ -4,11 +4,11 @@ pub trait TreeDisplay {
     /// Display the current node in the tree.
     /// If not implemented, it will default to the `get_name` method in `Compact` mode.
     /// and `get_multiline_representation` in `Default` mode.
-    fn node_display(&self, t: crate::DisplayFormatType) -> String {
+    fn node_display(&self, t: crate::DisplayLevel) -> String {
         match t {
             // If in `Compact` mode, only display the name of the node.
-            crate::DisplayFormatType::Compact => self.get_name(),
-            crate::DisplayFormatType::Default => self.get_multiline_representation().join(", "),
+            crate::DisplayLevel::Compact => self.get_name(),
+            crate::DisplayLevel::Default => self.get_multiline_representation().join(", "),
         }
     }
 
@@ -55,9 +55,9 @@ impl AsciiTreeBuilder {
         simple: bool,
     ) -> fmt::Result {
         let t = if simple {
-            crate::DisplayFormatType::Compact
+            crate::DisplayLevel::Compact
         } else {
-            crate::DisplayFormatType::Default
+            crate::DisplayLevel::Default
         };
         self.fmt_tree_gitstyle(node, 0, s, t)
     }
@@ -103,15 +103,15 @@ impl AsciiTreeBuilder {
         node: &T,
         depth: usize,
         s: &'a mut W,
-        t: crate::DisplayFormatType,
+        t: crate::DisplayLevel,
     ) -> fmt::Result {
         // Print the current node.
         // e.g. | | * <node contents line 1>
         //      | | | <node contents line 2>
 
         let lines = match t {
-            crate::DisplayFormatType::Compact => vec![node.get_name()],
-            crate::DisplayFormatType::Default => node.get_multiline_representation(),
+            crate::DisplayLevel::Compact => vec![node.get_name()],
+            crate::DisplayLevel::Default => node.get_multiline_representation(),
         };
         use terminal_size::{terminal_size, Width};
         let size = terminal_size();

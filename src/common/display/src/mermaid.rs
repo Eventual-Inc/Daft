@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use std::fmt;
 
-use crate::{tree::TreeDisplay, DisplayFormatType};
+use crate::{tree::TreeDisplay, DisplayLevel};
 
 pub trait MermaidDisplay: TreeDisplay {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;
@@ -34,8 +34,8 @@ impl<T: TreeDisplay> MermaidDisplay for T {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
         let mut s = String::new();
         let display_type = match options.simple {
-            true => DisplayFormatType::Compact,
-            false => DisplayFormatType::Default,
+            true => DisplayLevel::Compact,
+            false => DisplayLevel::Default,
         };
 
         let mut visitor =
@@ -48,7 +48,7 @@ impl<T: TreeDisplay> MermaidDisplay for T {
 
 pub struct MermaidDisplayVisitor<'a, W> {
     output: &'a mut W,
-    t: DisplayFormatType,
+    t: DisplayLevel,
     /// each node should only appear once in the tree.
     /// the key is the node's `multiline_display` string, and the value is the node's id.
     /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
@@ -59,11 +59,7 @@ pub struct MermaidDisplayVisitor<'a, W> {
 }
 
 impl<'a, W> MermaidDisplayVisitor<'a, W> {
-    pub fn new(
-        w: &'a mut W,
-        t: DisplayFormatType,
-        subgraph_options: Option<SubgraphOptions>,
-    ) -> Self {
+    pub fn new(w: &'a mut W, t: DisplayLevel, subgraph_options: Option<SubgraphOptions>) -> Self {
         Self {
             output: w,
             t,
@@ -119,9 +115,9 @@ where
         writeln!(self.output, r#"{child} --> {parent}"#)
     }
 
-    fn fmt_node<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result
+    fn fmt_node<D>(&mut self, node: &D) -> fmt::Result
     where
-        D: Sized,
+        D: Sized + TreeDisplay,
     {
         self.add_node(node)?;
         let children = node.get_children();
