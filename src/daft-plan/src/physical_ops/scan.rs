@@ -42,6 +42,7 @@ impl TreeDisplay for TabularScan {
                 .sum();
 
             let clustering_spec = scan.clustering_spec.multiline_display().join(", ");
+            #[allow(unused_mut)]
             let mut s = format!(
                 "TabularScan:
 Num Scan Tasks = {num_scan_tasks}
@@ -66,12 +67,27 @@ Clustering spec = {{ {clustering_spec} }}
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {
                 let mut s = base_display(self);
+                // We're only going to display the pushdowns and schema for the first scan task.
+                let pushdown = &self.scan_tasks[0].pushdowns;
+                if !pushdown.is_empty() {
+                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
+                    s.push('\n');
+                }
+
+                let schema = &self.scan_tasks[0].schema;
+                writeln!(
+                    s,
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                )
+                .unwrap();
+
                 let tasks = self.scan_tasks.iter();
 
                 writeln!(s, "Scan Tasks: [").unwrap();
                 for (i, st) in tasks.enumerate() {
                     if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Default)).unwrap();
+                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
                     } else if i == 3 {
                         writeln!(s, "...").unwrap();
                     }

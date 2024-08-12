@@ -603,17 +603,18 @@ impl DisplayAs for ScanTask {
             .to_string(),
             common_display::DisplayLevel::Default => {
                 format!(
-                    "ScanTask {{
-Sources = [
-{sources}
-]
-}}
+                    "ScanTask:
+Sources = [{sources}]
+Pushdowns = {pushdowns}
 ",
                     sources = self
                         .sources
                         .iter()
                         .map(|s| s.display_as(common_display::DisplayLevel::Default))
                         .join(", "),
+                    pushdowns = self
+                        .pushdowns
+                        .display_as(common_display::DisplayLevel::Default)
                 )
             }
             common_display::DisplayLevel::Verbose => todo!(),
@@ -828,6 +829,13 @@ impl Pushdowns {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.filters.is_none()
+            && self.partition_filters.is_none()
+            && self.columns.is_none()
+            && self.limit.is_none()
+    }
+
     pub fn with_limit(&self, limit: Option<usize>) -> Self {
         Self {
             filters: self.filters.clone(),
@@ -886,7 +894,7 @@ impl DisplayAs for Pushdowns {
         match level {
             common_display::DisplayLevel::Compact => {
                 let mut s = String::new();
-                s.push_str("Pushdowns {");
+                s.push_str("Pushdowns: {");
                 let mut sub_items = vec![];
                 if let Some(columns) = &self.columns {
                     sub_items.push(format!("projection: [{}]", columns.join(", ")));
@@ -901,7 +909,7 @@ impl DisplayAs for Pushdowns {
                     sub_items.push(format!("limit: {}", limit));
                 }
                 s.push_str(&sub_items.join(", "));
-                s.push_str("}");
+                s.push('}');
                 s
             }
             _ => self.multiline_display().join("\n"),

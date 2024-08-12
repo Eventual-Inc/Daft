@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 

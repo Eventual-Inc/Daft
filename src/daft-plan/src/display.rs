@@ -53,8 +53,11 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
             crate::PhysicalPlan::TabularWriteParquet(write) => write.description(level),
             crate::PhysicalPlan::TabularWriteJson(write) => write.description(level),
             crate::PhysicalPlan::TabularWriteCsv(write) => write.description(level),
+            #[cfg(feature = "python")]
             crate::PhysicalPlan::IcebergWrite(write) => write.description(level),
+            #[cfg(feature = "python")]
             crate::PhysicalPlan::DeltaLakeWrite(write) => write.description(level),
+            #[cfg(feature = "python")]
             crate::PhysicalPlan::LanceWrite(write) => write.description(level),
         }
     }
