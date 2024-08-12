@@ -53,6 +53,7 @@ pub type WorkerSet = tokio::task::JoinSet<DaftResult<()>>;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

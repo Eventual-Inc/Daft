@@ -6,8 +6,9 @@ use std::{
     },
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_tracing::refresh_chrome_trace;
+use daft_core::schema::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
 
@@ -92,17 +93,22 @@ pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
-    refresh_chrome_trace();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .max_blocking_threads(10)
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("Executor-Worker-{}", id)
-        })
-        .build()
-        .expect("Failed to create tokio runtime");
+    let final_schema = physical_plan.schema();
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let (tx, rx) = crossbeam_channel::unbounded();
+
+    let handle = std::thread::spawn(move || {
+        refresh_chrome_trace();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .max_blocking_threads(10)
+            .thread_name_fn(|| {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("Executor-Worker-{}", id)
+            })
+            .build()
+            .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
         let final_schema = physical_plan.schema();
