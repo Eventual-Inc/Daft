@@ -52,7 +52,6 @@ impl BlockingSink for SortSink {
                 !parts.is_empty(),
                 "We can not finalize SortSink with no data"
             );
-
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
