@@ -346,12 +346,12 @@ def udf(
     machine/cluster with 8 CPUs, Daft will be able to run up to 2 instances of this UDF at once, giving you a concurrency of 2!
 
     >>> import daft
-    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
-    ... def udf_needs_4_cpus(x: daft.Series):
+    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
+    ... def udf_needs_2_cpus(x: daft.Series):
     ...     return x
     >>>
     >>> df = daft.from_pydict({"x": [1, 2, 3]})
-    >>> df = df.with_column("new_x", udf_needs_4_cpus(df["x"]))
+    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
     >>> df.show()
     ╭───────┬───────╮
     │ x     ┆ new_x │
@@ -374,11 +374,11 @@ def udf(
     ... def udf_needs_4_cpus(x: daft.Series):
     ...     return x
     >>>
-    >>> # Override the num_cpus to 8 instead
-    >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=8)
+    >>> # Override the num_cpus to 2 instead
+    >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
     >>>
     >>> df = daft.from_pydict({"x": [1, 2, 3]})
-    >>> df = df.with_column("new_x", udf_needs_8_cpus(df["x"]))
+    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
     >>> df.show()
     ╭───────┬───────╮
     │ x     ┆ new_x │

@@ -5,7 +5,7 @@ use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
     functions::{
-        python::{PythonUDF, StatefulPythonUDF},
+        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     Expr, ExprRef,
@@ -51,9 +51,8 @@ impl ActorPoolProject {
         })
     }
 
-    pub fn resource_request(&self) -> ResourceRequest {
-        // TODO: Grab and merge resource requests across all UDFs
-        todo!();
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -93,12 +92,16 @@ impl ActorPoolProject {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
-        let resource_request = self.resource_request().multiline_display();
-        if !resource_request.is_empty() {
+        let resource_request = self.resource_request().map(|rr| rr.multiline_display());
+        if let Some(resource_request) = resource_request
+            && !resource_request.is_empty()
+        {
             res.push(format!(
                 "Resource request = {{ {} }}",
                 resource_request.join(", ")
             ));
+        } else {
+            res.push("Resource request = None".to_string());
         }
         res
     }
