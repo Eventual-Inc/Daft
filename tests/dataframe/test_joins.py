@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft import col
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
@@ -836,8 +837,6 @@ def test_join_semi_anti_different_names(join_strategy, join_type, expected, make
 
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_join_true_join_keys(join_type, make_df):
-    from daft import col
-
     daft_df = make_df(
         {
             "id": [1, 2, 3],
@@ -857,3 +856,218 @@ def test_join_true_join_keys(join_type, make_df):
     assert result.schema()["id"].dtype == daft_df.schema()["id"].dtype
     assert result.schema()["values"].dtype == daft_df.schema()["values"].dtype
     assert result.schema()["right.values"].dtype == daft_df2.schema()["values"].dtype
+
+
+@pytest.mark.parametrize(
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        (
+            "inner",
+            {
+                "a": [2, 3],
+                "b": [2, 3],
+            },
+        ),
+        (
+            "left",
+            {
+                "a": [1, 2, 3],
+                "b": [None, 2, 3],
+            },
+        ),
+        (
+            "right",
+            {
+                "a": [2, 3, None],
+                "b": [2, 3, 4],
+            },
+        ),
+        (
+            "outer",
+            {
+                "a": [1, 2, 3, None],
+                "b": [None, 2, 3, 4],
+            },
+        ),
+        (
+            "semi",
+            {
+                "a": [2, 3],
+            },
+        ),
+        (
+            "anti",
+            {
+                "a": [1],
+            },
+        ),
+    ],
+)
+def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df):
+    skip_invalid_join_strategies(join_strategy, join_type)
+
+    daft_df1 = make_df(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+    daft_df2 = make_df(
+        {
+            "b": [2, 3, 4],
+        }
+    )
+
+    daft_df = daft_df1.join(daft_df2, left_on=col("a").alias("x"), right_on="b", how=join_type, strategy=join_strategy)
+
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "a"
+    )
+
+
+@pytest.mark.parametrize(
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        (
+            "inner",
+            {
+                "a": [2, 3],
+                "right.a": [2, 3],
+            },
+        ),
+        (
+            "left",
+            {
+                "a": [1, 2, 3],
+                "right.a": [None, 2, 3],
+            },
+        ),
+        (
+            "right",
+            {
+                "a": [2, 3, None],
+                "right.a": [2, 3, 4],
+            },
+        ),
+        (
+            "outer",
+            {
+                "a": [1, 2, 3, None],
+                "right.a": [None, 2, 3, 4],
+            },
+        ),
+        (
+            "semi",
+            {
+                "a": [2, 3],
+            },
+        ),
+        (
+            "anti",
+            {
+                "a": [1],
+            },
+        ),
+    ],
+)
+def test_join_same_name_alias(join_strategy, join_type, expected, make_df):
+    skip_invalid_join_strategies(join_strategy, join_type)
+
+    daft_df1 = make_df(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+    daft_df2 = make_df(
+        {
+            "a": [2, 3, 4],
+        }
+    )
+
+    daft_df = daft_df1.join(daft_df2, left_on="a", right_on=col("a").alias("b"), how=join_type, strategy=join_strategy)
+
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "a"
+    )
+
+
+@pytest.mark.parametrize(
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        (
+            "inner",
+            {
+                "a": [0.2, 0.3],
+                "right.a": [20, 30],
+            },
+        ),
+        (
+            "left",
+            {
+                "a": [0.1, 0.2, 0.3],
+                "right.a": [None, 20, 30],
+            },
+        ),
+        (
+            "right",
+            {
+                "a": [0.2, 0.3, None],
+                "right.a": [20, 30, 40],
+            },
+        ),
+        (
+            "outer",
+            {
+                "a": [0.1, 0.2, 0.3, None],
+                "right.a": [None, 20, 30, 40],
+            },
+        ),
+        (
+            "semi",
+            {
+                "a": [0.2, 0.3],
+            },
+        ),
+        (
+            "anti",
+            {
+                "a": [0.1],
+            },
+        ),
+    ],
+)
+def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, make_df):
+    skip_invalid_join_strategies(join_strategy, join_type)
+
+    daft_df1 = make_df(
+        {
+            "a": [0.1, 0.2, 0.3],
+        }
+    )
+    daft_df2 = make_df(
+        {
+            "a": [20, 30, 40],
+        }
+    )
+
+    daft_df = daft_df1.join(
+        daft_df2, left_on=col("a") * 10, right_on=(col("a") / 10).alias("b"), how=join_type, strategy=join_strategy
+    )
+
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "a"
+    )

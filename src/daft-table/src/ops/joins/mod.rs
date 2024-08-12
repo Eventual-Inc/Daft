@@ -159,16 +159,11 @@ impl Table {
 
         let mut join_series = get_common_join_keys(left_on, right_on)
             .map(|name| {
-                let lcol = self.get_column(&name)?;
-                let rcol = right.get_column(&name)?;
+                let lcol = self.get_column(name)?;
+                let rcol = right.get_column(name)?;
 
-                let mut growable = make_growable(
-                    name.as_str(),
-                    lcol.data_type(),
-                    vec![lcol, rcol],
-                    false,
-                    lcol.len(),
-                );
+                let mut growable =
+                    make_growable(name, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
 
                 for (li, ri) in lidx.u64()?.into_iter().zip(ridx.u64()?) {
                     match (li, ri) {

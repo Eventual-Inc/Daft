@@ -207,7 +207,7 @@ pub(super) fn hash_left_right_join(
     } else {
         common_join_keys
             .map(|name| {
-                let col_dtype = &left.schema.get_field(name.as_str())?.dtype;
+                let col_dtype = &left.schema.get_field(name)?.dtype;
                 right.get_column(name)?.take(&ridx)?.cast(col_dtype)
             })
             .collect::<DaftResult<Vec<_>>>()?
@@ -425,8 +425,8 @@ pub(super) fn hash_outer_join(
         common_join_keys
             .into_iter()
             .map(|name| {
-                let lcol = left.get_column(&name)?.take(&lidx)?;
-                let rcol = right.get_column(&name)?.take(&ridx)?;
+                let lcol = left.get_column(name)?.take(&lidx)?;
+                let rcol = right.get_column(name)?.take(&ridx)?;
 
                 lcol.if_else(&rcol, &join_key_predicate)
             })

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     schema::{Schema, SchemaRef},
@@ -12,12 +14,12 @@ use crate::{Expr, ExprRef};
 pub fn get_common_join_keys<'a>(
     left_on: &'a [ExprRef],
     right_on: &'a [ExprRef],
-) -> impl Iterator<Item = String> + 'a {
+) -> impl Iterator<Item = &'a Arc<str>> {
     left_on.iter().zip(right_on.iter()).filter_map(|(l, r)| {
         if let (Expr::Column(l_name), Expr::Column(r_name)) = (&**l, &**r)
             && l_name == r_name
         {
-            Some(l_name.clone().to_string())
+            Some(l_name)
         } else {
             None
         }
@@ -46,7 +48,9 @@ pub fn infer_join_schema(
     if matches!(how, JoinType::Anti | JoinType::Semi) {
         Ok(left_schema.clone())
     } else {
-        let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on).collect();
+        let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
+            .map(|k| k.to_string())
+            .collect();
 
         // common join fields, then unique left fields, then unique right fields
         let fields: Vec<_> = common_join_keys
@@ -103,7 +107,9 @@ mod tests {
             col("e"),
         ];
 
-        let common_join_keys = get_common_join_keys(left_on, right_on).collect::<Vec<_>>();
+        let common_join_keys = get_common_join_keys(left_on, right_on)
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>();
 
         assert_eq!(common_join_keys, vec!["a"]);
     }

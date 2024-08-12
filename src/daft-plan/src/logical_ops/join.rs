@@ -3,8 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TransformedResult, TreeNode};
+use common_error::DaftError;
 use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
@@ -13,6 +12,7 @@ use daft_core::{
 use daft_dsl::{
     col,
     join::{get_common_join_keys, infer_join_schema},
+    optimization::replace_columns_with_expressions,
     resolve_exprs, Expr, ExprRef,
 };
 use itertools::Itertools;
@@ -91,7 +91,9 @@ impl Join {
             })
         } else {
             let common_join_keys: HashSet<_> =
-                get_common_join_keys(left_on.as_slice(), right_on.as_slice()).collect();
+                get_common_join_keys(left_on.as_slice(), right_on.as_slice())
+                    .map(|k| k.to_string())
+                    .collect();
 
             let left_names = left.schema().names();
             let right_names = right.schema().names();
@@ -135,23 +137,16 @@ impl Join {
                 let new_right: LogicalPlan =
                     Project::try_new(right, new_right_projection, Default::default())?.into();
 
+                let right_on_replace_map = right_rename_mapping
+                    .iter()
+                    .map(|(old_name, new_name)| (old_name.clone(), col(new_name.clone())))
+                    .collect::<HashMap<_, _>>();
+
                 // change any column references in the right_on expressions to the new column names
                 let new_right_on = right_on
                     .into_iter()
-                    .map(|expr| {
-                        expr.transform(|e| {
-                            if let Expr::Column(name) = e.as_ref()
-                                && let Some(new_name) = right_rename_mapping.get(name.as_ref())
-                            {
-                                Ok(Transformed::yes(col(new_name.clone())))
-                            } else {
-                                Ok(Transformed::no(e))
-                            }
-                        })
-                        .data()
-                    })
-                    .collect::<DaftResult<Vec<_>>>()
-                    .context(CreationSnafu)?;
+                    .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
+                    .collect::<Vec<_>>();
 
                 (new_right.into(), new_right_on)
             };
