@@ -6,8 +6,11 @@ use std::{
 use common_display::tree::TreeDisplay;
 
 impl TreeDisplay for crate::LogicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
+    fn description(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.name(),
+            common_display::DisplayLevel::Default => self.multiline_display().join("\n"),
+        }
     }
 
     fn get_name(&self) -> String {
@@ -20,8 +23,11 @@ impl TreeDisplay for crate::LogicalPlan {
 }
 
 impl TreeDisplay for crate::physical_plan::PhysicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
+    fn description(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.name(),
+            common_display::DisplayLevel::Default => self.multiline_display().join("\n"),
+        }
     }
 
     fn get_name(&self) -> String {
@@ -36,7 +42,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
 // Single node display.
 impl Display for crate::LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
+        write!(f, "{}", self.multiline_display().join(", "))?;
         Ok(())
     }
 }
@@ -44,7 +50,7 @@ impl Display for crate::LogicalPlan {
 // Single node display.
 impl Display for crate::physical_plan::PhysicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
+        write!(f, "{}", self.multiline_display().join(", "))?;
         Ok(())
     }
 }
@@ -139,7 +145,7 @@ mod test {
             .build();
 
         let mermaid_repr = plan.repr_mermaid(Default::default());
-
+        println!("{}", mermaid_repr);
         let expected = r#"flowchart TD
 Limit0["Limit: 10"]
 Project1["Project: col(first_name)"]
@@ -154,6 +160,7 @@ Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 Source5 --> Filter4
+Filter4 --> Join3
 Sort6["Sort: Sort by = (col(last_name), ascending)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
@@ -169,11 +176,11 @@ Filter10 --> Limit9
 Limit9 --> MonotonicallyIncreasingId8
 MonotonicallyIncreasingId8 --> Distinct7
 Distinct7 --> Sort6
-Filter4 --> Join3
 Sort6 --> Join3
 Join3 --> Filter2
 Filter2 --> Project1
-Project1 --> Limit0"#;
+Project1 --> Limit0
+"#;
 
         assert_eq!(mermaid_repr, expected);
         Ok(())
@@ -220,6 +227,7 @@ Join3["Join"]
 Filter4["Filter"]
 Source5["Source"]
 Source5 --> Filter4
+Filter4 --> Join3
 Sort6["Sort"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
@@ -231,11 +239,11 @@ Filter10 --> Limit9
 Limit9 --> MonotonicallyIncreasingId8
 MonotonicallyIncreasingId8 --> Distinct7
 Distinct7 --> Sort6
-Filter4 --> Join3
 Sort6 --> Join3
 Join3 --> Filter2
 Filter2 --> Project1
-Project1 --> Limit0"#;
+Project1 --> Limit0
+"#;
 
         assert_eq!(mermaid_repr, expected);
         Ok(())
@@ -258,7 +266,8 @@ optimizedSource0["PlaceHolder:
 Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
-end"#;
+end
+"#;
         assert_eq!(mermaid_repr, expected);
         Ok(())
     }

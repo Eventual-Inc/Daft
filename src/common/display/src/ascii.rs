@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::tree::TreeDisplay;
+use crate::{tree::TreeDisplay, DisplayLevel};
 
 // Print the tree recursively, and illustrate the tree structure with a single line per node + indentation.
 fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
@@ -14,7 +14,7 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
         write!(s, "{:indent$}", "", indent = 2 * indent)?;
     }
 
-    let node_str = node.get_multiline_representation().join(", ");
+    let node_str = node.description(DisplayLevel::Default);
     s.write_str(&node_str)?;
 
     // Recursively handle children.
@@ -49,10 +49,9 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
     // e.g. | | * <node contents line 1>
     //      | | | <node contents line 2>
 
-    let lines = match level {
-        crate::DisplayLevel::Compact => vec![node.get_name()],
-        crate::DisplayLevel::Default => node.get_multiline_representation(),
-    };
+    let desc = node.description(level);
+    let lines = desc.lines();
+
     use terminal_size::{terminal_size, Width};
     let size = terminal_size();
     let term_width = if let Some((Width(w), _)) = size {
@@ -62,9 +61,10 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
     };
 
     let mut counter = 0;
-    for val in lines.iter() {
-        let base_characters = depth * 2;
-        let expected_chars = (term_width - base_characters - 8).max(8);
+    let base_characters = depth * 2;
+    let expected_chars = (term_width - base_characters - 8).max(8);
+
+    for val in lines {
         let sublines = textwrap::wrap(val, expected_chars);
 
         for (i, sb) in sublines.iter().enumerate() {

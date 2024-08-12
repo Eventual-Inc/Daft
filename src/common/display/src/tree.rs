@@ -5,21 +5,19 @@ pub trait TreeDisplay {
     /// The `level` parameter is used to determine how verbose the description should be.
     /// It is up to the implementer to decide how to use this parameter.
     ///
-    ///
-    /// If not implemented, it will default to the `get_name` method in `Compact` mode.
-    /// and `get_multiline_representation` in `Default` mode.
-    fn node_description(&self, level: crate::DisplayLevel) -> String {
-        match level {
-            // If in `Compact` mode, only display the name of the node.
-            crate::DisplayLevel::Compact => self.get_name(),
-            crate::DisplayLevel::Default => self.get_multiline_representation().join(", "),
-        }
-    }
+    /// For example, a `level` of `DisplayLevel::Compact` might only show the name of the node,
+    /// while a `level` of `DisplayLevel::Default` might show all available details.
+    fn description(&self, level: crate::DisplayLevel) -> String;
 
-    /// Required method: Get a list of lines representing this node. No trailing newlines.
-    /// The multiline representation should contain information about the node itself,
-    /// **but not its children.**
-    fn get_multiline_representation(&self) -> Vec<String>;
+    /// Get a unique identifier for this node.
+    /// No two nodes should have the same semantic id.
+    /// The default implementation uses the node's name and memory address.
+    fn semantic_id(&self) -> String {
+        let mut s = String::new();
+        s.push_str(&self.get_name());
+        s.push_str(&format!("{:p}", self as *const Self as *const ()));
+        s
+    }
 
     /// Required method: Get the human-readable name of this node.
     fn get_name(&self) -> String;
@@ -29,12 +27,16 @@ pub trait TreeDisplay {
 }
 
 impl TreeDisplay for Arc<dyn TreeDisplay> {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.as_ref().get_multiline_representation()
+    fn description(&self, level: crate::DisplayLevel) -> String {
+        self.as_ref().description(level)
     }
 
     fn get_name(&self) -> String {
         self.as_ref().get_name()
+    }
+
+    fn semantic_id(&self) -> String {
+        self.as_ref().semantic_id()
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
