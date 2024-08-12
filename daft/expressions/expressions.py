@@ -124,7 +124,9 @@ def lit(value: object) -> Expression:
 
 
 def col(name: str) -> Expression:
-    """Creates an Expression referring to the column with the provided name
+    """Creates an Expression referring to the column with the provided name.
+
+    See :ref:`Column Wildcards` for details on wildcards.
 
     Example:
         >>> import daft
@@ -653,7 +655,7 @@ class Expression:
             │ ---                 ┆ ---                            │
             │ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
+            │ 2.9742334234767163  ┆ [1.993661701417351, 2.9742334… │
             ╰─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
