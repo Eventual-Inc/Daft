@@ -6,7 +6,7 @@ use daft_dsl::optimization::get_required_columns;
 use indexmap::IndexSet;
 use snafu::Snafu;
 
-use common_display::tree::AsciiTreeDisplay;
+use common_display::ascii::AsciiTreeDisplay;
 
 pub use crate::logical_ops::*;
 

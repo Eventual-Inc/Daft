@@ -1,4 +1,4 @@
-use common_display::{tree::AsciiTreeDisplay, DisplayFormat};
+use common_display::{ascii::AsciiTreeDisplay, DisplayFormat};
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, ops::Add, sync::Arc};
 

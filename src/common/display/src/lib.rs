@@ -1,12 +1,15 @@
 use mermaid::MermaidDisplayOptions;
 
+pub mod ascii;
 pub mod mermaid;
 pub mod tree;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DisplayLevel {
-    Default,
+    /// A compact display, showing only the most important details.
     Compact,
+    /// The default display, showing common details.
+    Default,
 }
 
 #[derive(Debug, Clone)]

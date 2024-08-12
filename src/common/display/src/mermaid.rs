@@ -96,7 +96,7 @@ where
     fn display_for_node<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
         // Ideally, a node should be able to uniquely identify itself.
         // For now, we'll just use the display string.
-        let line = node.node_display(self.t);
+        let line = node.node_description(self.t);
         let max_chars = 80;
 
         let sublines = textwrap::wrap(&line, max_chars);
