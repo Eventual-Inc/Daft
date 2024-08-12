@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -11,7 +10,6 @@ use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 pub struct SortSink {
     sort_by: Vec<ExprRef>,
     descending: Vec<bool>,
-    schema: SchemaRef,
     state: SortState,
 }
 
@@ -22,11 +20,10 @@ enum SortState {
 }
 
 impl SortSink {
-    pub fn new(sort_by: Vec<ExprRef>, descending: Vec<bool>, schema: SchemaRef) -> Self {
+    pub fn new(sort_by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
         Self {
             sort_by,
             descending,
-            schema,
             state: SortState::Building(vec![]),
         }
     }
@@ -51,11 +48,11 @@ impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if let SortState::Building(parts) = &mut self.state {
-            if parts.is_empty() {
-                let empty_mp = MicroPartition::empty(Some(self.schema.clone()));
-                self.state = SortState::Done(Arc::new(empty_mp));
-                return Ok(());
-            }
+            assert!(
+                !parts.is_empty(),
+                "We can not finalize SortSink with no data"
+            );
+
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);

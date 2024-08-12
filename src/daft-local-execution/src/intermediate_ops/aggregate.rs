@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -17,11 +16,10 @@ pub struct AggregateOperator {
 }
 
 impl AggregateSpec {
-    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>, input_schema: SchemaRef) -> Self {
+    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>) -> Self {
         Self {
             agg_exprs,
             group_by,
-            input_schema,
         }
     }
 }
@@ -55,11 +53,7 @@ impl IntermediateOperator for AggregateOperator {
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         match self.state.clear() {
             Some(part) => part.map(Some),
-            None => {
-                let empty_mp = MicroPartition::empty(Some(self.spec.input_schema.clone()));
-                let agged = empty_mp.agg(&self.spec.agg_exprs, &self.spec.group_by)?;
-                Ok(Some(Arc::new(agged)))
-            }
+            None => Ok(None),
         }
     }
 
