@@ -105,7 +105,6 @@ pub fn physical_plan_to_pipeline(
                         .map(|e| Arc::new(Expr::Agg(e.clone())))
                         .collect(),
                     vec![],
-                    input.schema().clone(),
                 );
                 IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed()
             };
@@ -117,7 +116,6 @@ pub fn physical_plan_to_pipeline(
                     .map(|e| Arc::new(Expr::Agg(e.clone())))
                     .collect(),
                 vec![],
-                schema.clone(),
             );
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
@@ -147,7 +145,6 @@ pub fn physical_plan_to_pipeline(
                         .map(|e| Arc::new(Expr::Agg(e.clone())))
                         .collect(),
                     group_by.clone(),
-                    input.schema().clone(),
                 );
                 IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed()
             };
@@ -159,7 +156,6 @@ pub fn physical_plan_to_pipeline(
                     .map(|e| Arc::new(Expr::Agg(e.clone())))
                     .collect(),
                 group_by.clone(),
-                schema.clone(),
             );
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
@@ -170,27 +166,22 @@ pub fn physical_plan_to_pipeline(
                 .boxed()
         }
         LocalPhysicalPlan::Distinct(Distinct {
-            input,
-            group_by,
-            schema,
-            ..
+            input, group_by, ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            let local_distinct_spec =
-                AggregateSpec::new(vec![], group_by.clone(), input.schema().clone());
+            let local_distinct_spec = AggregateSpec::new(vec![], group_by.clone());
             let local_distinct_node =
                 IntermediateNode::new(Arc::new(local_distinct_spec), vec![child_node]).boxed();
-            let global_distinct_sink = AggregateSink::new(vec![], group_by.clone(), schema.clone());
+            let global_distinct_sink = AggregateSink::new(vec![], group_by.clone());
             BlockingSinkNode::new(global_distinct_sink.boxed(), local_distinct_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
             sort_by,
             descending,
-            schema,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), schema.clone());
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
             BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }
