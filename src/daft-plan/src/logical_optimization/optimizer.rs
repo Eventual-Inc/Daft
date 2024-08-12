@@ -3,7 +3,6 @@ use std::{collections::HashSet, ops::ControlFlow, sync::Arc};
 use common_error::DaftResult;
 
 use crate::LogicalPlan;
-use common_treenode::DynTreeNode;
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
@@ -294,7 +293,7 @@ impl Optimizer {
         order: ApplyOrder,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Run optimization rules on children.
-        let children = plan.arc_children();
+        let children = plan.children();
         let result = children
             .into_iter()
             .map(|child_plan| {

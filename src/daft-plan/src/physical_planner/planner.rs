@@ -13,7 +13,7 @@ use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 use crate::LogicalPlanRef;
 
-use common_treenode::{DynTreeNode, TreeNodeRecursion};
+use common_treenode::TreeNodeRecursion;
 
 use super::translate::translate_single_logical_node;
 pub(super) struct PhysicalPlanTranslator {
@@ -74,7 +74,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                 "Detected Query Stage Boundary at {}",
                 translated_pplan.name()
             );
-            match &translated_pplan.arc_children()[..] {
+            match &translated_pplan.children()[..] {
                 [] | [_] => {
                     self.physical_children.push(translated_pplan.clone());
 
@@ -133,7 +133,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                         }
                         RunNext::Left => {
                             self.physical_children.push(left.clone());
-                            let logical_children = node.arc_children();
+                            let logical_children = node.children();
                             let logical_left = logical_children.first().expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );
@@ -160,7 +160,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                         }
                         RunNext::Right => {
                             self.physical_children.push(right.clone());
-                            let logical_children = node.arc_children();
+                            let logical_children = node.children();
                             let logical_left = logical_children.first().expect(
                                 "we expect the logical node of a binary op to also have 2 children",
                             );

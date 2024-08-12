@@ -13,7 +13,6 @@ use crate::{
     source_info::SourceInfo,
     LogicalPlan,
 };
-use common_treenode::DynTreeNode;
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
@@ -261,7 +260,7 @@ impl PushDownProjection {
                             })
                         });
                     let new_upstream = if all_projections_are_just_colexprs {
-                        upstream_plan.arc_children()[0].clone()
+                        upstream_plan.children()[0].clone()
                     } else {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                             upstream_actor_pool_projection.input.clone(),
@@ -299,7 +298,7 @@ impl PushDownProjection {
                     .collect::<IndexSet<_>>();
 
                 // Skip optimization if no columns would be pruned.
-                let grand_upstream_plan = &upstream_plan.arc_children()[0];
+                let grand_upstream_plan = &upstream_plan.children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
                 if grand_upstream_columns.len() == combined_dependencies.len() {
                     return Ok(Transformed::No(plan));

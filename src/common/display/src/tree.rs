@@ -21,10 +21,10 @@ pub trait TreeDisplay {
     /// **but not its children.**
     fn get_multiline_representation(&self) -> Vec<String>;
 
-    // Required method: Get the human-readable name of this node.
+    /// Required method: Get the human-readable name of this node.
     fn get_name(&self) -> String;
 
-    // Required method: Get the children of the self node.
+    /// Required method: Get the children of the self node.
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>>;
 }
 

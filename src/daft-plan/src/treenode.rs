@@ -9,7 +9,7 @@ impl DynTreeNode for LogicalPlan {
         self.children()
     }
 
-    fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
+    fn with_new_arc_children(self: Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
         let old_children = self.children();
         if children.len() != old_children.len() {
             panic!("LogicalPlan::with_new_arc_children: Wrong number of children")
@@ -31,7 +31,7 @@ impl DynTreeNode for PhysicalPlan {
         self.children()
     }
 
-    fn with_new_arc_children(self: &Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
+    fn with_new_arc_children(self: Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
         let old_children = self.children();
         if children.len() != old_children.len() {
             panic!("PhysicalPlan::with_new_arc_children: Wrong number of children")

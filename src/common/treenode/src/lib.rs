@@ -840,7 +840,7 @@ pub trait DynTreeNode {
     fn arc_children(&self) -> Vec<Arc<Self>>;
 
     /// Constructs a new node with the specified children.
-    fn with_new_arc_children(self: &Arc<Self>, new_children: Vec<Arc<Self>>) -> Result<Arc<Self>>;
+    fn with_new_arc_children(self: Arc<Self>, new_children: Vec<Arc<Self>>) -> Result<Arc<Self>>;
 }
 
 /// Blanket implementation for any `Arc<T>` where `T` implements [`DynTreeNode`]
