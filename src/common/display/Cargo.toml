@@ -1,13 +1,11 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
-common-treenode = {path = "../treenode", default-features = false}
 indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 terminal_size = {version = "0.3.0"}
 textwrap = {version = "0.16.1"}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-treenode/python"]
+python = ["dep:pyo3"]
 
 [package]
 edition = {workspace = true}

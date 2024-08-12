@@ -1240,8 +1240,6 @@ dependencies = [
 name = "common-display"
 version = "0.2.0-dev0"
 dependencies = [
- "common-error",
- "common-treenode",
  "indexmap 2.2.6",
  "pyo3",
  "terminal_size",
