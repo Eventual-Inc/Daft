@@ -29,16 +29,27 @@ else
 	$(VENV_BIN)/uv pip install -r requirements-dev.txt
 endif
 
+.PHONY: check-toolchain
+check-toolchain:
+	@TOOLCHAIN="$(shell rustup show active-toolchain)"; \
+	if echo "$$TOOLCHAIN" | grep -q 'rust-toolchain.toml'; \
+	then \
+		echo "Toolchain is correct, continuing with build"; \
+	else \
+		echo "Failed to build: rust using incorrect toolchain: $$TOOLCHAIN"; \
+		exit 1; \
+	fi
+
 .PHONY: hooks
 hooks: .venv
 	source $(VENV_BIN)/activate && pre-commit install --install-hooks
 
 .PHONY: build
-build: .venv  ## Compile and install Daft for development
+build: check-toolchain .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all
 
 .PHONY: build-release
-build-release: .venv  ## Compile and install a faster Daft binary
+build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release
 
 .PHONY: test
