@@ -210,12 +210,9 @@ impl OptimizerRule for PushDownFilter {
                 let push_down_filter: LogicalPlan =
                     Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
                 // Create new Projection.
-                let new_projection: LogicalPlan = Project::try_new(
-                    push_down_filter.into(),
-                    child_project.projection.clone(),
-                    child_project.resource_request.clone(),
-                )?
-                .into();
+                let new_projection: LogicalPlan =
+                    Project::try_new(push_down_filter.into(), child_project.projection.clone())?
+                        .into();
                 if can_not_push.is_empty() {
                     // If all Filter predicate expressions were pushable past Projection, return new
                     // Projection-Filter subplan.

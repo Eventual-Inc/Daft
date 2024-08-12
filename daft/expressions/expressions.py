@@ -20,7 +20,7 @@ import pyarrow as pa
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode
+from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -124,7 +124,9 @@ def lit(value: object) -> Expression:
 
 
 def col(name: str) -> Expression:
-    """Creates an Expression referring to the column with the provided name
+    """Creates an Expression referring to the column with the provided name.
+
+    See :ref:`Column Wildcards` for details on wildcards.
 
     Example:
         >>> import daft
@@ -234,17 +236,22 @@ class Expression:
         partial: PartialStatelessUDF,
         expressions: builtins.list[Expression],
         return_dtype: DataType,
+        resource_request: ResourceRequest | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateless_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype)
+            _stateless_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request)
         )
 
     @staticmethod
     def stateful_udf(
-        name: builtins.str, partial: PartialStatefulUDF, expressions: builtins.list[Expression], return_dtype: DataType
+        name: builtins.str,
+        partial: PartialStatefulUDF,
+        expressions: builtins.list[Expression],
+        return_dtype: DataType,
+        resource_request: ResourceRequest | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateful_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype)
+            _stateful_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request)
         )
 
     def __bool__(self) -> bool:
@@ -653,7 +660,7 @@ class Expression:
             │ ---                 ┆ ---                            │
             │ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
+            │ 2.9742334234767163  ┆ [1.993661701417351, 2.9742334… │
             ╰─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
@@ -809,7 +816,7 @@ class Expression:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
 
-        return StatelessUDF(name=name, func=batch_func, return_dtype=return_dtype)(self)
+        return StatelessUDF(name=name, func=batch_func, return_dtype=return_dtype, resource_request=None)(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)

@@ -134,8 +134,7 @@ impl Join {
                     })
                     .collect();
 
-                let new_right: LogicalPlan =
-                    Project::try_new(right, new_right_projection, Default::default())?.into();
+                let new_right: LogicalPlan = Project::try_new(right, new_right_projection)?.into();
 
                 let right_on_replace_map = right_rename_mapping
                     .iter()

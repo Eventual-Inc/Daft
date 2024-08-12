@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
@@ -153,6 +154,7 @@ pub fn stateless_udf(
     partial_stateless_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateless_udf;
 
@@ -166,6 +168,7 @@ pub fn stateless_udf(
             partial_stateless_udf,
             &expressions_map,
             return_dtype.dtype,
+            resource_request,
         )?
         .into(),
     })
@@ -182,6 +185,7 @@ pub fn stateful_udf(
     partial_stateful_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateful_udf;
 
@@ -195,6 +199,7 @@ pub fn stateful_udf(
             partial_stateful_udf,
             &expressions_map,
             return_dtype.dtype,
+            resource_request,
         )?
         .into(),
     })
@@ -213,7 +218,7 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 
 #[pyfunction]
 pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_expr(expr.expr.clone(), &schema.schema)?;
+    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
     Ok((resolved_expr.into(), field.into()))
 }
 

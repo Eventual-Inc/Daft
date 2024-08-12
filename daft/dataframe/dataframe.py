@@ -982,6 +982,10 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
+            if (item == "*" or item.endswith(".*")) and item not in schema.column_names():
+                # does not account for weird column names
+                # like if struct "a" has a field named "*", then a.* will wrongly fail
+                raise ValueError("Wildcard expressions are not supported in DataFrame.__getitem__")
             expr, _ = resolve_expr(col(item)._expr, schema._schema)
             return Expression._from_pyexpr(expr)
         elif isinstance(item, Iterable):
@@ -1214,7 +1218,7 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1241,18 +1245,26 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new column.
         """
+        if resource_request is not None:
+            warnings.warn(
+                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
+
         return self.with_columns({column_name: expr}, resource_request)
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1278,13 +1290,18 @@ class DataFrame:
 
         Args:
             columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if not isinstance(resource_request, ResourceRequest):
-            raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
+        if resource_request is not None:
+            warnings.warn(
+                "Specifying resource_request through `with_columns` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
 
         new_columns = [col.alias(name) for name, col in columns.items()]
 

@@ -103,6 +103,6 @@ where
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())
             .as_bytes(),
     )?;
-    writer.write_all(&[b'\n'])?;
+    writer.write_all(b"\n")?;
     Ok(())
 }

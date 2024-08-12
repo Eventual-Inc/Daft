@@ -33,20 +33,15 @@ pub struct SubgraphOptions {
     pub subgraph_id: String,
 }
 
-struct MermaidDisplayVisitor<T> {
-    phantom: PhantomData<T>,
-    /// each node should only appear once in the tree.
-    /// the key is the node's `multiline_display` string, and the value is the node's id.
-    /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
-    nodes: IndexMap<String, String>,
+pub struct MermaidDisplayBuilder {
     /// node_count is used to generate unique ids for each node.
     node_count: usize,
     output: Vec<String>,
     options: MermaidDisplayOptions,
 }
 
-impl<T> MermaidDisplayVisitor<T> {
-    pub fn new(options: MermaidDisplayOptions) -> MermaidDisplayVisitor<T> {
+impl MermaidDisplayBuilder {
+    pub fn new(options: MermaidDisplayOptions) -> Self {
         let mut output = Vec::new();
         // if it's not a subgraph, we render the entire thing: `flowchart TD`
         // otherwise we just build out the subgraph componenend `subgraph <subgraph_id>["<name>"]`
@@ -58,14 +53,31 @@ impl<T> MermaidDisplayVisitor<T> {
                 output.push("flowchart TD".to_string());
             }
         }
-
-        MermaidDisplayVisitor {
-            phantom: PhantomData,
-            nodes: IndexMap::new(),
+        Self {
             node_count: 0,
             output,
             options,
         }
+    }
+
+    fn add_node(&mut self, name: &str, display: &str) -> String {
+        let node_id = self.node_count;
+        self.node_count += 1;
+        let id = match &self.options.subgraph_options {
+            Some(SubgraphOptions { subgraph_id, .. }) => format!("{subgraph_id}{name}{node_id}"),
+            None => format!("{name}{node_id}"),
+        };
+
+        if self.options.simple {
+            self.output.push(format!(r#"{}["{}"]"#, id, name));
+        } else {
+            self.output.push(format!(r#"{}["{}"]"#, id, display));
+        }
+        id
+    }
+
+    fn add_edge(&mut self, parent_id: String, child_id: String) {
+        self.output.push(format!(r#"{child_id} --> {parent_id}"#));
     }
 
     /// Build the mermaid chart.
@@ -86,6 +98,39 @@ impl<T> MermaidDisplayVisitor<T> {
     }
 }
 
+struct MermaidDisplayVisitor<T> {
+    phantom: PhantomData<T>,
+    /// each node should only appear once in the tree.
+    /// the key is the node's `multiline_display` string, and the value is the node's id.
+    /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
+    nodes: IndexMap<String, String>,
+    builder: MermaidDisplayBuilder,
+}
+
+impl<T> MermaidDisplayVisitor<T> {
+    pub fn new(options: MermaidDisplayOptions) -> MermaidDisplayVisitor<T> {
+        MermaidDisplayVisitor {
+            phantom: PhantomData,
+            nodes: IndexMap::new(),
+            builder: MermaidDisplayBuilder::new(options),
+        }
+    }
+
+    /// Build the mermaid chart.
+    /// Example:
+    /// ```mermaid
+    /// flowchart TD
+    /// Limit0["Limit: 10"]
+    /// Filter1["Filter: col(first_name) == lit('hello')"]
+    /// Source2["Source: ..."]
+    /// Limit0 --> Filter1
+    /// Filter1 --> Source2
+    /// ```
+    fn build(self) -> String {
+        self.builder.build()
+    }
+}
+
 impl<T> MermaidDisplayVisitor<T>
 where
     T: TreeDisplay,
@@ -93,21 +138,8 @@ where
     fn add_node(&mut self, node: &T) {
         let name = node.get_name();
         let display = self.display_for_node(node);
-        let node_id = self.node_count;
-        self.node_count += 1;
-
-        let id = match &self.options.subgraph_options {
-            Some(SubgraphOptions { subgraph_id, .. }) => format!("{subgraph_id}{name}{node_id}"),
-            None => format!("{name}{node_id}"),
-        };
-
-        self.nodes.insert(display.clone(), id.clone());
-
-        if self.options.simple {
-            self.output.push(format!(r#"{}["{}"]"#, id, name));
-        } else {
-            self.output.push(format!(r#"{}["{}"]"#, id, display));
-        }
+        let id = self.builder.add_node(&name, &display);
+        self.nodes.insert(display, id);
     }
 
     fn display_for_node(&self, node: &T) -> String {
@@ -135,8 +167,8 @@ where
         self.nodes.get(&display).cloned().unwrap()
     }
 
-    fn add_edge(&mut self, parent: String, child: String) {
-        self.output.push(format!(r#"{child} --> {parent}"#));
+    fn add_edge(&mut self, parent_id: String, child_id: String) {
+        self.builder.add_edge(parent_id, child_id);
     }
 }
 

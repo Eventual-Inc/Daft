@@ -410,8 +410,14 @@ async fn stream_parquet_single(
         Ok((
             Arc::new(metadata),
             parquet_reader
-                .read_from_ranges_into_table_stream(ranges)
-                .await,
+                .read_from_ranges_into_table_stream(
+                    ranges,
+                    maintain_order,
+                    predicate.clone(),
+                    columns_to_return,
+                    num_rows_to_return,
+                )
+                .await?,
         ))
     }?;
 
@@ -1014,11 +1020,15 @@ mod tests {
     use common_error::DaftResult;
 
     use daft_io::{IOClient, IOConfig};
+    use futures::StreamExt;
 
     use super::read_parquet;
+    use super::stream_parquet;
+
+    const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
-        let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
+        let file = PARQUET_FILE;
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1042,5 +1052,40 @@ mod tests {
         assert_eq!(table.len(), 100);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parquet_streaming_read_from_s3() -> DaftResult<()> {
+        let file = PARQUET_FILE;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let runtime_handle = daft_io::get_runtime(true)?;
+        runtime_handle.block_on(async move {
+            let tables = stream_parquet(
+                file,
+                None,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                &Default::default(),
+                None,
+                None,
+                false,
+            )
+            .await?
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+            let total_tables_len = tables.iter().map(|t| t.len()).sum::<usize>();
+            assert_eq!(total_tables_len, 100);
+            Ok(())
+        })
     }
 }

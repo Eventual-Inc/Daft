@@ -94,6 +94,64 @@ As we have already seen in previous guides, adding a new column can be achieved 
     +---------+---------+---------+
     (Showing first 3 rows)
 
+.. _Column Wildcards:
+
+Selecting Columns Using Wildcards
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+We can select multiple columns at once using wildcards. The expression `col("*")` selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+
+.. code:: python
+
+    df = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
+    df.select(col("*") * 3).show()
+
+.. code:: none
+
+    ╭───────┬───────╮
+    │ A     ┆ B     │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 3     ┆ 12    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 6     ┆ 15    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 9     ┆ 18    │
+    ╰───────┴───────╯
+
+We can also select multiple columns within structs using `col("struct.*")`:
+
+.. code:: python
+
+    df = daft.from_pydict({
+        "A": [
+            {"B": 1, "C": 2},
+            {"B": 3, "C": 4}
+        ]
+    })
+    df.select(col("A.*")).show()
+
+.. code:: none
+
+    ╭───────┬───────╮
+    │ B     ┆ C     │
+    │ ---   ┆ ---   │
+    │ Int64 ┆ Int64 │
+    ╞═══════╪═══════╡
+    │ 1     ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 4     │
+    ╰───────┴───────╯
+
+Under the hood, wildcards work by finding all of the columns that match, then copying the expression several times and replacing the wildcard. This means that there are some caveats:
+
+* Only one wildcard is allowed per expression tree. This means that `col("*") + col("*")` and similar expressions do not work.
+* Be conscious about duplicated column names. Any code like `df.select(col("*"), col("*") + 3)` will not work because the wildcards expand into the same column names.
+
+  For the same reason, `col("A") + col("*")` will not work because the name on the left-hand side is inherited, meaning all the output columns are named `A`, causing an error if there is more than one.
+  However, `col("*") + col("A")` will work fine.
+
 Selecting Rows
 --------------
 

@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc, usize};
+use std::{ops::Deref, sync::Arc};
 
 use either::Either;
 
