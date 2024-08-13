@@ -7,7 +7,7 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = "0.2.16"
-
+secrecy = {version="0.8.0", features = ["alloc"], default_features = false}
 [features]
 python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
 
