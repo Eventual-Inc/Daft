@@ -2,15 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator,
+        aggregate::AggregateOperator, filter::FilterOperator, hash_join_probe::HashJoinProber,
+        intermediate_op::IntermediateNode, project::ProjectOperator,
     },
     sinks::{
-        aggregate::AggregateSink,
-        blocking_sink::BlockingSinkNode,
-        hash_join::{HashJoinNode, HashJoinOperator},
-        limit::LimitSink,
-        sort::SortSink,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
@@ -19,6 +16,11 @@ use crate::{
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use daft_core::{
+    datatypes::Field,
+    schema::{Schema, SchemaRef},
+    utils::supertype,
+};
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -173,18 +175,50 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
+
+            let left_key_fields = left_on
+                .iter()
+                .map(|e| e.to_field(left_schema))
+                .collect::<DaftResult<Vec<_>>>()?;
+            let right_key_fields = right_on
+                .iter()
+                .map(|e| e.to_field(right_schema))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            let key_schema: SchemaRef = Schema::new(
+                left_key_fields
+                    .into_iter()
+                    .zip(right_key_fields.into_iter())
+                    .map(|(l, r)| {
+                        // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
+                        let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
+                        Ok(Field::new(l.name, dtype))
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?,
+            )?
+            .into();
+
+            let casted_left_on = left_on
+                .iter()
+                .zip(key_schema.fields.values())
+                .map(|(e, f)| e.clone().cast(&f.dtype))
+                .collect::<Vec<_>>();
+            let casted_right_on = right_on
+                .iter()
+                .zip(key_schema.fields.values())
+                .map(|(e, f)| e.clone().cast(&f.dtype))
+                .collect::<Vec<_>>();
+
             let left_node = physical_plan_to_pipeline(left, psets)?;
             let right_node = physical_plan_to_pipeline(right, psets)?;
 
             // we should move to a builder pattern
-            let sink = HashJoinOperator::new(
-                left_on.clone(),
-                right_on.clone(),
-                *join_type,
-                left_schema,
-                right_schema,
-            )?;
-            HashJoinNode::new(sink, left_node, right_node).boxed()
+            let build_sink =
+                HashJoinBuildSink::new(casted_left_on.clone(), *join_type, &key_schema)?;
+            let build_sink_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
+
+            let probe_op = HashJoinProber::new(casted_right_on);
+            IntermediateNode::new(Arc::new(probe_op), vec![build_sink_node, right_node]).boxed()
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());

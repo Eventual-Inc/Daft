@@ -113,7 +113,7 @@ pub fn run_local(
         pipeline.start(sender, &mut runtime_handle).await?;
         let mut result = vec![];
         while let Some(val) = receiver.recv().await {
-            result.push(Ok(val));
+            result.push(Ok(val.as_micro_partition()?));
         }
 
         while let Some(result) = runtime_handle.join_next().await {

@@ -5,7 +5,7 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender},
+    channel::{create_channel, MultiSender, PipelineOutput},
     pipeline::PipelineNode,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
@@ -18,7 +18,7 @@ pub enum BlockingSinkStatus {
 
 pub trait BlockingSink: Send + Sync {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus>;
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>>;
+    fn finalize(&mut self) -> DaftResult<Option<PipelineOutput>>;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 }
@@ -61,7 +61,9 @@ impl PipelineNode for BlockingSinkNode {
             let span = info_span!("BlockingSinkNode::execute");
             let mut guard = op.lock().await;
             while let Some(val) = streaming_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val))? {
+                if let BlockingSinkStatus::Finished =
+                    span.in_scope(|| guard.sink(&val.as_micro_partition()?))?
+                {
                     break;
                 }
             }

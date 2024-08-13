@@ -1,11 +1,58 @@
 use std::sync::Arc;
 
+use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
+use daft_table::{ProbeTable, Table};
 
-pub type SingleSender = tokio::sync::mpsc::Sender<Arc<MicroPartition>>;
-pub type SingleReceiver = tokio::sync::mpsc::Receiver<Arc<MicroPartition>>;
+#[derive(Clone)]
+pub enum PipelineOutput {
+    MicroPartition(Arc<MicroPartition>),
+    ProbeTable(Arc<ProbeTable>, Arc<Vec<Table>>),
+}
 
-pub fn create_single_channel(buffer_size: usize) -> (SingleSender, SingleReceiver) {
+impl PipelineOutput {
+    pub fn should_broadcast(&self) -> bool {
+        match self {
+            Self::MicroPartition(_) => false,
+            Self::ProbeTable(_, _) => true,
+        }
+    }
+
+    pub fn as_micro_partition(&self) -> DaftResult<Arc<MicroPartition>> {
+        match self {
+            Self::MicroPartition(part) => Ok(part.clone()),
+            _ => Err(DaftError::InternalError(
+                "Expected MicroPartition, found ProbeTable".to_string(),
+            )),
+        }
+    }
+
+    pub fn as_probe_table(&self) -> DaftResult<(Arc<ProbeTable>, Arc<Vec<Table>>)> {
+        match self {
+            Self::ProbeTable(probe_table, tables) => Ok((probe_table.clone(), tables.clone())),
+            _ => Err(DaftError::InternalError(
+                "Expected ProbeTable, found MicroPartition".to_string(),
+            )),
+        }
+    }
+}
+
+impl From<Arc<MicroPartition>> for PipelineOutput {
+    fn from(part: Arc<MicroPartition>) -> Self {
+        Self::MicroPartition(part)
+    }
+}
+
+impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineOutput {
+    fn from((probe_table, tables): (Arc<ProbeTable>, Arc<Vec<Table>>)) -> Self {
+        Self::ProbeTable(probe_table, tables)
+    }
+}
+
+pub type SingleSender<T> = tokio::sync::mpsc::Sender<T>;
+pub type SingleReceiver<T> = tokio::sync::mpsc::Receiver<T>;
+
+pub fn create_single_channel<T>(buffer_size: usize) -> (SingleSender<T>, SingleReceiver<T>) {
     tokio::sync::mpsc::channel(buffer_size)
 }
 
@@ -24,12 +71,12 @@ pub fn create_channel(buffer_size: usize, in_order: bool) -> (MultiSender, Multi
 }
 
 pub enum MultiSender {
-    InOrder(InOrderSender),
-    OutOfOrder(OutOfOrderSender),
+    InOrder(InOrderSender<PipelineOutput>),
+    OutOfOrder(OutOfOrderSender<PipelineOutput>),
 }
 
 impl MultiSender {
-    pub fn get_next_sender(&mut self) -> SingleSender {
+    pub fn get_next_sender(&mut self) -> SingleSender<PipelineOutput> {
         match self {
             Self::InOrder(sender) => sender.get_next_sender(),
             Self::OutOfOrder(sender) => sender.get_sender(),
@@ -50,47 +97,47 @@ impl MultiSender {
         }
     }
 }
-pub struct InOrderSender {
-    senders: Vec<SingleSender>,
+pub struct InOrderSender<T> {
+    senders: Vec<SingleSender<T>>,
     curr_sender_idx: usize,
 }
 
-impl InOrderSender {
-    pub fn new(senders: Vec<SingleSender>) -> Self {
+impl<T> InOrderSender<T> {
+    pub fn new(senders: Vec<SingleSender<T>>) -> Self {
         Self {
             senders,
             curr_sender_idx: 0,
         }
     }
 
-    pub fn get_next_sender(&mut self) -> SingleSender {
+    pub fn get_next_sender(&mut self) -> SingleSender<T> {
         let next_idx = self.curr_sender_idx;
         self.curr_sender_idx = (next_idx + 1) % self.senders.len();
         self.senders[next_idx].clone()
     }
 }
 
-pub struct OutOfOrderSender {
-    sender: SingleSender,
+pub struct OutOfOrderSender<T> {
+    sender: SingleSender<T>,
 }
 
-impl OutOfOrderSender {
-    pub fn new(sender: SingleSender) -> Self {
+impl<T> OutOfOrderSender<T> {
+    pub fn new(sender: SingleSender<T>) -> Self {
         Self { sender }
     }
 
-    pub fn get_sender(&self) -> SingleSender {
+    pub fn get_sender(&self) -> SingleSender<T> {
         self.sender.clone()
     }
 }
 
 pub enum MultiReceiver {
-    InOrder(InOrderReceiver),
-    OutOfOrder(OutOfOrderReceiver),
+    InOrder(InOrderReceiver<PipelineOutput>),
+    OutOfOrder(OutOfOrderReceiver<PipelineOutput>),
 }
 
 impl MultiReceiver {
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
+    pub async fn recv(&mut self) -> Option<PipelineOutput> {
         match self {
             Self::InOrder(receiver) => receiver.recv().await,
             Self::OutOfOrder(receiver) => receiver.recv().await,
@@ -98,14 +145,14 @@ impl MultiReceiver {
     }
 }
 
-pub struct InOrderReceiver {
-    receivers: Vec<SingleReceiver>,
+pub struct InOrderReceiver<T> {
+    receivers: Vec<SingleReceiver<T>>,
     curr_receiver_idx: usize,
     is_done: bool,
 }
 
-impl InOrderReceiver {
-    pub fn new(receivers: Vec<SingleReceiver>) -> Self {
+impl<T> InOrderReceiver<T> {
+    pub fn new(receivers: Vec<SingleReceiver<T>>) -> Self {
         Self {
             receivers,
             curr_receiver_idx: 0,
@@ -113,7 +160,7 @@ impl InOrderReceiver {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
+    pub async fn recv(&mut self) -> Option<T> {
         if self.is_done {
             return None;
         }
@@ -129,16 +176,16 @@ impl InOrderReceiver {
     }
 }
 
-pub struct OutOfOrderReceiver {
-    receiver: SingleReceiver,
+pub struct OutOfOrderReceiver<T> {
+    receiver: SingleReceiver<T>,
 }
 
-impl OutOfOrderReceiver {
-    pub fn new(receiver: SingleReceiver) -> Self {
+impl<T> OutOfOrderReceiver<T> {
+    pub fn new(receiver: SingleReceiver<T>) -> Self {
         Self { receiver }
     }
 
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
+    pub async fn recv(&mut self) -> Option<T> {
         if let Some(val) = self.receiver.recv().await {
             return Some(val);
         }

@@ -72,23 +72,23 @@ impl PipelineNode for StreamingSinkNode {
             let mut is_active = true;
             while is_active && let Some(val) = streaming_receiver.recv().await {
                 loop {
-                    let result = span.in_scope(|| sink.execute(0, &val))?;
+                    let result = span.in_scope(|| sink.execute(0, &val.as_micro_partition()?))?;
                     match result {
                         StreamSinkOutput::HasMoreOutput(mp) => {
                             let sender = destination.get_next_sender();
-                            sender.send(mp).await.unwrap();
+                            sender.send(mp.into()).await.unwrap();
                         }
                         StreamSinkOutput::NeedMoreInput(mp) => {
                             if let Some(mp) = mp {
                                 let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
+                                sender.send(mp.into()).await.unwrap();
                             }
                             break;
                         }
                         StreamSinkOutput::Finished(mp) => {
                             if let Some(mp) = mp {
                                 let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
+                                sender.send(mp.into()).await.unwrap();
                             }
                             is_active = false;
                             break;

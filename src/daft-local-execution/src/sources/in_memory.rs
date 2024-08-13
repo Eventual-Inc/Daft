@@ -30,7 +30,7 @@ impl Source for InMemorySource {
         let data = self.data.clone();
         runtime_handle.spawn(async move {
             for part in data {
-                let _ = destination.get_next_sender().send(part).await;
+                let _ = destination.get_next_sender().send(part.into()).await;
             }
             Ok(())
         });

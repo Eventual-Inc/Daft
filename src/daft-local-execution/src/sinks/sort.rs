@@ -5,6 +5,8 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
+use crate::channel::PipelineOutput;
+
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
 pub struct SortSink {

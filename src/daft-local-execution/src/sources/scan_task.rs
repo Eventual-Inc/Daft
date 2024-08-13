@@ -16,7 +16,7 @@ use futures::{stream::BoxStream, StreamExt};
 use std::sync::Arc;
 
 use crate::{
-    channel::{MultiSender, SingleSender},
+    channel::{MultiSender, PipelineOutput, SingleSender},
     ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
 };
 
@@ -41,7 +41,7 @@ impl ScanTaskSource {
     )]
     async fn process_scan_task_stream(
         scan_task: Arc<ScanTask>,
-        sender: SingleSender,
+        sender: SingleSender<PipelineOutput>,
         morsel_size: usize,
         maintain_order: bool,
     ) -> DaftResult<()> {
@@ -49,7 +49,7 @@ impl ScanTaskSource {
         let mut stream =
             stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
         while let Some(partition) = stream.next().await {
-            let _ = sender.send(partition?).await;
+            let _ = sender.send(partition?.into()).await;
         }
         Ok(())
     }
