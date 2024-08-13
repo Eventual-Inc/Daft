@@ -5,6 +5,7 @@ daft-dsl = {path = "../daft-dsl"}
 daft-plan = {path = "../daft-plan"}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
+strum = {version = "0.26.3", features = ["derive"]}
 snafu.workspace = true
 
 [dev-dependencies]

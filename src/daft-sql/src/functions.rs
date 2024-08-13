@@ -1,7 +1,6 @@
-use std::str::FromStr;
-
 use daft_dsl::{ExprRef, LiteralValue};
 use sqlparser::ast::{Function, FunctionArg, FunctionArgExpr};
+use strum::EnumString;
 
 use crate::{
     ensure,
@@ -12,6 +11,9 @@ use crate::{
 };
 
 // TODO: expand this to support more functions
+#[derive(EnumString)]
+#[strum(serialize_all = "snake_case")]
+#[strum(ascii_case_insensitive)]
 pub enum SQLFunctions {
     // ------------------------------------------------
     // Numeric Functions
@@ -81,24 +83,28 @@ pub enum SQLFunctions {
     /// ```sql
     /// SELECT asin(0);
     /// ```
+    #[strum(serialize = "asin", serialize = "arcsin")]
     ArcSin,
     /// SQL `acos()` function
     /// # Example
     /// ```sql
     /// SELECT acos(0);
     /// ```
+    #[strum(serialize = "acos", serialize = "arccos")]
     ArcCos,
     /// SQL `atan()` function
     /// # Example
     /// ```sql
     /// SELECT atan(0);
     /// ```
+    #[strum(serialize = "atan", serialize = "arctan")]
     ArcTan,
     /// SQL `atan2()` function
     /// # Example
     /// ```sql
     /// SELECT atan2(0);
     /// ```
+    #[strum(serialize = "atan2", serialize = "arctan2")]
     ArcTan2,
     /// SQL `radians()` function
     /// # Example
@@ -147,18 +153,21 @@ pub enum SQLFunctions {
     /// ```sql
     /// SELECT atanh(0);
     /// ```
+    #[strum(serialize = "atanh", serialize = "arctanh")]
     ArcTanh,
     /// SQL `acosh()` function
     /// # Example
     /// ```sql
     /// SELECT acosh(1);
     /// ```
+    #[strum(serialize = "acosh", serialize = "arccosh")]
     ArcCosh,
     /// SQL `asinh()` function
     /// # Example
     /// ```sql
     /// SELECT asinh(0);
     /// ```
+    #[strum(serialize = "asinh", serialize = "arcsinh")]
     ArcSinh,
 
     // ------------------------------------------------
@@ -301,70 +310,6 @@ pub enum SQLFunctions {
     // Aggregate Functions
     // ------------------------------------------------
     Max,
-}
-
-impl FromStr for SQLFunctions {
-    type Err = PlannerError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(match value {
-            // ------------------------------------------------
-            // Numeric Functions
-            // ------------------------------------------------
-            "abs" => SQLFunctions::Abs,
-            "ceil" => SQLFunctions::Ceil,
-            "floor" => SQLFunctions::Floor,
-            "sign" => SQLFunctions::Sign,
-            "round" => SQLFunctions::Round,
-            "sqrt" => SQLFunctions::Sqrt,
-            "sin" => SQLFunctions::Sin,
-            "cos" => SQLFunctions::Cos,
-            "tan" => SQLFunctions::Tan,
-            "cot" => SQLFunctions::Cot,
-            "asin" | "arcsin" => SQLFunctions::ArcSin,
-            "acos" | "arccos " => SQLFunctions::ArcCos,
-            "atan" | "arctan " => SQLFunctions::ArcTan,
-            "atan2" => SQLFunctions::ArcTan2,
-            "radians" => SQLFunctions::Radians,
-            "degrees" => SQLFunctions::Degrees,
-            "log2" => SQLFunctions::Log2,
-            "log10" => SQLFunctions::Log10,
-            "ln" => SQLFunctions::Ln,
-            "log" => SQLFunctions::Log,
-            "exp" => SQLFunctions::Exp,
-            "atanh" => SQLFunctions::ArcTanh,
-            "acosh" => SQLFunctions::ArcCosh,
-            "asinh" => SQLFunctions::ArcSinh,
-            // ------------------------------------------------
-            // String Functions
-            // ------------------------------------------------
-            "ends_with" => SQLFunctions::EndsWith,
-            "starts_with" => SQLFunctions::StartsWith,
-            "contains" => SQLFunctions::Contains,
-            "split" => SQLFunctions::Split,
-            "extract" => SQLFunctions::Extract,
-            "extract_all" => SQLFunctions::ExtractAll,
-            "replace" => SQLFunctions::Replace,
-            "length" => SQLFunctions::Length,
-            "lower" => SQLFunctions::Lower,
-            "upper" => SQLFunctions::Upper,
-            "lstrip" => SQLFunctions::Lstrip,
-            "rstrip" => SQLFunctions::Rstrip,
-            "reverse" => SQLFunctions::Reverse,
-            "capitalize" => SQLFunctions::Capitalize,
-            "left" => SQLFunctions::Left,
-            "right" => SQLFunctions::Right,
-            "find" => SQLFunctions::Find,
-            "rpad" => SQLFunctions::Rpad,
-            "lpad" => SQLFunctions::Lpad,
-            "repeat" => SQLFunctions::Repeat,
-            "substr" => SQLFunctions::Substr,
-            "to_date" => SQLFunctions::ToDate,
-            "to_datetime" => SQLFunctions::ToDatetime,
-            "max" => SQLFunctions::Max,
-            _ => unsupported_sql_err!("unknown function: '{value}'"),
-        })
-    }
 }
 
 impl SQLPlanner {

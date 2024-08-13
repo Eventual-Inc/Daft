@@ -42,6 +42,13 @@ impl From<ParserError> for PlannerError {
         PlannerError::SQLParserError { source: value }
     }
 }
+impl From<strum::ParseError> for PlannerError {
+    fn from(value: strum::ParseError) -> Self {
+        PlannerError::ParseError {
+            message: value.to_string(),
+        }
+    }
+}
 
 impl PlannerError {
     pub fn column_not_found<A: Into<String>, B: Into<String>>(column_name: A, relation: B) -> Self {

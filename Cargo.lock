@@ -2012,6 +2012,7 @@ dependencies = [
  "rstest",
  "snafu",
  "sqlparser",
+ "strum 0.26.3",
 ]
 
 [[package]]
