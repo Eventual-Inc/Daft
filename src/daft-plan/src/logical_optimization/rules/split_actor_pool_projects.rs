@@ -70,6 +70,7 @@ struct SplitExprByStatefulUDF {
     remaining_exprs: Vec<ExprRef>,
     stage_id: usize,
     monotonically_increasing_expr_identifier: usize,
+    truncated_node_names: HashSet<String>,
 }
 
 impl SplitExprByStatefulUDF {
@@ -79,6 +80,7 @@ impl SplitExprByStatefulUDF {
             remaining_exprs: Vec::new(),
             stage_id,
             monotonically_increasing_expr_identifier: 0,
+            truncated_node_names: HashSet::new(),
         }
     }
 }
@@ -107,6 +109,8 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                             self.stage_id, self.monotonically_increasing_expr_identifier
                         );
                         self.monotonically_increasing_expr_identifier += 1;
+                        self.truncated_node_names
+                            .insert(intermediate_expr_name.clone());
 
                         // Truncate the child and push it onto the stack to indicate that it needs computation in a different stage
                         self.remaining_exprs
@@ -124,10 +128,12 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                     common_treenode::TreeNodeRecursion::Jump,
                 ))
             }
-            Expr::Column(_) => {
+            // If we encounter a ColumnExpr, we only add it to the remaining exprs if it wasn't a ColumnExpr that was added by SplitExprByStatefulUDF
+            Expr::Column(name) if !self.truncated_node_names.contains(name.as_ref()) => {
                 self.remaining_exprs.push(node.clone());
                 Ok(common_treenode::Transformed::no(node))
             }
+            // If we encounter a stateless expression, we try to truncate any children that are StatefulUDFs
             expr => {
                 // Indicate that we are now parsing a stateless expression tree
                 self.is_parsing_stateful_udf = false;
@@ -164,6 +170,8 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                             self.stage_id, self.monotonically_increasing_expr_identifier
                         );
                         self.monotonically_increasing_expr_identifier += 1;
+                        self.truncated_node_names
+                            .insert(intermediate_expr_name.clone());
                         self.remaining_exprs
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
                         Expr::Column(intermediate_expr_name.as_str().into()).arced()
@@ -172,7 +180,6 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                     }
                 });
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
         }
@@ -247,7 +254,7 @@ fn try_optimize_project(
     let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) =
         truncated_exprs.into_iter().partition(has_stateful_udf);
 
-    // Build the new stateless Project: [...stateless_projections, ...all columns that came before it]
+    // Build the new stateless Project: [...all columns that came before it, ...stateless_projections]
     let passthrough_columns = {
         let stateless_stages_names: HashSet<String> = stateless_stages
             .iter()
@@ -266,9 +273,9 @@ fn try_optimize_project(
             })
             .collect_vec()
     };
-    let stateless_projection = stateless_stages
+    let stateless_projection = passthrough_columns
         .into_iter()
-        .chain(passthrough_columns)
+        .chain(stateless_stages)
         .collect();
     let new_plan = LogicalPlan::Project(Project::try_new(
         new_plan_child.clone(),
@@ -276,7 +283,7 @@ fn try_optimize_project(
     )?)
     .arced();
 
-    // Iteratively build ActorPoolProject nodes: [StatefulUDF, ...all columns that came before it]
+    // Iteratively build ActorPoolProject nodes: [...all columns that came before it, StatefulUDF]
     let new_plan = {
         let mut child = new_plan;
 
@@ -352,7 +359,9 @@ mod tests {
 
     use crate::{
         logical_ops::{ActorPoolProject, Project},
-        logical_optimization::test::assert_optimized_plan_with_rules_eq,
+        logical_optimization::{
+            rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
@@ -379,7 +388,7 @@ mod tests {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("foo".to_string()),
                 num_expressions: inputs.len(),
-                return_dtype: daft_core::DataType::Binary,
+                return_dtype: daft_core::DataType::Int64,
                 resource_request: Some(create_resource_request()),
             })),
             inputs,
@@ -437,7 +446,7 @@ mod tests {
         // NOTE: Our common-subtree elimination will build this as 2 project nodes:
         // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
         //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Binary, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }) }))(a)";
+        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }) }))(a)";
         let project_plan = scan_plan
             .with_columns(
                 vec![
@@ -448,10 +457,6 @@ mod tests {
             )?
             .build();
 
-        // Project([col("a").alias("a")])
-        //   --> ActorPoolProject([col("a"), foo(col("a")).alias(factored_columns_name)])
-        //   --> Project([col("a"), col(factored_columns_name)])
-        //   --> Project([col("a"), col(factored_columns_name).alias("b"), foo(col(factored_columns_name)).alias("c")])
         let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
@@ -476,8 +481,7 @@ mod tests {
             ],
         )?)
         .arced();
-
-        assert_optimized_plan_eq(project_plan, expected)?;
+        assert_optimized_plan_eq(project_plan.clone(), expected.clone())?;
 
         Ok(())
     }
@@ -521,14 +525,14 @@ mod tests {
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
             expected,
-            vec![col("a"), col(intermediate_name)],
+            vec![col(intermediate_name), col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                col("a"),
                 col(intermediate_name),
+                col("a"),
                 create_stateful_udf(vec![col(intermediate_name)])
                     .clone()
                     .alias("b"),
@@ -612,6 +616,92 @@ mod tests {
                 col(intermediate_name_0),
                 col(intermediate_name_1),
                 create_stateful_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
+                    .clone()
+                    .alias("c"),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("c")])?).arced();
+
+        assert_optimized_plan_eq(project_plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_with_column_serial_multiarg_with_intermediate_stateless() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", daft_core::DataType::Int64),
+            Field::new("b", daft_core::DataType::Int64),
+        ]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let stacked_stateful_project_expr = create_stateful_udf(vec![create_stateful_udf(vec![
+            col("a"),
+        ])
+        .add(create_stateful_udf(vec![col("b")]))]);
+
+        // Add a Projection with StatefulUDF and resource request
+        // Project([foo(foo(col("a")) + foo(col("b"))).alias("c")])
+        let project_plan = scan_plan
+            .select(vec![stacked_stateful_project_expr.clone().alias("c")])?
+            .build();
+
+        let intermediate_name_0 = "__SplitExprByStatefulUDF_1-0_stateful__";
+        let intermediate_name_1 = "__SplitExprByStatefulUDF_1-1_stateful__";
+        let intermediate_name_2 = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                col("b"),
+                create_stateful_udf(vec![col("a")])
+                    .clone()
+                    .alias(intermediate_name_0),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                col("b"),
+                col(intermediate_name_0),
+                create_stateful_udf(vec![col("b")])
+                    .clone()
+                    .alias(intermediate_name_1),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![col(intermediate_name_0), col(intermediate_name_1)],
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![
+                col(intermediate_name_0),
+                col(intermediate_name_1),
+                col(intermediate_name_0)
+                    .add(col(intermediate_name_1))
+                    .alias(intermediate_name_2),
+            ],
+        )?)
+        .arced();
+        let expected =
+            LogicalPlan::Project(Project::try_new(expected, vec![col(intermediate_name_2)])?)
+                .arced();
+        let expected =
+            LogicalPlan::Project(Project::try_new(expected, vec![col(intermediate_name_2)])?)
+                .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col(intermediate_name_2),
+                create_stateful_udf(vec![col(intermediate_name_2)])
                     .clone()
                     .alias("c"),
             ],
