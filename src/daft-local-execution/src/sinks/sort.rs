@@ -7,10 +7,16 @@ use tracing::instrument;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
+enum SortState {
+    Building(Vec<Arc<MicroPartition>>),
+    #[allow(dead_code)]
+    Done(Arc<MicroPartition>),
+}
+
 pub struct SortSink {
     sort_by: Vec<ExprRef>,
     descending: Vec<bool>,
-    state: Vec<Arc<MicroPartition>>,
+    state: SortState,
 }
 
 impl SortSink {
@@ -18,7 +24,7 @@ impl SortSink {
         Self {
             sort_by,
             descending,
-            state: vec![],
+            state: SortState::Building(vec![]),
         }
     }
     pub fn boxed(self) -> Box<dyn BlockingSink> {
@@ -29,21 +35,26 @@ impl SortSink {
 impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        self.state.push(input.clone());
-        Ok(BlockingSinkStatus::NeedMoreInput)
+        if let SortState::Building(ref mut state) = self.state {
+            state.push(input.clone());
+            Ok(BlockingSinkStatus::NeedMoreInput)
+        } else {
+            panic!("SortSink should be in Building state");
+        }
     }
     fn name(&self) -> &'static str {
         "Sort"
     }
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(
-            !self.state.is_empty(),
-            "We can not finalize SortSink with no data"
-        );
-        let concated =
-            MicroPartition::concat(&self.state.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-        let sorted = concated.sort(&self.sort_by, &self.descending)?;
-        Ok(Some(Arc::new(sorted)))
+        if let SortState::Building(ref state) = self.state {
+            let concated =
+                MicroPartition::concat(&state.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
+            self.state = SortState::Done(sorted.clone());
+            Ok(Some(sorted))
+        } else {
+            panic!("SortSink should be in Building state");
+        }
     }
 }

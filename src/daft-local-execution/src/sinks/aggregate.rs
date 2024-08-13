@@ -7,10 +7,16 @@ use tracing::instrument;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
+enum AggregateState {
+    Accumulating(Vec<Arc<MicroPartition>>),
+    #[allow(dead_code)]
+    Done(Arc<MicroPartition>),
+}
+
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
-    state: Vec<Arc<MicroPartition>>,
+    state: AggregateState,
 }
 
 impl AggregateSink {
@@ -18,7 +24,7 @@ impl AggregateSink {
         Self {
             agg_exprs,
             group_by,
-            state: vec![],
+            state: AggregateState::Accumulating(vec![]),
         }
     }
 
@@ -30,20 +36,25 @@ impl AggregateSink {
 impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        self.state.push(input.clone());
-        Ok(BlockingSinkStatus::NeedMoreInput)
+        if let AggregateState::Accumulating(ref mut state) = self.state {
+            state.push(input.clone());
+            Ok(BlockingSinkStatus::NeedMoreInput)
+        } else {
+            panic!("AggregateSink should be in Accumulating state");
+        }
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(
-            !self.state.is_empty(),
-            "We can not finalize AggregateSink with no data"
-        );
-        let concated =
-            MicroPartition::concat(&self.state.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-        let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
-        Ok(Some(Arc::new(agged)))
+        if let AggregateState::Accumulating(ref state) = self.state {
+            let concated =
+                MicroPartition::concat(&state.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let aggregated = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
+            self.state = AggregateState::Done(aggregated.clone());
+            Ok(Some(aggregated))
+        } else {
+            panic!("AggregateSink should be in Accumulating state");
+        }
     }
     fn name(&self) -> &'static str {
         "AggregateSink"
