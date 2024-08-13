@@ -275,11 +275,6 @@ impl PyExpr {
         Ok(sqrt(self.into()).into())
     }
 
-    pub fn cbrt(&self) -> PyResult<Self> {
-        use functions::numeric::cbrt;
-        Ok(cbrt(self.into()).into())
-    }
-
     pub fn sin(&self) -> PyResult<Self> {
         use functions::numeric::sin;
         Ok(sin(self.into()).into())
