@@ -90,7 +90,6 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, &[]);
-
             let first_stage_agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
@@ -114,9 +113,9 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project_op = ProjectOperator::new(final_exprs);
+            let final_stage_project = ProjectOperator::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project_op), vec![second_stage_node]).boxed()
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -150,9 +149,9 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project_op = ProjectOperator::new(final_exprs);
+            let final_stage_project = ProjectOperator::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project_op), vec![second_stage_node]).boxed()
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
