@@ -22,19 +22,7 @@ use crate::{
 use super::state::OperatorTaskState;
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
-    #[allow(dead_code)]
-
     fn name(&self) -> &'static str;
-}
-
-/// An actor that runs an intermediate operator.
-/// The actor can run multiple tasks in parallel, depending on the buffer size of the sender.
-/// Each parallel task is mapped to a single sender.
-pub struct IntermediateOpActor {
-    sender: MultiSender,
-    receiver: MultiReceiver,
-    op: Arc<dyn IntermediateOperator>,
-    rt_context: Arc<RuntimeStatsContext>,
 }
 
 #[derive(Default)]
