@@ -6,6 +6,7 @@ use encode::TokenizeEncodeFunction;
 mod bpe;
 mod decode;
 mod encode;
+mod options;
 mod special_tokens;
 
 pub fn tokenize_encode(

@@ -9,6 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
+tokenizers = "0.20.0"
 tokio = {workspace = true}
 typetag = "0.2.16"
 uuid = "1.10.0"
