@@ -4,15 +4,17 @@ use std::fmt::Formatter;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::ObfuscatedString;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct AzureConfig {
     pub storage_account: Option<String>,
-    pub access_key: Option<String>,
+    pub access_key: Option<ObfuscatedString>,
     pub sas_token: Option<String>,
     pub bearer_token: Option<String>,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
-    pub client_secret: Option<String>,
+    pub client_secret: Option<ObfuscatedString>,
     pub use_fabric_endpoint: bool,
     pub anonymous: bool,
     pub endpoint_url: Option<String>,

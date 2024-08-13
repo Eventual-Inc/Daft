@@ -280,8 +280,8 @@ impl S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 key_id: key_id.or(def.key_id),
-                session_token: session_token.or(def.session_token),
-                access_key: access_key.or(def.access_key),
+                session_token: session_token.map(|v| v.into()).or(def.session_token),
+                access_key: access_key.map(|v| v.into()).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
                         Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
@@ -340,8 +340,12 @@ impl S3Config {
                 region_name: region_name.or_else(|| self.config.region_name.clone()),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 key_id: key_id.or_else(|| self.config.key_id.clone()),
-                session_token: session_token.or_else(|| self.config.session_token.clone()),
-                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                session_token: session_token
+                    .map(|v| v.into())
+                    .or_else(|| self.config.session_token.clone()),
+                access_key: access_key
+                    .map(|v| v.into())
+                    .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
                         Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
@@ -410,13 +414,23 @@ impl S3Config {
     /// AWS Session Token
     #[getter]
     pub fn session_token(&self) -> PyResult<Option<String>> {
-        Ok(self.config.session_token.clone())
+        Ok(self
+            .config
+            .session_token
+            .as_ref()
+            .map(|v| v.as_string())
+            .cloned())
     }
 
     /// AWS Secret Access Key
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
-        Ok(self.config.access_key.clone())
+        Ok(self
+            .config
+            .access_key
+            .as_ref()
+            .map(|v| v.as_string())
+            .cloned())
     }
 
     /// AWS max connections per IO thread
@@ -680,12 +694,12 @@ impl AzureConfig {
         AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
-                access_key: access_key.or(def.access_key),
+                access_key: access_key.map(|v| v.into()).or(def.access_key),
                 sas_token: sas_token.or(def.sas_token),
                 bearer_token: bearer_token.or(def.bearer_token),
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
-                client_secret: client_secret.or(def.client_secret),
+                client_secret: client_secret.map(|v| v.into()).or(def.client_secret),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(def.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
@@ -712,12 +726,16 @@ impl AzureConfig {
         AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
-                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                access_key: access_key
+                    .map(|v| v.into())
+                    .or_else(|| self.config.access_key.clone()),
                 sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
                 bearer_token: bearer_token.or_else(|| self.config.bearer_token.clone()),
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
-                client_secret: client_secret.or_else(|| self.config.client_secret.clone()),
+                client_secret: client_secret
+                    .map(|v| v.into())
+                    .or_else(|| self.config.client_secret.clone()),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(self.config.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
@@ -739,7 +757,12 @@ impl AzureConfig {
     /// Azure Secret Access Key
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
-        Ok(self.config.access_key.clone())
+        Ok(self
+            .config
+            .access_key
+            .as_ref()
+            .map(|v| v.as_string())
+            .cloned())
     }
 
     /// Azure Shared Access Signature token
@@ -766,7 +789,12 @@ impl AzureConfig {
 
     #[getter]
     pub fn client_secret(&self) -> PyResult<Option<String>> {
-        Ok(self.config.client_secret.clone())
+        Ok(self
+            .config
+            .client_secret
+            .as_ref()
+            .map(|v| v.as_string())
+            .cloned())
     }
 
     /// Whether to use Microsoft Fabric
@@ -808,7 +836,7 @@ impl GCSConfig {
         GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
-                credentials: credentials.or(def.credentials),
+                credentials: credentials.map(|v| v.into()).or(def.credentials),
                 token: token.or(def.token),
                 anonymous: anonymous.unwrap_or(def.anonymous),
             },
@@ -825,7 +853,9 @@ impl GCSConfig {
         GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or_else(|| self.config.project_id.clone()),
-                credentials: credentials.or_else(|| self.config.credentials.clone()),
+                credentials: credentials
+                    .map(|v| v.into())
+                    .or_else(|| self.config.credentials.clone()),
                 token: token.or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
             },
@@ -845,7 +875,11 @@ impl GCSConfig {
     /// Credentials file path or string to use when accessing Google Cloud Storage
     #[getter]
     pub fn credentials(&self) -> PyResult<Option<String>> {
-        Ok(self.config.credentials.clone())
+        Ok(self
+            .config
+            .credentials
+            .as_ref()
+            .map(|v| v.as_string().clone()))
     }
 
     /// OAuth2 token to use when accessing Google Cloud Storage

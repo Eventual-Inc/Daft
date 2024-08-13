@@ -360,9 +360,9 @@ impl GCSSource {
             ClientConfig::default().anonymous()
         } else if let Some(creds) = &config.credentials {
             // try using credentials as file path first, then as JSON string
-            let creds = match CredentialsFile::new_from_file(creds.clone()).await {
+            let creds = match CredentialsFile::new_from_file(creds.as_string().clone()).await {
                 Ok(creds) => creds,
-                Err(_) => CredentialsFile::new_from_str(creds)
+                Err(_) => CredentialsFile::new_from_str(creds.as_string())
                     .await
                     .context(UnableToLoadCredentialsSnafu {})?,
             };
