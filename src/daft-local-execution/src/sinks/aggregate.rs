@@ -7,10 +7,6 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use crate::channel::PipelineOutput;
-
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -20,7 +16,7 @@ enum AggregateState {
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
-    state: Vec<Arc<MicroPartition>>,
+    state: AggregateState,
 }
 
 impl AggregateSink {
@@ -28,7 +24,7 @@ impl AggregateSink {
         Self {
             agg_exprs,
             group_by,
-            state: vec![],
+            state: AggregateState::Accumulating(vec![]),
         }
     }
 
@@ -49,7 +45,7 @@ impl BlockingSink for AggregateSink {
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> DaftResult<Option<PipelineOutput>> {
         if let AggregateState::Accumulating(parts) = &mut self.state {
             assert!(
                 !parts.is_empty(),
@@ -59,7 +55,7 @@ impl BlockingSink for AggregateSink {
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
             self.state = AggregateState::Done(agged.clone());
-            Ok(Some(agged))
+            Ok(Some(agged.into()))
         } else {
             panic!("AggregateSink should be in Accumulating state");
         }

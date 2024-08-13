@@ -6,7 +6,7 @@ mod run;
 mod sinks;
 mod sources;
 
-use common_error::{{DaftError, DaftResult}, DaftResult};
+use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::Snafu;

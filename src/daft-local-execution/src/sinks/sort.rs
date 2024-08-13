@@ -26,7 +26,7 @@ impl SortSink {
         Self {
             sort_by,
             descending,
-            state: vec![],
+            state: SortState::Building(vec![]),
         }
     }
     pub fn boxed(self) -> Box<dyn BlockingSink> {
@@ -48,7 +48,7 @@ impl BlockingSink for SortSink {
         "Sort"
     }
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> DaftResult<Option<PipelineOutput>> {
         if let SortState::Building(parts) = &mut self.state {
             assert!(
                 !parts.is_empty(),
@@ -58,7 +58,7 @@ impl BlockingSink for SortSink {
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
             self.state = SortState::Done(sorted.clone());
-            Ok(Some(sorted))
+            Ok(Some(sorted.into()))
         } else {
             panic!("SortSink should be in Building state");
         }
