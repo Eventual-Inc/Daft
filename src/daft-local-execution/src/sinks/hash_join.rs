@@ -139,25 +139,24 @@ impl HashJoinOperator {
         self
     }
 
-    fn create_probe_spec(&self) -> HashJoinProbeSpec {
+    fn as_intermediate_op(&self) -> Arc<dyn IntermediateOperator> {
         if let HashJoinState::Probing {
             probe_table,
             tables,
         } = &self.join_state
         {
-            HashJoinProbeSpec {
+            Arc::new(HashJoinProber {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
             })
         } else {
-            panic!("create_probe_spec can only be used during the Probing Phase")
+            panic!("can't call as_intermediate_op when not in probing state")
         }
     }
 }
 
-#[derive(Clone)]
-struct HashJoinProbeSpec {
+struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
     right_on: Vec<ExprRef>,
@@ -181,13 +180,13 @@ impl IntermediateOperator for HashJoinProber {
     fn name(&self) -> &'static str {
         "HashJoinProber"
     }
-    fn execute(&mut self, input: &Arc<MicroPartition>) -> DaftResult<OperatorOutput> {
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         let _span = info_span!("HashJoinOperator::execute").entered();
         let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
         // Left should only be created once per probe table
         let mut left_growable =
-            GrowableTable::new(&self.spec.tables.iter().collect::<Vec<_>>(), false, 20)?;
+            GrowableTable::new(&self.tables.iter().collect::<Vec<_>>(), false, 20)?;
         // right should only be created morsel
 
         let right_input_tables = input.get_tables()?;
@@ -200,8 +199,8 @@ impl IntermediateOperator for HashJoinProber {
             let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
             for (r_table_idx, table) in right_input_tables.iter().enumerate() {
                 // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(&self.spec.right_on)?;
-                let iter = self.spec.probe_table.probe(&join_keys)?;
+                let join_keys = table.eval_expression_list(&self.right_on)?;
+                let iter = self.probe_table.probe(&join_keys)?;
 
                 for (l_table_idx, l_row_idx, right_idx) in iter {
                     left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
@@ -214,23 +213,11 @@ impl IntermediateOperator for HashJoinProber {
         let right_table = right_growable.build()?;
 
         let final_table = left_table.union(&right_table)?;
-        let mp = Arc::new(MicroPartition::new_loaded(
+        Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
             Arc::new(vec![final_table]),
             None,
-        ));
-        self.state.add(mp);
-        match self.state.try_clear() {
-            Some(part) => Ok(OperatorOutput::Ready(part?)),
-            None => Ok(OperatorOutput::NeedMoreInput),
-        }
-    }
-
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        match self.state.clear() {
-            Some(part) => part.map(Some),
-            None => Ok(None),
-        }
+        )))
     }
 }
 
@@ -312,7 +299,7 @@ impl PipelineNode for HashJoinNode {
         let hash_join = self.hash_join.clone();
         let probing_op = {
             let guard = hash_join.lock().await;
-            guard.create_probe_spec()
+            guard.as_intermediate_op()
         };
         let probing_node = IntermediateNode::new(probing_op, vec![]);
         let worker_senders = probing_node

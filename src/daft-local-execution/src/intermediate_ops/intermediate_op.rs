@@ -17,9 +17,9 @@ use crate::{
 
 use super::state::OperatorTaskState;
 pub trait IntermediateOperator: Send + Sync {
-    fn execute(&mut self, input: &Arc<MicroPartition>) -> DaftResult<OperatorOutput>;
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>>;
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     #[allow(dead_code)]
+
     fn name(&self) -> &'static str;
 }
 
