@@ -36,8 +36,8 @@ impl AggregateSink {
 impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        if let AggregateState::Accumulating(ref mut state) = self.state {
-            state.push(input.clone());
+        if let AggregateState::Accumulating(parts) = &mut self.state {
+            parts.push(input.clone());
             Ok(BlockingSinkStatus::NeedMoreInput)
         } else {
             panic!("AggregateSink should be in Accumulating state");
@@ -46,12 +46,16 @@ impl BlockingSink for AggregateSink {
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        if let AggregateState::Accumulating(ref state) = self.state {
+        if let AggregateState::Accumulating(parts) = &mut self.state {
+            assert!(
+                !parts.is_empty(),
+                "We can not finalize AggregateSink with no data"
+            );
             let concated =
-                MicroPartition::concat(&state.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-            let aggregated = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
-            self.state = AggregateState::Done(aggregated.clone());
-            Ok(Some(aggregated))
+                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
+            self.state = AggregateState::Done(agged.clone());
+            Ok(Some(agged))
         } else {
             panic!("AggregateSink should be in Accumulating state");
         }
