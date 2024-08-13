@@ -14,7 +14,7 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
         write!(s, "{:indent$}", "", indent = 2 * indent)?;
     }
 
-    let node_str = node.description(DisplayLevel::Default);
+    let node_str = node.display_as(DisplayLevel::Default);
     s.write_str(&node_str)?;
 
     // Recursively handle children.
@@ -49,7 +49,7 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
     // e.g. | | * <node contents line 1>
     //      | | | <node contents line 2>
 
-    let desc = node.description(level);
+    let desc = node.display_as(level);
     let lines = desc.lines();
 
     use terminal_size::{terminal_size, Width};

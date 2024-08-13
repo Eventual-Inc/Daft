@@ -64,7 +64,7 @@ impl BroadcastJoin {
 }
 
 impl TreeDisplay for BroadcastJoin {
-    fn description(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
         match level {
             common_display::DisplayLevel::Compact => self.get_name(),
             _ => self.multiline_display().join("\n"),

@@ -37,7 +37,7 @@ impl InMemoryScan {
     }
 }
 impl TreeDisplay for InMemoryScan {
-    fn description(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         match level {
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {

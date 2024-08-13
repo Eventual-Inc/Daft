@@ -9,12 +9,12 @@ pub trait TreeDisplay {
     /// while a `level` of `DisplayLevel::Default` might show all available details.
     ///
     /// **Important**. Implementers do not need to worry about the formatting of the output.
-    fn description(&self, level: crate::DisplayLevel) -> String;
+    fn display_as(&self, level: crate::DisplayLevel) -> String;
 
     /// Get a unique identifier for this node.
-    /// No two nodes should have the same semantic id.
+    /// No two nodes should have the same id.
     /// The default implementation uses the node's name and memory address.
-    fn semantic_id(&self) -> String {
+    fn id(&self) -> String {
         let mut s = String::new();
         s.push_str(&self.get_name());
         s.push_str(&format!("{:p}", self as *const Self as *const ()));
@@ -31,16 +31,16 @@ pub trait TreeDisplay {
 }
 
 impl TreeDisplay for Arc<dyn TreeDisplay> {
-    fn description(&self, level: crate::DisplayLevel) -> String {
-        self.as_ref().description(level)
+    fn display_as(&self, level: crate::DisplayLevel) -> String {
+        self.as_ref().display_as(level)
     }
 
     fn get_name(&self) -> String {
         self.as_ref().get_name()
     }
 
-    fn semantic_id(&self) -> String {
-        self.as_ref().semantic_id()
+    fn id(&self) -> String {
+        self.as_ref().id()
     }
 
     fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {

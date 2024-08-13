@@ -6,7 +6,7 @@ use std::{
 use common_display::{tree::TreeDisplay, DisplayLevel};
 
 impl TreeDisplay for crate::LogicalPlan {
-    fn description(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         match level {
             DisplayLevel::Compact => self.name(),
             DisplayLevel::Default | DisplayLevel::Verbose => self.multiline_display().join("\n"),
@@ -23,42 +23,42 @@ impl TreeDisplay for crate::LogicalPlan {
 }
 
 impl TreeDisplay for crate::physical_plan::PhysicalPlan {
-    fn description(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         match self {
-            crate::PhysicalPlan::InMemoryScan(scan) => scan.description(level),
-            crate::PhysicalPlan::TabularScan(scan) => scan.description(level),
-            crate::PhysicalPlan::EmptyScan(scan) => scan.description(level),
-            crate::PhysicalPlan::Project(p) => p.description(level),
-            crate::PhysicalPlan::ActorPoolProject(p) => p.description(level),
-            crate::PhysicalPlan::Filter(f) => f.description(level),
-            crate::PhysicalPlan::Limit(limit) => limit.description(level),
-            crate::PhysicalPlan::Explode(explode) => explode.description(level),
-            crate::PhysicalPlan::Unpivot(unpivot) => unpivot.description(level),
-            crate::PhysicalPlan::Sort(sort) => sort.description(level),
-            crate::PhysicalPlan::Split(split) => split.description(level),
-            crate::PhysicalPlan::Sample(sample) => sample.description(level),
-            crate::PhysicalPlan::MonotonicallyIncreasingId(id) => id.description(level),
-            crate::PhysicalPlan::Coalesce(coalesce) => coalesce.description(level),
-            crate::PhysicalPlan::Flatten(flatten) => flatten.description(level),
-            crate::PhysicalPlan::FanoutRandom(fanout) => fanout.description(level),
-            crate::PhysicalPlan::FanoutByHash(fanout) => fanout.description(level),
-            crate::PhysicalPlan::FanoutByRange(fanout) => fanout.description(level),
-            crate::PhysicalPlan::ReduceMerge(reduce) => reduce.description(level),
-            crate::PhysicalPlan::Aggregate(aggr) => aggr.description(level),
-            crate::PhysicalPlan::Pivot(pivot) => pivot.description(level),
-            crate::PhysicalPlan::Concat(concat) => concat.description(level),
-            crate::PhysicalPlan::HashJoin(join) => join.description(level),
-            crate::PhysicalPlan::SortMergeJoin(join) => join.description(level),
-            crate::PhysicalPlan::BroadcastJoin(join) => join.description(level),
-            crate::PhysicalPlan::TabularWriteParquet(write) => write.description(level),
-            crate::PhysicalPlan::TabularWriteJson(write) => write.description(level),
-            crate::PhysicalPlan::TabularWriteCsv(write) => write.description(level),
+            crate::PhysicalPlan::InMemoryScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::TabularScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::EmptyScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::Project(p) => p.display_as(level),
+            crate::PhysicalPlan::ActorPoolProject(p) => p.display_as(level),
+            crate::PhysicalPlan::Filter(f) => f.display_as(level),
+            crate::PhysicalPlan::Limit(limit) => limit.display_as(level),
+            crate::PhysicalPlan::Explode(explode) => explode.display_as(level),
+            crate::PhysicalPlan::Unpivot(unpivot) => unpivot.display_as(level),
+            crate::PhysicalPlan::Sort(sort) => sort.display_as(level),
+            crate::PhysicalPlan::Split(split) => split.display_as(level),
+            crate::PhysicalPlan::Sample(sample) => sample.display_as(level),
+            crate::PhysicalPlan::MonotonicallyIncreasingId(id) => id.display_as(level),
+            crate::PhysicalPlan::Coalesce(coalesce) => coalesce.display_as(level),
+            crate::PhysicalPlan::Flatten(flatten) => flatten.display_as(level),
+            crate::PhysicalPlan::FanoutRandom(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::FanoutByHash(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::FanoutByRange(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::ReduceMerge(reduce) => reduce.display_as(level),
+            crate::PhysicalPlan::Aggregate(aggr) => aggr.display_as(level),
+            crate::PhysicalPlan::Pivot(pivot) => pivot.display_as(level),
+            crate::PhysicalPlan::Concat(concat) => concat.display_as(level),
+            crate::PhysicalPlan::HashJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::SortMergeJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::BroadcastJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::TabularWriteParquet(write) => write.display_as(level),
+            crate::PhysicalPlan::TabularWriteJson(write) => write.display_as(level),
+            crate::PhysicalPlan::TabularWriteCsv(write) => write.display_as(level),
             #[cfg(feature = "python")]
-            crate::PhysicalPlan::IcebergWrite(write) => write.description(level),
+            crate::PhysicalPlan::IcebergWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]
-            crate::PhysicalPlan::DeltaLakeWrite(write) => write.description(level),
+            crate::PhysicalPlan::DeltaLakeWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]
-            crate::PhysicalPlan::LanceWrite(write) => write.description(level),
+            crate::PhysicalPlan::LanceWrite(write) => write.display_as(level),
         }
     }
 

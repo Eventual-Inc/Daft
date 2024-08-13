@@ -23,7 +23,7 @@ impl TabularScan {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        self.description(DisplayLevel::Default)
+        self.display_as(DisplayLevel::Default)
             .lines()
             .map(|s| s.to_string())
             .collect()
@@ -31,7 +31,7 @@ impl TabularScan {
 }
 
 impl TreeDisplay for TabularScan {
-    fn description(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         fn base_display(scan: &TabularScan) -> String {
             let num_scan_tasks = scan.scan_tasks.len();

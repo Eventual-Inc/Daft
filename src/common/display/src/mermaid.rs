@@ -89,14 +89,14 @@ where
         }
         writeln!(self.output, r#"{}["{}"]"#, id, display)?;
 
-        self.nodes.insert(node.semantic_id(), id);
+        self.nodes.insert(node.id(), id);
         Ok(())
     }
 
     fn display_for_node<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
         // Ideally, a node should be able to uniquely identify itself.
         // For now, we'll just use the display string.
-        let line = node.description(self.t);
+        let line = node.display_as(self.t);
         let max_chars = 80;
 
         let sublines = textwrap::wrap(&line, max_chars);
@@ -106,7 +106,7 @@ where
 
     // Get the id of a node that has already been added.
     fn get_node_id<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
-        let id = node.semantic_id();
+        let id = node.id();
         // SAFETY: Since this is only called after the parent node have been added, we can safely unwrap.
         Ok(self.nodes.get(&id).cloned().unwrap())
     }
