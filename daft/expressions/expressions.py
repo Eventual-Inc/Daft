@@ -2577,7 +2577,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
-            >>> df = df.with_column("normalized", df["x"].str.normalize())
+            >>> df = df.with_column("normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True))
             >>> df.show()
             ╭───────────────┬─────────────╮
             │ x             ┆ normalized  │
