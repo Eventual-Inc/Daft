@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     intermediate_ops::{
-        aggregate::AggregateSpec, filter::FilterSpec, intermediate_op::IntermediateNode,
-        project::ProjectSpec,
+        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
+        project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -61,16 +61,16 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
-            let proj_spec = ProjectSpec::new(projection.clone());
+            let proj_op = ProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            IntermediateNode::new(Arc::new(proj_spec), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
-            let filter_spec = FilterSpec::new(predicate.clone());
+            let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            IntermediateNode::new(Arc::new(filter_spec), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
@@ -95,7 +95,7 @@ pub fn physical_plan_to_pipeline(
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, &[]);
 
-            let first_stage_agg_spec = AggregateSpec::new(
+            let first_stage_agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
                     .cloned()
@@ -105,7 +105,7 @@ pub fn physical_plan_to_pipeline(
             );
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed();
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -118,10 +118,9 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project_spec = ProjectSpec::new(final_exprs);
+            let final_stage_project_op = ProjectOperator::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
-                .boxed()
+            IntermediateNode::new(Arc::new(final_stage_project_op), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -132,7 +131,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, group_by);
-            let first_stage_agg_spec = AggregateSpec::new(
+            let first_stage_agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
                     .cloned()
@@ -142,7 +141,7 @@ pub fn physical_plan_to_pipeline(
             );
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_spec), vec![child_node]).boxed();
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -155,10 +154,9 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
 
-            let final_stage_project_spec = ProjectSpec::new(final_exprs);
+            let final_stage_project_op = ProjectOperator::new(final_exprs);
 
-            IntermediateNode::new(Arc::new(final_stage_project_spec), vec![second_stage_node])
-                .boxed()
+            IntermediateNode::new(Arc::new(final_stage_project_op), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,

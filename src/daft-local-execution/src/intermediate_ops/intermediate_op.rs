@@ -15,34 +15,26 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
-pub trait IntermediateOpSpec: Send + Sync {
-    fn to_operator(&self) -> Box<dyn IntermediateOperator>;
-}
-
-pub enum OperatorOutput {
-    Ready(Arc<MicroPartition>),
-    NeedMoreInput,
-}
-
+use super::state::OperatorTaskState;
 pub trait IntermediateOperator: Send + Sync {
-    fn execute(&mut self, input: &Arc<MicroPartition>) -> DaftResult<OperatorOutput>;
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>>;
+    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     #[allow(dead_code)]
+
     fn name(&self) -> &'static str;
 }
 
 pub(crate) struct IntermediateNode {
-    intermediate_op_spec: Arc<dyn IntermediateOpSpec>,
+    intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
 }
 
 impl IntermediateNode {
     pub(crate) fn new(
-        intermediate_op_spec: Arc<dyn IntermediateOpSpec>,
+        intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
         IntermediateNode {
-            intermediate_op_spec,
+            intermediate_op,
             children,
         }
     }
@@ -53,23 +45,21 @@ impl IntermediateNode {
 
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
-        spec: Arc<dyn IntermediateOpSpec>,
+        op: Arc<dyn IntermediateOperator>,
         mut receiver: SingleReceiver,
         sender: SingleSender,
     ) -> DaftResult<()> {
-        let mut operator = spec.to_operator();
+        let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
         while let Some(morsel) = receiver.recv().await {
-            let result = span.in_scope(|| operator.execute(&morsel))?;
-            match result {
-                OperatorOutput::Ready(part) => {
-                    let _ = sender.send(part).await;
-                }
-                OperatorOutput::NeedMoreInput => {}
+            let result = span.in_scope(|| op.execute(&morsel))?;
+            state.add(result);
+            if let Some(part) = state.try_clear() {
+                let _ = sender.send(part?).await;
             }
         }
-        if let Some(part) = operator.finalize()? {
-            let _ = sender.send(part).await;
+        if let Some(part) = state.clear() {
+            let _ = sender.send(part?).await;
         }
         Ok(())
     }
@@ -86,7 +76,7 @@ impl IntermediateNode {
             let destination_sender = destination.get_next_sender();
             runtime_handle
                 .spawn(Self::run_worker(
-                    self.intermediate_op_spec.clone(),
+                    self.intermediate_op.clone(),
                     worker_receiver,
                     destination_sender,
                 ))
