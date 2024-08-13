@@ -1,19 +1,9 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-pub type SingleSender = tokio::sync::mpsc::Sender<DaftResult<Arc<MicroPartition>>>;
-pub type SingleReceiver = tokio::sync::mpsc::Receiver<DaftResult<Arc<MicroPartition>>>;
-
-pub fn spawn_compute_task<F>(future: F)
-where
-    F: std::future::Future<Output = DaftResult<()>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        let _ = future.await;
-    });
-}
+pub type SingleSender = tokio::sync::mpsc::Sender<Arc<MicroPartition>>;
+pub type SingleReceiver = tokio::sync::mpsc::Receiver<Arc<MicroPartition>>;
 
 pub fn create_single_channel(buffer_size: usize) -> (SingleSender, SingleReceiver) {
     tokio::sync::mpsc::channel(buffer_size)
@@ -100,7 +90,7 @@ pub enum MultiReceiver {
 }
 
 impl MultiReceiver {
-    pub async fn recv(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
+    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
         match self {
             Self::InOrder(receiver) => receiver.recv().await,
             Self::OutOfOrder(receiver) => receiver.recv().await,
@@ -123,7 +113,7 @@ impl InOrderReceiver {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
+    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
         if self.is_done {
             return None;
         }
@@ -148,7 +138,7 @@ impl OutOfOrderReceiver {
         Self { receiver }
     }
 
-    pub async fn recv(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
+    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
         if let Some(val) = self.receiver.recv().await {
             return Some(val);
         }

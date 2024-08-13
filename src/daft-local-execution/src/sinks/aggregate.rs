@@ -3,15 +3,13 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use futures::{stream, StreamExt};
 use tracing::instrument;
-
-use crate::sources::source::Source;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
+    #[allow(dead_code)]
     Done(Arc<MicroPartition>),
 }
 
@@ -42,12 +40,12 @@ impl BlockingSink for AggregateSink {
             parts.push(input.clone());
             Ok(BlockingSinkStatus::NeedMoreInput)
         } else {
-            panic!("sink must be in Accumulating phase")
+            panic!("AggregateSink should be in Accumulating state");
         }
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if let AggregateState::Accumulating(parts) = &mut self.state {
             assert!(
                 !parts.is_empty(),
@@ -55,27 +53,14 @@ impl BlockingSink for AggregateSink {
             );
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-            let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
-            self.state = AggregateState::Done(Arc::new(agged));
-            Ok(())
+            let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
+            self.state = AggregateState::Done(agged.clone());
+            Ok(Some(agged))
         } else {
-            panic!("finalize must be in Accumulating phase")
+            panic!("AggregateSink should be in Accumulating state");
         }
     }
     fn name(&self) -> &'static str {
         "AggregateSink"
-    }
-    fn as_source(&mut self) -> &mut dyn crate::sources::source::Source {
-        self
-    }
-}
-
-impl Source for AggregateSink {
-    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
-        if let AggregateState::Done(parts) = &self.state {
-            stream::iter([Ok(parts.clone())]).boxed()
-        } else {
-            panic!("as_source must be in Done phase")
-        }
     }
 }

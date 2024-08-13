@@ -6,7 +6,6 @@ use tracing::instrument;
 
 use super::streaming_sink::{StreamSinkOutput, StreamingSink};
 
-#[derive(Clone)]
 pub struct LimitSink {
     #[allow(dead_code)]
     limit: usize,

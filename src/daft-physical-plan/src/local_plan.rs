@@ -270,6 +270,7 @@ pub struct HashAggregate {
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
+
 #[derive(Debug)]
 
 pub struct HashJoin {

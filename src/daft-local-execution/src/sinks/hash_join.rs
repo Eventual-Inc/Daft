@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    channel::{create_channel, spawn_compute_task, MultiSender},
-    intermediate_ops::intermediate_op::{IntermediateOpActor, IntermediateOperator},
+    channel::{create_channel, MultiSender},
+    intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
-    sources::source::Source,
-    NUM_CPUS,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -17,7 +16,6 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use futures::{stream, StreamExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
@@ -218,18 +216,9 @@ impl BlockingSink for HashJoinOperator {
         self.join_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
-    fn finalize(&mut self) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         self.join_state.finalize()?;
-        Ok(())
-    }
-    fn as_source(&mut self) -> &mut dyn Source {
-        self
-    }
-}
-
-impl Source for HashJoinOperator {
-    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
-        stream::empty().boxed()
+        Ok(None)
     }
 }
 
@@ -263,9 +252,13 @@ impl PipelineNode for HashJoinNode {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
 
-    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+    async fn start(
+        &mut self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
-        self.left.start(sender).await?;
+        self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
 
         let probe_table_build = tokio::spawn(async move {
@@ -273,7 +266,7 @@ impl PipelineNode for HashJoinNode {
             let mut guard = hash_join.lock().await;
             let sink = guard.as_sink();
             while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val?))? {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val))? {
                     break;
                 }
             }
@@ -285,21 +278,23 @@ impl PipelineNode for HashJoinNode {
 
         let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
-        self.right.start(right_sender).await?;
+        self.right.start(right_sender, runtime_handle).await?;
 
         probe_table_build.await.unwrap()?;
 
         let hash_join = self.hash_join.clone();
-        let destination = destination;
         let probing_op = {
             let guard = hash_join.lock().await;
             guard.as_intermediate_op()
         };
-
-        let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
-        // this should ideally be in the actor
-        spawn_compute_task(async move { actor.run_parallel().await });
-
+        let probing_node = IntermediateNode::new(probing_op, vec![]);
+        let worker_senders = probing_node
+            .spawn_workers(&mut destination, runtime_handle)
+            .await;
+        runtime_handle.spawn(IntermediateNode::send_to_workers(
+            streaming_receiver,
+            worker_senders,
+        ));
         Ok(())
     }
 }
