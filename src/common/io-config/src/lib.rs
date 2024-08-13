@@ -7,9 +7,12 @@ mod gcs;
 mod http;
 mod s3;
 
-use std::{fmt::{Debug, Display}, hash::Hash};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
-use secrecy::{DebugSecret, ExposeSecret, Secret};
+use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
@@ -22,10 +25,9 @@ pub struct ObfuscatedString(Secret<String>);
 
 impl ObfuscatedString {
     pub fn as_string(&self) -> &String {
-        &self.0.expose_secret()
+        self.0.expose_secret()
     }
 }
-
 
 impl PartialEq for ObfuscatedString {
     fn eq(&self, other: &Self) -> bool {
@@ -55,8 +57,9 @@ impl Debug for ObfuscatedString {
 
 impl Serialize for ObfuscatedString {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         self.0.expose_secret().serialize(serializer)
     }
 }
@@ -70,8 +73,6 @@ impl<'de> Deserialize<'de> for ObfuscatedString {
         Ok(ObfuscatedString(s.into()))
     }
 }
-
-
 
 impl From<String> for ObfuscatedString {
     fn from(value: String) -> Self {
