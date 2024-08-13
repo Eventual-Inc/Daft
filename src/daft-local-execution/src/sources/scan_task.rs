@@ -15,7 +15,10 @@ use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use std::sync::Arc;
 
-use crate::DEFAULT_MORSEL_SIZE;
+use crate::{
+    channel::{MultiSender, SingleSender},
+    ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
+};
 
 use super::source::{Source, SourceStream};
 
@@ -23,32 +26,56 @@ use tracing::instrument;
 
 #[derive(Debug)]
 pub struct ScanTaskSource {
-    scan_task: Arc<ScanTask>,
+    scan_tasks: Vec<Arc<ScanTask>>,
 }
 
 impl ScanTaskSource {
-    pub fn new(scan_task: Arc<ScanTask>) -> Self {
-        Self { scan_task }
+    pub fn new(scan_tasks: Vec<Arc<ScanTask>>) -> Self {
+        Self { scan_tasks }
     }
 
+    #[instrument(
+        name = "ScanTaskSource::process_scan_task_stream",
+        level = "info",
+        skip_all
+    )]
+    async fn process_scan_task_stream(
+        scan_task: Arc<ScanTask>,
+        sender: SingleSender,
+        morsel_size: usize,
+        maintain_order: bool,
+    ) -> DaftResult<()> {
+        let io_stats = IOStatsContext::new("StreamScanTask");
+        let mut stream =
+            stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
+        while let Some(partition) = stream.next().await {
+            let _ = sender.send(partition?).await;
+        }
+        Ok(())
+    }
     pub fn boxed(self) -> Box<dyn Source> {
         Box::new(self) as Box<dyn Source>
     }
 }
-
 impl Source for ScanTaskSource {
-    #[instrument(name = "ScanTaskSource::get_data", level = "info", skip(self))]
-    fn get_data(&self, maintain_order: bool) -> SourceStream {
+    #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
+    fn get_data(
+        &self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         let morsel_size = DEFAULT_MORSEL_SIZE;
-        let io_stats = IOStatsContext::new("StreamScanTask");
-        let stream = async_stream::try_stream! {
-            let mut stream =
-                stream_scan_task(self.scan_task.clone(), Some(io_stats), maintain_order, morsel_size).await?;
-            while let Some(partition) = stream.next().await {
-                yield partition?;
-            }
-        };
-        Box::pin(stream)
+        let maintain_order = destination.in_order();
+        for scan_task in self.scan_tasks.clone() {
+            let sender = destination.get_next_sender();
+            runtime_handle.spawn(Self::process_scan_task_stream(
+                scan_task,
+                sender,
+                morsel_size,
+                maintain_order,
+            ));
+        }
+        Ok(())
     }
 }
 

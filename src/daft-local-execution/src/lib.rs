@@ -31,7 +31,7 @@ impl ExecutionRuntimeHandle {
             worker_set: tokio::task::JoinSet::new(),
         }
     }
-    pub async fn spawn(
+    pub fn spawn(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
     ) {

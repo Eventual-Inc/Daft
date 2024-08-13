@@ -47,16 +47,12 @@ pub fn physical_plan_to_pipeline(
     use daft_physical_plan::PhysicalScan;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
-            let scan_task_sources = scan_tasks
-                .iter()
-                .map(|st| ScanTaskSource::new(st.clone()).boxed())
-                .collect::<Vec<_>>();
-            scan_task_sources.into()
+            let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
+            scan_task_source.boxed().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            let in_memory_source = InMemorySource::new(partitions.clone()).boxed();
-            vec![in_memory_source].into()
+            InMemorySource::new(partitions.clone()).boxed().into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..

@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use futures::StreamExt;
-use tracing::{info_span, Instrument};
+use tracing::info_span;
 
 use crate::{
     channel::{create_channel, MultiSender},
     pipeline::PipelineNode,
-    sources::source::Source,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
@@ -20,12 +18,9 @@ pub enum BlockingSinkStatus {
 
 pub trait BlockingSink: Send + Sync {
     fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus>;
-    fn finalize(&mut self) -> DaftResult<()> {
-        Ok(())
-    }
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>>;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
-    fn as_source(&mut self) -> &mut dyn Source;
 }
 
 pub(crate) struct BlockingSinkNode {
@@ -62,26 +57,21 @@ impl PipelineNode for BlockingSinkNode {
         let child = self.child.as_mut();
         child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
-        runtime_handle
-            .spawn(async move {
-                let span = info_span!("BlockingSinkNode::execute");
-                let mut guard = op.lock().await;
-                while let Some(val) = streaming_receiver.recv().await {
-                    if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val))? {
-                        break;
-                    }
+        runtime_handle.spawn(async move {
+            let span = info_span!("BlockingSinkNode::execute");
+            let mut guard = op.lock().await;
+            while let Some(val) = streaming_receiver.recv().await {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| guard.sink(&val))? {
+                    break;
                 }
+            }
+            let finalized_result =
                 info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
-
-                let source = guard.as_source();
-                let mut source_stream = source.get_data(destination.in_order());
-                while let Some(val) = source_stream.next().in_current_span().await {
-                    let _ = destination.get_next_sender().send(val?).await;
-                }
-                DaftResult::Ok(())
-            })
-            .await;
-
+            if let Some(part) = finalized_result {
+                let _ = destination.get_next_sender().send(part).await;
+            }
+            Ok(())
+        });
         Ok(())
     }
 }

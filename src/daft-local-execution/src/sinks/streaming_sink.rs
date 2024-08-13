@@ -64,42 +64,40 @@ impl PipelineNode for StreamingSinkNode {
             .expect("we should only have 1 child");
         child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
-        runtime_handle
-            .spawn(async move {
-                // this should be a RWLock and run in concurrent workers
-                let span = info_span!("StreamingSink::execute");
+        runtime_handle.spawn(async move {
+            // this should be a RWLock and run in concurrent workers
+            let span = info_span!("StreamingSink::execute");
 
-                let mut sink = op.lock().await;
-                let mut is_active = true;
-                while is_active && let Some(val) = streaming_receiver.recv().await {
-                    loop {
-                        let result = span.in_scope(|| sink.execute(0, &val))?;
-                        match result {
-                            StreamSinkOutput::HasMoreOutput(mp) => {
+            let mut sink = op.lock().await;
+            let mut is_active = true;
+            while is_active && let Some(val) = streaming_receiver.recv().await {
+                loop {
+                    let result = span.in_scope(|| sink.execute(0, &val))?;
+                    match result {
+                        StreamSinkOutput::HasMoreOutput(mp) => {
+                            let sender = destination.get_next_sender();
+                            sender.send(mp).await.unwrap();
+                        }
+                        StreamSinkOutput::NeedMoreInput(mp) => {
+                            if let Some(mp) = mp {
                                 let sender = destination.get_next_sender();
                                 sender.send(mp).await.unwrap();
                             }
-                            StreamSinkOutput::NeedMoreInput(mp) => {
-                                if let Some(mp) = mp {
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
-                                }
-                                break;
+                            break;
+                        }
+                        StreamSinkOutput::Finished(mp) => {
+                            if let Some(mp) = mp {
+                                let sender = destination.get_next_sender();
+                                sender.send(mp).await.unwrap();
                             }
-                            StreamSinkOutput::Finished(mp) => {
-                                if let Some(mp) = mp {
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
-                                }
-                                is_active = false;
-                                break;
-                            }
+                            is_active = false;
+                            break;
                         }
                     }
                 }
-                DaftResult::Ok(())
-            })
-            .await;
+            }
+            DaftResult::Ok(())
+        });
         Ok(())
     }
 }

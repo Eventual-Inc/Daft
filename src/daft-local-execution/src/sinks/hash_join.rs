@@ -4,7 +4,6 @@ use crate::{
     channel::{create_channel, MultiSender},
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
-    sources::source::Source,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
@@ -17,7 +16,6 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use futures::{stream, StreamExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
@@ -232,18 +230,9 @@ impl BlockingSink for HashJoinOperator {
         self.join_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
-    fn finalize(&mut self) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         self.join_state.finalize()?;
-        Ok(())
-    }
-    fn as_source(&mut self) -> &mut dyn Source {
-        self
-    }
-}
-
-impl Source for HashJoinOperator {
-    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
-        stream::empty().boxed()
+        Ok(None)
     }
 }
 
@@ -316,12 +305,10 @@ impl PipelineNode for HashJoinNode {
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;
-        runtime_handle
-            .spawn(IntermediateNode::send_to_workers(
-                streaming_receiver,
-                worker_senders,
-            ))
-            .await;
+        runtime_handle.spawn(IntermediateNode::send_to_workers(
+            streaming_receiver,
+            worker_senders,
+        ));
         Ok(())
     }
 }

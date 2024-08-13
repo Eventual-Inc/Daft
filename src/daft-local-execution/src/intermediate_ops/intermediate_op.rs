@@ -74,13 +74,11 @@ impl IntermediateNode {
         for _ in 0..num_senders {
             let (worker_sender, worker_receiver) = create_single_channel(1);
             let destination_sender = destination.get_next_sender();
-            runtime_handle
-                .spawn(Self::run_worker(
-                    self.intermediate_op.clone(),
-                    worker_receiver,
-                    destination_sender,
-                ))
-                .await;
+            runtime_handle.spawn(Self::run_worker(
+                self.intermediate_op.clone(),
+                worker_receiver,
+                destination_sender,
+            ));
             worker_senders.push(worker_sender);
         }
         worker_senders
@@ -128,9 +126,7 @@ impl PipelineNode for IntermediateNode {
         child.start(sender, runtime_handle).await?;
 
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
-        runtime_handle
-            .spawn(Self::send_to_workers(receiver, worker_senders))
-            .await;
+        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders));
         Ok(())
     }
 }

@@ -2,21 +2,24 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use futures::{stream::BoxStream, StreamExt};
+use futures::stream::BoxStream;
 
 use async_trait::async_trait;
-use tracing::Instrument;
 
 use crate::{channel::MultiSender, pipeline::PipelineNode, ExecutionRuntimeHandle};
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
-    fn get_data(&self, maintain_order: bool) -> SourceStream;
+    fn get_data(
+        &self,
+        destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()>;
 }
 
 struct SourceNode {
-    sources: Vec<Arc<tokio::sync::Mutex<Box<dyn Source>>>>,
+    source: Box<dyn Source>,
 }
 
 #[async_trait]
@@ -26,35 +29,15 @@ impl PipelineNode for SourceNode {
     }
     async fn start(
         &mut self,
-        mut destination: MultiSender,
+        destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> DaftResult<()> {
-        let maintain_order = destination.in_order();
-        for source in &self.sources {
-            let source = source.clone();
-            let sender = destination.get_next_sender();
-            runtime_handle
-                .spawn(async move {
-                    let guard = source.lock().await;
-                    let mut source_stream = guard.get_data(maintain_order);
-                    while let Some(val) = source_stream.next().in_current_span().await {
-                        let _ = sender.send(val?).await;
-                    }
-                    DaftResult::Ok(())
-                })
-                .await;
-        }
-        Ok(())
+        self.source.get_data(destination, runtime_handle)
     }
 }
 
-impl From<Vec<Box<dyn Source>>> for Box<dyn PipelineNode> {
-    fn from(sources: Vec<Box<dyn Source>>) -> Self {
-        Box::new(SourceNode {
-            sources: sources
-                .into_iter()
-                .map(|v| Arc::new(tokio::sync::Mutex::new(v)))
-                .collect(),
-        })
+impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
+    fn from(source: Box<dyn Source>) -> Self {
+        Box::new(SourceNode { source })
     }
 }
