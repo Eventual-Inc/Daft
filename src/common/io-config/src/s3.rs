@@ -11,13 +11,15 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::time::SystemTime;
 
+pub use crate::ObfuscatedString;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct S3Config {
     pub region_name: Option<String>,
     pub endpoint_url: Option<String>,
     pub key_id: Option<String>,
-    pub session_token: Option<String>,
-    pub access_key: Option<String>,
+    pub session_token: Option<ObfuscatedString>,
+    pub access_key: Option<ObfuscatedString>,
     pub credentials_provider: Option<Box<dyn S3CredentialsProvider>>,
     pub buffer_time: Option<u64>,
     pub max_connections_per_io_thread: u32,

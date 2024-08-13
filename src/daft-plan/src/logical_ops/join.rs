@@ -1,16 +1,25 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftError;
 use daft_core::{
     join::{JoinStrategy, JoinType},
-    schema::{hash_index_map, Schema, SchemaRef},
+    schema::{Schema, SchemaRef},
     DataType,
 };
-use daft_dsl::{resolve_exprs, ExprRef};
+use daft_dsl::{
+    col,
+    join::{get_common_join_keys, infer_join_schema},
+    optimization::replace_columns_with_expressions,
+    resolve_exprs, Expr, ExprRef,
+};
 use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{
+    logical_ops::Project,
     logical_plan::{self, CreationSnafu},
     LogicalPlan,
 };
@@ -26,10 +35,6 @@ pub struct Join {
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
-
-    // Joins may rename columns from the right input; this struct tracks those renames.
-    // Output name -> Original name
-    pub right_input_mapping: indexmap::IndexMap<String, String>,
 }
 
 impl std::hash::Hash for Join {
@@ -41,7 +46,6 @@ impl std::hash::Hash for Join {
         std::hash::Hash::hash(&self.join_type, state);
         std::hash::Hash::hash(&self.join_strategy, state);
         std::hash::Hash::hash(&self.output_schema, state);
-        state.write_u64(hash_index_map(&self.right_input_mapping))
     }
 }
 
@@ -70,46 +74,101 @@ impl Join {
                 }
             }
         }
-        let mut right_input_mapping = indexmap::IndexMap::new();
-        // Schema inference ported from existing behaviour for parity,
-        // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
-        let output_schema = {
-            let left_join_keys = left_on.iter().map(|e| e.name()).collect::<HashSet<_>>();
-            let right_join_keys = right_on.iter().map(|e| e.name()).collect::<HashSet<_>>();
-            let left_schema = &left.schema().fields;
-            let fields = left_schema
+
+        if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+            // The output schema is the same as the left input schema for anti and semi joins.
+
+            let output_schema = left.schema().clone();
+
+            Ok(Self {
+                left,
+                right,
+                left_on,
+                right_on,
+                join_type,
+                join_strategy,
+                output_schema,
+            })
+        } else {
+            let common_join_keys: HashSet<_> =
+                get_common_join_keys(left_on.as_slice(), right_on.as_slice())
+                    .map(|k| k.to_string())
+                    .collect();
+
+            let left_names = left.schema().names();
+            let right_names = right.schema().names();
+
+            let mut names_so_far: HashSet<String> = HashSet::from_iter(left_names);
+
+            // rename right columns that have the same name as left columns and are not join keys
+            // old_name -> new_name
+            let right_rename_mapping: HashMap<_, _> = right_names
                 .iter()
-                .map(|(_, field)| field)
-                .cloned()
-                .chain(right.schema().fields.iter().filter_map(|(rname, rfield)| {
-                    if (left_join_keys.contains(rname.as_str())
-                        && right_join_keys.contains(rname.as_str()))
-                        || matches!(join_type, JoinType::Anti | JoinType::Semi)
-                    {
-                        right_input_mapping.insert(rname.clone(), rname.clone());
+                .filter_map(|name| {
+                    if !names_so_far.contains(name) || common_join_keys.contains(name) {
                         None
-                    } else if left_schema.contains_key(rname) {
-                        let new_name = format!("right.{}", rname);
-                        right_input_mapping.insert(new_name.clone(), rname.clone());
-                        Some(rfield.rename(new_name))
                     } else {
-                        right_input_mapping.insert(rname.clone(), rname.clone());
-                        Some(rfield.clone())
+                        let mut new_name = name.clone();
+                        while names_so_far.contains(&new_name) {
+                            new_name = format!("right.{}", new_name);
+                        }
+                        names_so_far.insert(new_name.clone());
+
+                        Some((name.clone(), new_name))
                     }
-                }))
-                .collect::<Vec<_>>();
-            Schema::new(fields).context(CreationSnafu)?.into()
-        };
-        Ok(Self {
-            left,
-            right,
-            left_on,
-            right_on,
-            join_type,
-            join_strategy,
-            output_schema,
-            right_input_mapping,
-        })
+                })
+                .collect();
+
+            let (right, right_on) = if right_rename_mapping.is_empty() {
+                (right, right_on)
+            } else {
+                // projection to update the right side with the new column names
+                let new_right_projection: Vec<_> = right_names
+                    .iter()
+                    .map(|name| {
+                        if let Some(new_name) = right_rename_mapping.get(name) {
+                            Expr::Alias(col(name.clone()), new_name.clone().into()).into()
+                        } else {
+                            col(name.clone())
+                        }
+                    })
+                    .collect();
+
+                let new_right: LogicalPlan = Project::try_new(right, new_right_projection)?.into();
+
+                let right_on_replace_map = right_rename_mapping
+                    .iter()
+                    .map(|(old_name, new_name)| (old_name.clone(), col(new_name.clone())))
+                    .collect::<HashMap<_, _>>();
+
+                // change any column references in the right_on expressions to the new column names
+                let new_right_on = right_on
+                    .into_iter()
+                    .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
+                    .collect::<Vec<_>>();
+
+                (new_right.into(), new_right_on)
+            };
+
+            let output_schema = infer_join_schema(
+                &left.schema(),
+                &right.schema(),
+                &left_on,
+                &right_on,
+                join_type,
+            )
+            .context(CreationSnafu)?;
+
+            Ok(Self {
+                left,
+                right,
+                left_on,
+                right_on,
+                join_type,
+                join_strategy,
+                output_schema,
+            })
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

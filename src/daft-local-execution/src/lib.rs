@@ -6,13 +6,45 @@ mod run;
 mod sinks;
 mod sources;
 
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
+use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::Snafu;
 
-use lazy_static::lazy_static;
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+}
+
+pub struct ExecutionRuntimeHandle {
+    pub worker_set: tokio::task::JoinSet<DaftResult<()>>,
+}
+
+impl Default for ExecutionRuntimeHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExecutionRuntimeHandle {
+    pub fn new() -> Self {
+        Self {
+            worker_set: tokio::task::JoinSet::new(),
+        }
+    }
+    pub fn spawn(
+        &mut self,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
+    ) {
+        self.worker_set.spawn(task);
+    }
+
+    pub async fn join_next(&mut self) -> Option<Result<DaftResult<()>, tokio::task::JoinError>> {
+        self.worker_set.join_next().await
+    }
+
+    pub async fn shutdown(&mut self) {
+        self.worker_set.shutdown().await;
+    }
 }
 
 const DEFAULT_MORSEL_SIZE: usize = 1000;

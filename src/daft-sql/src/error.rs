@@ -42,6 +42,13 @@ impl From<ParserError> for PlannerError {
         PlannerError::SQLParserError { source: value }
     }
 }
+impl From<strum::ParseError> for PlannerError {
+    fn from(value: strum::ParseError) -> Self {
+        PlannerError::ParseError {
+            message: value.to_string(),
+        }
+    }
+}
 
 impl PlannerError {
     pub fn column_not_found<A: Into<String>, B: Into<String>>(column_name: A, relation: B) -> Self {
@@ -96,6 +103,14 @@ macro_rules! column_not_found_err {
 macro_rules! invalid_operation_err {
     ($($arg:tt)*) => {
         return Err($crate::error::PlannerError::invalid_operation(format!($($arg)*)))
+    };
+}
+#[macro_export]
+macro_rules! ensure {
+    ($condition:expr, $($arg:tt)*) => {
+        if !$condition {
+            return Err($crate::error::PlannerError::invalid_operation(format!($($arg)*)))
+        }
     };
 }
 

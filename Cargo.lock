@@ -1276,6 +1276,7 @@ dependencies = [
  "common-error",
  "common-py-serde",
  "pyo3",
+ "secrecy",
  "serde",
  "serde_json",
  "typetag",
@@ -1708,9 +1709,11 @@ dependencies = [
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
+ "common-resource-request",
  "common-treenode",
  "daft-core",
  "daft-sketch",
+ "indexmap 2.3.0",
  "itertools 0.11.0",
  "log",
  "pyo3",
@@ -2011,6 +2014,7 @@ dependencies = [
  "rstest",
  "snafu",
  "sqlparser",
+ "strum 0.26.3",
 ]
 
 [[package]]
@@ -4456,6 +4460,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "security-framework"

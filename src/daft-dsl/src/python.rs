@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
@@ -153,6 +154,7 @@ pub fn stateless_udf(
     partial_stateless_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateless_udf;
 
@@ -166,6 +168,7 @@ pub fn stateless_udf(
             partial_stateless_udf,
             &expressions_map,
             return_dtype.dtype,
+            resource_request,
         )?
         .into(),
     })
@@ -182,6 +185,8 @@ pub fn stateful_udf(
     partial_stateful_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
+    init_args: Option<&PyAny>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateful_udf;
 
@@ -189,12 +194,15 @@ pub fn stateful_udf(
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
     let partial_stateful_udf = partial_stateful_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let init_args = init_args.map(|args| args.to_object(py));
     Ok(PyExpr {
         expr: stateful_udf(
             name,
             partial_stateful_udf,
             &expressions_map,
             return_dtype.dtype,
+            resource_request,
+            init_args,
         )?
         .into(),
     })

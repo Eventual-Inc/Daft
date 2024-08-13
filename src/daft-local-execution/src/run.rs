@@ -21,6 +21,7 @@ use {
 use crate::{
     channel::create_channel,
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    Error, ExecutionRuntimeHandle,
 };
 
 #[cfg(feature = "python")]
@@ -109,12 +110,28 @@ pub fn run_local(
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
         println!("{}", viz_pipeline(pipeline.as_ref()));
         let (sender, mut receiver) = create_channel(1, true);
-        pipeline.start(sender).await?;
+
+        let mut runtime_handle = ExecutionRuntimeHandle::default();
+        pipeline.start(sender, &mut runtime_handle).await?;
         let mut result = vec![];
         while let Some(val) = receiver.recv().await {
-            result.push(val);
+            result.push(Ok(val));
         }
-        DaftResult::Ok(result.into_iter())
+
+        while let Some(result) = runtime_handle.join_next().await {
+            match result {
+                Ok(Err(e)) => {
+                    runtime_handle.shutdown().await;
+                    return DaftResult::Err(e);
+                }
+                Err(e) => {
+                    runtime_handle.shutdown().await;
+                    return DaftResult::Err(Error::JoinError { source: e }.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(result.into_iter())
     });
     Ok(Box::new(res?))
 }

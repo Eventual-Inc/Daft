@@ -3,10 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use futures::{stream, StreamExt};
 use tracing::instrument;
-
-use crate::sources::source::Source;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 
@@ -18,6 +15,7 @@ pub struct SortSink {
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
+    #[allow(dead_code)]
     Done(Arc<MicroPartition>),
 }
 
@@ -40,15 +38,13 @@ impl BlockingSink for SortSink {
         if let SortState::Building(parts) = &mut self.state {
             parts.push(input.clone());
         } else {
-            panic!("sink should be in building phase");
+            panic!("SortSink should be in Building state");
         }
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
-    fn name(&self) -> &'static str {
-        "Sort"
-    }
+
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if let SortState::Building(parts) = &mut self.state {
             assert!(
                 !parts.is_empty(),
@@ -56,24 +52,11 @@ impl BlockingSink for SortSink {
             );
             let concated =
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-            let sorted = concated.sort(&self.sort_by, &self.descending)?;
-            self.state = SortState::Done(Arc::new(sorted));
-            Ok(())
+            let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
+            self.state = SortState::Done(sorted.clone());
+            Ok(Some(sorted))
         } else {
-            panic!("finalize should be in building phase");
-        }
-    }
-    fn as_source(&mut self) -> &mut dyn crate::sources::source::Source {
-        self
-    }
-}
-
-impl Source for SortSink {
-    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
-        if let SortState::Done(parts) = &self.state {
-            stream::iter([Ok(parts.clone())]).boxed()
-        } else {
-            panic!("get_data should be in done phase");
+            panic!("SortSink should be in Building state");
         }
     }
     fn name(&self) -> &'static str {

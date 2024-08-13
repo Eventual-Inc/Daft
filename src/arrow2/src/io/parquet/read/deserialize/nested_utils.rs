@@ -439,6 +439,18 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
         let rep = rep?;
         let def = def?;
         if rep == 0 {
+            // A row might have values that overflow across multiple data pages. If the overflowing
+            // row is the last row in our result (either because it is the last row in the column,
+            // or in the limit(), or in the show()), then we might have continued reading data pages
+            // despite having read `additional` rows (where `additional` could be 0). We only know
+            // that we've read all values to read when either `values_remaining` is 0, or we have
+            // read `additional` rows and see a repetition level of 0 (which tells us that we're
+            // reading a new record). In the latter case, the remaining values lie outside of the
+            // rows we're retrieving, so we zero out `values_remaining`.
+            if rows == additional {
+                *values_remaining = 0;
+                break;
+            }
             rows += 1;
         }
 
@@ -470,16 +482,18 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             }
         }
 
-        let next_rep = *page
-            .iter
-            .peek()
-            .map(|x| x.0.as_ref())
-            .transpose()
-            .unwrap() // todo: fix this
-            .unwrap_or(&0);
-
-        if next_rep == 0 && rows == additional {
-            break;
+        let next_rep = page.iter.peek().map(|x| x.0.as_ref()).transpose().unwrap();
+        match next_rep {
+            Some(next_rep) => {
+                if *next_rep == 0 && rows == additional {
+                    // If we see a repetition level of 0, we know that we've read all values in
+                    // `additional` rows, and the remaining values lie outside of the rows we're
+                    // retrieving, so we zero out `values_remaining`.
+                    *values_remaining = 0;
+                    break;
+                }
+            }
+            None => break,
         }
     }
     Ok(())

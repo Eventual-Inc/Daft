@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
-use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{col, optimization::replace_columns_with_expressions, Expr, ExprRef};
@@ -11,7 +10,7 @@ use indexmap::IndexSet;
 use crate::{
     logical_ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
-    LogicalPlan,
+    LogicalPlan, LogicalPlanRef,
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
@@ -121,15 +120,8 @@ impl PushDownProjection {
                     .collect();
 
                 // Make a new projection node with the merged projections.
-                let new_plan: LogicalPlan = Project::try_new(
-                    upstream_projection.input.clone(),
-                    merged_projection,
-                    ResourceRequest::max_all(&[
-                        &upstream_projection.resource_request,
-                        &projection.resource_request,
-                    ]),
-                )?
-                .into();
+                let new_plan: LogicalPlan =
+                    Project::try_new(upstream_projection.input.clone(), merged_projection)?.into();
                 let new_plan: Arc<LogicalPlan> = new_plan.into();
 
                 // Root node is changed, look at it again.
@@ -195,7 +187,6 @@ impl PushDownProjection {
                     let new_upstream: LogicalPlan = Project::try_new(
                         upstream_projection.input.clone(),
                         pruned_upstream_projections,
-                        upstream_projection.resource_request.clone(),
                     )?
                     .into();
 
@@ -265,7 +256,6 @@ impl PushDownProjection {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                             upstream_actor_pool_projection.input.clone(),
                             pruned_upstream_projections,
-                            upstream_actor_pool_projection.resource_request.clone(),
                             upstream_actor_pool_projection.num_actors,
                         )?)
                         .arced()
@@ -310,12 +300,7 @@ impl PushDownProjection {
                         .map(col)
                         .collect::<Vec<_>>();
 
-                    Project::try_new(
-                        grand_upstream_plan.clone(),
-                        pushdown_column_exprs,
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(grand_upstream_plan.clone(), pushdown_column_exprs)?.into()
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
@@ -348,20 +333,10 @@ impl PushDownProjection {
                     .map(col)
                     .collect::<Vec<_>>();
                 let new_left_subprojection: LogicalPlan = {
-                    Project::try_new(
-                        concat.input.clone(),
-                        pushdown_column_exprs.clone(),
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(concat.input.clone(), pushdown_column_exprs.clone())?.into()
                 };
                 let new_right_subprojection: LogicalPlan = {
-                    Project::try_new(
-                        concat.other.clone(),
-                        pushdown_column_exprs.clone(),
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(concat.other.clone(), pushdown_column_exprs.clone())?.into()
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[
@@ -377,7 +352,7 @@ impl PushDownProjection {
             }
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.
-                let [projection_required_columns] = &plan.required_columns()[..] else {
+                let [projection_dependencies] = &plan.required_columns()[..] else {
                     panic!()
                 };
                 let [left_dependencies, right_dependencies] = &upstream_plan.required_columns()[..]
@@ -385,94 +360,66 @@ impl PushDownProjection {
                     panic!()
                 };
 
-                let left_upstream_names = join
-                    .left
-                    .schema()
-                    .names()
-                    .iter()
-                    .cloned()
-                    .collect::<IndexSet<_>>();
-                let right_upstream_names = join
-                    .right
-                    .schema()
-                    .names()
-                    .iter()
-                    .cloned()
-                    .collect::<IndexSet<_>>();
+                /// For one side of the join, see if a non-vacuous pushdown is possible.
+                fn maybe_project_upstream_input(
+                    side: &LogicalPlanRef,
+                    side_dependencies: &IndexSet<String>,
+                    projection_dependencies: &IndexSet<String>,
+                ) -> DaftResult<Transformed<LogicalPlanRef>> {
+                    let schema = side.schema();
+                    let upstream_names: IndexSet<String> = schema.fields.keys().cloned().collect();
 
-                let right_combined_dependencies = projection_required_columns
-                    .iter()
-                    .filter_map(|colname| join.right_input_mapping.get(colname))
-                    .chain(right_dependencies.iter())
-                    .cloned()
-                    .collect::<IndexSet<_>>();
+                    let combined_dependencies: IndexSet<_> = side_dependencies
+                        .union(
+                            &upstream_names
+                                .intersection(projection_dependencies)
+                                .cloned()
+                                .collect::<IndexSet<_>>(),
+                        )
+                        .cloned()
+                        .collect();
 
-                let left_combined_dependencies = projection_required_columns
-                    .iter()
-                    .filter_map(|colname| left_upstream_names.get(colname))
-                    .chain(left_dependencies.iter())
-                    // We also have to keep any name conflict columns referenced by the right side.
-                    // E.g. if the user wants "right.c", left must also provide "c", or "right.c" disappears.
-                    // This is mostly an artifact of https://github.com/Eventual-Inc/Daft/issues/1303
-                    .chain(
-                        right_combined_dependencies
-                            .iter()
-                            .filter_map(|rname| left_upstream_names.get(rname)),
-                    )
-                    .cloned()
-                    .collect::<IndexSet<_>>();
-
-                // For each upstream, see if a non-vacuous pushdown is possible.
-                let maybe_new_left_upstream: Option<Arc<LogicalPlan>> = {
-                    if left_combined_dependencies.len() < left_upstream_names.len() {
-                        let pushdown_column_exprs: Vec<ExprRef> = left_combined_dependencies
+                    if combined_dependencies.len() < upstream_names.len() {
+                        let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
                             .into_iter()
-                            .map(col)
-                            .collect::<Vec<_>>();
-                        let new_project: LogicalPlan = Project::try_new(
-                            join.left.clone(),
-                            pushdown_column_exprs,
-                            Default::default(),
-                        )?
-                        .into();
-                        Some(new_project.into())
+                            .map(|d| col(d.to_string()))
+                            .collect();
+                        let new_project: LogicalPlan =
+                            Project::try_new(side.clone(), pushdown_column_exprs)?.into();
+                        Ok(Transformed::Yes(new_project.into()))
                     } else {
-                        None
+                        Ok(Transformed::No(side.clone()))
                     }
-                };
+                }
 
-                let maybe_new_right_upstream: Option<Arc<LogicalPlan>> = {
-                    if right_combined_dependencies.len() < right_upstream_names.len() {
-                        let pushdown_column_exprs: Vec<ExprRef> = right_combined_dependencies
-                            .into_iter()
-                            .map(col)
-                            .collect::<Vec<_>>();
-                        let new_project: LogicalPlan = Project::try_new(
-                            join.right.clone(),
-                            pushdown_column_exprs,
-                            Default::default(),
-                        )?
-                        .into();
-                        Some(new_project.into())
-                    } else {
-                        None
-                    }
-                };
+                let new_left_upstream = maybe_project_upstream_input(
+                    &join.left,
+                    left_dependencies,
+                    projection_dependencies,
+                )?;
+                let new_right_upstream = maybe_project_upstream_input(
+                    &join.right,
+                    right_dependencies,
+                    projection_dependencies,
+                )?;
 
-                // If either pushdown is possible, create a new Join node.
-                if maybe_new_left_upstream.is_some() || maybe_new_right_upstream.is_some() {
-                    let new_left_upstream = maybe_new_left_upstream.unwrap_or(join.left.clone());
-                    let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
-                    let new_join =
-                        upstream_plan.with_new_children(&[new_left_upstream, new_right_upstream]);
+                if new_left_upstream.is_no() && new_right_upstream.is_no() {
+                    Ok(Transformed::No(plan))
+                } else {
+                    // If either pushdown is possible, create a new Join node.
+                    let new_join = upstream_plan.with_new_children(&[
+                        new_left_upstream.unwrap().clone(),
+                        new_right_upstream.unwrap().clone(),
+                    ]);
+
                     let new_plan = Arc::new(plan.with_new_children(&[new_join.into()]));
+
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
                         .or(Transformed::Yes(new_plan));
+
                     Ok(new_plan)
-                } else {
-                    Ok(Transformed::No(plan))
                 }
             }
             LogicalPlan::Distinct(_) => {
@@ -508,12 +455,7 @@ impl PushDownProjection {
                     .map(|s| col(s.as_str()))
                     .collect::<Vec<_>>();
 
-                Project::try_new(
-                    upstream_plan.clone(),
-                    pushdown_column_exprs,
-                    Default::default(),
-                )?
-                .into()
+                Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
             let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
@@ -546,12 +488,7 @@ impl PushDownProjection {
                         .map(|s| col(s.as_str()))
                         .collect::<Vec<_>>();
 
-                    Project::try_new(
-                        join.right.clone(),
-                        pushdown_column_exprs,
-                        Default::default(),
-                    )?
-                    .into()
+                    Project::try_new(join.right.clone(), pushdown_column_exprs)?.into()
                 };
 
                 let new_join = plan
@@ -587,12 +524,7 @@ impl PushDownProjection {
                     .map(|s| col(s.as_str()))
                     .collect::<Vec<_>>();
 
-                Project::try_new(
-                    upstream_plan.clone(),
-                    pushdown_column_exprs,
-                    Default::default(),
-                )?
-                .into()
+                Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
             let new_pivot = plan.with_new_children(&[new_subprojection.into()]);
@@ -869,10 +801,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -885,6 +817,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
@@ -894,21 +827,18 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
             actor_pool_project,
             vec![col("udf_results")],
-            default::Default::default(),
         )?)
         .arced();
 
         let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
@@ -923,10 +853,10 @@ mod tests {
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
+        use common_resource_request::ResourceRequest;
         use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
         use daft_dsl::functions::FunctionExpr;
         use daft_dsl::Expr;
-        use std::default;
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -939,6 +869,7 @@ mod tests {
                 name: Arc::new("my-udf".to_string()),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
             })),
             inputs: vec![col("c")],
         }
@@ -948,16 +879,11 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            default::Default::default(),
             8,
         )?)
         .arced();
-        let project = LogicalPlan::Project(Project::try_new(
-            actor_pool_project,
-            vec![col("a")],
-            default::Default::default(),
-        )?)
-        .arced();
+        let project =
+            LogicalPlan::Project(Project::try_new(actor_pool_project, vec![col("a")])?).arced();
 
         // Optimized plan will push the projection all the way down into the scan
         let expected_scan = dummy_scan_node_with_pushdowns(

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // This is a Rust wrapper on top of a Python PartialStatelessUDF or PartialStatefulUDF to make it serde-able and hashable
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyPartialUDF(
+pub struct PyObjectWrapper(
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
@@ -14,15 +14,15 @@ pub struct PyPartialUDF(
     pub PyObject,
 );
 
-impl PartialEq for PyPartialUDF {
+impl PartialEq for PyObjectWrapper {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
     }
 }
 
-impl Eq for PyPartialUDF {}
+impl Eq for PyObjectWrapper {}
 
-impl Hash for PyPartialUDF {
+impl Hash for PyObjectWrapper {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let py_obj_hash = Python::with_gil(|py| self.0.as_ref(py).hash());
         match py_obj_hash {

@@ -37,7 +37,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::project(
                 input,
                 project.projection.clone(),
-                project.resource_request.clone(),
                 project.projected_schema.clone(),
             ))
         }

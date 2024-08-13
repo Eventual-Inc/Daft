@@ -14,6 +14,7 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
+    ExecutionRuntimeHandle,
 };
 
 use async_trait::async_trait;
@@ -33,7 +34,11 @@ use crate::channel::MultiSender;
 pub trait PipelineNode: Sync + Send {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
-    async fn start(&mut self, destination: MultiSender) -> DaftResult<()>;
+    async fn start(
+        &mut self,
+        destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()>;
 }
 
 pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
@@ -112,7 +117,6 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 vec![],
             );
-
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let post_first_agg_node =
                 IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
@@ -149,7 +153,6 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
-
             let child_node = physical_plan_to_pipeline(input, psets)?;
             let post_first_agg_node =
                 IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
