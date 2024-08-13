@@ -4,6 +4,7 @@ chrono = {workspace = true}
 common-error = {path = "../error", default-features = false}
 common-py-serde = {path = "../py-serde", default-features = false}
 pyo3 = {workspace = true, optional = true}
+secrecy = {version = "0.8.0", features = ["alloc"], default_features = false}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = "0.2.16"

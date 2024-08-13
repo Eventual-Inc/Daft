@@ -282,8 +282,8 @@ pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
         .await
         .with_context(|_| UnableToLoadCredentialsSnafu {})?;
     let key_id = Some(creds.access_key_id().to_string());
-    let access_key = Some(creds.secret_access_key().to_string());
-    let session_token = creds.session_token().map(|t| t.to_string());
+    let access_key = Some(creds.secret_access_key().to_string().into());
+    let session_token = creds.session_token().map(|t| t.to_string().into());
     let region_name = s3_conf.region().map(|r| r.to_string());
     Ok(S3Config {
         // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
@@ -375,8 +375,16 @@ async fn build_s3_conf(
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
-            config.access_key.clone().unwrap(),
-            config.session_token.clone(),
+            config
+                .access_key
+                .as_ref()
+                .map(|s| s.as_string().clone())
+                .unwrap(),
+            config
+                .session_token
+                .as_ref()
+                .map(|s| s.as_string().clone())
+                .clone(),
         );
         Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {

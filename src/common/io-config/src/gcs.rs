@@ -4,10 +4,12 @@ use std::fmt::Formatter;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::ObfuscatedString;
+
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct GCSConfig {
     pub project_id: Option<String>,
-    pub credentials: Option<String>,
+    pub credentials: Option<ObfuscatedString>,
     pub token: Option<String>,
     pub anonymous: bool,
 }

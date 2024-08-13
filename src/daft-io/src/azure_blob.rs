@@ -155,7 +155,7 @@ impl AzureBlobSource {
         let access_key = config
             .access_key
             .clone()
-            .or_else(|| std::env::var("AZURE_STORAGE_KEY").ok());
+            .or_else(|| std::env::var("AZURE_STORAGE_KEY").ok().map(|v| v.into()));
         let sas_token = config
             .sas_token
             .clone()
@@ -168,7 +168,7 @@ impl AzureBlobSource {
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
         } else if let Some(access_key) = access_key {
-            StorageCredentials::access_key(&storage_account, access_key)
+            StorageCredentials::access_key(&storage_account, access_key.as_string())
         } else if let Some(sas_token) = sas_token {
             StorageCredentials::sas_token(sas_token)
                 .map_err(|e| Error::AzureGeneric { source: e })?
@@ -182,7 +182,7 @@ impl AzureBlobSource {
                 new_http_client(),
                 tenant_id.clone(),
                 client_id.clone(),
-                client_secret.clone(),
+                client_secret.as_string().clone(),
                 Default::default(),
             )))
         } else {
