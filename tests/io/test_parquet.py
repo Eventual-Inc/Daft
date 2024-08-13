@@ -202,7 +202,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
             before = before.sort(col("_index"))
             before.write_parquet(file_path)
             after = daft.read_parquet(file_path)
-            after.limit(50).collect()
+            # Test various combinations of limits, shows, and collects.
             after.limit(5).show()
             after.show()
             after.show(10)
@@ -233,12 +233,19 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
         with write_options as writer:
             writer.write_table(before)
         after = daft.read_parquet(file_path)
-        after.limit(50).collect()
+        # Test various combinations of limits, shows, and collects.
         after.limit(5).show()
         after.show()
         after.show(10)
         after = after.sort(col("_index"))
         before = before.sort_by("_index")
+        assert before.to_pydict() == after.to_pydict()
+        pd_table = before.to_pandas().explode("nested_col")
+        assert [pd_table.count().get("nested_col")] == [
+            x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
+        ]
+        before = before.take(list(range(min(before.num_rows, 50))))
+        after = after.limit(50)
         assert before.to_pydict() == after.to_pydict()
         pd_table = before.to_pandas().explode("nested_col")
         assert [pd_table.count().get("nested_col")] == [
