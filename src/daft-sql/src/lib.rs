@@ -153,6 +153,7 @@ mod tests {
     #[case::orderby("select * from tbl1 order by i32 desc")]
     #[case::orderby("select * from tbl1 order by i32 asc")]
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
+    #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     fn test_compiles(planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);

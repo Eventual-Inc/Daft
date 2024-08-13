@@ -18,8 +18,9 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 use daft_scan::PhysicalScanInfo;
 
 use crate::logical_ops::{
-    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
-    Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
+    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+    Join as LogicalJoin, Limit as LogicalLimit,
     MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
     Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
     Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
@@ -97,16 +98,23 @@ pub(super) fn translate_single_logical_node(
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
-        LogicalPlan::Project(LogicalProject {
+        LogicalPlan::Project(LogicalProject { projection, .. }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(
+                PhysicalPlan::Project(Project::try_new(input_physical, projection.clone())?)
+                    .arced(),
+            )
+        }
+        LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
             projection,
-            resource_request,
+            num_actors,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Project(Project::try_new(
+            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 input_physical,
                 projection.clone(),
-                resource_request.clone(),
+                *num_actors,
             )?)
             .arced())
         }
@@ -325,11 +333,7 @@ pub(super) fn translate_single_logical_node(
                         groupby.clone(),
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(
-                        second_stage_agg.into(),
-                        final_exprs,
-                        Default::default(),
-                    )?)
+                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
                 }
             };
             Ok(result_plan.arced())
@@ -400,11 +404,7 @@ pub(super) fn translate_single_logical_node(
                         group_by_with_pivot,
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(
-                        second_stage_agg.into(),
-                        final_exprs,
-                        Default::default(),
-                    )?)
+                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
                 }
             };
 
@@ -423,11 +423,12 @@ pub(super) fn translate_single_logical_node(
             Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical)).arced())
         }
         LogicalPlan::Join(LogicalJoin {
+            left,
+            right,
             left_on,
             right_on,
             join_type,
             join_strategy,
-            output_schema,
             ..
         }) => {
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
@@ -496,11 +497,9 @@ pub(super) fn translate_single_logical_node(
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
-                // This method will panic if called with columns that aren't in the output schema,
-                // which is possible for anti- and semi-joins.
-                let is_primitive = |exprs: &Vec<ExprRef>| {
-                    exprs.iter().map(|e| e.name()).all(|col| {
-                        let dtype = &output_schema.get_field(col).unwrap().dtype;
+                fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
+                    on.iter().all(|expr| {
+                        let dtype = expr.get_type(schema).unwrap();
                         dtype.is_integer()
                             || dtype.is_floating()
                             || matches!(
@@ -508,7 +507,8 @@ pub(super) fn translate_single_logical_node(
                                 DataType::Utf8 | DataType::Binary | DataType::Boolean
                             )
                     })
-                };
+                }
+
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
                     && let Some(smaller_size_bytes) = smaller_size_bytes
@@ -524,8 +524,8 @@ pub(super) fn translate_single_logical_node(
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
                 // TODO(Kevin): Support sort-merge join for other types of joins.
                 } else if *join_type == JoinType::Inner
-                    && is_primitive(left_on)
-                    && is_primitive(right_on)
+                    && keys_are_primitive(left_on, &left.schema())
+                    && keys_are_primitive(right_on, &right.schema())
                     && (is_left_sort_partitioned || is_right_sort_partitioned)
                     && (!is_larger_partitioned
                         || (left_is_larger && is_left_sort_partitioned
@@ -548,16 +548,8 @@ pub(super) fn translate_single_logical_node(
                                 "Broadcast join does not support outer joins.".to_string(),
                             ));
                         }
-                        (JoinType::Anti, _) => {
-                            return Err(common_error::DaftError::ValueError(
-                                "Broadcast join does not support anti joins.".to_string(),
-                            ));
-                        }
-                        (JoinType::Semi, _) => {
-                            return Err(common_error::DaftError::ValueError(
-                                "Broadcast join does not support semi joins.".to_string(),
-                            ));
-                        }
+                        (JoinType::Anti, _) => true,
+                        (JoinType::Semi, _) => true,
                     };
 
                     if is_swapped {

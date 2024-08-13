@@ -22,6 +22,7 @@ chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 fastrand = "2.1.0"

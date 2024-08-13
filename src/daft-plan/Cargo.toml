@@ -14,9 +14,11 @@ arrow2 = {workspace = true, features = [
   "io_ipc"
 ]}
 common-daft-config = {path = "../common/daft-config", default-features = false}
+common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -28,11 +30,10 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
-terminal_size = {version = "0.3.0"}
-textwrap = {version = "0.16.1"}
 
 [dev-dependencies]
 daft-functions = {path = "../daft-functions", default-features = false}
+pretty_assertions = {workspace = true}
 rstest = {workspace = true}
 
 [features]
@@ -41,10 +42,12 @@ python = [
   "common-error/python",
   "common-io-config/python",
   "common-daft-config/python",
+  "common-resource-request/python",
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
-  "daft-table/python"
+  "daft-table/python",
+  "daft-scan/python"
 ]
 
 [package]

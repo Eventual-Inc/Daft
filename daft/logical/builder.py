@@ -14,6 +14,7 @@ from daft.daft import (
     ScanOperatorHandle,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
+from daft.dataframe.display import make_display_options
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -68,17 +69,16 @@ class LogicalPlanBuilder:
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
-    def pretty_print(self, simple: bool = False) -> str:
+    def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """
         Pretty prints the current underlying logical plan.
         """
-        if simple:
-            return self._builder.repr_ascii(simple=True)
-        else:
-            return repr(self)
+        display_opts = make_display_options(simple, format)
+        return self._builder.display_as(display_opts)
 
     def __repr__(self) -> str:
-        return self._builder.repr_ascii(simple=False)
+        display_opts = make_display_options(simple=False, format="ascii")
+        return self._builder.display_as(display_opts)
 
     def optimize(self) -> LogicalPlanBuilder:
         """
@@ -123,7 +123,9 @@ class LogicalPlanBuilder:
         builder = self._builder.select(to_select_pyexprs)
         return LogicalPlanBuilder(builder)
 
-    def with_columns(self, columns: list[Expression], custom_resource_request: ResourceRequest) -> LogicalPlanBuilder:
+    def with_columns(
+        self, columns: list[Expression], custom_resource_request: ResourceRequest | None
+    ) -> LogicalPlanBuilder:
         column_pyexprs = [expr._expr for expr in columns]
         builder = self._builder.with_columns(column_pyexprs, custom_resource_request)
         return LogicalPlanBuilder(builder)

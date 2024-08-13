@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_resource_request::ResourceRequest;
 use daft_core::{schema::SchemaRef, JoinType};
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::{InMemoryInfo, ResourceRequest};
+use daft_plan::InMemoryInfo;
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -99,13 +100,11 @@ impl LocalPhysicalPlan {
     pub(crate) fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::Project(Project {
             input,
             projection,
-            resource_request,
             schema,
             plan_stats: PlanStats {},
         })
@@ -191,7 +190,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &SchemaRef {
         match self {
             LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
             | LocalPhysicalPlan::Filter(Filter { schema, .. })
@@ -226,7 +225,6 @@ pub struct PhysicalScan {
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

@@ -557,9 +557,10 @@ def write_iceberg(
     spec_id: int | None,
     io_config: IOConfig | None = None,
 ):
+    import pyiceberg
+    from packaging.version import parse
     from pyiceberg.io.pyarrow import (
         compute_statistics_plan,
-        fill_parquet_file_metadata,
         parquet_path_to_id_mapping,
         schema_to_pyarrow,
     )
@@ -582,28 +583,50 @@ def write_iceberg(
         file_path = f"{protocol}://{written_file.path}"
         size = written_file.size
         metadata = written_file.metadata
-        # TODO Version guard pyarrow version
-        data_file = DataFile(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=IcebergFileFormat.PARQUET,
-            partition=Record(),
-            file_size_in_bytes=size,
+
+        kwargs = {
+            "content": DataFileContent.DATA,
+            "file_path": file_path,
+            "file_format": IcebergFileFormat.PARQUET,
+            "partition": Record(),
+            "file_size_in_bytes": size,
             # After this has been fixed:
             # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
+            # "sort_order_id": task.sort_order_id,
+            "sort_order_id": None,
             # Just copy these from the table for now
-            spec_id=spec_id,
-            equality_ids=None,
-            key_metadata=None,
-        )
-        fill_parquet_file_metadata(
-            data_file=data_file,
-            parquet_metadata=metadata,
-            stats_columns=compute_statistics_plan(schema, properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
-        )
+            "spec_id": spec_id,
+            "equality_ids": None,
+            "key_metadata": None,
+        }
+
+        if parse(pyiceberg.__version__) >= parse("0.7.0"):
+            from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
+
+            statistics = data_file_statistics_from_parquet_metadata(
+                parquet_metadata=metadata,
+                stats_columns=compute_statistics_plan(schema, properties),
+                parquet_column_mapping=parquet_path_to_id_mapping(schema),
+            )
+
+            data_file = DataFile(
+                **{
+                    **kwargs,
+                    **statistics.to_serialized_dict(),
+                }
+            )
+        else:
+            from pyiceberg.io.pyarrow import fill_parquet_file_metadata
+
+            data_file = DataFile(**kwargs)
+
+            fill_parquet_file_metadata(
+                data_file=data_file,
+                parquet_metadata=metadata,
+                stats_columns=compute_statistics_plan(schema, properties),
+                parquet_column_mapping=parquet_path_to_id_mapping(schema),
+            )
+
         data_files.append(data_file)
 
     is_local_fs = canonicalized_protocol == "file"

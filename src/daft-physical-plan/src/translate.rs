@@ -16,7 +16,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     let scan_tasks = scan_tasks_iter.collect::<DaftResult<Vec<_>>>()?;
                     Ok(LocalPhysicalPlan::physical_scan(
                         scan_tasks,
-                        info.source_schema.clone(),
+                        source.output_schema.clone(),
                     ))
                 }
                 SourceInfo::PlaceHolder(_) => {
@@ -37,7 +37,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::project(
                 input,
                 project.projection.clone(),
-                project.resource_request.clone(),
                 project.projected_schema.clone(),
             ))
         }
@@ -101,6 +100,10 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let input = translate(&concat.input)?;
             let other = translate(&concat.other)?;
             Ok(LocalPhysicalPlan::concat(input, other))
+        }
+        LogicalPlan::Repartition(repartition) => {
+            log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
+            translate(&repartition.input)
         }
         _ => todo!("{} not yet implemented", plan.name()),
     }

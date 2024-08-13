@@ -1,0 +1,7 @@
+[dependencies]
+serde = {workspace = true}
+
+[package]
+edition = {workspace = true}
+name = "common-hashable-float-wrapper"
+version = {workspace = true}

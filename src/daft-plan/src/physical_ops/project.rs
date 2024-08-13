@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use common_resource_request::ResourceRequest;
+use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use itertools::Itertools;
 
 use crate::{
     partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,
-    ResourceRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,37 +15,33 @@ pub struct Project {
     // Upstream node.
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl Project {
     // uses input to create output clustering spec
-    pub(crate) fn try_new(
-        input: PhysicalPlanRef,
-        projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
-    ) -> DaftResult<Self> {
+    pub(crate) fn try_new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
         Ok(Self {
             input,
             projection,
-            resource_request,
             clustering_spec,
         })
+    }
+
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     // does not re-create clustering spec, unlike try_new
     pub(crate) fn new_with_clustering_spec(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
         Ok(Self {
             input,
             projection,
-            resource_request,
             clustering_spec,
         })
     }
@@ -60,11 +56,11 @@ impl Project {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
-        let resource_request = self.resource_request.multiline_display();
-        if !resource_request.is_empty() {
+        if let Some(resource_request) = self.resource_request() {
+            let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
-                resource_request.join(", ")
+                multiline_display.join(", ")
             ));
         }
         res

@@ -1,10 +1,12 @@
 use common_error::DaftResult;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    common_display::DisplayFormat,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
@@ -68,6 +70,10 @@ impl PhysicalPlanScheduler {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.plan().repr_ascii(simple))
+    }
+
+    pub fn display_as(&self, display_format: DisplayFormat) -> PyResult<String> {
+        Ok(self.plan().display_as(display_format))
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
@@ -285,12 +291,11 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::Project(Project {
-            input,
-            projection,
-            resource_request,
-            ..
-        }) => {
+        PhysicalPlan::Project(
+            project @ Project {
+                input, projection, ..
+            },
+        ) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let projection_pyexprs: Vec<PyExpr> = projection
                 .iter()
@@ -299,9 +304,68 @@ fn physical_plan_to_partition_tasks(
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "project"))?
-                .call1((upstream_iter, projection_pyexprs, resource_request.clone()))?;
+                .call1((
+                    upstream_iter,
+                    projection_pyexprs,
+                    project.resource_request(),
+                ))?;
             Ok(py_iter.into())
         }
+
+        PhysicalPlan::ActorPoolProject(
+            app @ ActorPoolProject {
+                input,
+                projection,
+                num_actors,
+                ..
+            },
+        ) => {
+            use daft_dsl::{
+                common_treenode::TreeNode,
+                functions::{
+                    python::{PythonUDF, StatefulPythonUDF},
+                    FunctionExpr,
+                },
+            };
+
+            // Extract any StatefulUDFs from the projection
+            let mut py_partial_udfs = HashMap::new();
+            projection.iter().for_each(|e| {
+                e.apply(|child| {
+                    if let Expr::Function {
+                        func:
+                            FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                                name,
+                                stateful_partial_func: py_partial_udf,
+                                ..
+                            })),
+                        ..
+                    } = child.as_ref()
+                    {
+                        py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.0.clone());
+                    }
+                    Ok(daft_dsl::common_treenode::TreeNodeRecursion::Continue)
+                })
+                .unwrap();
+            });
+
+            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "actor_pool_project"))?
+                .call1((
+                    upstream_iter,
+                    projection
+                        .iter()
+                        .map(|expr| PyExpr::from(expr.clone()))
+                        .collect::<Vec<_>>(),
+                    py_partial_udfs,
+                    app.resource_request(),
+                    *num_actors,
+                ))?;
+            Ok(py_iter.into())
+        }
+
         PhysicalPlan::Filter(Filter { input, predicate }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;

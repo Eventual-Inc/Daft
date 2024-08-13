@@ -801,6 +801,13 @@ def test_compare_timestamps_diff_tz(tu1, tu2):
     assert (tz1 == tz2).to_pylist() == [True]
 
 
+@pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
+def test_compare_lt_timestamps_same_tz(tu1, tu2):
+    tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)]).cast(DataType.timestamp(tu1, "UTC"))
+    tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)]).cast(DataType.timestamp(tu2, "UTC"))
+    assert (tz1 < tz2).to_pylist() == [False]
+
+
 @pytest.mark.parametrize("op", [operator.eq, operator.ne, operator.lt, operator.gt, operator.le, operator.ge])
 def test_numeric_and_string_compare_raises_error(op):
     left = Series.from_pylist([1, 2, 3])

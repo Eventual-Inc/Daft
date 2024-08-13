@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{array::ops::DaftCompare, join::JoinType};
-use daft_dsl::ExprRef;
+use daft_dsl::{join::infer_join_schema, ExprRef};
 use daft_io::IOStatsContext;
-use daft_table::{infer_join_schema, Table};
+use daft_table::Table;
 
 use crate::micropartition::MicroPartition;
 
@@ -29,12 +29,14 @@ impl MicroPartition {
             | (JoinType::Inner, _, 0)
             | (JoinType::Left, 0, _)
             | (JoinType::Right, _, 0)
-            | (JoinType::Outer, 0, 0) => {
+            | (JoinType::Outer, 0, 0)
+            | (JoinType::Semi, 0, _) => {
                 return Ok(Self::empty(Some(join_schema)));
             }
             _ => {}
         }
 
+        // TODO(Kevin): short circuits are also possible for other join types
         if how == JoinType::Inner {
             let tv = match (&self.statistics, &right.statistics) {
                 (_, None) => TruthValue::Maybe,

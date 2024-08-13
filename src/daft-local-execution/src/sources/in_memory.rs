@@ -14,11 +14,14 @@ impl InMemorySource {
     pub fn new(data: Vec<Arc<MicroPartition>>) -> Self {
         Self { data }
     }
+    pub fn boxed(self) -> Box<dyn Source> {
+        Box::new(self) as Box<dyn Source>
+    }
 }
 
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip(self))]
-    fn get_data(&self) -> SourceStream {
+    fn get_data(&self, maintain_order: bool) -> SourceStream {
         stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
     }
 }

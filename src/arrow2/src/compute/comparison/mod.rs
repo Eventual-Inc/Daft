@@ -7,6 +7,7 @@
 //! The functions are organized in two variants:
 //! * statically typed
 //! * dynamically typed
+//!
 //! The statically typed are available under each module of this module (e.g. [`primitive::eq`], [`primitive::lt_scalar`])
 //! The dynamically typed are available in this module (e.g. [`eq`] or [`lt_scalar`]).
 //!

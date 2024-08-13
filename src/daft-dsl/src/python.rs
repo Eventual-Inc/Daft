@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
@@ -147,20 +148,63 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 // * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
 // * `return_dtype` - returned column's DataType
 #[pyfunction]
-pub fn udf(
+pub fn stateless_udf(
     py: Python,
-    func: &PyAny,
+    name: &str,
+    partial_stateless_udf: &PyAny,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
 ) -> PyResult<PyExpr> {
-    use crate::functions::python::udf;
+    use crate::functions::python::stateless_udf;
 
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let func = func.to_object(py);
+    let partial_stateless_udf = partial_stateless_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
-        expr: udf(func, &expressions_map, return_dtype.dtype)?.into(),
+        expr: stateless_udf(
+            name,
+            partial_stateless_udf,
+            &expressions_map,
+            return_dtype.dtype,
+            resource_request,
+        )?
+        .into(),
+    })
+}
+
+// Create a UDF Expression using:
+// * `cls` - a Python class that has an __init__, and where __call__ takes as input an ordered list of Python Series to execute the user's UDF.
+// * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
+// * `return_dtype` - returned column's DataType
+#[pyfunction]
+pub fn stateful_udf(
+    py: Python,
+    name: &str,
+    partial_stateful_udf: &PyAny,
+    expressions: Vec<PyExpr>,
+    return_dtype: PyDataType,
+    resource_request: Option<ResourceRequest>,
+    init_args: Option<&PyAny>,
+) -> PyResult<PyExpr> {
+    use crate::functions::python::stateful_udf;
+
+    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
+    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
+    let partial_stateful_udf = partial_stateful_udf.to_object(py);
+    let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let init_args = init_args.map(|args| args.to_object(py));
+    Ok(PyExpr {
+        expr: stateful_udf(
+            name,
+            partial_stateful_udf,
+            &expressions_map,
+            return_dtype.dtype,
+            resource_request,
+            init_args,
+        )?
+        .into(),
     })
 }
 
@@ -177,7 +221,7 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 
 #[pyfunction]
 pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_expr(expr.expr.clone(), &schema.schema)?;
+    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
     Ok((resolved_expr.into(), field.into()))
 }
 

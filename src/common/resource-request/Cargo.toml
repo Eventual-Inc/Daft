@@ -1,0 +1,12 @@
+[dependencies]
+common-hashable-float-wrapper = {path = "../hashable-float-wrapper"}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+
+[features]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "common-resource-request"
+version = {workspace = true}

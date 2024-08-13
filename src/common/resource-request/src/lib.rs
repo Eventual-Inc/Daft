@@ -1,9 +1,6 @@
-use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
+use common_hashable_float_wrapper::FloatWrapper;
 #[cfg(feature = "python")]
-use pyo3::{
-    pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo, Python,
-    ToPyObject,
-};
+use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyModule, PyResult, Python};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
 
@@ -35,13 +32,6 @@ impl ResourceRequest {
         Self::new_internal(Some(1.0), None, None)
     }
 
-    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
-        Self {
-            num_cpus,
-            ..self.clone()
-        }
-    }
-
     pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> Self {
         Self {
             num_cpus: self.num_cpus.or(num_cpus),
@@ -49,23 +39,9 @@ impl ResourceRequest {
         }
     }
 
-    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
-        Self {
-            num_gpus,
-            ..self.clone()
-        }
-    }
-
     pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> Self {
         Self {
             num_gpus: self.num_gpus.or(num_gpus),
-            ..self.clone()
-        }
-    }
-
-    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
-        Self {
-            memory_bytes,
             ..self.clone()
         }
     }
@@ -122,10 +98,12 @@ impl ResourceRequest {
         Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
     }
 
-    pub fn max_all(resource_requests: &[&Self]) -> Self {
+    pub fn max_all<ResourceRequestAsRef: AsRef<Self>>(
+        resource_requests: &[ResourceRequestAsRef],
+    ) -> Self {
         resource_requests
             .iter()
-            .fold(Default::default(), |acc, e| acc.max(e))
+            .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
     }
 }
 
@@ -154,6 +132,12 @@ impl Hash for ResourceRequest {
         self.num_cpus.map(FloatWrapper).hash(state);
         self.num_gpus.map(FloatWrapper).hash(state);
         self.memory_bytes.hash(state)
+    }
+}
+
+impl AsRef<ResourceRequest> for ResourceRequest {
+    fn as_ref(&self) -> &ResourceRequest {
+        self
     }
 }
 
@@ -198,6 +182,27 @@ impl ResourceRequest {
         Ok(self.memory_bytes)
     }
 
+    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
+        ResourceRequest {
+            num_cpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
+        ResourceRequest {
+            num_gpus,
+            ..self.clone()
+        }
+    }
+
+    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
+        ResourceRequest {
+            memory_bytes,
+            ..self.clone()
+        }
+    }
+
     fn __add__(&self, other: &Self) -> Self {
         self + other
     }
@@ -215,4 +220,8 @@ impl ResourceRequest {
     }
 }
 
-impl_bincode_py_state_serialization!(ResourceRequest);
+#[cfg(feature = "python")]
+pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<ResourceRequest>()?;
+    Ok(())
+}

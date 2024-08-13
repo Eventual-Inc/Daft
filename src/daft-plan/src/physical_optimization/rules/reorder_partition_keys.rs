@@ -77,13 +77,21 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
             // we are hash partitioned but we might need to transform the expression
             match c.plan.as_ref() {
                 // these store their clustering spec inside
-                PhysicalPlan::Project(Project { input, projection, resource_request, .. }) => {
+                PhysicalPlan::Project(Project { input, projection, .. }) => {
                     let new_plan = PhysicalPlan::Project(Project::new_with_clustering_spec(
                         input.clone(),
                         projection.clone(),
-                        resource_request.clone(),
                         new_spec.into(),
                     )?);
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
+                PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject { input, projection, clustering_spec: _, num_actors }) => {
+                    let new_plan = PhysicalPlan::ActorPoolProject(crate::physical_ops::ActorPoolProject {
+                        input: input.clone(),
+                        projection: projection.clone(),
+                        num_actors: *num_actors,
+                        clustering_spec: new_spec.into(),
+                    });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
                 PhysicalPlan::Explode(Explode { input, to_explode, .. }) => {

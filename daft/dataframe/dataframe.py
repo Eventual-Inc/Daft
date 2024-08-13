@@ -124,7 +124,9 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_all: bool = False, simple: bool = False, file: Optional[io.IOBase] = None) -> None:
+    def explain(
+        self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
+    ) -> Any:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -132,33 +134,53 @@ class DataFrame:
         Args:
             show_all (bool): Whether to show the optimized logical plan and the physical plan in addition to the
                 unoptimized logical plan.
+            format (str): The format to print the plan in. one of 'ascii' or 'mermaid'
             simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
                 of how each op is configured.
+
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
+        is_cached = self._result_cache is not None
+        if format == "mermaid":
+            from daft.dataframe.display import MermaidFormatter
+            from daft.utils import in_notebook
+
+            instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
+            if file is not None:
+                # if we are printing to a file, we print the markdown representation of the plan
+                text = instance._repr_markdown_()
+                print(text, file=file)
+            if in_notebook():
+                # if in a notebook, we return the class instance and let jupyter display it
+                return instance
+            else:
+                # if we are not in a notebook, we return the raw markdown instead of the class instance
+                return repr(instance)
+
         print_to_file = partial(print, file=file)
 
         if self._result_cache is not None:
             print_to_file("Result is cached and will skip computation\n")
-            print_to_file(self._builder.pretty_print(simple))
+            print_to_file(self._builder.pretty_print(simple, format=format))
 
             print_to_file("However here is the logical plan used to produce this result:\n", file=file)
 
         builder = self.__builder
         print_to_file("== Unoptimized Logical Plan ==\n")
-        print_to_file(builder.pretty_print(simple))
+        print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            print_to_file(physical_plan_scheduler.pretty_print(simple))
+            print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
             )
+        return None
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config
@@ -521,24 +543,13 @@ class DataFrame:
                 f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
             )
 
-        from pyiceberg.table import _MergingSnapshotProducer
-        from pyiceberg.table.snapshots import Operation
+        if mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
         operations = []
         path = []
         rows = []
         size = []
-
-        if mode == "append":
-            operation = Operation.APPEND
-        elif mode == "overwrite":
-            operation = Operation.OVERWRITE
-        else:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
-
-        # We perform the merge here since table is not pickle-able
-        # We should be able to move to a transaction API for iceberg 0.7.0
-        merge = _MergingSnapshotProducer(operation=operation, table=table)
 
         builder = self._builder.write_iceberg(table)
         write_df = DataFrame(builder)
@@ -548,13 +559,12 @@ class DataFrame:
         assert "data_file" in write_result
         data_files = write_result["data_file"]
 
-        if operation == Operation.OVERWRITE:
+        if mode == "overwrite":
             deleted_files = table.scan().plan_files()
         else:
             deleted_files = []
 
         for data_file in data_files:
-            merge.append_data_file(data_file)
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
@@ -567,7 +577,44 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-        merge.commit()
+        if parse(pyiceberg.__version__) >= parse("0.7.0"):
+            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
+
+            tx = table.transaction()
+
+            if mode == "overwrite":
+                tx.delete(delete_filter=ALWAYS_TRUE)
+
+            update_snapshot = tx.update_snapshot()
+
+            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+                tx.table_metadata.properties,
+                TableProperties.MANIFEST_MERGE_ENABLED,
+                TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+            )
+
+            append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+            with append_method() as append_files:
+                for data_file in data_files:
+                    append_files.append_data_file(data_file)
+
+            tx.commit_transaction()
+        else:
+            from pyiceberg.table import _MergingSnapshotProducer
+            from pyiceberg.table.snapshots import Operation
+
+            operations_map = {
+                "append": Operation.APPEND,
+                "overwrite": Operation.OVERWRITE,
+            }
+
+            merge = _MergingSnapshotProducer(operation=operations_map[mode], table=table)
+
+            for data_file in data_files:
+                merge.append_data_file(data_file)
+
+            merge.commit()
 
         from daft import from_pydict
 
@@ -783,7 +830,7 @@ class DataFrame:
 
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")
+        >>> df.write_lance("/tmp/lance/my_table.lance") # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -794,7 +841,7 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
 
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect() # doctest: +SKIP
         ╭───────╮
         │ a     │
         │ ---   │
@@ -814,7 +861,7 @@ class DataFrame:
 
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024) # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -935,6 +982,10 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
+            if (item == "*" or item.endswith(".*")) and item not in schema.column_names():
+                # does not account for weird column names
+                # like if struct "a" has a field named "*", then a.* will wrongly fail
+                raise ValueError("Wildcard expressions are not supported in DataFrame.__getitem__")
             expr, _ = resolve_expr(col(item)._expr, schema._schema)
             return Expression._from_pyexpr(expr)
         elif isinstance(item, Iterable):
@@ -1167,7 +1218,7 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1194,18 +1245,26 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new column.
         """
+        if resource_request is not None:
+            warnings.warn(
+                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
+
         return self.with_columns({column_name: expr}, resource_request)
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: ResourceRequest = ResourceRequest(),
+        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1231,13 +1290,18 @@ class DataFrame:
 
         Args:
             columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation
+            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
+                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if not isinstance(resource_request, ResourceRequest):
-            raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
+        if resource_request is not None:
+            warnings.warn(
+                "Specifying resource_request through `with_columns` will be deprecated from Daft version >= 0.3.0! "
+                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "Check the Daft documentation for more details."
+            )
 
         new_columns = [col.alias(name) for name, col in columns.items()]
 
@@ -1472,8 +1536,6 @@ class DataFrame:
             raise ValueError("Sort merge join only supports inner joins")
         elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
-        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Anti:
-            raise ValueError("Broadcast join does not support Anti joins")
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
@@ -1734,6 +1796,7 @@ class DataFrame:
     def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
+
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
@@ -1762,6 +1825,7 @@ class DataFrame:
             ╰───────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
+
         Args:
             func: A function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.

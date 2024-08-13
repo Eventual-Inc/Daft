@@ -574,7 +574,35 @@ impl SQLPlanner {
             SQLExpr::TypedString { .. } => unsupported_sql_err!("TYPED STRING"),
             SQLExpr::MapAccess { .. } => unsupported_sql_err!("MAP ACCESS"),
             SQLExpr::Function(func) => self.plan_function(func, current_relation),
-            SQLExpr::Case { .. } => unsupported_sql_err!("CASE"),
+            SQLExpr::Case {
+                operand,
+                conditions,
+                results,
+                else_result,
+            } => {
+                if operand.is_some() {
+                    unsupported_sql_err!("CASE with operand not yet supported");
+                }
+                if results.len() != conditions.len() {
+                    unsupported_sql_err!("CASE with different number of conditions and results");
+                }
+
+                let else_expr = match else_result {
+                    Some(expr) => self.plan_expr(expr, current_relation)?,
+                    None => unsupported_sql_err!("CASE with no else result"),
+                };
+
+                // we need to traverse from back to front to build the if else chain
+                // because we need to start with the else expression
+                conditions.iter().zip(results.iter()).rev().try_fold(
+                    else_expr,
+                    |else_expr, (condition, result)| {
+                        let cond = self.plan_expr(condition, current_relation)?;
+                        let res = self.plan_expr(result, current_relation)?;
+                        Ok(cond.if_else(res, else_expr))
+                    },
+                )
+            }
             SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
             SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),

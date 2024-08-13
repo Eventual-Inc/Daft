@@ -500,9 +500,16 @@ impl SQLPlanner {
                 ensure!(args.len() == 2, "log takes exactly two arguments");
                 let base = args[1]
                     .as_literal()
-                    .and_then(|lit| lit.as_f64())
+                    .and_then(|lit| match lit {
+                        LiteralValue::Float64(f) => Some(*f),
+                        LiteralValue::Int32(i) => Some(*i as f64),
+                        LiteralValue::UInt32(u) => Some(*u as f64),
+                        LiteralValue::Int64(i) => Some(*i as f64),
+                        LiteralValue::UInt64(u) => Some(*u as f64),
+                        _ => None,
+                    })
                     .ok_or_else(|| PlannerError::InvalidOperation {
-                        message: "log base must be a float".to_string(),
+                        message: "log base must be a float or a number".to_string(),
                     })?;
 
                 Ok(daft_dsl::functions::numeric::log(args[0].clone(), base))

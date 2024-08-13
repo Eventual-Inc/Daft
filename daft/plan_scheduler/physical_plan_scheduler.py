@@ -7,6 +7,7 @@ from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.daft import (
     PyDaftExecutionConfig,
 )
+from daft.dataframe.display import make_display_options
 from daft.execution import physical_plan
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
@@ -33,14 +34,12 @@ class PhysicalPlanScheduler:
     def num_partitions(self) -> int:
         return self._scheduler.num_partitions()
 
-    def pretty_print(self, simple: bool = False) -> str:
+    def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """
         Pretty prints the current underlying physical plan.
         """
-        if simple:
-            return self._scheduler.repr_ascii(simple=True)
-        else:
-            return repr(self)
+        display_opts = make_display_options(simple, format)
+        return self._scheduler.display_as(display_opts)
 
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)

@@ -1,9 +1,9 @@
 use crate::expr::Expr;
 use crate::ExprRef;
 
+use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
-use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
     datatypes::{
@@ -54,6 +54,7 @@ pub enum LiteralValue {
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
     /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
     Timestamp(i64, TimeUnit, Option<String>),

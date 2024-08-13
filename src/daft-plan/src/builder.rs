@@ -12,15 +12,17 @@ use crate::{
     },
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    LogicalPlanRef, ResourceRequest,
+    LogicalPlanRef,
 };
+use common_display::DisplayFormat;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
+use common_resource_request::ResourceRequest;
 use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, functions::python::replace_udf_resource_request, ExprRef};
 use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -131,15 +133,28 @@ impl LogicalPlanBuilder {
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn with_columns(
         &self,
         columns: Vec<ExprRef>,
-        resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> DaftResult<Self> {
+        // TODO: This should be deprecated in Daft >= v0.3
+        //
+        // Here we use resource_request to parametrize any UDFs in the new expression columns
+        // In the future, the ability to pass ResourceRequests into with_column(s) will be deprecated. Users will parametrize their UDFs directly instead.
+        let columns = if let Some(rr) = resource_request {
+            columns
+                .into_iter()
+                .map(|expr| replace_udf_resource_request(expr, &rr))
+                .collect()
+        } else {
+            columns
+        };
+
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -168,7 +183,7 @@ impl LogicalPlanBuilder {
         );
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -189,7 +204,7 @@ impl LogicalPlanBuilder {
             .collect::<Vec<_>>();
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -480,6 +495,15 @@ impl LogicalPlanBuilder {
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
     }
+
+    pub fn display_as(&self, format: DisplayFormat) -> String {
+        use common_display::mermaid::MermaidDisplay;
+
+        match format {
+            DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
+            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
+        }
+    }
 }
 
 /// A Python-facing wrapper of the LogicalPlanBuilder.
@@ -540,7 +564,7 @@ impl PyLogicalPlanBuilder {
     pub fn with_columns(
         &self,
         columns: Vec<PyExpr>,
-        resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -811,6 +835,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         Ok(self.builder.repr_ascii(simple))
+    }
+
+    pub fn display_as(&self, opts: common_display::DisplayFormat) -> PyResult<String> {
+        Ok(self.builder.display_as(opts))
     }
 }
 

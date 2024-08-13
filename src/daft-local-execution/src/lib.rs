@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod channel;
 mod intermediate_ops;
 mod pipeline;

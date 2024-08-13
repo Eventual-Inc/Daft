@@ -1,142 +1,81 @@
 use std::{collections::HashMap, sync::Arc};
 
-use daft_dsl::Expr;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
-    Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalScan,
-    Project, Sort, UnGroupedAggregate,
-};
-use daft_plan::populate_aggregation_stages;
-
 use crate::{
-    channel::MultiSender,
     intermediate_ops::{
-        aggregate::AggregateOperator,
-        filter::FilterOperator,
-        intermediate_op::{run_intermediate_op, IntermediateOperator},
+        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink,
-        concat::ConcatSink,
-        hash_join::HashJoinSink,
+        blocking_sink::BlockingSinkNode,
+        hash_join::{HashJoinNode, HashJoinOperator},
         limit::LimitSink,
-        sink::{run_double_input_sink, run_single_input_sink, DoubleInputSink, SingleInputSink},
         sort::SortSink,
+        streaming_sink::StreamingSinkNode,
     },
-    sources::{
-        in_memory::InMemorySource,
-        scan_task::ScanTaskSource,
-        source::{run_source, Source},
-    },
+    sources::in_memory::InMemorySource,
 };
 
-pub enum PipelineNode {
-    Source {
-        source: Arc<dyn Source>,
-    },
-    IntermediateOp {
-        intermediate_op: Box<dyn IntermediateOperator>,
-        child: Box<PipelineNode>,
-    },
-    SingleInputSink {
-        sink: Box<dyn SingleInputSink>,
-        child: Box<PipelineNode>,
-    },
-    DoubleInputSink {
-        sink: Box<dyn DoubleInputSink>,
-        left_child: Box<PipelineNode>,
-        right_child: Box<PipelineNode>,
-    },
-}
+use async_trait::async_trait;
+use common_error::DaftResult;
+use daft_dsl::Expr;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    UnGroupedAggregate,
+};
+use daft_plan::populate_aggregation_stages;
 
-impl PipelineNode {
-    pub fn start(self, sender: MultiSender) {
-        match self {
-            PipelineNode::Source { source } => {
-                run_source(source.clone(), sender);
-            }
-            PipelineNode::IntermediateOp {
-                intermediate_op,
-                child,
-            } => {
-                let sender = run_intermediate_op(intermediate_op.clone(), sender);
-                child.start(sender);
-            }
-            PipelineNode::SingleInputSink { sink, child } => {
-                let sender = run_single_input_sink(sink, sender);
-                child.start(sender);
-            }
-            PipelineNode::DoubleInputSink {
-                sink,
-                left_child,
-                right_child,
-            } => {
-                let (left_sender, right_sender) = run_double_input_sink(sink, sender);
-                left_child.start(left_sender);
-                right_child.start(right_sender);
-            }
-        }
-    }
+use crate::channel::MultiSender;
+
+#[async_trait]
+pub trait PipelineNode: Sync + Send {
+    fn children(&self) -> Vec<&dyn PipelineNode>;
+    async fn start(&mut self, destination: MultiSender) -> DaftResult<()>;
 }
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> PipelineNode {
-    match physical_plan {
+) -> DaftResult<Box<dyn PipelineNode>> {
+    use crate::sources::scan_task::ScanTaskSource;
+    use daft_physical_plan::PhysicalScan;
+    let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            PipelineNode::Source {
-                source: Arc::new(scan_task_source),
-            }
+            scan_task_source.boxed().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            let in_memory_source = InMemorySource::new(partitions.clone());
-            PipelineNode::Source {
-                source: Arc::new(in_memory_source),
-            }
+            InMemorySource::new(partitions.clone()).boxed().into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
-            PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(proj_op),
-                child: Box::new(child_node),
-            }
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
-            PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(filter_op),
-                child: Box::new(child_node),
-            }
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
-            let child_node = physical_plan_to_pipeline(input, psets);
-            PipelineNode::SingleInputSink {
-                sink: Box::new(sink),
-                child: Box::new(child_node),
-            }
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
         }
-        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
-            let sink = ConcatSink::new();
-            let left_child = physical_plan_to_pipeline(input, psets);
-            let right_child = physical_plan_to_pipeline(other, psets);
-            PipelineNode::DoubleInputSink {
-                sink: Box::new(sink),
-                left_child: Box::new(left_child),
-                right_child: Box::new(right_child),
-            }
+        LocalPhysicalPlan::Concat(_) => {
+            todo!("concat")
+            // let sink = ConcatSink::new();
+            // let left_child = physical_plan_to_pipeline(input, psets)?;
+            // let right_child = physical_plan_to_pipeline(other, psets)?;
+            // PipelineNode::double_sink(sink, left_child, right_child)
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -154,6 +93,11 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 vec![],
             );
+
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
                     .values()
@@ -162,23 +106,12 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 vec![],
             );
+            let second_stage_node =
+                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+
             let final_stage_project = ProjectOperator::new(final_exprs);
 
-            let child_node = physical_plan_to_pipeline(input, psets);
-            let intermediate_agg_op_node = PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(first_stage_agg_op),
-                child: Box::new(child_node),
-            };
-
-            let sink_node = PipelineNode::SingleInputSink {
-                sink: Box::new(second_stage_agg_sink),
-                child: Box::new(intermediate_agg_op_node),
-            };
-
-            PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(final_stage_project),
-                child: Box::new(sink_node),
-            }
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -197,6 +130,11 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
+
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
                     .values()
@@ -205,23 +143,12 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
+            let second_stage_node =
+                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+
             let final_stage_project = ProjectOperator::new(final_exprs);
 
-            let child_node = physical_plan_to_pipeline(input, psets);
-            let intermediate_agg_op_node = PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(first_stage_agg_op),
-                child: Box::new(child_node),
-            };
-
-            let sink_node = PipelineNode::SingleInputSink {
-                sink: Box::new(second_stage_agg_sink),
-                child: Box::new(intermediate_agg_op_node),
-            };
-
-            PipelineNode::IntermediateOp {
-                intermediate_op: Box::new(final_stage_project),
-                child: Box::new(sink_node),
-            }
+            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
@@ -230,11 +157,8 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
-            let child_node = physical_plan_to_pipeline(input, psets);
-            PipelineNode::SingleInputSink {
-                sink: Box::new(sort_sink),
-                child: Box::new(child_node),
-            }
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
@@ -244,17 +168,25 @@ pub fn physical_plan_to_pipeline(
             join_type,
             ..
         }) => {
-            let left_node = physical_plan_to_pipeline(left, psets);
-            let right_node = physical_plan_to_pipeline(right, psets);
-            let sink = HashJoinSink::new(left_on.clone(), right_on.clone(), *join_type);
-            PipelineNode::DoubleInputSink {
-                sink: Box::new(sink),
-                left_child: Box::new(left_node),
-                right_child: Box::new(right_node),
-            }
+            let left_schema = left.schema();
+            let right_schema = right.schema();
+            let left_node = physical_plan_to_pipeline(left, psets)?;
+            let right_node = physical_plan_to_pipeline(right, psets)?;
+
+            // we should move to a builder pattern
+            let sink = HashJoinOperator::new(
+                left_on.clone(),
+                right_on.clone(),
+                *join_type,
+                left_schema,
+                right_schema,
+            )?;
+            HashJoinNode::new(sink, left_node, right_node).boxed()
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
         }
-    }
+    };
+
+    Ok(out)
 }
