@@ -39,3 +39,6 @@ log/
 
 # Zed editor
 .zed/
+
+# helix editor
+.helix
