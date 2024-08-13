@@ -1,4 +1,5 @@
 mod abs;
+mod cbrt;
 mod ceil;
 mod exp;
 mod floor;
@@ -9,6 +10,7 @@ mod sqrt;
 mod trigonometry;
 
 use abs::AbsEvaluator;
+use cbrt::CbrtEvaluator;
 use ceil::CeilEvaluator;
 use common_hashable_float_wrapper::FloatWrapper;
 use floor::FloorEvaluator;
@@ -34,6 +36,7 @@ pub enum NumericExpr {
     Sign,
     Round(i32),
     Sqrt,
+    Cbrt,
     Sin,
     Cos,
     Tan,
@@ -57,32 +60,32 @@ pub enum NumericExpr {
 impl NumericExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use NumericExpr::*;
         match self {
-            Abs => &AbsEvaluator {},
-            Ceil => &CeilEvaluator {},
-            Floor => &FloorEvaluator {},
-            Sign => &SignEvaluator {},
-            Round(_) => &RoundEvaluator {},
-            Sqrt => &SqrtEvaluator {},
-            Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
-            Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
-            Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
-            Cot => &TrigonometryEvaluator(TrigonometricFunction::Cot),
-            ArcSin => &TrigonometryEvaluator(TrigonometricFunction::ArcSin),
-            ArcCos => &TrigonometryEvaluator(TrigonometricFunction::ArcCos),
-            ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
-            ArcTan2 => &Atan2Evaluator {},
-            Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
-            Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
-            Log2 => &LogEvaluator(log::LogFunction::Log2),
-            Log10 => &LogEvaluator(log::LogFunction::Log10),
-            Log(_) => &LogEvaluator(log::LogFunction::Log),
-            Ln => &LogEvaluator(log::LogFunction::Ln),
-            Exp => &ExpEvaluator {},
-            ArcTanh => &TrigonometryEvaluator(TrigonometricFunction::ArcTanh),
-            ArcCosh => &TrigonometryEvaluator(TrigonometricFunction::ArcCosh),
-            ArcSinh => &TrigonometryEvaluator(TrigonometricFunction::ArcSinh),
+            NumericExpr::Abs => &AbsEvaluator {},
+            NumericExpr::Ceil => &CeilEvaluator {},
+            NumericExpr::Floor => &FloorEvaluator {},
+            NumericExpr::Sign => &SignEvaluator {},
+            NumericExpr::Round(_) => &RoundEvaluator {},
+            NumericExpr::Sqrt => &SqrtEvaluator {},
+            NumericExpr::Cbrt => &CbrtEvaluator,
+            NumericExpr::Sin => &TrigonometryEvaluator(TrigonometricFunction::Sin),
+            NumericExpr::Cos => &TrigonometryEvaluator(TrigonometricFunction::Cos),
+            NumericExpr::Tan => &TrigonometryEvaluator(TrigonometricFunction::Tan),
+            NumericExpr::Cot => &TrigonometryEvaluator(TrigonometricFunction::Cot),
+            NumericExpr::ArcSin => &TrigonometryEvaluator(TrigonometricFunction::ArcSin),
+            NumericExpr::ArcCos => &TrigonometryEvaluator(TrigonometricFunction::ArcCos),
+            NumericExpr::ArcTan => &TrigonometryEvaluator(TrigonometricFunction::ArcTan),
+            NumericExpr::ArcTan2 => &Atan2Evaluator {},
+            NumericExpr::Radians => &TrigonometryEvaluator(TrigonometricFunction::Radians),
+            NumericExpr::Degrees => &TrigonometryEvaluator(TrigonometricFunction::Degrees),
+            NumericExpr::Log2 => &LogEvaluator(log::LogFunction::Log2),
+            NumericExpr::Log10 => &LogEvaluator(log::LogFunction::Log10),
+            NumericExpr::Log(_) => &LogEvaluator(log::LogFunction::Log),
+            NumericExpr::Ln => &LogEvaluator(log::LogFunction::Ln),
+            NumericExpr::Exp => &ExpEvaluator {},
+            NumericExpr::ArcTanh => &TrigonometryEvaluator(TrigonometricFunction::ArcTanh),
+            NumericExpr::ArcCosh => &TrigonometryEvaluator(TrigonometricFunction::ArcCosh),
+            NumericExpr::ArcSinh => &TrigonometryEvaluator(TrigonometricFunction::ArcSinh),
         }
     }
 }
@@ -130,6 +133,14 @@ pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
 pub fn sqrt(input: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Sqrt),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn cbrt(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Cbrt),
         inputs: vec![input],
     }
     .into()
