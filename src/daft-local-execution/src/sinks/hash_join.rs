@@ -162,20 +162,6 @@ struct HashJoinProber {
     right_on: Vec<ExprRef>,
 }
 
-impl IntermediateOpSpec for HashJoinProbeSpec {
-    fn to_operator(&self) -> Box<dyn IntermediateOperator> {
-        Box::new(HashJoinProber {
-            spec: self.clone(),
-            state: OperatorTaskState::new(),
-        })
-    }
-}
-
-struct HashJoinProber {
-    spec: HashJoinProbeSpec,
-    state: OperatorTaskState,
-}
-
 impl IntermediateOperator for HashJoinProber {
     fn name(&self) -> &'static str {
         "HashJoinProber"
