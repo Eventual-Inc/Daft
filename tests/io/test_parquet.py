@@ -201,7 +201,18 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
             before = before
             before = before.sort(col("_index"))
             before.write_parquet(file_path)
-            after = daft.read_parquet(file_path).sort(col("_index"))
+            after = daft.read_parquet(file_path)
+            after.limit(50).collect()
+            after.limit(5).show()
+            after.show()
+            after.show(10)
+            after = after.sort(col("_index"))
+            assert before.to_pydict() == after.to_pydict()
+            assert [x for x in before.explode(col("nested_col")).count().collect()] == [
+                x for x in after.explode(col("nested_col")).count().collect()
+            ]
+            before = before.limit(50)
+            after = after.limit(50)
             assert before.to_pydict() == after.to_pydict()
             assert [x for x in before.explode(col("nested_col")).count().collect()] == [
                 x for x in after.explode(col("nested_col")).count().collect()
@@ -221,8 +232,14 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
         )
         with write_options as writer:
             writer.write_table(before)
-        after = daft.read_parquet(file_path).sort(col("_index"))
-        assert before.sort_by("_index").to_pydict() == after.to_pydict()
+        after = daft.read_parquet(file_path)
+        after.limit(50).collect()
+        after.limit(5).show()
+        after.show()
+        after.show(10)
+        after = after.sort(col("_index"))
+        before = before.sort_by("_index")
+        assert before.to_pydict() == after.to_pydict()
         pd_table = before.to_pandas().explode("nested_col")
         assert [pd_table.count().get("nested_col")] == [
             x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
@@ -234,6 +251,9 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
     # Data page has 1023 items.
     test_parquet_helper(get_string_data_and_type(511, 3000, 2), True)
     test_parquet_helper(get_dictionary_data_and_type(511, 3000, 2), False)
+    # Data pages have 10240 and 9761 items. This could cause .show() or .limit() to fail if we
+    # incorrectly account for the number of values to read.
+    test_parquet_helper(get_string_data_and_type(100, 100, 200), True)
 
     # Cases where the last row of `nested.field1` has items that span two data pages.
     # Data pages have 131072 and 1 items.
