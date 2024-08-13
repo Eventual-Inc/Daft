@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use crate::channel::PipelineOutput;
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+
+use crate::pipeline::PipelineOutput;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{ProbeTable, ProbeTableBuilder, Table};

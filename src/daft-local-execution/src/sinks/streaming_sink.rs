@@ -5,8 +5,8 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender},
-    pipeline::PipelineNode,
+    channel::create_channel,
+    pipeline::{PipelineNode, PipelineOutputReceiver},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
@@ -53,16 +53,17 @@ impl PipelineNode for StreamingSinkNode {
 
     async fn start(
         &mut self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
-        // now we can start building the right side
+    ) -> DaftResult<PipelineOutputReceiver> {
         let child = self
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender, runtime_handle).await?;
+        let mut child_receiver = child.start(true, runtime_handle).await?;
+        let (mut destination_sender, destination_receiver) =
+            create_channel(*NUM_CPUS, maintain_order);
+
         let op = self.op.clone();
         runtime_handle.spawn(async move {
             // this should be a RWLock and run in concurrent workers
@@ -70,24 +71,25 @@ impl PipelineNode for StreamingSinkNode {
 
             let mut sink = op.lock().await;
             let mut is_active = true;
-            while is_active && let Some(val) = streaming_receiver.recv().await {
+            while is_active && let Some(val) = child_receiver.recv().await {
+                let val = val?;
                 loop {
                     let result = span.in_scope(|| sink.execute(0, &val.as_micro_partition()?))?;
                     match result {
                         StreamSinkOutput::HasMoreOutput(mp) => {
-                            let sender = destination.get_next_sender();
+                            let sender = destination_sender.get_next_sender();
                             sender.send(mp.into()).await.unwrap();
                         }
                         StreamSinkOutput::NeedMoreInput(mp) => {
                             if let Some(mp) = mp {
-                                let sender = destination.get_next_sender();
+                                let sender = destination_sender.get_next_sender();
                                 sender.send(mp.into()).await.unwrap();
                             }
                             break;
                         }
                         StreamSinkOutput::Finished(mp) => {
                             if let Some(mp) = mp {
-                                let sender = destination.get_next_sender();
+                                let sender = destination_sender.get_next_sender();
                                 sender.send(mp.into()).await.unwrap();
                             }
                             is_active = false;
@@ -98,6 +100,6 @@ impl PipelineNode for StreamingSinkNode {
             }
             DaftResult::Ok(())
         });
-        Ok(())
+        Ok(destination_receiver.into())
     }
 }

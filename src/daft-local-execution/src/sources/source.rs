@@ -6,16 +6,20 @@ use futures::stream::BoxStream;
 
 use async_trait::async_trait;
 
-use crate::{channel::MultiSender, pipeline::PipelineNode, ExecutionRuntimeHandle};
+use crate::{
+    channel::MultiReceiver,
+    pipeline::{PipelineNode, PipelineOutputReceiver},
+    ExecutionRuntimeHandle,
+};
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
     fn get_data(
         &self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()>;
+    ) -> DaftResult<MultiReceiver>;
 }
 
 struct SourceNode {
@@ -29,10 +33,11 @@ impl PipelineNode for SourceNode {
     }
     async fn start(
         &mut self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
-        self.source.get_data(destination, runtime_handle)
+    ) -> DaftResult<PipelineOutputReceiver> {
+        let receiver = self.source.get_data(maintain_order, runtime_handle)?;
+        Ok(receiver.into())
     }
 }
 

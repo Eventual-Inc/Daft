@@ -5,9 +5,9 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender, PipelineOutput},
-    pipeline::PipelineNode,
-    ExecutionRuntimeHandle, NUM_CPUS,
+    channel::create_one_shot_channel,
+    pipeline::{PipelineNode, PipelineOutput, PipelineOutputReceiver},
+    ExecutionRuntimeHandle,
 };
 use async_trait::async_trait;
 pub enum BlockingSinkStatus {
@@ -49,18 +49,20 @@ impl PipelineNode for BlockingSinkNode {
 
     async fn start(
         &mut self,
-        mut destination: MultiSender,
+        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, true);
-        // now we can start building the right side
+    ) -> DaftResult<PipelineOutputReceiver> {
         let child = self.child.as_mut();
-        child.start(sender, runtime_handle).await?;
+        let mut child_receiver = child.start(true, runtime_handle).await?;
+        let (destination_sender, destination_receiver) =
+            create_one_shot_channel::<PipelineOutput>();
+
         let op = self.op.clone();
         runtime_handle.spawn(async move {
             let span = info_span!("BlockingSinkNode::execute");
             let mut guard = op.lock().await;
-            while let Some(val) = streaming_receiver.recv().await {
+            while let Some(val) = child_receiver.recv().await {
+                let val = val?;
                 if let BlockingSinkStatus::Finished =
                     span.in_scope(|| guard.sink(&val.as_micro_partition()?))?
                 {
@@ -70,10 +72,10 @@ impl PipelineNode for BlockingSinkNode {
             let finalized_result =
                 info_span!("BlockingSinkNode::finalize").in_scope(|| guard.finalize())?;
             if let Some(part) = finalized_result {
-                let _ = destination.get_next_sender().send(part).await;
+                let _ = destination_sender.send(part);
             }
             Ok(())
         });
-        Ok(())
+        Ok(destination_receiver.into())
     }
 }

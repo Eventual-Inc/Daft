@@ -18,9 +18,7 @@ use {
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
-use crate::{
-    channel::create_channel, pipeline::physical_plan_to_pipeline, Error, ExecutionRuntimeHandle,
-};
+use crate::{pipeline::physical_plan_to_pipeline, Error, ExecutionRuntimeHandle};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -107,13 +105,13 @@ pub fn run_local(
     let res = runtime.block_on(async {
         let final_schema = physical_plan.schema();
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
-        let (sender, mut receiver) = create_channel(1, true);
 
         let mut runtime_handle = ExecutionRuntimeHandle::default();
-        pipeline.start(sender, &mut runtime_handle).await?;
+        let mut receiver = pipeline.start(true, &mut runtime_handle).await?;
         let mut result = vec![];
         while let Some(val) = receiver.recv().await {
-            result.push(Ok(val.as_micro_partition()?));
+            let val = val?;
+            result.push(val.as_micro_partition());
         }
 
         while let Some(result) = runtime_handle.join_next().await {

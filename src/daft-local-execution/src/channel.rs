@@ -1,52 +1,10 @@
-use std::sync::Arc;
+use crate::pipeline::PipelineOutput;
 
-use common_error::{DaftError, DaftResult};
-use daft_micropartition::MicroPartition;
-use daft_table::{ProbeTable, Table};
+pub type OneShotSender<T> = tokio::sync::oneshot::Sender<T>;
+pub type OneShotReceiver<T> = tokio::sync::oneshot::Receiver<T>;
 
-#[derive(Clone)]
-pub enum PipelineOutput {
-    MicroPartition(Arc<MicroPartition>),
-    ProbeTable(Arc<ProbeTable>, Arc<Vec<Table>>),
-}
-
-impl PipelineOutput {
-    pub fn should_broadcast(&self) -> bool {
-        match self {
-            Self::MicroPartition(_) => false,
-            Self::ProbeTable(_, _) => true,
-        }
-    }
-
-    pub fn as_micro_partition(&self) -> DaftResult<Arc<MicroPartition>> {
-        match self {
-            Self::MicroPartition(part) => Ok(part.clone()),
-            _ => Err(DaftError::InternalError(
-                "Expected MicroPartition, found ProbeTable".to_string(),
-            )),
-        }
-    }
-
-    pub fn as_probe_table(&self) -> DaftResult<(Arc<ProbeTable>, Arc<Vec<Table>>)> {
-        match self {
-            Self::ProbeTable(probe_table, tables) => Ok((probe_table.clone(), tables.clone())),
-            _ => Err(DaftError::InternalError(
-                "Expected ProbeTable, found MicroPartition".to_string(),
-            )),
-        }
-    }
-}
-
-impl From<Arc<MicroPartition>> for PipelineOutput {
-    fn from(part: Arc<MicroPartition>) -> Self {
-        Self::MicroPartition(part)
-    }
-}
-
-impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineOutput {
-    fn from((probe_table, tables): (Arc<ProbeTable>, Arc<Vec<Table>>)) -> Self {
-        Self::ProbeTable(probe_table, tables)
-    }
+pub fn create_one_shot_channel<T>() -> (OneShotSender<T>, OneShotReceiver<T>) {
+    tokio::sync::oneshot::channel()
 }
 
 pub type SingleSender<T> = tokio::sync::mpsc::Sender<T>;

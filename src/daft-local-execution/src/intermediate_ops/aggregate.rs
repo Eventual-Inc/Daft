@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use tracing::instrument;
 
-use crate::channel::PipelineOutput;
+use crate::pipeline::PipelineOutput;
 
 use super::{
     intermediate_op::{IntermediateOperator, IntermediateOperatorOutput},

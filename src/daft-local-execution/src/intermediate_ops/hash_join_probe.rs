@@ -6,7 +6,7 @@ use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeTable, Table};
 use tracing::info_span;
 
-use crate::{channel::PipelineOutput, DEFAULT_MORSEL_SIZE};
+use crate::{pipeline::PipelineOutput, DEFAULT_MORSEL_SIZE};
 
 use super::{
     intermediate_op::{IntermediateOperator, IntermediateOperatorOutput},

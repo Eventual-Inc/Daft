@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
+use crate::pipeline::PipelineOutput;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;

@@ -16,7 +16,8 @@ use futures::{stream::BoxStream, StreamExt};
 use std::sync::Arc;
 
 use crate::{
-    channel::{MultiSender, PipelineOutput, SingleSender},
+    channel::{create_channel, MultiReceiver, SingleSender},
+    pipeline::PipelineOutput,
     ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
 };
 
@@ -61,13 +62,13 @@ impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
         &self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> DaftResult<MultiReceiver> {
         let morsel_size = DEFAULT_MORSEL_SIZE;
-        let maintain_order = destination.in_order();
+        let (mut sender, receiver) = create_channel(self.scan_tasks.len(), maintain_order);
         for scan_task in self.scan_tasks.clone() {
-            let sender = destination.get_next_sender();
+            let sender = sender.get_next_sender();
             runtime_handle.spawn(Self::process_scan_task_stream(
                 scan_task,
                 sender,
@@ -75,7 +76,7 @@ impl Source for ScanTaskSource {
                 maintain_order,
             ));
         }
-        Ok(())
+        Ok(receiver)
     }
 }
 

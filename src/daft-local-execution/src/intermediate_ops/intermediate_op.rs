@@ -7,11 +7,8 @@ use tracing::{info_span, instrument};
 use async_trait::async_trait;
 
 use crate::{
-    channel::{
-        create_channel, create_single_channel, MultiReceiver, MultiSender, PipelineOutput,
-        SingleReceiver, SingleSender,
-    },
-    pipeline::PipelineNode,
+    channel::{create_channel, create_single_channel, MultiSender, SingleReceiver, SingleSender},
+    pipeline::{PipelineNode, PipelineOutput, PipelineOutputReceiver},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
@@ -108,12 +105,13 @@ impl IntermediateNode {
     }
 
     pub async fn send_to_workers(
-        child_receivers: Vec<MultiReceiver>,
+        child_receivers: Vec<PipelineOutputReceiver>,
         worker_senders: Vec<SingleSender<(usize, PipelineOutput)>>,
     ) -> DaftResult<()> {
         for (idx, mut receiver) in child_receivers.into_iter().enumerate() {
             let mut next_worker_idx = 0;
             while let Some(morsel) = receiver.recv().await {
+                let morsel = morsel?;
                 if morsel.should_broadcast() {
                     for sender in worker_senders.iter() {
                         let _ = sender.send((idx, morsel.clone())).await;
@@ -137,21 +135,24 @@ impl PipelineNode for IntermediateNode {
 
     async fn start(
         &mut self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> DaftResult<PipelineOutputReceiver> {
         let child_order = match self.intermediate_op.required_ordering() {
-            Ordering::MaintainParentOrder => destination.in_order(),
+            Ordering::MaintainParentOrder => maintain_order,
         };
         let mut child_receivers = vec![];
         for child in self.children.iter_mut() {
-            let (sender, receiver) = create_channel(*NUM_CPUS, child_order);
-            child.start(sender, runtime_handle).await?;
-            child_receivers.push(receiver);
+            let rx = child.start(child_order, runtime_handle).await?;
+            child_receivers.push(rx);
         }
 
-        let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
+        let (mut destination_sender, destination_receiver) =
+            create_channel(*NUM_CPUS, maintain_order);
+        let worker_senders = self
+            .spawn_workers(&mut destination_sender, runtime_handle)
+            .await;
         runtime_handle.spawn(Self::send_to_workers(child_receivers, worker_senders));
-        Ok(())
+        Ok(destination_receiver.into())
     }
 }

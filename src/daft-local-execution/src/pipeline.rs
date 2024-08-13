@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    channel::{MultiReceiver, OneShotReceiver},
     intermediate_ops::{
         aggregate::AggregateOperator, filter::FilterOperator, hash_join_probe::HashJoinProber,
         intermediate_op::IntermediateNode, project::ProjectOperator,
@@ -11,11 +12,11 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, OneShotRecvSnafu,
 };
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::Field,
     schema::{Schema, SchemaRef},
@@ -28,17 +29,95 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
+use daft_table::{ProbeTable, Table};
+use snafu::ResultExt;
 
-use crate::channel::MultiSender;
+#[derive(Clone)]
+pub enum PipelineOutput {
+    MicroPartition(Arc<MicroPartition>),
+    ProbeTable(Arc<ProbeTable>, Arc<Vec<Table>>),
+}
+
+impl PipelineOutput {
+    pub fn should_broadcast(&self) -> bool {
+        match self {
+            Self::MicroPartition(_) => false,
+            Self::ProbeTable(_, _) => true,
+        }
+    }
+
+    pub fn as_micro_partition(&self) -> DaftResult<Arc<MicroPartition>> {
+        match self {
+            Self::MicroPartition(part) => Ok(part.clone()),
+            _ => Err(DaftError::InternalError(
+                "Expected MicroPartition, found ProbeTable".to_string(),
+            )),
+        }
+    }
+
+    pub fn as_probe_table(&self) -> DaftResult<(Arc<ProbeTable>, Arc<Vec<Table>>)> {
+        match self {
+            Self::ProbeTable(probe_table, tables) => Ok((probe_table.clone(), tables.clone())),
+            _ => Err(DaftError::InternalError(
+                "Expected ProbeTable, found MicroPartition".to_string(),
+            )),
+        }
+    }
+}
+
+impl From<Arc<MicroPartition>> for PipelineOutput {
+    fn from(part: Arc<MicroPartition>) -> Self {
+        Self::MicroPartition(part)
+    }
+}
+
+impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineOutput {
+    fn from((probe_table, tables): (Arc<ProbeTable>, Arc<Vec<Table>>)) -> Self {
+        Self::ProbeTable(probe_table, tables)
+    }
+}
+
+pub enum PipelineOutputReceiver {
+    Many(MultiReceiver),
+    Single(OneShotReceiver<PipelineOutput>, bool),
+}
+
+impl From<MultiReceiver> for PipelineOutputReceiver {
+    fn from(receiver: MultiReceiver) -> Self {
+        Self::Many(receiver)
+    }
+}
+
+impl From<OneShotReceiver<PipelineOutput>> for PipelineOutputReceiver {
+    fn from(receiver: OneShotReceiver<PipelineOutput>) -> Self {
+        Self::Single(receiver, false)
+    }
+}
+
+impl PipelineOutputReceiver {
+    pub async fn recv(&mut self) -> Option<DaftResult<PipelineOutput>> {
+        match self {
+            Self::Many(receiver) => receiver.recv().await.map(Ok),
+            Self::Single(receiver, complete) => {
+                if *complete {
+                    return None;
+                }
+                let res = receiver.await.context(OneShotRecvSnafu).map_err(Into::into);
+                *complete = true;
+                Some(res)
+            }
+        }
+    }
+}
 
 #[async_trait]
 pub trait PipelineNode: Sync + Send {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     async fn start(
         &mut self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()>;
+    ) -> DaftResult<PipelineOutputReceiver>;
 }
 
 pub fn physical_plan_to_pipeline(
