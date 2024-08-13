@@ -490,9 +490,8 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def cbrt(self) -> Expression:
-        """The square root of a numeric expression (``expr.cbrt()``)"""
-        expr = self._expr.cbrt()
-        return Expression._from_pyexpr(expr)
+        """The cube root of a numeric expression (``expr.cbrt()``)"""
+        return Expression._from_pyexpr(native.cbrt(self._expr))
 
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression (``expr.sin()``)"""
