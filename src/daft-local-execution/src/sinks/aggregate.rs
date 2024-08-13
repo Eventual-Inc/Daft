@@ -16,7 +16,7 @@ enum AggregateState {
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
-    state: AggregateState,
+    state: Vec<Arc<MicroPartition>>,
 }
 
 impl AggregateSink {
@@ -24,7 +24,7 @@ impl AggregateSink {
         Self {
             agg_exprs,
             group_by,
-            state: AggregateState::Accumulating(vec![]),
+            state: vec![],
         }
     }
 

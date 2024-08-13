@@ -26,12 +26,12 @@ use tracing::instrument;
 
 #[derive(Debug)]
 pub struct ScanTaskSource {
-    scan_task: Arc<ScanTask>,
+    scan_tasks: Vec<Arc<ScanTask>>,
 }
 
 impl ScanTaskSource {
-    pub fn new(scan_task: Arc<ScanTask>) -> Self {
-        Self { scan_task }
+    pub fn new(scan_tasks: Vec<Arc<ScanTask>>) -> Self {
+        Self { scan_tasks }
     }
 
     #[instrument(

@@ -24,7 +24,7 @@ impl SortSink {
         Self {
             sort_by,
             descending,
-            state: SortState::Building(vec![]),
+            state: vec![],
         }
     }
     pub fn boxed(self) -> Box<dyn BlockingSink> {
