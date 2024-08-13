@@ -1712,6 +1712,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
+ "indexmap 2.3.0",
  "itertools 0.11.0",
  "log",
  "pyo3",

@@ -6,6 +6,7 @@ common-resource-request = {path = "../common/resource-request", default-features
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}

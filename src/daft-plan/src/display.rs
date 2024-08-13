@@ -147,7 +147,7 @@ Filter2["Filter: col(first_name) == lit('hello')"]
 Join3["Join: Type = Inner
 Strategy = Auto
 On = col(id)
-Output schema = text#Utf8, id#Int32, first_name#Utf8, last_name#Utf8"]
+Output schema = id#Int32, text#Utf8, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:
 Source ID = 0
