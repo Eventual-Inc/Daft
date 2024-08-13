@@ -1,5 +1,4 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::DataType;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
@@ -15,40 +14,26 @@ impl FunctionEvaluator for SqrtEvaluator {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            )));
-        }
-        let field = inputs.first().unwrap().to_field(schema)?;
-        let dtype = match field.dtype {
-            DataType::Int8 => DataType::Float32,
-            DataType::Int16 => DataType::Float32,
-            DataType::UInt8 => DataType::Float32,
-            DataType::UInt16 => DataType::Float32,
-            DataType::Int32 => DataType::Float64,
-            DataType::Int64 => DataType::Float64,
-            DataType::UInt32 => DataType::Float64,
-            DataType::UInt64 => DataType::Float64,
-            DataType::Float32 => DataType::Float32,
-            DataType::Float64 => DataType::Float64,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Expected input to sqrt to be numeric, got {}",
-                    field.dtype
-                )))
+        match inputs {
+            [first] => {
+                let field = first.to_field(schema)?;
+                let dtype = field.dtype.to_floating_representation()?;
+                Ok(Field::new(field.name, dtype))
             }
-        };
-        Ok(Field::new(field.name, dtype))
-    }
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
+            _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
-            )));
+            ))),
         }
-        inputs.first().unwrap().sqrt()
+    }
+
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+        match inputs {
+            [first] => first.cbrt(),
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
     }
 }
