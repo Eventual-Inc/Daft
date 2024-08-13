@@ -248,6 +248,16 @@ def test_sqrt(unary_data_fixture):
     )
 
 
+def test_cbrt(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).cbrt(),
+        run_kernel=lambda: arg.cbrt(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
 def test_shift_left(binary_data_fixture):
     lhs, rhs = binary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
