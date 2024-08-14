@@ -2568,20 +2568,20 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def normalize(
         self,
         *,
-        remove_punct: bool = True,
-        lowercase: bool = True,
-        nfd_unicode: bool = True,
-        white_space: bool = True,
+        remove_punct: bool = False,
+        lowercase: bool = False,
+        nfd_unicode: bool = False,
+        white_space: bool = False,
     ):
         """Normalizes a string for more useful deduplication.
 
         .. NOTE::
-            All processing options are on by default.
+            All processing options are off by default.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
-            >>> df = df.with_column("normalized", df["x"].str.normalize())
+            >>> df = df.with_column("normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True))
             >>> df.show()
             ╭───────────────┬─────────────╮
             │ x             ┆ normalized  │
