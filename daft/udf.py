@@ -76,6 +76,7 @@ class BoundUDFArgs:
         return hash(frozenset(self.bound_args.arguments.items()))
 
 
+# Assumes there is at least one evaluated expression
 def run_udf(
     func: Callable,
     bound_args: BoundUDFArgs,
