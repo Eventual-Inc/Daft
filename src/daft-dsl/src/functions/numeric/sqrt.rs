@@ -29,7 +29,7 @@ impl FunctionEvaluator for SqrtEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         match inputs {
-            [first] => first.cbrt(),
+            [first] => first.sqrt(),
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
