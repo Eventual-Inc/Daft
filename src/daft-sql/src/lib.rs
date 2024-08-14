@@ -157,8 +157,6 @@ mod tests {
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        println!("query: {}", query);
-        println!("plan: {:?}", plan);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
 
         Ok(())
