@@ -61,8 +61,11 @@ impl SQLPlanner {
         }
     }
 
+    /// SAFETY: it is up to the caller to ensure that the relation is set before calling this method.
+    /// It's a programming error to call this method without setting the relation first.
+    /// Some methods such as `plan_expr` do not require the relation to be set.
     fn relation_mut(&mut self) -> &mut Relation {
-        self.current_relation.as_mut().unwrap()
+        self.current_relation.as_mut().expect("relation not set")
     }
 
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
