@@ -173,7 +173,8 @@ class DaftContext:
     @property
     def is_ray_runner(self) -> bool:
         with self._lock:
-            return isinstance(self._runner_config, _RayRunnerConfig)
+            runner_config = self._get_runner_config()
+            return isinstance(runner_config, _RayRunnerConfig)
 
 
 _DaftContext = DaftContext()
