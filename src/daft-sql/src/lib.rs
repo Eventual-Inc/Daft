@@ -13,6 +13,7 @@ use pyo3::prelude::*;
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
     parent.add_wrapped(wrap_pyfunction!(python::sql))?;
+    parent.add_wrapped(wrap_pyfunction!(python::sql_expr))?;
     Ok(())
 }
 
@@ -118,10 +119,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case("select * from tbl1")]
-    #[case("select * from tbl1 limit 1")]
-    #[case("select * exclude utf8 from tbl1")]
-    #[case("select * exclude (utf8, i32) from tbl1")]
+    #[case::basic("select * from tbl1")]
+    #[case::select_with_limit("select * from tbl1 limit 1")]
+    #[case::exclude("select * exclude utf8 from tbl1")]
+    #[case::exclude2("select * exclude (utf8, i32) from tbl1")]
     #[case("select utf8 from tbl1")]
     #[case("select i32 from tbl1")]
     #[case("select i64 from tbl1")]
@@ -134,10 +135,10 @@ mod tests {
     #[case("select list_utf8 as a, utf8 as b, utf8 as c from tbl1")]
     #[case("select list_utf8::text[] from tbl1")]
     #[case("select list_utf8[0] from tbl1")]
-    #[case("select list_utf8[0:2] from tbl1")]
-    #[case("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
-    #[case("select tbl2.text from tbl2")]
-    #[case("select tbl2.text from tbl2 join tbl3 using (id)")]
+    #[case::slice("select list_utf8[0:2] from tbl1")]
+    #[case::join("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
+    #[case::from("select tbl2.text from tbl2")]
+    #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
     #[case(
         r#"
     select
@@ -154,15 +155,17 @@ mod tests {
     #[case::orderby("select * from tbl1 order by i32 asc")]
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
-    fn test_compiles(planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+    fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
+        println!("query: {}", query);
+        println!("plan: {:?}", plan);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
 
         Ok(())
     }
 
     #[rstest]
-    fn test_parse_sql(planner: SQLPlanner, tbl_1: LogicalPlanRef) {
+    fn test_parse_sql(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) {
         let sql = "select test as a from tbl1";
         let plan = planner.plan_sql(sql).unwrap();
 
@@ -174,7 +177,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_where_clause(planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+    fn test_where_clause(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 where test = 'a'";
         let plan = planner.plan_sql(sql)?;
 
@@ -187,7 +190,7 @@ mod tests {
         Ok(())
     }
     #[rstest]
-    fn test_limit(planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+    fn test_limit(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 limit 10";
         let plan = planner.plan_sql(sql)?;
 
@@ -201,7 +204,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_orderby(planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+    fn test_orderby(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select utf8 from tbl1 order by utf8 desc";
         let plan = planner.plan_sql(sql)?;
 
@@ -215,7 +218,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cast(planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+    fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let builder = LogicalPlanBuilder::new(tbl_1);
         let cases = vec![
             (
@@ -248,7 +251,7 @@ mod tests {
 
     #[rstest]
     fn test_join(
-        planner: SQLPlanner,
+        mut planner: SQLPlanner,
         tbl_2: LogicalPlanRef,
         tbl_3: LogicalPlanRef,
     ) -> SQLPlannerResult<()> {
@@ -310,7 +313,7 @@ mod tests {
     #[case::repeat("select repeat(utf8, 1) as repeat from tbl1")]
     #[case::to_date("select to_date(utf8, 'YYYY-MM-DD') as to_date from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
-    fn test_compiles_funcs(planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+    fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
 

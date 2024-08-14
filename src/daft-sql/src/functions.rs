@@ -6,7 +6,7 @@ use crate::{
     ensure,
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err,
-    planner::{Relation, SQLPlanner},
+    planner::SQLPlanner,
     unsupported_sql_err,
 };
 
@@ -313,11 +313,7 @@ pub enum SQLFunctions {
 }
 
 impl SQLPlanner {
-    pub(crate) fn plan_function(
-        &self,
-        func: &Function,
-        current_rel: &Relation,
-    ) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn plan_function(&self, func: &Function) -> SQLPlannerResult<ExprRef> {
         if func.null_treatment.is_some() {
             unsupported_sql_err!("null treatment");
         }
@@ -345,7 +341,7 @@ impl SQLPlanner {
                 arg_list
                     .args
                     .iter()
-                    .map(|arg| self.plan_function_arg(arg, current_rel))
+                    .map(|arg| self.plan_function_arg(arg))
                     .collect::<SQLPlannerResult<Vec<_>>>()?
             }
         };
@@ -636,13 +632,9 @@ impl SQLPlanner {
         }
     }
 
-    fn plan_function_arg(
-        &self,
-        function_arg: &FunctionArg,
-        current_rel: &Relation,
-    ) -> SQLPlannerResult<ExprRef> {
+    fn plan_function_arg(&self, function_arg: &FunctionArg) -> SQLPlannerResult<ExprRef> {
         match function_arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr, current_rel),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
             _ => unsupported_sql_err!("named function args not yet supported"),
         }
     }

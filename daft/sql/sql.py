@@ -3,7 +3,9 @@
 from daft.api_annotations import PublicAPI
 from daft.daft import PyCatalog as _PyCatalog
 from daft.daft import sql as _sql
+from daft.daft import sql_expr as _sql_expr
 from daft.dataframe import DataFrame
+from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 
 
@@ -24,6 +26,11 @@ class SQLCatalog:
 
     def __str__(self) -> str:
         return str(self._catalog)
+
+
+@PublicAPI
+def sql_expr(sql: str) -> Expression:
+    return Expression._from_pyexpr(_sql_expr(sql))
 
 
 @PublicAPI

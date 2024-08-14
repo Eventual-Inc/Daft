@@ -80,3 +80,19 @@ def test_fizzbuzz_sql():
         catalog=catalog,
     ).collect()
     assert df.to_pydict() == expected.to_pydict()
+
+
+@pytest.mark.parametrize(
+    "actual,expected",
+    [
+        ("lower(text)", daft.col("text").str.lower()),
+        ("abs(n)", daft.col("n").abs()),
+        ("n + 1", daft.col("n") + 1),
+        ("ceil(1.1)", daft.lit(1.1).ceil()),
+        ("contains(text, 'hello')", daft.col("text").str.contains("hello")),
+        ("to_date(date_col, 'YYYY-MM-DD')", daft.col("date_col").str.to_date("YYYY-MM-DD")),
+    ],
+)
+def test_sql_expr(actual, expected):
+    actual = daft.sql_expr(actual)
+    assert repr(actual) == repr(expected)

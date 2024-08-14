@@ -89,7 +89,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.sql.sql import sql
+from daft.sql.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
@@ -129,4 +129,5 @@ __all__ = [
     "set_planning_config",
     "set_execution_config",
     "sql",
+    "sql_expr",
 ]
