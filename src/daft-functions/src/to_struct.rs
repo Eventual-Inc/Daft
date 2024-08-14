@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::StructArray, datatypes::Field, schema::Schema, DataType, IntoSeries, Series,
 };
@@ -29,10 +29,20 @@ impl ScalarUDF for ToStructFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        if inputs.is_empty() {
+            return Err(DaftError::ValueError(
+                "Cannot call to_struct with no inputs".to_string(),
+            ));
+        }
         Ok(series_to_struct(inputs))
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        if inputs.is_empty() {
+            return Err(DaftError::ValueError(
+                "Cannot call to_struct with no inputs".to_string(),
+            ));
+        }
         let child_fields = inputs
             .iter()
             .map(|e| e.to_field(schema))
