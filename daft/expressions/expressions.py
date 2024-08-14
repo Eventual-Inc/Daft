@@ -263,6 +263,8 @@ class Expression:
         """Converts multiple input expressions into a struct.
 
         Example:
+            >>> import daft
+            >>> from daft import col
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
             >>> df.select(daft.to_struct(col("a")*2, col("b"))).show()
             ╭───────────────────────────╮
