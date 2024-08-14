@@ -18,6 +18,8 @@ from daft.expressions import col
 from daft.logical.schema import Schema
 from daft.table import MicroPartition
 
+from ..integration.io.conftest import minio_create_bucket
+
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 
@@ -155,7 +157,9 @@ def test_row_groups():
 # Test fix for issue #2537.
 # This issue arose when the last row of a top-level column has a leaf field with values that span
 # more than one data page.
-def test_parquet_rows_cross_page_boundaries(tmpdir):
+@pytest.mark.integration()
+@pytest.mark.parametrize("chunk_size", [5, 1024, 2048, 4096])
+def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size):
     int64_min = -(2**63)
     int64_max = 2**63 - 1
 
@@ -187,6 +191,47 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
         data_type = pa.list_(pa.struct([("field1", pa.dictionary(pa.int32(), pa.string())), ("field2", pa.string())]))
         return data, data_type
 
+    def compare_before_and_after(before, after, is_arrow):
+        # Test various combinations of limits, shows, and collects.
+        after.limit(5).show()
+        after.show()
+        after.show(10)
+        after = after.sort(col("_index"))
+        assert before.to_pydict() == after.to_pydict()
+        after_limit_50 = after.limit(50)
+        after_limit_2050 = after.limit(2050)  # Test a limit beyond the default chunk size (2048).
+        if is_arrow:
+            pd_table = before.to_pandas().explode("nested_col")
+            assert [pd_table.count().get("nested_col")] == [
+                x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
+            ]
+            before_limit_50 = before.take(list(range(min(before.num_rows, 50))))
+            before_limit_2050 = before.take(list(range(min(before.num_rows, 2050))))
+            assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
+            assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
+            pd_table = before_limit_50.to_pandas().explode("nested_col")
+            assert [pd_table.count().get("nested_col")] == [
+                x["nested_col"] for x in after_limit_50.explode(col("nested_col")).count().collect()
+            ]
+            pd_table = before_limit_2050.to_pandas().explode("nested_col")
+            assert [pd_table.count().get("nested_col")] == [
+                x["nested_col"] for x in after_limit_2050.explode(col("nested_col")).count().collect()
+            ]
+        else:
+            assert [x for x in before.explode(col("nested_col")).count().collect()] == [
+                x for x in after.explode(col("nested_col")).count().collect()
+            ]
+            before_limit_50 = before.limit(50)
+            before_limit_2050 = before.limit(2050)
+            assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
+            assert [x for x in before_limit_50.explode(col("nested_col")).count().collect()] == [
+                x for x in after_limit_50.explode(col("nested_col")).count().collect()
+            ]
+            assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
+            assert [x for x in before_limit_2050.explode(col("nested_col")).count().collect()] == [
+                x for x in after_limit_2050.explode(col("nested_col")).count().collect()
+            ]
+
     def test_parquet_helper(data_and_type, use_daft_writer):
         data, data_type = data_and_type
         index_data = [x for x in range(0, len(data))]
@@ -198,31 +243,24 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
             before = daft.from_pydict(
                 {"nested_col": pa.array(data, type=data_type), "_index": pa.array(index_data, type=pa.int64())}
             )
-            before = before
             before = before.sort(col("_index"))
             before.write_parquet(file_path)
-            after = daft.read_parquet(file_path)
-            # Test various combinations of limits, shows, and collects.
-            after.limit(5).show()
-            after.show()
-            after.show(10)
-            after = after.sort(col("_index"))
-            assert before.to_pydict() == after.to_pydict()
-            assert [x for x in before.explode(col("nested_col")).count(*before.column_names).collect()] == [
-                x for x in after.explode(col("nested_col")).count(*after.column_names).collect()
-            ]
-            before = before.limit(50)
-            after = after.limit(50)
-            assert before.to_pydict() == after.to_pydict()
-            assert [x for x in before.explode(col("nested_col")).count(*before.column_names).collect()] == [
-                x for x in after.explode(col("nested_col")).count(*after.column_names).collect()
-            ]
+            after = daft.read_parquet(file_path, _chunk_size=chunk_size)
+            compare_before_and_after(before, after, False)
+            # Test reads from S3.
+            bucket_name = "my-bucket"
+            s3_path = f"s3://{bucket_name}/my-folder"
+            with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+                before.write_parquet(s3_path, io_config=minio_io_config)
+                after = daft.read_parquet(s3_path, io_config=minio_io_config, _chunk_size=chunk_size)
+                compare_before_and_after(before, after, False)
 
         # Test Arrow write with Daft read.
         file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
         before = pa.Table.from_arrays(
             [pa.array(data, type=data_type), pa.array(index_data, type=pa.int64())], names=["nested_col", "_index"]
         )
+        before = before.sort_by("_index")
         write_options = papq.ParquetWriter(
             file_path,
             before.schema,
@@ -232,25 +270,8 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
         )
         with write_options as writer:
             writer.write_table(before)
-        after = daft.read_parquet(file_path)
-        # Test various combinations of limits, shows, and collects.
-        after.limit(5).show()
-        after.show()
-        after.show(10)
-        after = after.sort(col("_index"))
-        before = before.sort_by("_index")
-        assert before.to_pydict() == after.to_pydict()
-        pd_table = before.to_pandas().explode("nested_col")
-        assert [pd_table.count().get("nested_col")] == [
-            x["nested_col"] for x in after.explode(col("nested_col")).count(*after.column_names).collect()
-        ]
-        before = before.take(list(range(min(before.num_rows, 50))))
-        after = after.limit(50)
-        assert before.to_pydict() == after.to_pydict()
-        pd_table = before.to_pandas().explode("nested_col")
-        assert [pd_table.count().get("nested_col")] == [
-            x["nested_col"] for x in after.explode(col("nested_col")).count(*after.column_names).collect()
-        ]
+        after = daft.read_parquet(file_path, _chunk_size=chunk_size)
+        compare_before_and_after(before, after, True)
 
     # The normal case where the last row `nested.field1` is contained within a single data page.
     # Data page has 131071 items.
@@ -280,3 +301,22 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
     # Data pages has 1024, 1024, 1024, 1024, and 1 items.
     test_parquet_helper(get_string_data_and_type(1, 3000, 3072), True)
     test_parquet_helper(get_dictionary_data_and_type(1, 3000, 3072), False)
+
+    # Cases where the list sizes are 1. This also simulates the case where there is no list in the
+    # schema. We encountered a bug where if page size aligns with chunk size (typically 2048 for
+    # non-local reads), then upon checking the next page for more values, we would read
+    # more rows than the chunk size, and the `rows read == chunk size` check would not be true until
+    # we've read all values in the page. This could repeat for every subsequent data page.
+
+    # Here we test various scenarios where the number of values in a data page are various multiples
+    # and denominators of the parameterized chunk size.
+
+    # One column uses a single dictionary-encoded data page, and the other contains data pages with
+    # 1024 values each.
+    test_parquet_helper(get_string_data_and_type(4096, 3000, 1), True)
+    # One column uses a single dictionary-encoded data page, and the other contains data pages with
+    # 2048 values each.
+    test_parquet_helper(get_string_data_and_type(8192, 1000, 1), True)
+    # One column uses a single dictionary-encoded data page, and the other contains data pages with
+    # 4096 values each.
+    test_parquet_helper(get_string_data_and_type(8192, 300, 1), True)
