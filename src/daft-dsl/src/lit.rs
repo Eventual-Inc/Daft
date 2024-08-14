@@ -247,6 +247,71 @@ impl LiteralValue {
             Python(..) => display_sql_err,
         }
     }
+
+    /// If the liter is a boolean, return it. Otherwise, return None.
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            LiteralValue::Boolean(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// If the literal is a string, return it. Otherwise, return None.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            LiteralValue::Utf8(s) => Some(s),
+            _ => None,
+        }
+    }
+    /// If the literal is `Binary`, return it. Otherwise, return None.
+    pub fn as_binary(&self) -> Option<&[u8]> {
+        match self {
+            LiteralValue::Binary(b) => Some(b),
+            _ => None,
+        }
+    }
+    /// If the literal is `Int32`, return it. Otherwise, return None.
+    pub fn as_i32(&self) -> Option<i32> {
+        match self {
+            LiteralValue::Int32(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `UInt32`, return it. Otherwise, return None.
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            LiteralValue::UInt32(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `Int64`, return it. Otherwise, return None.
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            LiteralValue::Int64(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `UInt64`, return it. Otherwise, return None.
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            LiteralValue::UInt64(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `Float64`, return it. Otherwise, return None.
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            LiteralValue::Float64(f) => Some(*f),
+            _ => None,
+        }
+    }
+    /// If the literal is a series, return it. Otherwise, return None.
+    pub fn as_series(&self) -> Option<&Series> {
+        match self {
+            LiteralValue::Series(series) => Some(series),
+            _ => None,
+        }
+    }
 }
 
 pub trait Literal {

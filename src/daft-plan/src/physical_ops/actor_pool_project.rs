@@ -5,7 +5,7 @@ use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
     functions::{
-        python::{PythonUDF, StatefulPythonUDF},
+        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     Expr, ExprRef,
@@ -22,7 +22,6 @@ use crate::{
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub resource_request: ResourceRequest,
     pub clustering_spec: Arc<ClusteringSpec>,
     pub num_actors: usize,
 }
@@ -31,7 +30,6 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
-        resource_request: ResourceRequest,
         num_actors: usize,
     ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
@@ -51,10 +49,13 @@ impl ActorPoolProject {
         Ok(ActorPoolProject {
             input,
             projection,
-            resource_request,
             clustering_spec,
             num_actors,
         })
+    }
+
+    pub fn resource_request(&self) -> Option<ResourceRequest> {
+        get_resource_request(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -94,12 +95,16 @@ impl ActorPoolProject {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
-        let resource_request = self.resource_request.multiline_display();
-        if !resource_request.is_empty() {
+        let resource_request = self.resource_request().map(|rr| rr.multiline_display());
+        if let Some(resource_request) = resource_request
+            && !resource_request.is_empty()
+        {
             res.push(format!(
                 "Resource request = {{ {} }}",
                 resource_request.join(", ")
             ));
+        } else {
+            res.push("Resource request = None".to_string());
         }
         res
     }

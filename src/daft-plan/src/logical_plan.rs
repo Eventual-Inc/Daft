@@ -243,10 +243,10 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(), resource_request.clone(),
+                Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
+                    input.clone(), projection.clone(),
                 ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, resource_request, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), resource_request.clone(), *num_actors).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), *num_actors).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),

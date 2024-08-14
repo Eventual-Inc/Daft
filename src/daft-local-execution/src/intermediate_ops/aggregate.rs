@@ -7,7 +7,6 @@ use tracing::instrument;
 
 use super::intermediate_op::IntermediateOperator;
 
-#[derive(Clone)]
 pub struct AggregateOperator {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,

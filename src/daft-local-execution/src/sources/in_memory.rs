@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use crate::{channel::MultiSender, ExecutionRuntimeHandle};
+use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use futures::{stream, StreamExt};
 use tracing::instrument;
 
-use super::source::{Source, SourceStream};
+use super::source::Source;
 
 pub struct InMemorySource {
     data: Vec<Arc<MicroPartition>>,
@@ -20,8 +21,19 @@ impl InMemorySource {
 }
 
 impl Source for InMemorySource {
-    #[instrument(name = "InMemorySource::get_data", level = "info", skip(self))]
-    fn get_data(&self, maintain_order: bool) -> SourceStream {
-        stream::iter(self.data.clone().into_iter().map(Ok)).boxed()
+    #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
+    fn get_data(
+        &self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
+        let data = self.data.clone();
+        runtime_handle.spawn(async move {
+            for part in data {
+                let _ = destination.get_next_sender().send(part).await;
+            }
+            Ok(())
+        });
+        Ok(())
     }
 }

@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    channel::{create_channel, spawn_compute_task, MultiSender},
-    intermediate_ops::intermediate_op::{IntermediateOpActor, IntermediateOperator},
+    channel::{create_channel, MultiSender},
+    intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
-    sources::source::Source,
-    NUM_CPUS,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -17,13 +16,10 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use futures::{stream, StreamExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use daft_table::{
-    infer_join_schema_mapper, GrowableTable, JoinOutputMapper, ProbeTable, ProbeTableBuilder, Table,
-};
+use daft_table::{GrowableTable, ProbeTable, ProbeTableBuilder, Table};
 
 enum HashJoinState {
     Building {
@@ -65,7 +61,7 @@ impl HashJoinState {
             panic!("add_tables can only be used during the Building Phase")
         }
     }
-    fn finalize(&mut self, join_mapper: &JoinOutputMapper) -> DaftResult<()> {
+    fn finalize(&mut self) -> DaftResult<()> {
         if let Self::Building {
             probe_table_builder,
             tables,
@@ -74,14 +70,10 @@ impl HashJoinState {
         {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
             let pt = ptb.build();
-            let mapped_tables = tables
-                .iter()
-                .map(|t| join_mapper.map_left(t))
-                .collect::<DaftResult<Vec<_>>>()?;
 
             *self = Self::Probing {
                 probe_table: Arc::new(pt),
-                tables: Arc::new(mapped_tables),
+                tables: Arc::new(tables.clone()),
             };
             Ok(())
         } else {
@@ -93,7 +85,6 @@ impl HashJoinState {
 pub(crate) struct HashJoinOperator {
     right_on: Vec<ExprRef>,
     _join_type: JoinType,
-    join_mapper: Arc<JoinOutputMapper>,
     join_state: HashJoinState,
 }
 
@@ -126,9 +117,6 @@ impl HashJoinOperator {
         )?
         .into();
 
-        let join_mapper =
-            infer_join_schema_mapper(left_schema, right_schema, &left_on, &right_on, join_type)?;
-
         let left_on = left_on
             .into_iter()
             .zip(key_schema.fields.values())
@@ -143,7 +131,6 @@ impl HashJoinOperator {
         Ok(Self {
             right_on,
             _join_type: join_type,
-            join_mapper: Arc::new(join_mapper),
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
     }
@@ -162,7 +149,6 @@ impl HashJoinOperator {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
-                join_mapper: self.join_mapper.clone(),
             })
         } else {
             panic!("can't call as_intermediate_op when not in probing state")
@@ -174,7 +160,6 @@ struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
     right_on: Vec<ExprRef>,
-    join_mapper: Arc<JoinOutputMapper>,
 }
 
 impl IntermediateOperator for HashJoinProber {
@@ -192,13 +177,8 @@ impl IntermediateOperator for HashJoinProber {
 
         let right_input_tables = input.get_tables()?;
 
-        let right_tables = right_input_tables
-            .iter()
-            .map(|t| self.join_mapper.map_right(t))
-            .collect::<DaftResult<Vec<_>>>()?;
-
         let mut right_growable =
-            GrowableTable::new(&right_tables.iter().collect::<Vec<_>>(), false, 20)?;
+            GrowableTable::new(&right_input_tables.iter().collect::<Vec<_>>(), false, 20)?;
 
         drop(_growables);
         {
@@ -236,18 +216,9 @@ impl BlockingSink for HashJoinOperator {
         self.join_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
-    fn finalize(&mut self) -> DaftResult<()> {
-        self.join_state.finalize(&self.join_mapper)?;
-        Ok(())
-    }
-    fn as_source(&mut self) -> &mut dyn Source {
-        self
-    }
-}
-
-impl Source for HashJoinOperator {
-    fn get_data(&self, _maintain_order: bool) -> crate::sources::source::SourceStream {
-        stream::empty().boxed()
+    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+        self.join_state.finalize()?;
+        Ok(None)
     }
 }
 
@@ -281,9 +252,13 @@ impl PipelineNode for HashJoinNode {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
 
-    async fn start(&mut self, destination: MultiSender) -> DaftResult<()> {
+    async fn start(
+        &mut self,
+        mut destination: MultiSender,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> DaftResult<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
-        self.left.start(sender).await?;
+        self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
 
         let probe_table_build = tokio::spawn(async move {
@@ -291,7 +266,7 @@ impl PipelineNode for HashJoinNode {
             let mut guard = hash_join.lock().await;
             let sink = guard.as_sink();
             while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val?))? {
+                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val))? {
                     break;
                 }
             }
@@ -303,21 +278,23 @@ impl PipelineNode for HashJoinNode {
 
         let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
-        self.right.start(right_sender).await?;
+        self.right.start(right_sender, runtime_handle).await?;
 
         probe_table_build.await.unwrap()?;
 
         let hash_join = self.hash_join.clone();
-        let destination = destination;
         let probing_op = {
             let guard = hash_join.lock().await;
             guard.as_intermediate_op()
         };
-
-        let mut actor = IntermediateOpActor::new(probing_op, streaming_receiver, destination);
-        // this should ideally be in the actor
-        spawn_compute_task(async move { actor.run_parallel().await });
-
+        let probing_node = IntermediateNode::new(probing_op, vec![]);
+        let worker_senders = probing_node
+            .spawn_workers(&mut destination, runtime_handle)
+            .await;
+        runtime_handle.spawn(IntermediateNode::send_to_workers(
+            streaming_receiver,
+            worker_senders,
+        ));
         Ok(())
     }
 }

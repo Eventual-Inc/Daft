@@ -2,9 +2,11 @@
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -13,7 +15,7 @@ serde_json = {workspace = true}
 typetag = "0.2.16"
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python", "common-resource-request/python"]
 
 [package]
 edition = {workspace = true}

@@ -22,7 +22,7 @@ use daft_core::{
     join::{JoinStrategy, JoinType},
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, functions::python::replace_udf_resource_request, ExprRef};
 use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -133,15 +133,28 @@ impl LogicalPlanBuilder {
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), to_select, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn with_columns(
         &self,
         columns: Vec<ExprRef>,
-        resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> DaftResult<Self> {
+        // TODO: This should be deprecated in Daft >= v0.3
+        //
+        // Here we use resource_request to parametrize any UDFs in the new expression columns
+        // In the future, the ability to pass ResourceRequests into with_column(s) will be deprecated. Users will parametrize their UDFs directly instead.
+        let columns = if let Some(rr) = resource_request {
+            columns
+                .into_iter()
+                .map(|expr| replace_udf_resource_request(expr, &rr))
+                .collect()
+        } else {
+            columns
+        };
+
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -170,7 +183,7 @@ impl LogicalPlanBuilder {
         );
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, resource_request)?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -191,7 +204,7 @@ impl LogicalPlanBuilder {
             .collect::<Vec<_>>();
 
         let logical_plan: LogicalPlan =
-            logical_ops::Project::try_new(self.plan.clone(), exprs, Default::default())?.into();
+            logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -551,7 +564,7 @@ impl PyLogicalPlanBuilder {
     pub fn with_columns(
         &self,
         columns: Vec<PyExpr>,
-        resource_request: ResourceRequest,
+        resource_request: Option<ResourceRequest>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
