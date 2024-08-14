@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use daft_core::JoinType;
 use daft_dsl::{
     col,
     optimization::{
@@ -244,55 +245,97 @@ impl OptimizerRule for PushDownFilter {
                 new_concat.into()
             }
             LogicalPlan::Join(child_join) => {
-                // Push filter into each side of the join.
-                // TODO(Clark): Merge filter predicate with on predicate, if present.
-                // TODO(Clark): Duplicate filters for joined columns so filters can be pushed down to both sides.
+                // TODO(Kevin): add more filter pushdowns for joins
+                // Example 1:
+                //      For `foo JOIN bar ON foo.a == (bar.b + 2) WHERE a > 0`, the filter `a > 0` is pushed down to the left side, but can also be pushed down to the right side as `(b + 2) > 0`
+                //
+                // Example 2:
+                //      A predicate `(a AND b) OR (c AND d)` is equivalent to `((a AND b) OR (c AND d)) AND (a OR c)`, and `a OR c` could potentially be pushed down.
 
-                // Get all input columns for predicate.
-                let predicate_cols: HashSet<_> = get_required_columns(&filter.predicate)
-                    .iter()
-                    .cloned()
-                    .collect();
-                // Only push the filter into the left side of the join if the left side of the join has all columns
-                // required by the predicate.
-                let left_cols: HashSet<_> =
-                    child_join.left.schema().names().iter().cloned().collect();
-                let can_push_left = left_cols
-                    .intersection(&predicate_cols)
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == predicate_cols.len();
-                // Only push the filter into the right side of the join if the right side of the join has all columns
-                // required by the predicate.
-                let right_cols: HashSet<_> =
-                    child_join.right.schema().names().iter().cloned().collect();
-                let can_push_right = right_cols
-                    .intersection(&predicate_cols)
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == predicate_cols.len();
-                if !can_push_left && !can_push_right {
+                // if a filter is pushed down on one side, would it preserve the output of the join+filter?
+                let (left_preserved, right_preserved) = match child_join.join_type {
+                    JoinType::Inner => (true, true),
+                    JoinType::Left => (true, false),
+                    JoinType::Right => (false, true),
+                    JoinType::Outer => (false, false),
+                    JoinType::Anti => (true, true),
+                    JoinType::Semi => (true, true),
+                };
+
+                let mut left_pushdowns = vec![];
+                let mut right_pushdowns = vec![];
+                let mut kept_predicates = vec![];
+
+                let left_cols = HashSet::<_>::from_iter(child_join.left.schema().names());
+                let right_cols = HashSet::<_>::from_iter(child_join.right.schema().names());
+
+                for predicate in split_conjuction(&filter.predicate).into_iter().cloned() {
+                    let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
+
+                    match (
+                        pred_cols.is_subset(&left_cols),
+                        pred_cols.is_subset(&right_cols),
+                    ) {
+                        (true, true) => {
+                            // predicate only depends on common join keys, so we can push it down to both sides
+                            left_pushdowns.push(predicate.clone());
+                            right_pushdowns.push(predicate);
+                        }
+                        (false, false) => {
+                            // predicate depends on unique columns on both left and right sides, so we can't push it down
+                            kept_predicates.push(predicate);
+                        }
+                        (true, false) => {
+                            if left_preserved {
+                                left_pushdowns.push(predicate);
+                            } else {
+                                kept_predicates.push(predicate);
+                            }
+                        }
+                        (false, true) => {
+                            if right_preserved {
+                                right_pushdowns.push(predicate);
+                            } else {
+                                kept_predicates.push(predicate);
+                            }
+                        }
+                    }
+                }
+
+                let left_pushdowns = conjuct(left_pushdowns);
+                let right_pushdowns = conjuct(right_pushdowns);
+
+                if left_pushdowns.is_some() || right_pushdowns.is_some() {
+                    let kept_predicates = conjuct(kept_predicates);
+
+                    let new_left = left_pushdowns.map_or_else(
+                        || child_join.left.clone(),
+                        |left_pushdowns| {
+                            Filter::try_new(child_join.left.clone(), left_pushdowns)
+                                .unwrap()
+                                .into()
+                        },
+                    );
+
+                    let new_right = right_pushdowns.map_or_else(
+                        || child_join.right.clone(),
+                        |right_pushdowns| {
+                            Filter::try_new(child_join.right.clone(), right_pushdowns)
+                                .unwrap()
+                                .into()
+                        },
+                    );
+
+                    let new_join = child_plan.with_new_children(&[new_left, new_right]).into();
+
+                    if let Some(kept_predicates) = kept_predicates {
+                        Filter::try_new(new_join, kept_predicates).unwrap().into()
+                    } else {
+                        new_join
+                    }
+                } else {
                     return Ok(Transformed::No(plan));
                 }
-                let new_left: Arc<LogicalPlan> = if can_push_left {
-                    LogicalPlan::from(Filter::try_new(
-                        child_join.left.clone(),
-                        filter.predicate.clone(),
-                    )?)
-                    .into()
-                } else {
-                    child_join.left.clone()
-                };
-                let new_right: Arc<LogicalPlan> = if can_push_right {
-                    LogicalPlan::from(Filter::try_new(
-                        child_join.right.clone(),
-                        filter.predicate.clone(),
-                    )?)
-                    .into()
-                } else {
-                    child_join.right.clone()
-                };
-                child_plan.with_new_children(&[new_left, new_right]).into()
             }
             _ => return Ok(Transformed::No(plan)),
         };
