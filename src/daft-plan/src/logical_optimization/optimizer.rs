@@ -11,6 +11,7 @@ use super::{
         PushDownProjection, Transformed,
     },
 };
+use common_treenode::DynTreeNode;
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -293,7 +294,7 @@ impl Optimizer {
         order: ApplyOrder,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Run optimization rules on children.
-        let children = plan.children();
+        let children = plan.arc_children();
         let result = children
             .into_iter()
             .map(|child_plan| {

@@ -78,8 +78,8 @@ macro_rules! impl_default_tree_display {
                         _ => self.multiline_display().join("\n"),
                     }
                 }
-                fn get_children(&self) -> Vec<std::sync::Arc<dyn common_display::tree::TreeDisplay>> {
-                    vec![self.input.clone()]
+                fn get_children(&self) -> Vec<&dyn common_display::tree::TreeDisplay> {
+                    vec![self.input.as_ref()]
                 }
             }
         )+

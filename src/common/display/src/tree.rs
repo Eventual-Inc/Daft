@@ -27,7 +27,7 @@ pub trait TreeDisplay {
     }
 
     /// Required method: Get the children of the self node.
-    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>>;
+    fn get_children(&self) -> Vec<&dyn TreeDisplay>;
 }
 
 impl TreeDisplay for Arc<dyn TreeDisplay> {
@@ -43,7 +43,7 @@ impl TreeDisplay for Arc<dyn TreeDisplay> {
         self.as_ref().id()
     }
 
-    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.as_ref().get_children()
     }
 }

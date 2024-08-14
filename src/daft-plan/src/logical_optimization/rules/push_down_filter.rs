@@ -20,6 +20,7 @@ use crate::{
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
+use common_treenode::DynTreeNode;
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
@@ -229,7 +230,7 @@ impl OptimizerRule for PushDownFilter {
             LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) => {
                 // Naive commuting with unary ops.
                 let new_filter = plan
-                    .with_new_children(&[child_plan.children()[0].clone()])
+                    .with_new_children(&[child_plan.arc_children()[0].clone()])
                     .into();
                 child_plan.with_new_children(&[new_filter]).into()
             }

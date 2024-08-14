@@ -74,7 +74,7 @@ impl<'a, W> MermaidDisplayVisitor<'a, W>
 where
     W: fmt::Write,
 {
-    fn add_node<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result {
+    fn add_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
         let name = node.get_name();
         let display = self.display_for_node(node)?;
         let node_id = self.node_count;
@@ -93,7 +93,7 @@ where
         Ok(())
     }
 
-    fn display_for_node<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
+    fn display_for_node(&self, node: &dyn TreeDisplay) -> Result<String, fmt::Error> {
         // Ideally, a node should be able to uniquely identify itself.
         // For now, we'll just use the display string.
         let line = node.display_as(self.t);
@@ -105,7 +105,7 @@ where
     }
 
     // Get the id of a node that has already been added.
-    fn get_node_id<D: TreeDisplay>(&self, node: &D) -> Result<String, fmt::Error> {
+    fn get_node_id(&self, node: &dyn TreeDisplay) -> Result<String, fmt::Error> {
         let id = node.id();
         // SAFETY: Since this is only called after the parent node have been added, we can safely unwrap.
         Ok(self.nodes.get(&id).cloned().unwrap())
@@ -115,10 +115,7 @@ where
         writeln!(self.output, r#"{child} --> {parent}"#)
     }
 
-    fn fmt_node<D>(&mut self, node: &D) -> fmt::Result
-    where
-        D: Sized + TreeDisplay,
-    {
+    fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
         self.add_node(node)?;
         let children = node.get_children();
         if children.is_empty() {
@@ -126,14 +123,14 @@ where
         }
 
         for child in children {
-            self.fmt_node(&child)?;
-            self.add_edge(self.get_node_id(node)?, self.get_node_id(&child)?)?;
+            self.fmt_node(child)?;
+            self.add_edge(self.get_node_id(node)?, self.get_node_id(child)?)?;
         }
 
         Ok(())
     }
 
-    pub fn fmt<D: TreeDisplay>(&mut self, node: &D) -> fmt::Result {
+    pub fn fmt(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
         match &self.subgraph_options {
             Some(SubgraphOptions { name, subgraph_id }) => {
                 writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;

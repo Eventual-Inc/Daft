@@ -80,7 +80,7 @@ impl TreeDisplay for SortMergeJoin {
         }
     }
 
-    fn get_children(&self) -> Vec<std::sync::Arc<dyn TreeDisplay>> {
-        vec![self.left.clone(), self.right.clone()]
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.left.as_ref(), self.right.as_ref()]
     }
 }

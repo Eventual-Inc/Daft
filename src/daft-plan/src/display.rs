@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display},
-    sync::Arc,
-};
+use std::fmt::{self, Display};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 
@@ -17,7 +14,7 @@ impl TreeDisplay for crate::LogicalPlan {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children().into_iter().map(|x| x as _).collect()
     }
 }
@@ -66,7 +63,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children().into_iter().map(|x| x as _).collect()
     }
 }

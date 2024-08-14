@@ -42,7 +42,7 @@ impl TreeDisplay for EmptyScan {
         "EmptyScan".to_string()
     }
 
-    fn get_children(&self) -> Vec<Arc<dyn TreeDisplay>> {
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         vec![]
     }
 }

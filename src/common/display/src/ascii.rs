@@ -3,8 +3,8 @@ use std::fmt;
 use crate::{tree::TreeDisplay, DisplayLevel};
 
 // Print the tree recursively, and illustrate the tree structure with a single line per node + indentation.
-fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
-    node: &T,
+fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
+    node: &dyn TreeDisplay,
     indent: usize,
     s: &'a mut W,
 ) -> fmt::Result {
@@ -20,7 +20,7 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
     // Recursively handle children.
     let children = node.get_children();
 
-    match &children[..] {
+    match children[..] {
         // No children - stop printing.
         [] => Ok(()),
         // One child.
@@ -39,8 +39,8 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a, T: TreeDisplay>(
 
 // Print the tree recursively, and illustrate the tree structure in the same style as `git log --graph`.
 // `depth` is the number of forks in this node's ancestors.
-fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
-    node: &T,
+fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
+    node: &dyn TreeDisplay,
     depth: usize,
     s: &'a mut W,
     level: crate::DisplayLevel,
@@ -83,7 +83,7 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a, T: TreeDisplay>(
 
     // Recursively handle children.
     let children = node.get_children();
-    match &children[..] {
+    match children[..] {
         // No children - stop printing.
         [] => Ok(()),
         // One child - print leg, then print the child tree.

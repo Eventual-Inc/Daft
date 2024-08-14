@@ -71,7 +71,7 @@ impl TreeDisplay for BroadcastJoin {
         }
     }
 
-    fn get_children(&self) -> Vec<std::sync::Arc<dyn TreeDisplay>> {
-        vec![self.broadcaster.clone(), self.receiver.clone()]
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.broadcaster.as_ref(), self.receiver.as_ref()]
     }
 }

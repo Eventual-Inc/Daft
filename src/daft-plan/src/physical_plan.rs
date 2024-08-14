@@ -410,48 +410,48 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<Arc<PhysicalPlan>> {
+    pub fn children(&self) -> Vec<&PhysicalPlan> {
         match self {
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
-            Self::Project(Project { input, .. }) => vec![input.clone()],
-            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input.clone()],
-            Self::Filter(Filter { input, .. }) => vec![input.clone()],
-            Self::Limit(Limit { input, .. }) => vec![input.clone()],
-            Self::Explode(Explode { input, .. }) => vec![input.clone()],
-            Self::Unpivot(Unpivot { input, .. }) => vec![input.clone()],
-            Self::Sample(Sample { input, .. }) => vec![input.clone()],
-            Self::Sort(Sort { input, .. }) => vec![input.clone()],
-            Self::Split(Split { input, .. }) => vec![input.clone()],
-            Self::Coalesce(Coalesce { input, .. }) => vec![input.clone()],
-            Self::Flatten(Flatten { input }) => vec![input.clone()],
-            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input.clone()],
-            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input.clone()],
-            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input.clone()],
-            Self::ReduceMerge(ReduceMerge { input }) => vec![input.clone()],
-            Self::Aggregate(Aggregate { input, .. }) => vec![input.clone()],
-            Self::Pivot(Pivot { input, .. }) => vec![input.clone()],
-            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input.clone()],
-            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input.clone()],
-            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input.clone()],
+            Self::Project(Project { input, .. }) => vec![input],
+            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::Filter(Filter { input, .. }) => vec![input],
+            Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Explode(Explode { input, .. }) => vec![input],
+            Self::Unpivot(Unpivot { input, .. }) => vec![input],
+            Self::Sample(Sample { input, .. }) => vec![input],
+            Self::Sort(Sort { input, .. }) => vec![input],
+            Self::Split(Split { input, .. }) => vec![input],
+            Self::Coalesce(Coalesce { input, .. }) => vec![input],
+            Self::Flatten(Flatten { input }) => vec![input],
+            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input],
+            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input],
+            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input],
+            Self::ReduceMerge(ReduceMerge { input }) => vec![input],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Pivot(Pivot { input, .. }) => vec![input],
+            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
+            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
+            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
             #[cfg(feature = "python")]
-            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input.clone()],
+            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
-            Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input.clone()],
+            Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
-            Self::LanceWrite(LanceWrite { input, .. }) => vec![input.clone()],
-            Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::LanceWrite(LanceWrite { input, .. }) => vec![input],
+            Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
                 receiver,
                 ..
-            }) => vec![broadcaster.clone(), receiver.clone()],
+            }) => vec![broadcaster, receiver],
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
-                vec![left.clone(), right.clone()]
+                vec![left, right]
             }
-            Self::Concat(Concat { input, other }) => vec![input.clone(), other.clone()],
+            Self::Concat(Concat { input, other }) => vec![input, other],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                vec![input.clone()]
+                vec![input]
             }
         }
     }
