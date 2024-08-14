@@ -150,16 +150,16 @@ class DaftContext:
         if runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
-            assert isinstance(self._runner_config, _RayRunnerConfig)
+            assert isinstance(runner_config, _RayRunnerConfig)
             self._runner = RayRunner(
-                address=self._runner_config.address,
-                max_task_backlog=self._runner_config.max_task_backlog,
+                address=runner_config.address,
+                max_task_backlog=runner_config.max_task_backlog,
             )
         elif runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
 
-            assert isinstance(self._runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(use_thread_pool=self._runner_config.use_thread_pool)
+            assert isinstance(runner_config, _PyRunnerConfig)
+            self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
 
         else:
             raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
