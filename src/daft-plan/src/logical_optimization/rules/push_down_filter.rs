@@ -641,59 +641,11 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that Filter commutes with Join.
-    #[rstest]
-    fn filter_commutes_with_join(
-        #[values(false, true)] push_into_left_scan: bool,
-    ) -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ]);
-        let left_scan_plan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
-            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
-        );
-        let right_scan_plan =
-            dummy_scan_node_with_pushdowns(scan_op.clone(), Pushdowns::default().with_limit(None));
-        let join_on = vec![col("b")];
-        let pred = col("a").lt(lit(2));
-        let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                JoinType::Inner,
-                None,
-            )?
-            .filter(pred.clone())?
-            .build();
-        let expected_left_filter_scan = if push_into_left_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
-            )
-        } else {
-            left_scan_plan.filter(pred.clone())?
-        };
-        let expected_right_filter_scan = right_scan_plan;
-        let expected = expected_left_filter_scan
-            .join(
-                &expected_right_filter_scan,
-                join_on.clone(),
-                join_on.clone(),
-                JoinType::Inner,
-                None,
-            )?
-            .build();
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
     /// Tests that Filter can be pushed into the left side of a Join.
     #[rstest]
     fn filter_commutes_with_join_left_side(
         #[values(false, true)] push_into_left_scan: bool,
+        #[values(JoinType::Inner, JoinType::Left, JoinType::Anti, JoinType::Semi)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -715,7 +667,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -733,7 +685,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
@@ -745,6 +697,7 @@ mod tests {
     #[rstest]
     fn filter_commutes_with_join_right_side(
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(JoinType::Inner, JoinType::Right)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -766,7 +719,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -784,7 +737,7 @@ mod tests {
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
@@ -797,6 +750,15 @@ mod tests {
     fn filter_commutes_with_join_on_join_key(
         #[values(false, true)] push_into_left_scan: bool,
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(
+            JoinType::Inner,
+            JoinType::Left,
+            JoinType::Right,
+            JoinType::Outer,
+            JoinType::Anti,
+            JoinType::Semi
+        )]
+        how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Utf8),
@@ -822,7 +784,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -848,10 +810,76 @@ mod tests {
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter can be pushed into the left side of a Join.
+    #[rstest]
+    fn filter_does_not_commute_with_join_left_side(
+        #[values(JoinType::Right, JoinType::Outer)] how: JoinType,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let join_on = vec![col("b")];
+        let pred = col("a").lt(lit(2));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                how,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        // should not push down filter
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter can be pushed into the right side of a Join.
+    #[rstest]
+    fn filter_does_not_commute_with_join_right_side(
+        #[values(JoinType::Left, JoinType::Outer)] how: JoinType,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let join_on = vec![col("b")];
+        let pred = col("c").lt(lit(2.0));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                how,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        // should not push down filter
+        let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
