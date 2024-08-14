@@ -260,6 +260,35 @@ class Expression:
 
     @staticmethod
     def to_struct(*inputs: Expression) -> Expression:
+        """Converts multiple input expressions into a struct.
+
+        Example:
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+            >>> df.select(daft.to_struct(col("a")*2, col("b"))).show()
+            ╭───────────────────────────╮
+            │ struct                    │
+            │ ---                       │
+            │ Struct[a: Int64, b: Utf8] │
+            ╞═══════════════════════════╡
+            │ {a: 2,                    │
+            │ b: a,                     │
+            │ }                         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {a: 4,                    │
+            │ b: b,                     │
+            │ }                         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {a: 6,                    │
+            │ b: c,                     │
+            │ }                         │
+            ╰───────────────────────────╯
+
+        Args:
+            inputs: Expressions to be converted into struct fields.
+
+        Returns:
+            An expression for a struct column with the input columns as its fields.
+        """
         pyinputs = [x._expr for x in inputs]
         return Expression._from_pyexpr(_to_struct(pyinputs))
 
