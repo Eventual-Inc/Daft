@@ -54,6 +54,7 @@ Numeric
     Expression.sign
     Expression.round
     Expression.sqrt
+    Expression.cbrt
     Expression.sin
     Expression.cos
     Expression.tan
