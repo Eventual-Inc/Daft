@@ -152,7 +152,7 @@ impl PipelineNode for IntermediateNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         assert_eq!(
             self.children.len(),
             1,
@@ -166,7 +166,10 @@ impl PipelineNode for IntermediateNode {
         child.start(sender, runtime_handle).await?;
 
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
-        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders));
+        runtime_handle.spawn(
+            Self::send_to_workers(receiver, worker_senders),
+            self.name().to_string(),
+        );
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {

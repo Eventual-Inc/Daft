@@ -89,7 +89,7 @@ impl PipelineNode for StreamingSinkNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         let child = self

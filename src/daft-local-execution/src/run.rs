@@ -121,7 +121,7 @@ pub fn run_local(
         .expect("Failed to create tokio runtime");
 
     let res = runtime.block_on(async {
-        let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
+        let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
         let (sender, mut receiver) = create_channel(1, true);
 
         let mut runtime_handle = ExecutionRuntimeHandle::default();
@@ -135,7 +135,7 @@ pub fn run_local(
             match result {
                 Ok(Err(e)) => {
                     runtime_handle.shutdown().await;
-                    return DaftResult::Err(e);
+                    return DaftResult::Err(e.into());
                 }
                 Err(e) => {
                     runtime_handle.shutdown().await;

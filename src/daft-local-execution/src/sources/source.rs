@@ -7,6 +7,7 @@ use daft_micropartition::MicroPartition;
 use futures::stream::BoxStream;
 
 use async_trait::async_trait;
+use snafu::ResultExt;
 
 use crate::{
     channel::MultiSender, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
@@ -24,6 +25,7 @@ pub(crate) trait Source: Send + Sync {
         runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
     ) -> DaftResult<()>;
+    fn name(&self) -> &'static str;
 }
 
 struct SourceNode {

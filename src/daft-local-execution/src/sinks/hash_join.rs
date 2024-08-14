@@ -18,6 +18,7 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+use snafu::{futures::TryFutureExt, ResultExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
@@ -296,7 +297,7 @@ impl PipelineNode for HashJoinNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
         self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
@@ -322,7 +323,7 @@ impl PipelineNode for HashJoinNode {
         // now we can start building the right side
         self.right.start(right_sender, runtime_handle).await?;
 
-        probe_table_build.await.unwrap()?;
+        probe_table_build.await.context(JoinSnafu {})??;
 
         let hash_join = self.hash_join.clone();
         let probing_op = {
@@ -337,10 +338,10 @@ impl PipelineNode for HashJoinNode {
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;
-        runtime_handle.spawn(IntermediateNode::send_to_workers(
-            streaming_receiver,
-            worker_senders,
-        ));
+        runtime_handle.spawn(
+            IntermediateNode::send_to_workers(streaming_receiver, worker_senders),
+            self.name().to_string(),
+        );
         Ok(())
     }
 

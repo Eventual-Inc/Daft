@@ -14,7 +14,7 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
 use async_trait::async_trait;
@@ -27,6 +27,7 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
+use snafu::ResultExt;
 
 use crate::channel::MultiSender;
 
@@ -58,7 +59,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> DaftResult<Box<dyn PipelineNode>> {
+) -> crate::Result<Box<dyn PipelineNode>> {
     use crate::sources::scan_task::ScanTaskSource;
     use daft_physical_plan::PhysicalScan;
     let out: Box<dyn PipelineNode> = match physical_plan {
@@ -199,7 +200,10 @@ pub fn physical_plan_to_pipeline(
                 *join_type,
                 left_schema,
                 right_schema,
-            )?;
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             HashJoinNode::new(sink, left_node, right_node).boxed()
         }
         _ => {
