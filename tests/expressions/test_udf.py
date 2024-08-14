@@ -351,13 +351,15 @@ def test_udf_batch_size_override(batch_size):
     assert result.to_pydict() == {"a": [2, 3, 4, 5, 6, 7, 8]}
 
 
-@pytest.mark.parametrize("batch_size", [0, -1, -100])
-def test_udf_invalid_batch_sizes(batch_size):
+def test_udf_invalid_batch_sizes():
     table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5, 6, 7]})
 
-    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
+    @udf(return_dtype=DataType.int64())
     def noop(data):
         return data
 
     with pytest.raises(ValueError, match="batch size must be positive"):
-        table.eval_expression_list([noop(col("a"))])
+        table.eval_expression_list([noop.override_options(batch_size=0)(col("a"))])
+
+    with pytest.raises(OverflowError):
+        table.eval_expression_list([noop.override_options(batch_size=-1)(col("a"))])

@@ -95,48 +95,39 @@ def run_udf(
     ), "Computed series must map 1:1 to the expressions that were evaluated"
     function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
 
-    args = []
-    expr_name_to_args_index = {}
-    for name in arg_keys:
-        # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
-        if name == "self":
-            continue
+    def get_args_for_slice(start: int, end: int):
+        args = []
+        must_slice = start > 0 or end < len(evaluated_expressions[0])
+        for name in arg_keys:
+            # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
+            if name == "self":
+                continue
 
-        assert name in pyvalues or name in function_parameter_name_to_index
-        if name in pyvalues:
-            args.append(pyvalues[name])
-        else:
-            # we fill in expressions later
-            expr_name_to_args_index[name] = len(args)
-            args.append(None)
-
-    kwargs = {}
-    kwarg_exprs = []  # list of names of exprs in kwargs
-    for name in kwarg_keys:
-        assert name in pyvalues or name in function_parameter_name_to_index
-        if name in pyvalues:
-            kwargs[name] = pyvalues[name]
-        else:
-            kwarg_exprs.append(name)
-
-    # Fill in args and kwargs with sliced versions of the series
-    def set_args_to_slice(start: int, end: int):
-        for name, ind in expr_name_to_args_index.items():
-            expr = evaluated_expressions[function_parameter_name_to_index[name]]
-            if start == 0 and end >= len(expr):
-                # avoid copying if we are taking entire thing
-                args[ind] = expr
+            assert name in pyvalues or name in function_parameter_name_to_index
+            if name in pyvalues:
+                args.append(pyvalues[name])
             else:
-                args[ind] = expr.slice(start, end)
-        for name in kwarg_exprs:
-            expr = evaluated_expressions[function_parameter_name_to_index[name]]
-            if start == 0 and end >= len(expr):
-                kwargs[name] = expr
+                # we fill in expressions later
+                series = evaluated_expressions[function_parameter_name_to_index[name]]
+                if must_slice:
+                    series = series.slice(start, end)
+                args.append(series)
+
+        kwargs = {}
+        for name in kwarg_keys:
+            assert name in pyvalues or name in function_parameter_name_to_index
+            if name in pyvalues:
+                kwargs[name] = pyvalues[name]
             else:
-                kwargs[name] = expr.slice(start, end)
+                series = evaluated_expressions[function_parameter_name_to_index[name]]
+                if must_slice:
+                    series = series.slice(start, end)
+                kwargs[name] = series
+
+        return args, kwargs
 
     if batch_size is None:
-        set_args_to_slice(0, len(evaluated_expressions[0]))
+        args, kwargs = get_args_for_slice(0, len(evaluated_expressions[0]))
         try:
             results = [func(*args, **kwargs)]
         except Exception as user_function_exception:
@@ -154,7 +145,7 @@ def run_udf(
         results = []
         for i in range(0, len(evaluated_expressions[0]), batch_size):
             cur_batch_size = min(batch_size, len(evaluated_expressions[0]) - i)
-            set_args_to_slice(i, i + cur_batch_size)
+            args, kwargs = get_args_for_slice(i, i + cur_batch_size)
             try:
                 results.append(func(*args, **kwargs))
             except Exception as user_function_exception:
@@ -241,7 +232,6 @@ class UDF:
                 num_cpus is _UnsetMarker,
                 num_gpus is _UnsetMarker,
                 memory_bytes is _UnsetMarker,
-                batch_size is _UnsetMarker,
             )
         ):
             new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
@@ -252,8 +242,9 @@ class UDF:
             if memory_bytes is not _UnsetMarker:
                 new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
             result = dataclasses.replace(result, resource_request=new_resource_request)
-            if batch_size is not _UnsetMarker:
-                result.batch_size = batch_size
+
+        if batch_size is not _UnsetMarker:
+            result.batch_size = batch_size
 
         return result
 
