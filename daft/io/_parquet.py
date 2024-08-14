@@ -21,7 +21,8 @@ from daft.io.common import get_tabular_files_scan
 def read_parquet(
     path: Union[str, List[str]],
     row_groups: Optional[List[List[int]]] = None,
-    schema_hints: Optional[Dict[str, DataType]] = None,
+    infer_schema: bool = True,
+    schema: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
@@ -39,8 +40,8 @@ def read_parquet(
     Args:
         path (str): Path to Parquet file (allows for wildcards)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
-        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option
-            will override the specified columns on the inferred schema with the specified DataTypes
+        infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
+        schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
@@ -81,8 +82,8 @@ def read_parquet(
 
     builder = get_tabular_files_scan(
         path=path,
-        infer_schema=True,
-        schema=schema_hints,
+        infer_schema=infer_schema,
+        schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
         is_ray_runner=is_ray_runner,

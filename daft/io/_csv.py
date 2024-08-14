@@ -1,6 +1,5 @@
 # isort: dont-add-import: from __future__ import annotations
 
-import warnings
 from typing import Dict, List, Optional, Union
 
 from daft import context
@@ -21,7 +20,6 @@ from daft.io.common import get_tabular_files_scan
 @PublicAPI
 def read_csv(
     path: Union[str, List[str]],
-    schema_hints: Optional[Dict[str, DataType]] = None,
     infer_schema: bool = True,
     schema: Optional[Dict[str, DataType]] = None,
     has_headers: bool = True,
@@ -46,11 +44,6 @@ def read_csv(
 
     Args:
         path (str): Path to CSV (allows for wildcards)
-        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option
-            will override the specified columns on the inferred schema with the specified DataTypes
-
-            .. deprecated:: 0.2.27
-                Schema hints are deprecated and will be removed in the next release. Please use `schema` and `infer_schema` instead.
         infer_schema (bool): Whether to infer the schema of the CSV, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the CSV if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
@@ -68,11 +61,6 @@ def read_csv(
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
-
-    if schema_hints is not None:
-        warnings.warn("schema_hints is deprecated and will be removed in a future release. Please use schema instead.")
-        if schema is None:
-            schema = schema_hints
 
     if not infer_schema and schema is None:
         raise ValueError(
