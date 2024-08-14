@@ -237,9 +237,12 @@ class Expression:
         expressions: builtins.list[Expression],
         return_dtype: DataType,
         resource_request: ResourceRequest | None,
+        batch_size: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateless_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request)
+            _stateless_udf(
+                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, batch_size
+            )
         )
 
     @staticmethod
@@ -250,10 +253,17 @@ class Expression:
         return_dtype: DataType,
         resource_request: ResourceRequest | None,
         init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
+        batch_size: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _stateful_udf(
-                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, init_args
+                name,
+                partial,
+                [e._expr for e in expressions],
+                return_dtype._dtype,
+                resource_request,
+                init_args,
+                batch_size,
             )
         )
 
@@ -823,7 +833,13 @@ class Expression:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
 
-        return StatelessUDF(name=name, func=batch_func, return_dtype=return_dtype, resource_request=None)(self)
+        return StatelessUDF(
+            name=name,
+            func=batch_func,
+            return_dtype=return_dtype,
+            resource_request=None,
+            batch_size=None,
+        )(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)

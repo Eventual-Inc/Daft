@@ -1188,6 +1188,7 @@ def stateless_udf(
     expressions: list[PyExpr],
     return_dtype: PyDataType,
     resource_request: ResourceRequest | None,
+    batch_size: int | None,
 ) -> PyExpr: ...
 def stateful_udf(
     name: str,
@@ -1196,6 +1197,7 @@ def stateful_udf(
     return_dtype: PyDataType,
     resource_request: ResourceRequest | None,
     init_args: tuple[tuple[Any, ...], dict[str, Any]] | None,
+    batch_size: int | None,
 ) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...

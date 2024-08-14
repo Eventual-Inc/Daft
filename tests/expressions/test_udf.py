@@ -29,10 +29,11 @@ def test_udf():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_class_udf():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_class_udf(batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
         def __init__(self):
             self.n = 2
@@ -49,10 +50,11 @@ def test_class_udf():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_class_udf_init_args():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_class_udf_init_args(batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
         def __init__(self, initial_n: int = 2):
             self.n = initial_n
@@ -75,10 +77,11 @@ def test_class_udf_init_args():
     assert result.to_pydict() == {"a": ["foofoofoo", "barbarbar", "bazbazbaz"]}
 
 
-def test_class_udf_init_args_no_default():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_class_udf_init_args_no_default(batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
         def __init__(self, initial_n):
             self.n = initial_n
@@ -126,10 +129,11 @@ def test_udf_kwargs():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_udf_tuples():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_tuples(batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def repeat_n(data, tuple_data):
         n = tuple_data[0]
         return Series.from_pylist([d.as_py() * n for d in data.to_arrow()])
@@ -144,10 +148,11 @@ def test_udf_tuples():
 
 
 @pytest.mark.parametrize("container", [Series, list, np.ndarray])
-def test_udf_return_containers(container):
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_return_containers(container, batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def identity(data):
         if container == Series:
             return data
@@ -177,8 +182,9 @@ def test_udf_error():
     assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
 
 
-def test_no_args_udf_call():
-    @udf(return_dtype=DataType.int64())
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_no_args_udf_call(batch_size):
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def udf_no_args():
         pass
 
@@ -227,8 +233,9 @@ def test_udf_equality():
     assert not expr_structurally_equal(udf1("x"), udf1("y"))
 
 
-def test_udf_return_tensor():
-    @udf(return_dtype=DataType.tensor(DataType.float64()))
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_return_tensor(batch_size):
+    @udf(return_dtype=DataType.tensor(DataType.float64()), batch_size=batch_size)
     def np_udf(x):
         return [np.ones((3, 3)) * i for i in x.to_pylist()]
 
@@ -251,10 +258,11 @@ def test_udf_repr():
     assert single_arg_udf(col("x"), "y", z=20).__repr__() == "@udf[single_arg_udf](col('x'), 'y', z=20)"
 
 
-def test_udf_arbitrary_number_of_args():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_arbitrary_number_of_args(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    @udf(return_dtype=DataType.int64())
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def add_cols_elementwise(*args):
         return Series.from_pylist([sum(x) for x in zip(*[arg.to_pylist() for arg in args])])
 
@@ -267,10 +275,11 @@ def test_udf_arbitrary_number_of_args():
     assert result.to_pydict() == {"a": [3, 6, 9]}
 
 
-def test_udf_arbitrary_number_of_kwargs():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_arbitrary_number_of_kwargs(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    @udf(return_dtype=DataType.string())
+    @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def repeat_kwargs(**kwargs):
         data = {k: v.to_pylist() for k, v in kwargs.items()}
         length = len(data[list(data.keys())[0]])
@@ -285,10 +294,11 @@ def test_udf_arbitrary_number_of_kwargs():
     assert result.to_pydict() == {"a": ["abc", "aabbcc", "aaabbbccc"]}
 
 
-def test_udf_arbitrary_number_of_args_with_kwargs():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_arbitrary_number_of_args_with_kwargs(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    @udf(return_dtype=DataType.int64())
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def add_cols_elementwise(*args, multiplier: float):
         return Series.from_pylist([multiplier * sum(x) for x in zip(*[arg.to_pylist() for arg in args])])
 
@@ -301,12 +311,55 @@ def test_udf_arbitrary_number_of_args_with_kwargs():
     assert result.to_pydict() == {"a": [6, 12, 18]}
 
 
-def test_udf_return_pyarrow():
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_udf_return_pyarrow(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3]})
 
-    @udf(return_dtype=DataType.int64())
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def add_1(data):
         return pa.compute.add(data.to_arrow(), 1)
 
     result = table.eval_expression_list([add_1(col("a"))])
     assert result.to_pydict() == {"a": [2, 3, 4]}
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 7, 8, 1000])
+def test_udf_batch_size(batch_size):
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5, 6, 7]})
+
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
+    def add_1(data):
+        lt = data.to_pylist()
+        assert len(lt) <= batch_size
+        return [x + 1 for x in lt]
+
+    result = table.eval_expression_list([add_1(col("a"))])
+    assert result.to_pydict() == {"a": [2, 3, 4, 5, 6, 7, 8]}
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 7, 8, 1000])
+def test_udf_batch_size_override(batch_size):
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5, 6, 7]})
+
+    @udf(return_dtype=DataType.int64())
+    def add_1(data):
+        lt = data.to_pylist()
+        assert len(lt) <= batch_size
+        return [x + 1 for x in lt]
+
+    result = table.eval_expression_list([add_1.override_options(batch_size=batch_size)(col("a"))])
+    assert result.to_pydict() == {"a": [2, 3, 4, 5, 6, 7, 8]}
+
+
+def test_udf_invalid_batch_sizes():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5, 6, 7]})
+
+    @udf(return_dtype=DataType.int64())
+    def noop(data):
+        return data
+
+    with pytest.raises(ValueError, match="batch size must be positive"):
+        table.eval_expression_list([noop.override_options(batch_size=0)(col("a"))])
+
+    with pytest.raises(OverflowError):
+        table.eval_expression_list([noop.override_options(batch_size=-1)(col("a"))])
