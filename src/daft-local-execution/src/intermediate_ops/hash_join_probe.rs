@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
+use crate::{pipeline::PipelineOutput, DEFAULT_MORSEL_SIZE};
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeTable, Table};
 use tracing::info_span;
-
-use crate::{pipeline::PipelineOutput, DEFAULT_MORSEL_SIZE};
 
 use super::{
     intermediate_op::{IntermediateOperator, IntermediateOperatorOutput},
@@ -91,12 +90,13 @@ impl OperatorState for HashJoinProbeState {
 }
 
 pub struct HashJoinProber {
+    left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
 }
 
 impl HashJoinProber {
-    pub fn new(right_on: Vec<ExprRef>) -> Self {
-        Self { right_on }
+    pub fn new(left_on: Vec<ExprRef>, right_on: Vec<ExprRef>) -> Self {
+        Self { left_on, right_on }
     }
 
     fn probe(
@@ -135,14 +135,25 @@ impl HashJoinProber {
         let left_table = left_growable.build()?;
         let right_table = right_growable.build()?;
 
-        let non_join_columns = right_table
+        let common_join_keys = self
+            .left_on
+            .iter()
+            .zip(self.right_on.iter())
+            .filter_map(|(l, r)| {
+                if l.name() == r.name() {
+                    Some(l.name())
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let right_table_pruned_columns = right_table
             .schema
             .fields
-            .iter()
-            .filter(|c| !self.right_on.iter().any(|e| e.name() == c.0))
-            .map(|c| c.0)
+            .keys()
+            .filter(|x| !common_join_keys.contains(x.as_str()))
             .collect::<Vec<_>>();
-        let right_table = right_table.get_columns(&non_join_columns)?;
+        let right_table = right_table.get_columns(&right_table_pruned_columns)?;
 
         let final_table = left_table.union(&right_table)?;
         Ok(Arc::new(MicroPartition::new_loaded(

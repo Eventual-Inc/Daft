@@ -296,7 +296,7 @@ pub fn physical_plan_to_pipeline(
                 HashJoinBuildSink::new(casted_left_on.clone(), *join_type, &key_schema)?;
             let build_sink_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
 
-            let probe_op = HashJoinProber::new(casted_right_on);
+            let probe_op = HashJoinProber::new(casted_left_on, casted_right_on);
             IntermediateNode::new(Arc::new(probe_op), vec![build_sink_node, right_node]).boxed()
         }
         _ => {
