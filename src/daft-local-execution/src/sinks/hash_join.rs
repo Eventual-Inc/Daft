@@ -340,7 +340,7 @@ impl PipelineNode for HashJoinNode {
             .await;
         runtime_handle.spawn(
             IntermediateNode::send_to_workers(streaming_receiver, worker_senders),
-            self.name().to_string(),
+            self.name(),
         );
         Ok(())
     }

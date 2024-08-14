@@ -166,10 +166,7 @@ impl PipelineNode for IntermediateNode {
         child.start(sender, runtime_handle).await?;
 
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
-        runtime_handle.spawn(
-            Self::send_to_workers(receiver, worker_senders),
-            self.name().to_string(),
-        );
+        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders), self.name());
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {

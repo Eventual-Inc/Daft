@@ -34,8 +34,9 @@ impl ExecutionRuntimeHandle {
     pub fn spawn(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
-        node_name: String,
+        node_name: &str,
     ) {
+        let node_name = node_name.to_string();
         self.worker_set
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
