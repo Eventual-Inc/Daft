@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::datatypes::DataType;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -129,64 +129,6 @@ pub fn stateful_udf(
         })),
         inputs: expressions.into(),
     })
-}
-
-/// Replaces resource_requests on UDF expressions in the provided expression tree
-pub fn replace_udf_resource_request(
-    expr: ExprRef,
-    override_resource_request: &ResourceRequest,
-) -> ExprRef {
-    expr.transform(|e| match e.as_ref() {
-        Expr::Function {
-            func:
-                FunctionExpr::Python(PythonUDF::Stateful(
-                    original @ StatefulPythonUDF {
-                        resource_request, ..
-                    },
-                )),
-            inputs,
-        } => {
-            if let Some(existing_rr) = resource_request
-                && existing_rr == override_resource_request
-            {
-                return Ok(Transformed::no(e));
-            }
-            let new_expr = Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                    resource_request: Some(override_resource_request.clone()),
-                    ..original.clone()
-                })),
-                inputs: inputs.clone(),
-            };
-            Ok(Transformed::yes(new_expr.arced()))
-        }
-        Expr::Function {
-            func:
-                FunctionExpr::Python(PythonUDF::Stateless(
-                    original @ StatelessPythonUDF {
-                        resource_request, ..
-                    },
-                )),
-            inputs,
-        } => {
-            if let Some(existing_rr) = resource_request
-                && existing_rr == override_resource_request
-            {
-                return Ok(Transformed::no(e));
-            }
-            let new_expr = Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
-                    resource_request: Some(override_resource_request.clone()),
-                    ..original.clone()
-                })),
-                inputs: inputs.clone(),
-            };
-            Ok(Transformed::yes(new_expr.arced()))
-        }
-        _ => Ok(Transformed::no(e)),
-    })
-    .unwrap()
-    .data
 }
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.

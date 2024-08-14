@@ -31,7 +31,7 @@ from urllib.parse import urlparse
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest, resolve_expr
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, resolve_expr
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -1218,7 +1218,6 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1245,26 +1244,16 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
-                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new column.
         """
-        if resource_request is not None:
-            warnings.warn(
-                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "Check the Daft documentation for more details."
-            )
-
-        return self.with_columns({column_name: expr}, resource_request)
+        return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: Optional[ResourceRequest] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1290,22 +1279,13 @@ class DataFrame:
 
         Args:
             columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
-                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if resource_request is not None:
-            warnings.warn(
-                "Specifying resource_request through `with_columns` will be deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "Check the Daft documentation for more details."
-            )
-
         new_columns = [col.alias(name) for name, col in columns.items()]
 
-        builder = self._builder.with_columns(new_columns, resource_request)
+        builder = self._builder.with_columns(new_columns)
         return DataFrame(builder)
 
     @DataframePublicAPI

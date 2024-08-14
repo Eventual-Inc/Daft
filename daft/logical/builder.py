@@ -10,7 +10,6 @@ from daft.daft import (
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
-    ResourceRequest,
     ScanOperatorHandle,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
@@ -123,11 +122,9 @@ class LogicalPlanBuilder:
         builder = self._builder.select(to_select_pyexprs)
         return LogicalPlanBuilder(builder)
 
-    def with_columns(
-        self, columns: list[Expression], custom_resource_request: ResourceRequest | None
-    ) -> LogicalPlanBuilder:
+    def with_columns(self, columns: list[Expression]) -> LogicalPlanBuilder:
         column_pyexprs = [expr._expr for expr in columns]
-        builder = self._builder.with_columns(column_pyexprs, custom_resource_request)
+        builder = self._builder.with_columns(column_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def exclude(self, to_exclude: list[str]) -> LogicalPlanBuilder:
