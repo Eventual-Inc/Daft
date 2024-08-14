@@ -32,13 +32,15 @@ impl ActorPoolProject {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
 
         if !projection.iter().any(|expr| {
-            matches!(
-                expr.as_ref(),
-                Expr::Function {
-                    func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                    ..
-                }
-            )
+            expr.exists(|expr| {
+                matches!(
+                    expr.as_ref(),
+                    Expr::Function {
+                        func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+                        ..
+                    }
+                )
+            })
         }) {
             return Err(DaftError::InternalError("Cannot create ActorPoolProject from expressions that don't contain a stateful Python UDF".to_string()));
         }
