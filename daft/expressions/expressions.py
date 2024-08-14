@@ -32,6 +32,7 @@ from daft.daft import stateful_udf as _stateful_udf
 from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
+from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import url_download as _url_download
@@ -256,6 +257,11 @@ class Expression:
                 name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, init_args
             )
         )
+
+    @staticmethod
+    def to_struct(*inputs: Expression) -> Expression:
+        pyinputs = [x._expr for x in inputs]
+        return Expression._from_pyexpr(_to_struct(pyinputs))
 
     def __bool__(self) -> bool:
         raise ValueError(
