@@ -155,8 +155,18 @@ pub fn stateless_udf(
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
+    batch_size: Option<i64>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateless_udf;
+
+    if let Some(batch_size) = batch_size {
+        if batch_size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "Error creating UDF: batch size must be positive (got {batch_size})"
+            )));
+        }
+    }
+    let batch_size = batch_size.map(|b| b as usize);
 
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
@@ -169,6 +179,7 @@ pub fn stateless_udf(
             &expressions_map,
             return_dtype.dtype,
             resource_request,
+            batch_size,
         )?
         .into(),
     })
@@ -179,6 +190,7 @@ pub fn stateless_udf(
 // * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
 // * `return_dtype` - returned column's DataType
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn stateful_udf(
     py: Python,
     name: &str,
@@ -187,8 +199,18 @@ pub fn stateful_udf(
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
     init_args: Option<&PyAny>,
+    batch_size: Option<i64>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateful_udf;
+
+    if let Some(batch_size) = batch_size {
+        if batch_size <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "Error creating UDF: batch size must be positive (got {batch_size})"
+            )));
+        }
+    }
+    let batch_size = batch_size.map(|b| b as usize);
 
     // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
     // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
@@ -203,6 +225,7 @@ pub fn stateful_udf(
             return_dtype.dtype,
             resource_request,
             init_args,
+            batch_size,
         )?
         .into(),
     })

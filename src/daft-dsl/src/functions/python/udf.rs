@@ -57,6 +57,7 @@ fn run_udf(
     func: pyo3::Py<PyAny>,
     bound_args: pyo3::Py<PyAny>,
     return_dtype: &DataType,
+    batch_size: Option<usize>,
 ) -> DaftResult<Series> {
     use daft_core::python::{PyDataType, PySeries};
 
@@ -83,6 +84,7 @@ fn run_udf(
         bound_args,                             // Arguments bound to the function
         pyseries,                               // evaluated_expressions
         PyDataType::from(return_dtype.clone()), // Returned datatype
+        batch_size,
     ));
 
     match result {
@@ -118,7 +120,14 @@ impl StatelessPythonUDF {
                 .0
                 .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
-            run_udf(py, inputs, func, bound_args, &self.return_dtype)
+            run_udf(
+                py,
+                inputs,
+                func,
+                bound_args,
+                &self.return_dtype,
+                self.batch_size,
+            )
         })
     }
 }
@@ -200,7 +209,14 @@ impl FunctionEvaluator for StatefulPythonUDF {
                 }
             };
 
-            run_udf(py, inputs, func, bound_args, &self.return_dtype)
+            run_udf(
+                py,
+                inputs,
+                func,
+                bound_args,
+                &self.return_dtype,
+                self.batch_size,
+            )
         })
     }
 

@@ -39,6 +39,7 @@ pub struct StatelessPythonUDF {
     num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
+    pub batch_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,6 +52,7 @@ pub struct StatefulPythonUDF {
     pub resource_request: Option<ResourceRequest>,
     #[cfg(feature = "python")]
     pub init_args: Option<pyobj_serde::PyObjectWrapper>,
+    pub batch_size: Option<usize>,
 }
 
 #[cfg(feature = "python")]
@@ -60,6 +62,7 @@ pub fn stateless_udf(
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
+    batch_size: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
@@ -68,6 +71,7 @@ pub fn stateless_udf(
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
+            batch_size,
         })),
         inputs: expressions.into(),
     })
@@ -79,6 +83,7 @@ pub fn stateless_udf(
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
+    batch_size: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
@@ -86,6 +91,7 @@ pub fn stateless_udf(
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
+            batch_size,
         })),
         inputs: expressions.into(),
     })
@@ -99,6 +105,7 @@ pub fn stateful_udf(
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
     init_args: Option<pyo3::PyObject>,
+    batch_size: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -108,6 +115,7 @@ pub fn stateful_udf(
             return_dtype,
             resource_request,
             init_args: init_args.map(pyobj_serde::PyObjectWrapper),
+            batch_size,
         })),
         inputs: expressions.into(),
     })
@@ -119,6 +127,7 @@ pub fn stateful_udf(
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
+    batch_size: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -126,6 +135,7 @@ pub fn stateful_udf(
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
+            batch_size,
         })),
         inputs: expressions.into(),
     })

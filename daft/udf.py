@@ -77,7 +77,11 @@ class BoundUDFArgs:
 
 
 def run_udf(
-    func: Callable, bound_args: BoundUDFArgs, evaluated_expressions: list[Series], py_return_dtype: PyDataType
+    func: Callable,
+    bound_args: BoundUDFArgs,
+    evaluated_expressions: list[Series],
+    py_return_dtype: PyDataType,
+    batch_size: int | None,
 ) -> PySeries:
     """API to call from Rust code that will call an UDF (initialized, in the case of stateful UDFs) on the inputs"""
     return_dtype = DataType._from_pydatatype(py_return_dtype)
@@ -91,6 +95,7 @@ def run_udf(
     function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
 
     args = []
+    expr_name_to_args_index = {}
     for name in arg_keys:
         # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
         if name == "self":
@@ -100,22 +105,61 @@ def run_udf(
         if name in pyvalues:
             args.append(pyvalues[name])
         else:
-            args.append(evaluated_expressions[function_parameter_name_to_index[name]])
+            # we fill in expressions later
+            expr_name_to_args_index[name] = len(args)
+            args.append(None)
 
     kwargs = {}
+    kwarg_exprs = []  # list of names of exprs in kwargs
     for name in kwarg_keys:
         assert name in pyvalues or name in function_parameter_name_to_index
         if name in pyvalues:
             kwargs[name] = pyvalues[name]
         else:
-            kwargs[name] = evaluated_expressions[function_parameter_name_to_index[name]]
+            kwarg_exprs.append(name)
 
-    try:
-        result = func(*args, **kwargs)
-    except Exception as user_function_exception:
-        raise RuntimeError(
-            f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)}"
-        ) from user_function_exception
+    # Fill in args and kwargs with sliced versions of the series
+    def set_args_to_slice(start: int, end: int):
+        for name, ind in expr_name_to_args_index.items():
+            expr = evaluated_expressions[function_parameter_name_to_index[name]]
+            if start == 0 and end >= len(expr):
+                # avoid copying if we are taking entire thing
+                args[ind] = expr
+            else:
+                args[ind] = expr.slice(start, end)
+        for name in kwarg_exprs:
+            expr = evaluated_expressions[function_parameter_name_to_index[name]]
+            if start == 0 and end >= len(expr):
+                kwargs[name] = expr
+            else:
+                kwargs[name] = expr.slice(start, end)
+
+    if batch_size is None:
+        set_args_to_slice(0, len(evaluated_expressions[0]))
+        try:
+            results = [func(*args, **kwargs)]
+        except Exception as user_function_exception:
+            raise RuntimeError(
+                f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)}"
+            ) from user_function_exception
+    else:
+        # all inputs must have the same lengths for batching
+        # not sure this error can possibly be triggered but it's here
+        if len(set(len(s) for s in evaluated_expressions)) != 1:
+            raise RuntimeError(
+                f"User-defined function `{func}` failed: cannot run in batches when inputs are different lengths: {tuple(len(series) for series in evaluated_expressions)}"
+            )
+
+        results = []
+        for i in range(0, len(evaluated_expressions[0]), batch_size):
+            cur_batch_size = min(batch_size, len(evaluated_expressions[0]) - i)
+            set_args_to_slice(i, i + cur_batch_size)
+            try:
+                results.append(func(*args, **kwargs))
+            except Exception as user_function_exception:
+                raise RuntimeError(
+                    f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(cur_batch_size for _ in evaluated_expressions)}"
+                ) from user_function_exception
 
     # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
     # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
@@ -123,19 +167,23 @@ def run_udf(
     name = evaluated_expressions[0].name()
 
     # Post-processing of results into a Series of the appropriate dtype
-    if isinstance(result, Series):
-        return result.rename(name).cast(return_dtype)._series
-    elif isinstance(result, list):
+    if isinstance(results[0], Series):
+        result_series = Series.concat(results)
+        return result_series.rename(name).cast(return_dtype)._series
+    elif isinstance(results[0], list):
+        result_list = [x for res in results for x in res]
         if return_dtype == DataType.python():
-            return Series.from_pylist(result, name=name, pyobj="force")._series
+            return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
-            return Series.from_pylist(result, name=name, pyobj="allow").cast(return_dtype)._series
-    elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
-        return Series.from_numpy(result, name=name).cast(return_dtype)._series
-    elif _PYARROW_AVAILABLE and isinstance(result, (pa.Array, pa.ChunkedArray)):
-        return Series.from_arrow(result, name=name).cast(return_dtype)._series
+            return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
+    elif _NUMPY_AVAILABLE and isinstance(results[0], np.ndarray):
+        result_np = np.concatenate(results)
+        return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
+    elif _PYARROW_AVAILABLE and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
+        result_pa = pa.concat_arrays(results)
+        return Series.from_arrow(result_pa, name=name).cast(return_dtype)._series
     else:
-        raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
+        raise NotImplementedError(f"Return type not supported for UDF: {type(results[0])}")
 
 
 # Marker that helps us differentiate whether a user provided the argument or not
@@ -145,6 +193,7 @@ _UnsetMarker: Any = object()
 @dataclasses.dataclass
 class UDF:
     resource_request: ResourceRequest | None
+    batch_size: int | None
 
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Expression: ...
@@ -155,6 +204,7 @@ class UDF:
         num_cpus: float | None = _UnsetMarker,
         num_gpus: float | None = _UnsetMarker,
         memory_bytes: int | None = _UnsetMarker,
+        batch_size: int | None = _UnsetMarker,
     ) -> UDF:
         """Replace the resource requests for running each instance of your stateless UDF.
 
@@ -180,11 +230,19 @@ class UDF:
                 the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
             memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
                 this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+            batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
         """
         result = self
 
         # Any changes to resource request
-        if not all((num_cpus is _UnsetMarker, num_gpus is _UnsetMarker, memory_bytes is _UnsetMarker)):
+        if not all(
+            (
+                num_cpus is _UnsetMarker,
+                num_gpus is _UnsetMarker,
+                memory_bytes is _UnsetMarker,
+                batch_size is _UnsetMarker,
+            )
+        ):
             new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
             if num_cpus is not _UnsetMarker:
                 new_resource_request = new_resource_request.with_num_cpus(num_cpus)
@@ -193,6 +251,8 @@ class UDF:
             if memory_bytes is not _UnsetMarker:
                 new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
             result = dataclasses.replace(result, resource_request=new_resource_request)
+            if batch_size is not _UnsetMarker:
+                result.batch_size = batch_size
 
         return result
 
@@ -238,6 +298,7 @@ class StatelessUDF(UDF):
             expressions=expressions,
             return_dtype=self.return_dtype,
             resource_request=self.resource_request,
+            batch_size=self.batch_size,
         )
 
     def bind_func(self, *args, **kwargs) -> inspect.BoundArguments:
@@ -287,6 +348,7 @@ class StatefulUDF(UDF):
             return_dtype=self.return_dtype,
             resource_request=self.resource_request,
             init_args=self.init_args,
+            batch_size=self.batch_size,
         )
 
     def with_init_args(self, *args, **kwargs) -> StatefulUDF:
@@ -356,6 +418,7 @@ def udf(
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
+    batch_size: int | None = None,
 ) -> Callable[[UserProvidedPythonFunction | type], StatelessUDF | StatefulUDF]:
     """Decorator to convert a Python function into a UDF
 
@@ -463,6 +526,7 @@ def udf(
             the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
         memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
             this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+        batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
 
     Returns:
         Callable[[UserProvidedPythonFunction], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -491,6 +555,7 @@ def udf(
                 cls=f,
                 return_dtype=return_dtype,
                 resource_request=resource_request,
+                batch_size=batch_size,
             )
         else:
             return StatelessUDF(
@@ -498,6 +563,7 @@ def udf(
                 func=f,
                 return_dtype=return_dtype,
                 resource_request=resource_request,
+                batch_size=batch_size,
             )
 
     return _udf
