@@ -105,8 +105,7 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
-        let mut rts: RuntimeStatsContext = Default::default();
-        rts.name = intermediate_op.name().to_string();
+        let rts: RuntimeStatsContext = RuntimeStatsContext::new(intermediate_op.name().to_string());
         IntermediateNode {
             intermediate_op,
             runtime_stats: Arc::new(rts),
