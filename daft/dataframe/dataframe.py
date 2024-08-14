@@ -1971,11 +1971,48 @@ class DataFrame:
     def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global count on the DataFrame
 
+        If no columns are specified (i.e. in the case you call `df.count()`) this functions very
+        similarly to a COUNT(*) operation in SQL and will return a new dataframe with a single column
+        with the name "count".
+
+            >>> import daft
+            >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2]})
+            >>> df.count().show()
+            ╭────────╮
+            │ count  │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        However, specifying some column names would instead change the behavior to count all non-null values,
+        similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`
+
+            >>> df.count("foo", "bar").show()
+            ╭────────┬────────╮
+            │ foo    ┆ bar    │
+            │ ---    ┆ ---    │
+            │ UInt64 ┆ UInt64 │
+            ╞════════╪════════╡
+            │ 1      ┆ 2      │
+            ╰────────┴────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
         Args:
             *cols (Union[str, Expression]): columns to count
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
         """
+        # Special case: treat this as a COUNT(*) operation which is likely what most people would expect
+        if len(cols) == 0:
+            builder = self._builder.count()
+            return DataFrame(builder)
+
+        # Otherwise, perform a column-wise count on the specified columns
         return self._apply_agg_fn(Expression.count, cols)
 
     @DataframePublicAPI
