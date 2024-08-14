@@ -1,5 +1,4 @@
 use std::{
-    env,
     sync::{atomic::AtomicU64, Arc},
     time::Instant,
 };
@@ -43,7 +42,7 @@ struct RuntimeStats {
 impl RuntimeStatsContext {
     fn new(name: String) -> Self {
         Self {
-            name: name,
+            name,
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
@@ -89,80 +88,6 @@ impl RuntimeStatsContext {
     }
 }
 
-// impl IntermediateOpActor {
-//     pub fn new(
-//         op: Arc<dyn IntermediateOperator>,
-//         receiver: MultiReceiver,
-//         sender: MultiSender,
-//     ) -> Self {
-//         let name = op.name().to_string();
-//         Self {
-//             op,
-//             receiver,
-//             sender,
-//             rt_context: Arc::new(RuntimeStatsContext::new(name))
-//         }
-//     }
-
-//     // Run a single instance of the operator.
-//     #[instrument(level = "info", skip_all, name = "IntermediateOpActor::run_single")]
-//     async fn run_single(
-//         mut receiver: SingleReceiver,
-//         sender: SingleSender,
-//         op: Arc<dyn IntermediateOperator>,
-//         rt_context: Arc<RuntimeStatsContext>,
-
-//     ) -> DaftResult<()> {
-//         let mut state = OperatorTaskState::new();
-//         let span = info_span!("IntermediateOp::execute");
-
-//         while let Some(morsel) = receiver.recv().await {
-//             rt_context.mark_rows_received(morsel.len() as u64);
-//             let result = rt_context.in_span(&span, || op.execute(&morsel))?;
-//             state.add(result);
-//             if let Some(part) = state.try_clear() {
-//                 let part = part?;
-//                 rt_context.mark_rows_emitted(part.len() as u64);
-//                 let _ = sender.send(part).await;
-//             }
-//         }
-//         if let Some(part) = state.clear() {
-//             let part = part?;
-//             rt_context.mark_rows_emitted(part.len() as u64);
-//             let _ = sender.send(part).await;
-//         }
-//         Ok(())
-//     }
-
-//     // Create and run parallel tasks for the operator.
-//     #[instrument(level = "info", skip_all, name = "IntermediateOpActor::run_parallel")]
-//     pub async fn run_parallel(&mut self) -> DaftResult<()> {
-//         // Initialize senders to send data to parallel tasks.
-//         let mut inner_task_senders: Vec<SingleSender> =
-//             Vec::with_capacity(self.sender.buffer_size());
-//         let mut curr_task_idx = 0;
-
-//         while let Some(morsel) = self.receiver.recv().await {
-//             // If the task sender already exists for the current index, send the data to it.
-//             if let Some(s) = inner_task_senders.get(curr_task_idx) {
-//                 let _ = s.send(morsel).await;
-//             }
-//             // Otherwise, create a new task and send the data to it.
-//             else {
-//                 let (task_sender, task_receiver) = create_single_channel(1);
-//                 let op = self.op.clone();
-//                 let next_sender = self.sender.get_next_sender();
-//                 spawn_compute_task(Self::run_single(task_receiver, next_sender, op, self.rt_context.clone()));
-//                 let _ = task_sender.send(morsel).await;
-
-//                 inner_task_senders.push(task_sender);
-//             }
-//             curr_task_idx = (curr_task_idx + 1) % self.sender.buffer_size();
-//         }
-//         Ok(())
-//     }
-// }
-
 impl Drop for RuntimeStatsContext {
     fn drop(&mut self) {
         println!("{}={:?}", self.name, self.result());
@@ -171,6 +96,7 @@ impl Drop for RuntimeStatsContext {
 
 pub(crate) struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
+    runtime_stats: Arc<RuntimeStatsContext>,
     children: Vec<Box<dyn PipelineNode>>,
 }
 
@@ -179,8 +105,11 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
+        let mut rts: RuntimeStatsContext = Default::default();
+        rts.name = intermediate_op.name().to_string();
         IntermediateNode {
             intermediate_op,
+            runtime_stats: Arc::new(rts),
             children,
         }
     }
@@ -194,18 +123,26 @@ impl IntermediateNode {
         op: Arc<dyn IntermediateOperator>,
         mut receiver: SingleReceiver,
         sender: SingleSender,
+        rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
         while let Some(morsel) = receiver.recv().await {
-            let result = span.in_scope(|| op.execute(&morsel))?;
+            rt_context.mark_rows_received(morsel.len() as u64);
+            let result = rt_context.in_span(&span, || op.execute(&morsel))?;
             state.add(result);
             if let Some(part) = state.try_clear() {
-                let _ = sender.send(part?).await;
+                let part = part?;
+                rt_context.mark_rows_emitted(part.len() as u64);
+
+                let _ = sender.send(part).await;
             }
         }
         if let Some(part) = state.clear() {
-            let _ = sender.send(part?).await;
+            let part = part?;
+            rt_context.mark_rows_emitted(part.len() as u64);
+
+            let _ = sender.send(part).await;
         }
         Ok(())
     }
@@ -224,6 +161,7 @@ impl IntermediateNode {
                 self.intermediate_op.clone(),
                 worker_receiver,
                 destination_sender,
+                self.runtime_stats.clone(),
             ));
             worker_senders.push(worker_sender);
         }
