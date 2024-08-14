@@ -7,7 +7,6 @@ import daft.exceptions
 from daft import col
 
 
-# why on earth would you do this... testing it anyways
 def test_to_struct_empty_structs():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
