@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
@@ -11,7 +11,7 @@ use crate::{
     Series,
 };
 
-use arrow2::types::Index;
+use arrow2::{trusted_len::TrustedLen, types::Index};
 use common_error::DaftResult;
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
@@ -183,6 +183,78 @@ impl FixedSizeListArray {
             self.validity(),
             seed,
         )
+    }
+}
+
+fn struct_hash_helper(
+    validity_iter: impl TrustedLen<Item = bool>,
+    seed_iter: impl TrustedLen<Item = Option<u64>>,
+    name: &str,
+    child_hashes: &[UInt64Array],
+) -> UInt64Array {
+    let hash_iter = validity_iter
+        .zip(seed_iter)
+        .enumerate()
+        .map(|(i, (valid, seed))| {
+            if valid {
+                let row_hashes: Vec<u8> = child_hashes
+                    .iter()
+                    .flat_map(|c| c.get(i).unwrap().to_le_bytes())
+                    .collect();
+                if let Some(seed) = seed {
+                    Some(xxh3_64_with_seed(&row_hashes, seed))
+                } else {
+                    Some(xxh3_64(&row_hashes))
+                }
+            } else {
+                None
+            }
+        });
+    UInt64Array::from_iter(name, hash_iter)
+}
+
+impl StructArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        // hash children individually, then hash the hashes
+        let child_hashes: Vec<UInt64Array> = self
+            .children
+            .iter()
+            .map(|c| c.hash(seed))
+            .collect::<DaftResult<_>>()?;
+
+        let row_count = self.len();
+        let res = if let Some(validity) = self.validity() {
+            if let Some(seed) = seed {
+                struct_hash_helper(
+                    validity.iter(),
+                    seed.as_arrow().values_iter().map(|x| Some(*x)),
+                    self.name(),
+                    &child_hashes,
+                )
+            } else {
+                struct_hash_helper(
+                    validity.iter(),
+                    std::iter::repeat(None).take(row_count),
+                    self.name(),
+                    &child_hashes,
+                )
+            }
+        } else if let Some(seed) = seed {
+            struct_hash_helper(
+                std::iter::repeat(true).take(row_count),
+                seed.as_arrow().values_iter().map(|x| Some(*x)),
+                self.name(),
+                &child_hashes,
+            )
+        } else {
+            struct_hash_helper(
+                std::iter::repeat(true).take(row_count),
+                std::iter::repeat(None).take(row_count),
+                self.name(),
+                &child_hashes,
+            )
+        };
+        Ok(res)
     }
 }
 

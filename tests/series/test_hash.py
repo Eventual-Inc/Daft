@@ -352,6 +352,92 @@ def test_hash_fixed_size_list_array_consistency(dtype):
     assert hashed1 == hashed2
 
 
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+@pytest.mark.parametrize("seed", [None, 123])
+def test_hash_struct(dtype, seed):
+    data = [
+        {"a": 1, "b": 2},
+        {"a": 3, "b": 4},
+        {"a": 1, "b": 4},
+        {"a": 2, "b": 1},
+        None,
+        {"b": 2, "a": 1},
+        {"b": 1, "a": 2},
+        None,
+    ]
+    arr = Series.from_pylist(data).cast(DataType.struct({"a": dtype, "b": dtype}))
+
+    seeds = None if seed is None else Series.from_pylist([seed] * len(data)).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+    assert hashed[0] == hashed[5]
+    assert hashed[3] == hashed[6]
+    assert hashed[4] is None and hashed[-1] is None
+
+    different_inds = [0, 1, 2, 3]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+@pytest.mark.parametrize("seed", [None, 123])
+def test_hash_struct_nested(dtype, seed):
+    data = [
+        {"a": 1, "b": {"c": 1, "d": 2}},
+        {"a": 3, "b": {"c": 3, "d": 4}},
+        {"a": 1, "b": {"c": 3, "d": 4}},
+        {"a": 2, "b": {"c": 1, "d": 2}},
+        None,
+        {"b": {"c": 1, "d": 2}, "a": 1},
+        {"b": {"c": 1, "d": 2}, "a": 2},
+        {"a": 1, "b": {"c": 2, "d": 1}},
+        None,
+    ]
+    arr = Series.from_pylist(data).cast(DataType.struct({"a": dtype, "b": DataType.struct({"c": dtype, "d": dtype})}))
+
+    seeds = None if seed is None else Series.from_pylist([seed] * len(data)).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+    assert hashed[0] == hashed[5]
+    assert hashed[3] == hashed[6]
+    assert hashed[4] is None and hashed[-1] is None
+
+    different_inds = [0, 1, 2, 3, 7]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+@pytest.mark.parametrize("seed", [None, 123])
+def test_hash_struct_sublist(dtype, seed):
+    data = [
+        {"a": 1, "b": [2, 3, 4]},
+        {"a": 3, "b": [5, 6, 7]},
+        {"a": 1, "b": [5, 6, 7]},
+        {"a": 2, "b": [2, 3, 4]},
+        None,
+        {"b": [2, 3, 4], "a": 1},
+        {"b": [2, 3, 4], "a": 2},
+        {"a": 1, "b": [2, 4, 3]},
+        None,
+    ]
+    arr = Series.from_pylist(data).cast(DataType.struct({"a": dtype, "b": DataType.list(dtype)}))
+
+    seeds = None if seed is None else Series.from_pylist([seed] * len(data)).cast(DataType.uint64())
+
+    hashed = arr.hash(seeds).to_pylist()
+    assert hashed[0] == hashed[5]
+    assert hashed[3] == hashed[6]
+    assert hashed[4] is None and hashed[-1] is None
+
+    different_inds = [0, 1, 2, 3, 7]
+    for i in range(len(different_inds)):
+        for j in range(i):
+            assert hashed[different_inds[i]] != hashed[different_inds[j]]
+
+
 @pytest.mark.parametrize(
     "dtype",
     [

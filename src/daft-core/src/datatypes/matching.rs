@@ -180,6 +180,7 @@ macro_rules! with_match_hashable_daft_types {(
         FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         List(_) => __with_ty__! { ListType },
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
+        Struct(_) => __with_ty__! { StructType },
         _ => panic!("{:?} not implemented", $key_type)
     }
 })}
