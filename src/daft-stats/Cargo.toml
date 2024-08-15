@@ -1,8 +1,8 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
+common-error = {path = "../common/error", default_features = false}
+daft-core = {path = "../daft-core", default_features = false}
+daft-dsl = {path = "../daft-dsl", default_features = false}
+daft-table = {path = "../daft-table", default_features = false}
 indexmap = {workspace = true, features = ["serde"]}
 serde = {workspace = true}
 snafu = {workspace = true}

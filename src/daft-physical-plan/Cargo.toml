@@ -1,10 +1,10 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-plan = {path = "../daft-plan", default-features = false}
-daft-scan = {path = "../daft-scan", default-features = false}
+common-error = {path = "../common/error", default_features = false}
+common-resource-request = {path = "../common/resource-request", default_features = false}
+daft-core = {path = "../daft-core", default_features = false}
+daft-dsl = {path = "../daft-dsl", default_features = false}
+daft-plan = {path = "../daft-plan", default_features = false}
+daft-scan = {path = "../daft-scan", default_features = false}
 log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}
 

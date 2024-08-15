@@ -3,13 +3,13 @@ arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
+common-error = {path = "../common/error", default_features = false}
 crossbeam-channel = "0.5.1"
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-daft-stats = {path = "../daft-stats", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
+daft-core = {path = "../daft-core", default_features = false}
+daft-dsl = {path = "../daft-dsl", default_features = false}
+daft-io = {path = "../daft-io", default_features = false}
+daft-stats = {path = "../daft-stats", default_features = false}
+daft-table = {path = "../daft-table", default_features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}

@@ -1,8 +1,8 @@
 [dependencies]
 aws-credential-types = {version = "0.55.3"}
 chrono = {workspace = true}
-common-error = {path = "../error", default-features = false}
-common-py-serde = {path = "../py-serde", default-features = false}
+common-error = {path = "../error", default_features = false}
+common-py-serde = {path = "../py-serde", default_features = false}
 pyo3 = {workspace = true, optional = true}
 secrecy = {version = "0.8.0", features = ["alloc"], default_features = false}
 serde = {workspace = true}

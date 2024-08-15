@@ -1,11 +1,11 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
+common-error = {path = "../common/error", default_features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
-common-treenode = {path = "../common/treenode", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-sketch = {path = "../daft-sketch", default-features = false}
+common-py-serde = {path = "../common/py-serde", default_features = false}
+common-resource-request = {path = "../common/resource-request", default_features = false}
+common-treenode = {path = "../common/treenode", default_features = false}
+daft-core = {path = "../daft-core", default_features = false}
+daft-sketch = {path = "../daft-sketch", default_features = false}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}

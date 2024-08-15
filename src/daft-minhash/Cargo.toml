@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
+common-error = {path = "../common/error", default_features = false}
 fastrand = "2.1.0"
 mur3 = "0.1.0"
 

@@ -2,19 +2,19 @@
 async-recursion = "1.0.4"
 async-stream = "0.3.5"
 async-trait = "0.1.79"
-aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
+aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default_features = false}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
+aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default_features = false}
 aws-sig-auth = "0.55.3"
 aws-smithy-async = "0.55.3"
 aws-smithy-client = "0.55.3"
 azure_core = "0.17.0"
 azure_identity = "0.17.0"
-azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
-azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
+azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default_features = false}
+azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default_features = false}
 bytes = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
+common-error = {path = "../common/error", default_features = false}
+common-io-config = {path = "../common/io-config", default_features = false}
 futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.15.0", default_features = false, features = ["default-tls", "auth"]}
@@ -35,7 +35,7 @@ tokio-stream = {workspace = true}
 url = {workspace = true}
 
 [dependencies.reqwest]
-default-features = false
+default_features = false
 features = ["stream", "native-tls"]
 version = "0.11.18"
 

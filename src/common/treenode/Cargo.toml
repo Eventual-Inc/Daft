@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
+common-error = {path = "../error", default_features = false}
 
 [features]
 python = ["common-error/python"]

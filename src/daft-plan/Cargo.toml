@@ -13,17 +13,17 @@ arrow2 = {workspace = true, features = [
   "compute_concatenate",
   "io_ipc"
 ]}
-common-daft-config = {path = "../common/daft-config", default-features = false}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
-common-treenode = {path = "../common/treenode", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-scan = {path = "../daft-scan", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
+common-daft-config = {path = "../common/daft-config", default_features = false}
+common-display = {path = "../common/display", default_features = false}
+common-error = {path = "../common/error", default_features = false}
+common-io-config = {path = "../common/io-config", default_features = false}
+common-py-serde = {path = "../common/py-serde", default_features = false}
+common-resource-request = {path = "../common/resource-request", default_features = false}
+common-treenode = {path = "../common/treenode", default_features = false}
+daft-core = {path = "../daft-core", default_features = false}
+daft-dsl = {path = "../daft-dsl", default_features = false}
+daft-scan = {path = "../daft-scan", default_features = false}
+daft-table = {path = "../daft-table", default_features = false}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
@@ -32,7 +32,7 @@ serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 
 [dev-dependencies]
-daft-functions = {path = "../daft-functions", default-features = false}
+daft-functions = {path = "../daft-functions", default_features = false}
 pretty_assertions = {workspace = true}
 rstest = {workspace = true}
 

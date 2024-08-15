@@ -20,7 +20,7 @@ chrono = {version = "0.4.31", default_features = false, features = ["std"]}
 # for timezone support
 chrono-tz = {version = "0.8", optional = true}
 # used to print columns in a nice columnar format
-comfy-table = {version = "6.0", optional = true, default-features = false}
+comfy-table = {version = "6.0", optional = true, default_features = false}
 # for csv io
 csv = {version = "^1.1", optional = true}
 # for csv async io
@@ -38,7 +38,7 @@ futures = {version = "0.3", optional = true}
 # crate provides HashMap that assumes pre-hashed values.
 hash_hasher = "^2.0.3"
 # A Rust port of SwissTable
-hashbrown = {version = "0.14", default-features = false, features = ["ahash"]}
+hashbrown = {version = "0.14", default_features = false, features = ["ahash"]}
 hex = {version = "^0.4", optional = true}
 indexmap = {version = "^1.6", optional = true}
 itertools = {version = "^0.10", optional = true}
