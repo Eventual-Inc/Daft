@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "common-daft-config"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "bincode",
  "common-io-config",
@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "common-display"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-treenode",
@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "common-error"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "pyo3",
@@ -1262,14 +1262,14 @@ dependencies = [
 
 [[package]]
 name = "common-hashable-float-wrapper"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "common-io-config"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "aws-credential-types",
  "chrono",
@@ -1284,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "common-py-serde"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "pyo3",
  "serde",
@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "common-resource-request"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-hashable-float-wrapper",
  "pyo3",
@@ -1301,7 +1301,7 @@ dependencies = [
 
 [[package]]
 name = "common-system-info"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "pyo3",
  "sysinfo",
@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "common-tracing"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "lazy_static",
  "tracing",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "common-treenode"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
 ]
@@ -1577,7 +1577,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "daft-compression"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "async-compression",
  "tokio",
@@ -1623,7 +1623,7 @@ dependencies = [
 
 [[package]]
 name = "daft-core"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow2",
@@ -1665,7 +1665,7 @@ dependencies = [
 
 [[package]]
 name = "daft-csv"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -1692,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "daft-decoding"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "atoi_simd",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "daft-dsl"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-hashable-float-wrapper",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "daft-functions"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "base64 0.22.1",
@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "daft-io"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "async-recursion",
  "async-stream",
@@ -1789,7 +1789,7 @@ dependencies = [
 
 [[package]]
 name = "daft-json"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1819,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "daft-local-execution"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "daft-micropartition"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "bincode",
@@ -1869,7 +1869,7 @@ dependencies = [
 
 [[package]]
 name = "daft-minhash"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "fastrand 2.1.0",
@@ -1878,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "daft-parquet"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -1907,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "daft-physical-plan"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-resource-request",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "daft-plan"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "common-daft-config",
@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "daft-scan"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-error",
@@ -1974,7 +1974,7 @@ dependencies = [
 
 [[package]]
 name = "daft-scheduler"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
@@ -1991,7 +1991,7 @@ dependencies = [
 
 [[package]]
 name = "daft-sketch"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "common-error",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "daft-sql"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "daft-core",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "daft-stats"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "daft-core",
@@ -2031,7 +2031,7 @@ dependencies = [
 
 [[package]]
 name = "daft-table"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
