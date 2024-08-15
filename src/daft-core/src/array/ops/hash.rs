@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 use arrow2::types::Index;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 use super::as_arrow::AsArrow;
@@ -183,6 +183,24 @@ impl FixedSizeListArray {
             self.validity(),
             seed,
         )
+    }
+}
+
+impl StructArray {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        // seed first child with input seed,
+        // then seed each child after with the output of the previous
+        if self.children.is_empty() {
+            return Err(DaftError::ValueError(
+                "Cannot hash struct with no children".into(),
+            ));
+        }
+        let mut res = self.children.first().unwrap().hash(seed)?;
+
+        for child in self.children.iter().skip(1) {
+            res = child.hash(Some(&res))?;
+        }
+        res.with_validity(self.validity().cloned())
     }
 }
 

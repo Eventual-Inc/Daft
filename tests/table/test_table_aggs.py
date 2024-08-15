@@ -852,3 +852,25 @@ def test_groupby_fixed_size_list(dtype) -> None:
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_struct(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [
+                {"c": 1, "d": "hi"},
+                {"c": 1, "d": "hi"},
+                {"c": 1, "d": "hello"},
+                {"c": 2, "d": "hello"},
+                {"c": 1, "d": "hi"},
+                {"c": 2, "d": "hello"},
+                {"c": 1, "d": "hello"},
+            ],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.struct({"c": dtype, "d": DataType.string()})))
+    res = df.groupby("a").agg_list("b").to_pydict()
+    expected = [[0, 1, 4], [2, 6], [3, 5]]
+    for lt in expected:
+        assert lt in res["b"]
