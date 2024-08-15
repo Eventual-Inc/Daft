@@ -13,7 +13,10 @@ use crate::{
     channel::{
         create_channel, create_single_channel, MultiReceiver, MultiSender, SingleReceiver,
         SingleSender,
-    }, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle, NUM_CPUS
+    },
+    pipeline::PipelineNode,
+    runtime_stats::RuntimeStatsContext,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 use super::state::OperatorTaskState;
@@ -22,12 +25,10 @@ pub trait IntermediateOperator: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-
-
 pub(crate) struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
-    runtime_stats: Arc<RuntimeStatsContext>,
     children: Vec<Box<dyn PipelineNode>>,
+    runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl IntermediateNode {
@@ -36,10 +37,18 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
         let rts: RuntimeStatsContext = RuntimeStatsContext::new(intermediate_op.name().to_string());
-        IntermediateNode {
+        Self::new_with_runtime_stats(intermediate_op, children, Arc::new(rts))
+    }
+
+    pub(crate) fn new_with_runtime_stats(
+        intermediate_op: Arc<dyn IntermediateOperator>,
+        children: Vec<Box<dyn PipelineNode>>,
+        runtime_stats: Arc<RuntimeStatsContext>,
+    ) -> Self {
+        Self {
             intermediate_op,
-            runtime_stats: Arc::new(rts),
             children,
+            runtime_stats,
         }
     }
 
@@ -65,7 +74,6 @@ impl IntermediateNode {
                 let len = part.len();
                 let _ = sender.send(part).await;
                 rt_context.mark_rows_emitted(len as u64);
-
             }
         }
         if let Some(part) = state.clear() {
@@ -73,7 +81,6 @@ impl IntermediateNode {
             let len = part.len();
             let _ = sender.send(part).await;
             rt_context.mark_rows_emitted(len as u64);
-
         }
         Ok(())
     }

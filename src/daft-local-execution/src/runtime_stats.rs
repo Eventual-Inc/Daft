@@ -1,7 +1,5 @@
 use std::{sync::atomic::AtomicU64, time::Instant};
 
-
-
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
     name: String,

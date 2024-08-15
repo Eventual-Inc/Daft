@@ -5,7 +5,10 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender}, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle, NUM_CPUS
+    channel::{create_channel, MultiSender},
+    pipeline::PipelineNode,
+    runtime_stats::RuntimeStatsContext,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 pub enum StreamSinkOutput {
@@ -40,7 +43,7 @@ impl StreamingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             children,
-            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string()))
+            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string())),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {

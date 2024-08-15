@@ -4,6 +4,7 @@ use crate::{
     channel::{create_channel, MultiSender},
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
+    runtime_stats::{RuntimeStats, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
@@ -227,6 +228,8 @@ pub(crate) struct HashJoinNode {
     hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
+    build_runtime_stats: Arc<RuntimeStatsContext>,
+    probe_runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl HashJoinNode {
@@ -239,6 +242,10 @@ impl HashJoinNode {
             hash_join: Arc::new(tokio::sync::Mutex::new(op)),
             left,
             right,
+            build_runtime_stats: Arc::new(RuntimeStatsContext::new(
+                "HashJoinProbeTableBuilder".to_string(),
+            )),
+            probe_runtime_stats: Arc::new(RuntimeStatsContext::new("HashJoinProber".to_string())),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -264,18 +271,20 @@ impl PipelineNode for HashJoinNode {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
         self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
-
+        let build_runtime_stats = self.build_runtime_stats.clone();
         let probe_table_build = tokio::spawn(async move {
             let span = info_span!("ProbeTable::sink");
             let mut guard = hash_join.lock().await;
             let sink = guard.as_sink();
             while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val))? {
+                build_runtime_stats.mark_rows_received(val.len() as u64);
+                if let BlockingSinkStatus::Finished =
+                    build_runtime_stats.in_span(&span, || sink.sink(&val))?
+                {
                     break;
                 }
             }
-
-            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
+            build_runtime_stats.in_span(&info_span!("ProbeTable::finalize"), || sink.finalize())?;
             DaftResult::Ok(())
         });
         // should wrap in context join handle
@@ -291,7 +300,11 @@ impl PipelineNode for HashJoinNode {
             let guard = hash_join.lock().await;
             guard.as_intermediate_op()
         };
-        let probing_node = IntermediateNode::new(probing_op, vec![]);
+        let probing_node = IntermediateNode::new_with_runtime_stats(
+            probing_op,
+            vec![],
+            self.probe_runtime_stats.clone(),
+        );
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;

@@ -5,7 +5,10 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender}, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle, NUM_CPUS
+    channel::{create_channel, MultiSender},
+    pipeline::PipelineNode,
+    runtime_stats::RuntimeStatsContext,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
 pub enum BlockingSinkStatus {
@@ -35,7 +38,7 @@ impl BlockingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             child,
-            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string()))
+            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string())),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -70,12 +73,16 @@ impl PipelineNode for BlockingSinkNode {
             let mut guard = op.lock().await;
             while let Some(val) = streaming_receiver.recv().await {
                 rt_context.mark_rows_received(val.len() as u64);
-                if let BlockingSinkStatus::Finished = rt_context.in_span(&span, || guard.sink(&val))? {
+                if let BlockingSinkStatus::Finished =
+                    rt_context.in_span(&span, || guard.sink(&val))?
+                {
                     break;
                 }
             }
-            let finalized_result =
-                rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || guard.finalize())?;
+            let finalized_result = rt_context
+                .in_span(&info_span!("BlockingSinkNode::finalize"), || {
+                    guard.finalize()
+                })?;
             if let Some(part) = finalized_result {
                 let len = part.len();
                 let _ = destination.get_next_sender().send(part).await;

@@ -370,7 +370,7 @@ async fn stream_parquet_single(
             schema_infer_options,
             metadata,
             maintain_order,
-            io_stats
+            io_stats,
         )
     } else {
         let builder = ParquetReaderBuilder::from_uri(

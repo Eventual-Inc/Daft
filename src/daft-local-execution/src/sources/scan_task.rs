@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::{
     channel::{MultiSender, SingleSender},
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
 };
 
@@ -24,15 +25,19 @@ use super::source::{Source, SourceStream};
 
 use tracing::instrument;
 
-#[derive(Debug)]
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
-    io_stats: IOStatsRef
+    io_stats: IOStatsRef,
+    runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl ScanTaskSource {
     pub fn new(scan_tasks: Vec<Arc<ScanTask>>) -> Self {
-        Self { scan_tasks, io_stats: IOStatsContext::new("StreamScanTask") }
+        Self {
+            scan_tasks,
+            io_stats: IOStatsContext::new("StreamScanTask"),
+            runtime_stats: Arc::new(RuntimeStatsContext::new("StreamScanTask".to_string())),
+        }
     }
 
     #[instrument(
@@ -45,12 +50,16 @@ impl ScanTaskSource {
         sender: SingleSender,
         morsel_size: usize,
         maintain_order: bool,
-        io_stats: IOStatsRef
+        io_stats: IOStatsRef,
+        runtime_stats: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let mut stream =
             stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
         while let Some(partition) = stream.next().await {
-            let _ = sender.send(partition?).await;
+            let partition = partition?;
+            let len = partition.len();
+            let _ = sender.send(partition).await;
+            runtime_stats.mark_rows_emitted(len as u64);
         }
         Ok(())
     }
@@ -74,7 +83,8 @@ impl Source for ScanTaskSource {
                 sender,
                 morsel_size,
                 maintain_order,
-                self.io_stats.clone()
+                self.io_stats.clone(),
+                self.runtime_stats.clone(),
             ));
         }
         Ok(())
@@ -84,7 +94,6 @@ impl Source for ScanTaskSource {
         "ScanTask"
     }
 }
-
 
 impl Drop for ScanTaskSource {
     fn drop(&mut self) {
