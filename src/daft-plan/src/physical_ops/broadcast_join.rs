@@ -1,3 +1,4 @@
+use common_display::tree::TreeDisplay;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
@@ -59,5 +60,18 @@ impl BroadcastJoin {
         }
         res.push(format!("Is swapped = {}", self.is_swapped));
         res
+    }
+}
+
+impl TreeDisplay for BroadcastJoin {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.get_name(),
+            _ => self.multiline_display().join("\n"),
+        }
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.broadcaster.as_ref(), self.receiver.as_ref()]
     }
 }

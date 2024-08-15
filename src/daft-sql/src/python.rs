@@ -1,3 +1,4 @@
+use daft_dsl::python::PyExpr;
 use daft_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
 
@@ -5,9 +6,15 @@ use crate::{catalog::SQLCatalog, planner::SQLPlanner};
 
 #[pyfunction]
 pub fn sql(sql: &str, catalog: PyCatalog) -> PyResult<PyLogicalPlanBuilder> {
-    let planner = SQLPlanner::new(catalog.catalog);
+    let mut planner = SQLPlanner::new(catalog.catalog);
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan).into())
+}
+
+#[pyfunction]
+pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
+    let expr = crate::planner::sql_expr(sql)?;
+    Ok(PyExpr { expr })
 }
 
 /// PyCatalog is the Python interface to the Catalog.

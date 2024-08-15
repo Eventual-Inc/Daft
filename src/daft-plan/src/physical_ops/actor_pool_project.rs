@@ -13,7 +13,10 @@ use daft_dsl::{
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{partitioning::translate_clustering_spec, ClusteringSpec, PhysicalPlanRef};
+use crate::{
+    impl_default_tree_display, partitioning::translate_clustering_spec, ClusteringSpec,
+    PhysicalPlanRef,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActorPoolProject {
@@ -106,3 +109,5 @@ impl ActorPoolProject {
         res
     }
 }
+
+impl_default_tree_display!(ActorPoolProject);

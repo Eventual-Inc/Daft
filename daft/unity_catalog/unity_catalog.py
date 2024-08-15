@@ -23,7 +23,7 @@ class UnityCatalog:
 
     >>> cat = UnityCatalog("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
     >>> table = cat.load_table("my_catalog.my_schema.my_table")
-    >>> df = daft.read_delta_lake(table)
+    >>> df = daft.read_deltalake(table)
     """
 
     def __init__(self, endpoint: str, token: str | None = None):

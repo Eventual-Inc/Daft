@@ -1,3 +1,4 @@
+use common_display::tree::TreeDisplay;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
@@ -68,5 +69,18 @@ impl SortMergeJoin {
         res.push(format!("Left is larger = {}", self.left_is_larger));
         res.push(format!("Needs presort = {}", self.needs_presort));
         res
+    }
+}
+
+impl TreeDisplay for SortMergeJoin {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        match level {
+            common_display::DisplayLevel::Compact => self.get_name(),
+            _ => self.multiline_display().join("\n"),
+        }
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.left.as_ref(), self.right.as_ref()]
     }
 }

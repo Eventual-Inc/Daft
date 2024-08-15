@@ -33,3 +33,5 @@ impl Limit {
         res
     }
 }
+
+crate::impl_default_tree_display!(Limit);

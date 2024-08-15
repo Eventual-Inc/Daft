@@ -16,7 +16,7 @@ async-stream = {version = "0.3.2", optional = true}
 avro-schema = {version = "0.3", optional = true}
 base64 = {version = "0.21.0", optional = true}
 bytemuck = {version = "1", features = ["derive"]}
-chrono = {version = "0.4.31", default_features = false, features = ["std"]}
+chrono = {version = "0.4.31", default-features = false, features = ["std"]}
 # for timezone support
 chrono-tz = {version = "0.8", optional = true}
 # used to print columns in a nice columnar format
@@ -74,7 +74,7 @@ zstd = {version = "0.12", optional = true}
 
 # parquet support
 [dependencies.parquet2]
-default_features = false
+default-features = false
 optional = true
 path = "../parquet2"
 
@@ -85,7 +85,7 @@ crossbeam-channel = "0.5.1"
 doc-comment = "0.3"
 flate2 = "1"
 # used to run formal property testing
-proptest = {version = "1", default_features = false, features = ["std"]}
+proptest = {version = "1", default-features = false, features = ["std"]}
 # use for flaky testing
 rand = "0.8"
 # use for generating and testing random data samples

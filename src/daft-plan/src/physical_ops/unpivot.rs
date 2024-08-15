@@ -54,3 +54,5 @@ impl Unpivot {
         res
     }
 }
+
+crate::impl_default_tree_display!(Unpivot);

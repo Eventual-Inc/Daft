@@ -368,6 +368,9 @@ class Series:
     def sqrt(self) -> Series:
         return Series._from_pyseries(self._series.sqrt())
 
+    def cbrt(self) -> Series:
+        return Series._from_pyseries(self._series.cbrt())
+
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
         return Series._from_pyseries(self._series.sin())
@@ -888,10 +891,10 @@ class SeriesStringNamespace(SeriesNamespace):
     def normalize(
         self,
         *,
-        remove_punct: bool = True,
-        lowercase: bool = True,
-        nfd_unicode: bool = True,
-        white_space: bool = True,
+        remove_punct: bool = False,
+        lowercase: bool = False,
+        nfd_unicode: bool = False,
+        white_space: bool = False,
     ) -> Series:
         if not isinstance(remove_punct, bool):
             raise ValueError(f"expected bool for remove_punct but got {type(remove_punct)}")

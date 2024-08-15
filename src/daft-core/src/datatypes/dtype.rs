@@ -393,6 +393,33 @@ impl DataType {
         }
     }
 
+    #[inline]
+    pub fn to_floating_representation(&self) -> DaftResult<Self> {
+        let data_type = match self {
+            // All numeric types that coerce to `f32`
+            DataType::Int8 => DataType::Float32,
+            DataType::Int16 => DataType::Float32,
+            DataType::UInt8 => DataType::Float32,
+            DataType::UInt16 => DataType::Float32,
+            DataType::Float32 => DataType::Float32,
+
+            // All numeric types that coerce to `f64`
+            DataType::Int32 => DataType::Float64,
+            DataType::Int64 => DataType::Float64,
+            DataType::UInt32 => DataType::Float64,
+            DataType::UInt64 => DataType::Float64,
+            DataType::Float64 => DataType::Float64,
+
+            _ => {
+                return Err(DaftError::TypeError(format!(
+                    "Expected input to be numeric, instead got {}",
+                    self,
+                )))
+            }
+        };
+        Ok(data_type)
+    }
+
     pub fn estimate_size_bytes(&self) -> Option<f64> {
         const VARIABLE_TYPE_SIZE: f64 = 20.;
         const DEFAULT_LIST_LEN: f64 = 4.;

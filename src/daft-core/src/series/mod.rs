@@ -75,6 +75,10 @@ impl Series {
         self.inner.data_type()
     }
 
+    pub fn to_floating_data_type(&self) -> DaftResult<DataType> {
+        self.inner.data_type().to_floating_representation()
+    }
+
     pub fn name(&self) -> &str {
         self.inner.name()
     }

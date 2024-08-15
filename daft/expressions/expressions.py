@@ -32,6 +32,7 @@ from daft.daft import stateful_udf as _stateful_udf
 from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
+from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import url_download as _url_download
@@ -237,9 +238,12 @@ class Expression:
         expressions: builtins.list[Expression],
         return_dtype: DataType,
         resource_request: ResourceRequest | None,
+        batch_size: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateless_udf(name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request)
+            _stateless_udf(
+                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, batch_size
+            )
         )
 
     @staticmethod
@@ -250,12 +254,57 @@ class Expression:
         return_dtype: DataType,
         resource_request: ResourceRequest | None,
         init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
+        batch_size: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _stateful_udf(
-                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, init_args
+                name,
+                partial,
+                [e._expr for e in expressions],
+                return_dtype._dtype,
+                resource_request,
+                init_args,
+                batch_size,
             )
         )
+
+    @staticmethod
+    def to_struct(*inputs: Expression) -> Expression:
+        """Converts multiple input expressions into a struct.
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+            >>> df.select(daft.to_struct(col("a")*2, col("b"))).show()
+            ╭───────────────────────────╮
+            │ struct                    │
+            │ ---                       │
+            │ Struct[a: Int64, b: Utf8] │
+            ╞═══════════════════════════╡
+            │ {a: 2,                    │
+            │ b: a,                     │
+            │ }                         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {a: 4,                    │
+            │ b: b,                     │
+            │ }                         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {a: 6,                    │
+            │ b: c,                     │
+            │ }                         │
+            ╰───────────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            inputs: Expressions to be converted into struct fields.
+
+        Returns:
+            An expression for a struct column with the input columns as its fields.
+        """
+        pyinputs = [x._expr for x in inputs]
+        return Expression._from_pyexpr(_to_struct(pyinputs))
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -488,6 +537,10 @@ class Expression:
         """The square root of a numeric expression (``expr.sqrt()``)"""
         expr = self._expr.sqrt()
         return Expression._from_pyexpr(expr)
+
+    def cbrt(self) -> Expression:
+        """The cube root of a numeric expression (``expr.cbrt()``)"""
+        return Expression._from_pyexpr(native.cbrt(self._expr))
 
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression (``expr.sin()``)"""
@@ -819,7 +872,13 @@ class Expression:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
 
-        return StatelessUDF(name=name, func=batch_func, return_dtype=return_dtype, resource_request=None)(self)
+        return StatelessUDF(
+            name=name,
+            func=batch_func,
+            return_dtype=return_dtype,
+            resource_request=None,
+            batch_size=None,
+        )(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data)
@@ -2564,20 +2623,20 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def normalize(
         self,
         *,
-        remove_punct: bool = True,
-        lowercase: bool = True,
-        nfd_unicode: bool = True,
-        white_space: bool = True,
+        remove_punct: bool = False,
+        lowercase: bool = False,
+        nfd_unicode: bool = False,
+        white_space: bool = False,
     ):
         """Normalizes a string for more useful deduplication.
 
         .. NOTE::
-            All processing options are on by default.
+            All processing options are off by default.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
-            >>> df = df.with_column("normalized", df["x"].str.normalize())
+            >>> df = df.with_column("normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True))
             >>> df.show()
             ╭───────────────┬─────────────╮
             │ x             ┆ normalized  │

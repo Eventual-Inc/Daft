@@ -80,7 +80,6 @@ from daft.io import (
     from_glob_path,
     read_csv,
     read_deltalake,
-    read_delta_lake,
     read_hudi,
     read_iceberg,
     read_json,
@@ -89,9 +88,11 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.sql.sql import sql
+from daft.sql.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
+
+to_struct = Expression.to_struct
 
 __all__ = [
     "from_pylist",
@@ -107,7 +108,6 @@ __all__ = [
     "read_hudi",
     "read_iceberg",
     "read_deltalake",
-    "read_delta_lake",
     "read_sql",
     "read_lance",
     "DataCatalogType",
@@ -129,4 +129,6 @@ __all__ = [
     "set_planning_config",
     "set_execution_config",
     "sql",
+    "sql_expr",
+    "to_struct",
 ]

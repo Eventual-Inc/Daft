@@ -146,6 +146,10 @@ impl PySeries {
         Ok(self.series.sqrt()?.into())
     }
 
+    pub fn cbrt(&self) -> PyResult<Self> {
+        Ok(self.series.cbrt()?.into())
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         Ok(self
             .series

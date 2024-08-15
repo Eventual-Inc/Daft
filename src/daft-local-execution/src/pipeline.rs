@@ -18,7 +18,6 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use common_display::mermaid::MermaidDisplayBuilder;
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
@@ -41,22 +40,22 @@ pub trait PipelineNode: Sync + Send {
     ) -> DaftResult<()>;
 }
 
-pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
-    let mut display = MermaidDisplayBuilder::new(Default::default());
-    let mut queue = vec![(None, root)];
-    while !queue.is_empty() {
-        let (parent_id, curr) = queue.pop().expect("should be non empty");
-        let child_id = display.add_node(curr.name(), curr.name());
-        if let Some(parent_id) = parent_id {
-            display.add_edge(child_id.clone(), parent_id)
-        }
+// pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
+//     let mut display = MermaidDisplayBuilder::new(Default::default());
+//     let mut queue = vec![(None, root)];
+//     while !queue.is_empty() {
+//         let (parent_id, curr) = queue.pop().expect("should be non empty");
+//         let child_id = display.add_node(curr.name(), curr.name());
+//         if let Some(parent_id) = parent_id {
+//             display.add_edge(child_id.clone(), parent_id)
+//         }
 
-        for new_child in curr.children() {
-            queue.push((Some(child_id.clone()), new_child))
-        }
-    }
-    display.build()
-}
+//         for new_child in curr.children() {
+//             queue.push((Some(child_id.clone()), new_child))
+//         }
+//     }
+//     display.build()
+// }
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
