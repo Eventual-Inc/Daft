@@ -200,7 +200,8 @@ impl StructArray {
         for child in self.children.iter().skip(1) {
             res = child.hash(Some(&res))?;
         }
-        res.with_validity(self.validity().cloned())
+        res.rename(self.name())
+            .with_validity(self.validity().cloned())
     }
 }
 
