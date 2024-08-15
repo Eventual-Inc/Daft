@@ -5,7 +5,7 @@ mod pipeline;
 mod run;
 mod sinks;
 mod sources;
-
+mod runtime_stats;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
