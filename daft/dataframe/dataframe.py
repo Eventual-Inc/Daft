@@ -1185,25 +1185,43 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def where(self, predicate: Expression) -> "DataFrame":
+    def where(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
 
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
             >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
+            │ 2     ┆ 6     ┆ 8     │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3     ┆ 6     ┆ 9     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+
+            You can also use a string expression as a predicate.
+
+            Note: this will use the method `sql_expr` to parse the string into an expression
+            this may raise an error if the expression is not yet supported in the sql engine.
+
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 9, 9]})
+            >>> df.where("z = 9 AND y > 5").collect()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 3     ┆ 6     ┆ 9     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
@@ -1211,6 +1229,10 @@ class DataFrame:
         Returns:
             DataFrame: Filtered DataFrame.
         """
+        if isinstance(predicate, str):
+            from daft.sql.sql import sql_expr
+
+            predicate = sql_expr(predicate)
         builder = self._builder.filter(predicate)
         return DataFrame(builder)
 
