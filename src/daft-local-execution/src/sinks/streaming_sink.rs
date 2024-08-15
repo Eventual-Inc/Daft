@@ -5,9 +5,7 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender},
-    pipeline::PipelineNode,
-    ExecutionRuntimeHandle, NUM_CPUS,
+    channel::{create_channel, MultiSender}, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle, NUM_CPUS
 };
 use async_trait::async_trait;
 pub enum StreamSinkOutput {
@@ -32,6 +30,7 @@ pub(crate) struct StreamingSinkNode {
     op: Arc<tokio::sync::Mutex<Box<dyn StreamingSink>>>,
     name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
+    runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl StreamingSinkNode {
@@ -41,6 +40,7 @@ impl StreamingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             children,
+            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string()))
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -71,6 +71,7 @@ impl PipelineNode for StreamingSinkNode {
             .expect("we should only have 1 child");
         child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(async move {
             // this should be a RWLock and run in concurrent workers
             let span = info_span!("StreamingSink::execute");
@@ -78,24 +79,31 @@ impl PipelineNode for StreamingSinkNode {
             let mut sink = op.lock().await;
             let mut is_active = true;
             while is_active && let Some(val) = streaming_receiver.recv().await {
+                runtime_stats.mark_rows_received(val.len() as u64);
                 loop {
-                    let result = span.in_scope(|| sink.execute(0, &val))?;
+                    let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
                     match result {
                         StreamSinkOutput::HasMoreOutput(mp) => {
+                            let len = mp.len() as u64;
                             let sender = destination.get_next_sender();
                             sender.send(mp).await.unwrap();
+                            runtime_stats.mark_rows_emitted(len);
                         }
                         StreamSinkOutput::NeedMoreInput(mp) => {
                             if let Some(mp) = mp {
+                                let len = mp.len() as u64;
                                 let sender = destination.get_next_sender();
                                 sender.send(mp).await.unwrap();
+                                runtime_stats.mark_rows_emitted(len);
                             }
                             break;
                         }
                         StreamSinkOutput::Finished(mp) => {
                             if let Some(mp) = mp {
+                                let len = mp.len() as u64;
                                 let sender = destination.get_next_sender();
                                 sender.send(mp).await.unwrap();
+                                runtime_stats.mark_rows_emitted(len);
                             }
                             is_active = false;
                             break;

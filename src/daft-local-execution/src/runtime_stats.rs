@@ -11,7 +11,7 @@ pub(crate) struct RuntimeStatsContext {
 }
 
 #[derive(Debug)]
-struct RuntimeStats {
+pub(crate) struct RuntimeStats {
     rows_received: u64,
     rows_emitted: u64,
     cpu_us: u64,
