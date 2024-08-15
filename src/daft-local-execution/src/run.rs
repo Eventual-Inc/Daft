@@ -124,12 +124,11 @@ pub fn run_local(
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
         let (sender, mut receiver) = create_channel(1, true);
 
-        let mut runtime_handle = ExecutionRuntimeHandle::default();
-        pipeline.start(sender, &mut runtime_handle).await?;
-        let mut result = vec![];
-        while let Some(val) = receiver.recv().await {
-            result.push(Ok(val));
-        }
+            let mut runtime_handle = ExecutionRuntimeHandle::default();
+            pipeline.start(sender, &mut runtime_handle).await?;
+            while let Some(val) = receiver.recv().await {
+                let _ = tx.send(val).await;
+            }
 
         while let Some(result) = runtime_handle.join_next().await {
             match result {
