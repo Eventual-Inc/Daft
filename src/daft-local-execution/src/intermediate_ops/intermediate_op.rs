@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -124,6 +125,17 @@ impl IntermediateNode {
     }
 }
 
+
+impl TreeDisplay for IntermediateNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        self.intermediate_op.name().to_string()
+    }
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children.iter().map(|v| v.as_tree_display()).collect()
+    }
+}
+
+
 #[async_trait]
 impl PipelineNode for IntermediateNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
@@ -154,5 +166,8 @@ impl PipelineNode for IntermediateNode {
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
         runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders));
         Ok(())
+    }
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

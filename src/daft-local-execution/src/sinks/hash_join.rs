@@ -8,6 +8,7 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_core::{
     datatypes::Field,
@@ -253,6 +254,17 @@ impl HashJoinNode {
     }
 }
 
+
+impl TreeDisplay for HashJoinNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        self.name().to_string()
+    }
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.left.as_tree_display(),  self.right.as_tree_display()]
+    }
+}
+
+
 #[async_trait]
 impl PipelineNode for HashJoinNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
@@ -313,5 +325,9 @@ impl PipelineNode for HashJoinNode {
             worker_senders,
         ));
         Ok(())
+    }
+    
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

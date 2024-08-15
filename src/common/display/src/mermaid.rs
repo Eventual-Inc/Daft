@@ -46,6 +46,7 @@ impl<T: TreeDisplay> MermaidDisplay for T {
     }
 }
 
+
 pub struct MermaidDisplayVisitor<'a, W> {
     output: &'a mut W,
     t: DisplayLevel,

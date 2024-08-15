@@ -18,6 +18,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
@@ -30,7 +31,7 @@ use daft_plan::populate_aggregation_stages;
 use crate::channel::MultiSender;
 
 #[async_trait]
-pub trait PipelineNode: Sync + Send {
+pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
     async fn start(
@@ -38,24 +39,30 @@ pub trait PipelineNode: Sync + Send {
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> DaftResult<()>;
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
 
-// pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
-//     let mut display = MermaidDisplayBuilder::new(Default::default());
-//     let mut queue = vec![(None, root)];
-//     while !queue.is_empty() {
-//         let (parent_id, curr) = queue.pop().expect("should be non empty");
-//         let child_id = display.add_node(curr.name(), curr.name());
-//         if let Some(parent_id) = parent_id {
-//             display.add_edge(child_id.clone(), parent_id)
-//         }
+pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
+    let mut output = String::new();
+    let mut visitor = MermaidDisplayVisitor::new(&mut output, common_display::DisplayLevel::Default, Default::default());
+    visitor.fmt(root.as_tree_display()).unwrap();
+    output
+    // let mut display = MermaidDisplayBuilder::new(Default::default());
+    // let mut queue = vec![(None, root)];
+    // while !queue.is_empty() {
+    //     let (parent_id, curr) = queue.pop().expect("should be non empty");
+    //     let child_id = display.add_node(curr.name(), curr.name());
+    //     if let Some(parent_id) = parent_id {
+    //         display.add_edge(child_id.clone(), parent_id)
+    //     }
 
-//         for new_child in curr.children() {
-//             queue.push((Some(child_id.clone()), new_child))
-//         }
-//     }
-//     display.build()
-// }
+    //     for new_child in curr.children() {
+    //         queue.push((Some(child_id.clone()), new_child))
+    //     }
+    // }
+    // display.build()
+}
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,

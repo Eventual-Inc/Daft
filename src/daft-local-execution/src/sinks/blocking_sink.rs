@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::info_span;
@@ -46,6 +47,16 @@ impl BlockingSinkNode {
     }
 }
 
+impl TreeDisplay for BlockingSinkNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        self.name().to_string()
+    }
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
+}
+
+
 #[async_trait]
 impl PipelineNode for BlockingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
@@ -91,5 +102,8 @@ impl PipelineNode for BlockingSinkNode {
             Ok(())
         });
         Ok(())
+    }
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
