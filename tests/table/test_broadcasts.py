@@ -21,3 +21,8 @@ def test_broadcast_fixed_size_list():
         [col("x"), lit(data).cast(daft.DataType.fixed_size_list(daft.DataType.int64(), 3))]
     )
     assert new_table.to_pydict() == {"x": [1, 2, 3], "literal": [data for _ in range(3)]}
+
+
+def test_broadcast_empty_table():
+    df = daft.from_pydict({}).select(daft.lit(1)).collect()
+    assert df.to_pydict() == {"literal": [1]}
