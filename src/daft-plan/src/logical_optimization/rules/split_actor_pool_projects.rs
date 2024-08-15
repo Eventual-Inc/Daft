@@ -501,7 +501,6 @@ mod tests {
         )
     }
 
-    #[cfg(not(feature = "python"))]
     fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {

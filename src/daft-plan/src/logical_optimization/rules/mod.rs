@@ -10,3 +10,4 @@ pub use push_down_filter::PushDownFilter;
 pub use push_down_limit::PushDownLimit;
 pub use push_down_projection::PushDownProjection;
 pub use rule::{ApplyOrder, OptimizerRule, Transformed};
+pub use split_actor_pool_projects::SplitActorPoolProjects;
