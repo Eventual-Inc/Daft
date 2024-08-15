@@ -205,6 +205,9 @@ impl Schema {
     }
 
     pub fn short_string(&self) -> String {
+        if self.is_empty() {
+            return "EMPTY".to_string();
+        }
         self.fields
             .iter()
             .map(|(name, field)| format!("{}#{:?}", name, field.dtype))
