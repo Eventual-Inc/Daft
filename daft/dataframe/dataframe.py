@@ -2017,6 +2017,10 @@ class DataFrame:
             else list(typing.cast(Tuple[Expression], to_agg))
         )
 
+        for expr in to_agg_list:
+            if not isinstance(expr, Expression):
+                raise ValueError(f"DataFrame.agg() only accepts expression type, received: {type(expr)}")
+
         return self._agg(to_agg_list, group_by=None)
 
     @DataframePublicAPI
@@ -2669,6 +2673,10 @@ class GroupedDataFrame:
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
             else list(typing.cast(Tuple[Expression], to_agg))
         )
+
+        for expr in to_agg_list:
+            if not isinstance(expr, Expression):
+                raise ValueError(f"GroupedDataFrame.agg() only accepts expression type, received: {type(expr)}")
 
         return self.df._agg(to_agg_list, group_by=self.group_by)
 
