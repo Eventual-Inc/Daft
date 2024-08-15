@@ -1,13 +1,13 @@
 use std::{collections::HashSet, iter, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeRewriter};
+use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
     functions::{
         python::{PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
-    optimization::requires_computation,
+    optimization::{get_required_columns, requires_computation},
     Expr, ExprRef,
 };
 use itertools::Itertools;
@@ -70,56 +70,75 @@ impl OptimizerRule for SplitActorPoolProjects {
     }
 }
 
-struct SplitExprByStatefulUDF {
-    // Initialized to True, but once we encounter non-aliases this will be set to false
-    is_parsing_stateful_udf: bool,
-    remaining_exprs: Vec<ExprRef>,
-    stage_id: usize,
-    monotonically_increasing_expr_identifier: usize,
-    truncated_node_names: HashSet<String>,
+// TreeNodeRewriter that assumes the Expression tree is rooted at a StatefulUDF (or alias of a StatefulUDF)
+// and its children need to be truncated + replaced with Expr::Columns
+struct TruncateRootStatefulUDF {
+    pub(crate) new_children: Vec<ExprRef>,
+    stage_idx: usize,
+    expr_idx: usize,
 }
 
-impl SplitExprByStatefulUDF {
-    fn new(stage_id: usize) -> Self {
+impl TruncateRootStatefulUDF {
+    fn new(stage_idx: usize, expr_idx: usize) -> Self {
         Self {
-            is_parsing_stateful_udf: true,
-            remaining_exprs: Vec::new(),
-            stage_id,
-            monotonically_increasing_expr_identifier: 0,
-            truncated_node_names: HashSet::new(),
+            new_children: Vec::new(),
+            stage_idx,
+            expr_idx,
         }
     }
 }
 
-impl TreeNodeRewriter for SplitExprByStatefulUDF {
+// TreeNodeRewriter that assumes the Expression tree has some children which are StatefulUDFs
+// which needs to be truncated and replaced with Expr::Columns
+struct TruncateAnyStatefulUDFChildren {
+    pub(crate) new_children: Vec<ExprRef>,
+    stage_idx: usize,
+    expr_idx: usize,
+}
+
+impl TruncateAnyStatefulUDFChildren {
+    fn new(stage_idx: usize, expr_idx: usize) -> Self {
+        Self {
+            new_children: Vec::new(),
+            stage_idx,
+            expr_idx,
+        }
+    }
+}
+
+impl TreeNodeRewriter for TruncateRootStatefulUDF {
     type Node = ExprRef;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            // Encountered alias: keep going if we are parsing stateful UDFs because we should ignoring aliases
-            Expr::Alias { .. } if self.is_parsing_stateful_udf => {
+            // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
+            Expr::Column(name) => {
+                if !self
+                    .new_children
+                    .iter()
+                    .map(|e| e.name())
+                    .contains(&name.as_ref())
+                {
+                    self.new_children.push(node.clone());
+                }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // Encountered stateful UDF: chop off all children and add to self.next_exprs
+            // Encountered stateful UDF: chop off all children and add to self.next_children
             Expr::Function {
                 func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
                 inputs,
             } => {
-                assert!(self.is_parsing_stateful_udf, "SplitExprByStatefulUDF.is_parsing_stateful_udf should be True if we encounter a stateful UDF expression");
-
+                let mut monotonically_increasing_expr_identifier = 0;
                 let new_inputs = inputs.iter().map(|e| {
                     if requires_computation(e.as_ref()) {
                         // Give the new child a deterministic name
                         let intermediate_expr_name = format!(
-                            "__SplitExprByStatefulUDF_{}-{}_stateful_child__",
-                            self.stage_id, self.monotonically_increasing_expr_identifier
+                            "__TruncateRootStatefulUDF_{}-{}-{}__",
+                            self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
-                        self.monotonically_increasing_expr_identifier += 1;
-                        self.truncated_node_names
-                            .insert(intermediate_expr_name.clone());
+                        monotonically_increasing_expr_identifier += 1;
 
-                        // Truncate the child and push it onto the stack to indicate that it needs computation in a different stage
-                        self.remaining_exprs
+                        self.new_children
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
                         Expr::Column(intermediate_expr_name.as_str().into()).arced()
                     } else {
@@ -127,30 +146,41 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                     }
                 });
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-
-                Ok(common_treenode::Transformed::new(
-                    new_truncated_node,
-                    true,
-                    common_treenode::TreeNodeRecursion::Jump,
-                ))
+                Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
-            // If we encounter a ColumnExpr, we only add it to the remaining exprs if it wasn't a ColumnExpr that was added by SplitExprByStatefulUDF
-            Expr::Column(name) if !self.truncated_node_names.contains(name.as_ref()) => {
+            _ => Ok(common_treenode::Transformed::no(node)),
+        }
+    }
+}
+
+impl TreeNodeRewriter for TruncateAnyStatefulUDFChildren {
+    type Node = ExprRef;
+
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+        match node.as_ref() {
+            // This rewriter should never encounter a StatefulUDF expression (they should always be truncated and replaced)
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
+                ..
+            } => {
+                unreachable!(
+                    "TruncateAnyStatefulUDFChildren should never run on a StatefulUDF expression"
+                );
+            }
+            // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
+            Expr::Column(name) => {
                 if !self
-                    .remaining_exprs
+                    .new_children
                     .iter()
                     .map(|e| e.name())
                     .contains(&name.as_ref())
                 {
-                    self.remaining_exprs.push(node.clone());
+                    self.new_children.push(node.clone());
                 }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // If we encounter a stateless expression, we try to truncate any children that are StatefulUDFs
+            // Attempt to truncate any children that are StatefulUDFs, replacing them with a Expr::Column
             expr => {
-                // Indicate that we are now parsing a stateless expression tree
-                self.is_parsing_stateful_udf = false;
-
                 // None of the direct children are stateful UDFs, so we keep going
                 if node.children().iter().all(|e| {
                     !matches!(
@@ -166,7 +196,7 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                     return Ok(common_treenode::Transformed::no(node));
                 }
 
-                // If any children are stateful UDFs, we truncate
+                let mut monotonically_increasing_expr_identifier = 0;
                 let inputs = expr.children();
                 let new_inputs = inputs.iter().map(|e| {
                     if matches!(
@@ -179,13 +209,12 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
                         }
                     ) {
                         let intermediate_expr_name = format!(
-                            "__SplitExprByStatefulUDF_{}-{}_stateful__",
-                            self.stage_id, self.monotonically_increasing_expr_identifier
+                            "__TruncateAnyStatefulUDFChildren_{}-{}-{}__",
+                            self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
-                        self.monotonically_increasing_expr_identifier += 1;
-                        self.truncated_node_names
-                            .insert(intermediate_expr_name.clone());
-                        self.remaining_exprs
+                        monotonically_increasing_expr_identifier += 1;
+
+                        self.new_children
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
                         Expr::Column(intermediate_expr_name.as_str().into()).arced()
                     } else {
@@ -197,6 +226,82 @@ impl TreeNodeRewriter for SplitExprByStatefulUDF {
             }
         }
     }
+}
+
+/// Splits a projection down into two sets of new projections: (truncated_exprs, new_children)
+///
+/// `truncated_exprs` are the newly truncated expressions from `projection`. This has the same
+/// length as `projection`, and also the same names as each Expr in `projection`. However, their
+/// children are (potentially) truncated and replaced with Expr::Column nodes, which refer to
+/// Exprs in `new_children`.
+///
+/// `new_children` are the new children of `truncated_exprs`. Every Expr::Column leaf node in
+/// `truncated_exprs` should have a corresponding expression in `new_children` with the appropriate
+/// name.
+fn split_projection(
+    projection: &[ExprRef],
+    stage_idx: usize,
+) -> DaftResult<(Vec<ExprRef>, Vec<ExprRef>)> {
+    let mut truncated_exprs = Vec::new();
+    let (mut new_children_seen, mut new_children): (HashSet<String>, Vec<ExprRef>) =
+        (HashSet::new(), Vec::new());
+
+    fn _is_stateful_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
+        let mut is_stateful_udf = true;
+        expr.apply(|e| match e.as_ref() {
+            Expr::Alias(..) => Ok(TreeNodeRecursion::Continue),
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
+                ..
+            } => Ok(TreeNodeRecursion::Stop),
+            _ => {
+                is_stateful_udf = false;
+                Ok(TreeNodeRecursion::Stop)
+            }
+        })
+        .unwrap();
+        is_stateful_udf
+    }
+
+    for (expr_idx, expr) in projection.iter().enumerate() {
+        // Run the TruncateRootStatefulUDF TreeNodeRewriter
+        if _is_stateful_udf_and_should_truncate_children(expr) {
+            let mut rewriter = TruncateRootStatefulUDF::new(stage_idx, expr_idx);
+            let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
+            truncated_exprs.push(rewritten_root);
+            for new_child in rewriter.new_children {
+                if !new_children_seen.contains(new_child.name()) {
+                    new_children_seen.insert(new_child.name().to_string());
+                    new_children.push(new_child.clone());
+                }
+            }
+
+        // Run the TruncateAnyStatefulUDFChildren TreeNodeRewriter
+        } else if has_stateful_udf(expr) {
+            let mut rewriter = TruncateAnyStatefulUDFChildren::new(stage_idx, expr_idx);
+            let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
+            truncated_exprs.push(rewritten_root);
+            for new_child in rewriter.new_children {
+                if !new_children_seen.contains(new_child.name()) {
+                    new_children_seen.insert(new_child.name().to_string());
+                    new_children.push(new_child.clone());
+                }
+            }
+
+        // No need to rewrite the tree
+        } else {
+            truncated_exprs.push(expr.clone());
+            for required_col_name in get_required_columns(expr) {
+                if !new_children_seen.contains(&required_col_name) {
+                    let colexpr = Expr::Column(required_col_name.as_str().into()).arced();
+                    new_children_seen.insert(required_col_name);
+                    new_children.push(colexpr);
+                }
+            }
+        }
+    }
+
+    Ok((truncated_exprs, new_children))
 }
 
 fn try_optimize_project(
@@ -223,28 +328,8 @@ fn try_optimize_project(
     // Split the Projection into:
     // * remaining: remaining parts of the Project to recurse on
     // * truncated_exprs: current parts of the Project to split into (Project -> ActorPoolProjects -> Project)
-    let (remaining, truncated_exprs): (Vec<ExprRef>, Vec<ExprRef>) = {
-        let mut remaining: Vec<ExprRef> = Vec::new();
-        let mut truncated_exprs = Vec::new();
-        for expr in projection.projection.iter() {
-            let mut rewriter = SplitExprByStatefulUDF::new(recursive_count);
-            let root = expr.clone().rewrite(&mut rewriter)?.data;
-            truncated_exprs.push(root);
-
-            let filtered_remaining_exprs = rewriter
-                .remaining_exprs
-                .into_iter()
-                .filter(|new| {
-                    !remaining
-                        .iter()
-                        .map(|existing| existing.name())
-                        .contains(&new.name())
-                })
-                .collect_vec();
-            remaining.extend(filtered_remaining_exprs);
-        }
-        (remaining, truncated_exprs)
-    };
+    let (truncated_exprs, remaining): (Vec<ExprRef>, Vec<ExprRef>) =
+        split_projection(projection.projection.as_slice(), recursive_count)?;
 
     log::debug!(
         "Truncated Exprs: {}",
@@ -452,7 +537,6 @@ mod tests {
     // TODO: need to figure out how users will pass this in
     static NUM_ACTORS: usize = 1;
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
@@ -480,9 +564,103 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_parallel() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", daft_core::DataType::Utf8),
+            Field::new("b", daft_core::DataType::Utf8),
+        ]);
+        let scan_plan = dummy_scan_node(scan_op);
+        let project_plan = scan_plan
+            .with_columns(
+                vec![
+                    create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]).alias("a_prime"),
+                    create_stateful_udf(vec![create_stateful_udf(vec![col("b")])]).alias("b_prime"),
+                ],
+                None,
+            )?
+            .build();
+
+        let intermediate_column_name_0 = "__TruncateRootStatefulUDF_0-2-0__";
+        let intermediate_column_name_1 = "__TruncateRootStatefulUDF_0-3-0__";
+        let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                col("b"),
+                create_stateful_udf(vec![col("a")]).alias(intermediate_column_name_0),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                col("b"),
+                col(intermediate_column_name_0),
+                create_stateful_udf(vec![col("b")]).alias(intermediate_column_name_1),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![
+                col("a"),
+                col("b"),
+                col(intermediate_column_name_0),
+                col(intermediate_column_name_1),
+            ],
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![
+                col(intermediate_column_name_0),
+                col(intermediate_column_name_1),
+                col("a"),
+                col("b"),
+            ],
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col(intermediate_column_name_0),
+                col(intermediate_column_name_1),
+                col("a"),
+                col("b"),
+                create_stateful_udf(vec![col(intermediate_column_name_0)]).alias("a_prime"),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col(intermediate_column_name_0),
+                col(intermediate_column_name_1),
+                col("a"),
+                col("b"),
+                col("a_prime"),
+                create_stateful_udf(vec![col(intermediate_column_name_1)]).alias("b_prime"),
+            ],
+            NUM_ACTORS,
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![col("a"), col("b"), col("a_prime"), col("b_prime")],
+        )?)
+        .arced();
+        assert_optimized_plan_eq(project_plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_with_column_parallel_common_subtree_eliminated() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stateful_project_expr = create_stateful_udf(vec![col("a")]);
@@ -566,7 +744,7 @@ mod tests {
             .with_columns(vec![stacked_stateful_project_expr.clone().alias("b")], None)?
             .build();
 
-        let intermediate_name = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let intermediate_name = "__TruncateRootStatefulUDF_0-1-0__";
         let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
@@ -656,8 +834,8 @@ mod tests {
             .select(vec![stacked_stateful_project_expr.clone().alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__SplitExprByStatefulUDF_0-0_stateful_child__";
-        let intermediate_name_1 = "__SplitExprByStatefulUDF_0-1_stateful_child__";
+        let intermediate_name_0 = "__TruncateRootStatefulUDF_0-0-0__";
+        let intermediate_name_1 = "__TruncateRootStatefulUDF_0-0-1__";
         let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
@@ -766,9 +944,9 @@ mod tests {
             .select(vec![stacked_stateful_project_expr.clone().alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__SplitExprByStatefulUDF_1-0_stateful__";
-        let intermediate_name_1 = "__SplitExprByStatefulUDF_1-1_stateful__";
-        let intermediate_name_2 = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_1-0-0__";
+        let intermediate_name_1 = "__TruncateAnyStatefulUDFChildren_1-0-1__";
+        let intermediate_name_2 = "__TruncateRootStatefulUDF_0-0-0__";
         let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
@@ -891,8 +1069,8 @@ mod tests {
             ])?
             .build();
 
-        let intermediate_name_0 = "__SplitExprByStatefulUDF_1-0_stateful__";
-        let intermediate_name_1 = "__SplitExprByStatefulUDF_0-0_stateful_child__";
+        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_1-1-0__";
+        let intermediate_name_1 = "__TruncateRootStatefulUDF_0-1-0__";
         let expected = scan_plan.build();
         let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("a")])?).arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
