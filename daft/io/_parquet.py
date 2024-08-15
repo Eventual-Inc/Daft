@@ -26,6 +26,7 @@ def read_parquet(
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
+    schema_hints: Optional[Dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
@@ -56,6 +57,11 @@ def read_parquet(
 
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of Parquet filepaths")
+
+    if schema_hints is not None:
+        raise ValueError(
+            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
+        )
 
     is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.

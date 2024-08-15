@@ -31,6 +31,7 @@ def read_csv(
     allow_variable_columns: bool = False,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
+    schema_hints: Optional[Dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
@@ -61,6 +62,11 @@ def read_csv(
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
+
+    if schema_hints is not None:
+        raise ValueError(
+            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
+        )
 
     if not infer_schema and schema is None:
         raise ValueError(
