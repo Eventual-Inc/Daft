@@ -284,6 +284,8 @@ class Expression:
             │ b: c,                     │
             │ }                         │
             ╰───────────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
 
         Args:
             inputs: Expressions to be converted into struct fields.
