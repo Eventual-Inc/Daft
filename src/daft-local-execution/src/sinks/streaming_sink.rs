@@ -44,7 +44,7 @@ impl StreamingSinkNode {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             children,
-            runtime_stats: Arc::new(RuntimeStatsContext::new(name.to_string())),
+            runtime_stats: RuntimeStatsContext::new(),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {

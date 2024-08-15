@@ -1,12 +1,8 @@
-use std::{
-    sync::{atomic::AtomicU64, Arc},
-    time::Instant,
-};
+use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use tokio::sync::mpsc::error::SendError;
 use tracing::{info_span, instrument};
 
 use async_trait::async_trait;
@@ -38,8 +34,8 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
-        let rts: RuntimeStatsContext = RuntimeStatsContext::new(intermediate_op.name().to_string());
-        Self::new_with_runtime_stats(intermediate_op, children, Arc::new(rts))
+        let rts = RuntimeStatsContext::new();
+        Self::new_with_runtime_stats(intermediate_op, children, rts)
     }
 
     pub(crate) fn new_with_runtime_stats(

@@ -10,7 +10,6 @@ use crate::channel::SingleSender;
 
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
-    name: String,
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
@@ -24,13 +23,12 @@ pub(crate) struct RuntimeStats {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new(name: String) -> Self {
-        Self {
-            name,
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
-        }
+        })
     }
     pub(crate) fn in_span<F: FnOnce() -> T, T>(&self, span: &tracing::Span, f: F) -> T {
         let _enter = span.enter();
@@ -52,7 +50,7 @@ impl RuntimeStatsContext {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
     }
-
+    #[allow(unused)]
     pub(crate) fn reset(&self) {
         self.rows_received
             .store(0, std::sync::atomic::Ordering::Release);

@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::{IOStatsContext, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;

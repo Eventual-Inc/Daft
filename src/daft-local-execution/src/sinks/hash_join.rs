@@ -4,7 +4,7 @@ use crate::{
     channel::{create_channel, MultiSender},
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
-    runtime_stats::{RuntimeStats, RuntimeStatsContext},
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
@@ -243,10 +243,8 @@ impl HashJoinNode {
             hash_join: Arc::new(tokio::sync::Mutex::new(op)),
             left,
             right,
-            build_runtime_stats: Arc::new(RuntimeStatsContext::new(
-                "HashJoinProbeTableBuilder".to_string(),
-            )),
-            probe_runtime_stats: Arc::new(RuntimeStatsContext::new("HashJoinProber".to_string())),
+            build_runtime_stats: RuntimeStatsContext::new(),
+            probe_runtime_stats: RuntimeStatsContext::new(),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {

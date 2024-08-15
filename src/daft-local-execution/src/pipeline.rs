@@ -18,7 +18,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use common_display::{ascii::AsciiTreeDisplay, mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;

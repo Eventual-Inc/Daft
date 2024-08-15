@@ -85,10 +85,10 @@ impl PipelineNode for SourceNode {
 
 impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
     fn from(source: Box<dyn Source>) -> Self {
-        let name = source.name().to_string();
+        let name = source.name();
         Box::new(SourceNode {
             source,
-            runtime_stats: Arc::new(RuntimeStatsContext::new(name.clone())),
+            runtime_stats: RuntimeStatsContext::new(),
             io_stats: IOStatsContext::new(name),
         })
     }
