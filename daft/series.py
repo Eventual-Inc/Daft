@@ -891,10 +891,10 @@ class SeriesStringNamespace(SeriesNamespace):
     def normalize(
         self,
         *,
-        remove_punct: bool = True,
-        lowercase: bool = True,
-        nfd_unicode: bool = True,
-        white_space: bool = True,
+        remove_punct: bool = False,
+        lowercase: bool = False,
+        nfd_unicode: bool = False,
+        white_space: bool = False,
     ) -> Series:
         if not isinstance(remove_punct, bool):
             raise ValueError(f"expected bool for remove_punct but got {type(remove_punct)}")
