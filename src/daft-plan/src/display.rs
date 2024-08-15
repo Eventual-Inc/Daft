@@ -174,7 +174,7 @@ mod test {
             .build();
 
         let mermaid_repr = plan.repr_mermaid(Default::default());
-        println!("{}", mermaid_repr);
+
         let expected = r#"flowchart TD
 Limit0["Limit: 10"]
 Project1["Project: col(first_name)"]
