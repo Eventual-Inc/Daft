@@ -256,7 +256,6 @@ impl PushDownProjection {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                             upstream_actor_pool_projection.input.clone(),
                             pruned_upstream_projections,
-                            upstream_actor_pool_projection.num_actors,
                         )?)
                         .arced()
                     };

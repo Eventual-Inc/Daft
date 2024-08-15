@@ -105,16 +105,11 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
-        LogicalPlan::ActorPoolProject(LogicalActorPoolProject {
-            projection,
-            num_actors,
-            ..
-        }) => {
+        LogicalPlan::ActorPoolProject(LogicalActorPoolProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 input_physical,
                 projection.clone(),
-                *num_actors,
             )?)
             .arced())
         }

@@ -254,6 +254,7 @@ class Expression:
         resource_request: ResourceRequest | None,
         init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
         batch_size: int | None,
+        concurrency: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _stateful_udf(
@@ -264,6 +265,7 @@ class Expression:
                 resource_request,
                 init_args,
                 batch_size,
+                concurrency,
             )
         )
 

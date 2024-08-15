@@ -466,7 +466,7 @@ impl PhysicalPlan {
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), clustering_spec.clone(),
                 ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), *num_actors).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),

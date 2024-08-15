@@ -19,6 +19,13 @@ impl PyDaftPlanningConfig {
         PyDaftPlanningConfig::default()
     }
 
+    #[staticmethod]
+    pub fn from_env() -> Self {
+        PyDaftPlanningConfig {
+            config: Arc::new(DaftPlanningConfig::from_env()),
+        }
+    }
+
     fn with_config_values(
         &mut self,
         default_io_config: Option<PyIOConfig>,

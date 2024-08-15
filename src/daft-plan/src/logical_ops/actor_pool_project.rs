@@ -5,7 +5,7 @@ use common_treenode::TreeNode;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
     functions::{
-        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
+        python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     resolve_exprs, Expr, ExprRef,
@@ -24,15 +24,10 @@ pub struct ActorPoolProject {
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
-    pub num_actors: usize,
 }
 
 impl ActorPoolProject {
-    pub(crate) fn try_new(
-        input: Arc<LogicalPlan>,
-        projection: Vec<ExprRef>,
-        num_actors: usize,
-    ) -> Result<Self> {
+    pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
             resolve_exprs(projection, input.schema().as_ref()).context(CreationSnafu)?;
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
@@ -40,12 +35,15 @@ impl ActorPoolProject {
             input,
             projection,
             projected_schema,
-            num_actors,
         })
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
         get_resource_request(self.projection.as_slice())
+    }
+
+    pub fn concurrency(&self) -> usize {
+        get_concurrency(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -80,7 +78,7 @@ impl ActorPoolProject {
                 })
                 .join(", ")
         ));
-        res.push(format!("Num actors = {}", self.num_actors,));
+        res.push(format!("Concurrency = {}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(

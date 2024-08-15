@@ -6,6 +6,7 @@ import inspect
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Union
 
+from daft.context import get_context
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
 from daft.expressions import Expression
@@ -198,9 +199,9 @@ class UDF:
         memory_bytes: int | None = _UnsetMarker,
         batch_size: int | None = _UnsetMarker,
     ) -> UDF:
-        """Replace the resource requests for running each instance of your stateless UDF.
+        """Replace the resource requests for running each instance of your UDF.
 
-        For instance, if your stateless UDF requires 4 CPUs to run, you can configure it like so:
+        For instance, if your UDF requires 4 CPUs to run, you can configure it like so:
 
         >>> import daft
         >>>
@@ -309,6 +310,7 @@ class StatefulUDF(UDF):
     cls: type
     return_dtype: DataType
     init_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
+    concurrency: int | None = None
 
     def __post_init__(self):
         """Analogous to the @functools.wraps(self.cls) pattern
@@ -319,6 +321,17 @@ class StatefulUDF(UDF):
         functools.update_wrapper(self, self.cls)
 
     def __call__(self, *args, **kwargs) -> Expression:
+        # Validate that the UDF has a concurrency set, if running with actor pool projections
+        if get_context().daft_planning_config.enable_actor_pool_projections:
+            if self.concurrency is None:
+                raise ValueError(
+                    "Cannot call StatefulUDF without supplying a concurrency argument. Daft needs to know how many instances of your StatefulUDF to run concurrently. Please parametrize your UDF using `.with_concurrency(N)` before invoking it!"
+                )
+        elif self.concurrency is not None:
+            raise ValueError(
+                "StatefulUDF cannot be run with concurrency specified without the experimental DAFT_ENABLE_ACTOR_POOL_PROJECTIONS=1 flag set."
+            )
+
         # Validate that initialization arguments are provided if the __init__ signature indicates that there are
         # parameters without defaults
         init_sig = inspect.signature(self.cls.__init__)  # type: ignore
@@ -341,7 +354,28 @@ class StatefulUDF(UDF):
             resource_request=self.resource_request,
             init_args=self.init_args,
             batch_size=self.batch_size,
+            concurrency=self.concurrency,
         )
+
+    def with_concurrency(self, concurrency: int) -> StatefulUDF:
+        """Override the concurrency of this StatefulUDF, which tells Daft how many instances of your StatefulUDF to run concurrently.
+
+        Example:
+
+        >>> import daft
+        >>>
+        >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+        ... class MyUDFThatNeedsAGPU:
+        ...     def __init__(self, text=" world"):
+        ...         self.text = text
+        ...
+        ...     def __call__(self, data):
+        ...         return [x + self.text for x in data.to_pylist()]
+        >>>
+        >>> # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
+        >>> MyUDFThatNeedsAGPU_8_concurrency = MyUDFThatNeedsAGPU.with_concurrency(8)
+        """
+        return dataclasses.replace(self, concurrency=concurrency)
 
     def with_init_args(self, *args, **kwargs) -> StatefulUDF:
         """Replace initialization arguments for the Stateful UDF when calling __init__ at runtime
@@ -411,6 +445,7 @@ def udf(
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
     batch_size: int | None = None,
+    _concurrency: int | None = None,
 ) -> Callable[[UserProvidedPythonFunction | type], StatelessUDF | StatefulUDF]:
     """Decorator to convert a Python function into a UDF
 
