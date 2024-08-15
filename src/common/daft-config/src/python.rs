@@ -48,6 +48,11 @@ impl PyDaftPlanningConfig {
         })
     }
 
+    #[getter(enable_actor_pool_projections)]
+    fn enable_actor_pool_projections(&self) -> PyResult<bool> {
+        Ok(self.config.enable_actor_pool_projections)
+    }
+
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
         let bin_data = bincode::serialize(self.config.as_ref())
             .expect("DaftPlanningConfig should be serializable to bytes");
