@@ -57,13 +57,8 @@ impl OptimizerRule for SplitActorPoolProjects {
     }
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // TODO: Figure out num_actors! How do we propagate this correctly?
-        let num_actors = 1;
-
         match plan.as_ref() {
-            LogicalPlan::Project(projection) => {
-                try_optimize_project(projection, plan.clone(), num_actors, 0)
-            }
+            LogicalPlan::Project(projection) => try_optimize_project(projection, plan.clone(), 0),
             // TODO: Figure out how to split other nodes as well such as Filter, Agg etc
             _ => Ok(Transformed::No(plan)),
         }
@@ -307,7 +302,6 @@ fn split_projection(
 fn try_optimize_project(
     projection: &Project,
     plan: Arc<LogicalPlan>,
-    num_actors: usize,
     recursive_count: usize,
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
     // Base case: no stateful UDFs at all
@@ -354,12 +348,8 @@ fn try_optimize_project(
         // Recursively run the rule on the new child Project
         let new_project = Project::try_new(plan.children()[0].clone(), remaining)?;
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
-        let optimized_child_plan = try_optimize_project(
-            &new_project,
-            new_child_project.clone(),
-            num_actors,
-            recursive_count + 1,
-        )?;
+        let optimized_child_plan =
+            try_optimize_project(&new_project, new_child_project.clone(), recursive_count + 1)?;
         optimized_child_plan.unwrap().clone()
     };
 
@@ -418,7 +408,6 @@ fn try_optimize_project(
             child = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 child,
                 stateful_projection,
-                num_actors,
             )?)
             .arced();
         }
@@ -521,6 +510,7 @@ mod tests {
                 return_dtype: daft_core::DataType::Int64,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
+                concurrency: Some(8),
             })),
             inputs,
         }
@@ -534,9 +524,6 @@ mod tests {
             memory_bytes: None,
         }
     }
-
-    // TODO: need to figure out how users will pass this in
-    static NUM_ACTORS: usize = 1;
 
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
@@ -554,7 +541,6 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![col("a"), stateful_project_expr.clone().alias("b")],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected =
@@ -589,7 +575,6 @@ mod tests {
                 col("b"),
                 create_stateful_udf(vec![col("a")]).alias(intermediate_column_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -600,7 +585,6 @@ mod tests {
                 col(intermediate_column_name_0),
                 create_stateful_udf(vec![col("b")]).alias(intermediate_column_name_1),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -632,7 +616,6 @@ mod tests {
                 col("b"),
                 create_stateful_udf(vec![col(intermediate_column_name_0)]).alias("a_prime"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -645,7 +628,6 @@ mod tests {
                 col("a_prime"),
                 create_stateful_udf(vec![col(intermediate_column_name_1)]).alias("b_prime"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -667,7 +649,7 @@ mod tests {
         // NOTE: Our common-subtree elimination will build this as 2 project nodes:
         // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
         //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }), batch_size: None }))(a)";
+        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }), batch_size: None, concurrency: Some(8) }))(a)";
         let project_plan = scan_plan
             .with_columns(vec![
                 stateful_project_expr.clone().alias("b"),
@@ -682,7 +664,6 @@ mod tests {
                 col("a"),
                 stateful_project_expr.clone().alias(factored_column_name),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -709,7 +690,6 @@ mod tests {
                 col("a"),
                 stateful_project_expr.clone().alias(factored_column_name),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -749,7 +729,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -771,7 +750,6 @@ mod tests {
                     .clone()
                     .alias("b"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected =
@@ -788,7 +766,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -804,7 +781,6 @@ mod tests {
                     .clone()
                     .alias("b"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -841,7 +817,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -854,7 +829,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_1),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -876,7 +850,6 @@ mod tests {
                     .clone()
                     .alias("c"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("c")])?).arced();
@@ -893,7 +866,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -904,7 +876,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_1),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -914,7 +885,6 @@ mod tests {
                     .clone()
                     .alias("c"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan.clone(), expected.clone())?;
@@ -952,7 +922,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -965,7 +934,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_1),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -998,7 +966,6 @@ mod tests {
                     .clone()
                     .alias("c"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("c")])?).arced();
@@ -1015,7 +982,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -1026,7 +992,6 @@ mod tests {
                     .clone()
                     .alias(intermediate_name_1),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -1041,7 +1006,6 @@ mod tests {
             vec![create_stateful_udf(vec![col(intermediate_name_2)])
                 .clone()
                 .alias("c")],
-            NUM_ACTORS,
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan.clone(), expected.clone())?;
@@ -1074,7 +1038,6 @@ mod tests {
                 col("a"),
                 create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -1110,7 +1073,6 @@ mod tests {
                 col("a"),
                 create_stateful_udf(vec![col(intermediate_name_1)]).alias("c"),
             ],
-            NUM_ACTORS,
         )?)
         .arced();
         let expected =
