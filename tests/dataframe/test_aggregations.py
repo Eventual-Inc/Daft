@@ -385,22 +385,6 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
         assert df.num_partitions() == min(min_partitions, partition_size)
 
 
-def test_agg_deprecation():
-    with pytest.deprecated_call():
-        df = daft.from_pydict({"a": [1, 2, 3], "b": [True, False, True]})
-        df = df.agg([("a", "sum"), ("b", "count")])
-        df.collect()
-
-        assert df.to_pydict() == {"a": [6], "b": [3]}
-
-    with pytest.deprecated_call():
-        df = daft.from_pydict({"a": [1, 2, 3], "b": [True, False, True]})
-        df = df.groupby("b").agg([("a", "sum")])
-        df.collect()
-
-        assert df.to_pydict() == {"b": [True, False], "a": [4, 2]}
-
-
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_agg_any_value(make_df, repartition_nparts):
     daft_df = make_df(

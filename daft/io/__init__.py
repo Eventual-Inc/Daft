@@ -12,7 +12,7 @@ from daft.daft import (
     set_io_pool_num_threads,
 )
 from daft.io._csv import read_csv
-from daft.io._delta_lake import read_deltalake, read_delta_lake
+from daft.io._delta_lake import read_deltalake
 from daft.io._hudi import read_hudi
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
@@ -45,7 +45,6 @@ __all__ = [
     "read_hudi",
     "read_iceberg",
     "read_deltalake",
-    "read_delta_lake",
     "read_lance",
     "read_sql",
     "IOConfig",
