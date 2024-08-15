@@ -329,6 +329,12 @@ macro_rules! impl_from_data_struct_for_logical_plan {
                 Self::$name(data)
             }
         }
+
+        impl From<$name> for Arc<LogicalPlan> {
+            fn from(data: $name) -> Self {
+                Arc::new(LogicalPlan::$name(data))
+            }
+        }
     };
 }
 
