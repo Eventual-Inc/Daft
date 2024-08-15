@@ -122,7 +122,7 @@ pub fn run_local(
 
     let res = runtime.block_on(async {
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-        let (sender, mut receiver) = create_channel(1, true);
+        let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
 
         let mut runtime_handle = ExecutionRuntimeHandle::default();
         pipeline.start(sender, &mut runtime_handle).await?;
