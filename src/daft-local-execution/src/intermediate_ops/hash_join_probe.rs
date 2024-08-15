@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{pipeline::PipelineOutput, DEFAULT_MORSEL_SIZE};
 use common_error::DaftResult;
+use daft_core::{schema::Schema, JoinType};
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeTable, Table};
@@ -90,13 +91,18 @@ impl OperatorState for HashJoinProbeState {
 }
 
 pub struct HashJoinProber {
-    left_on: Vec<ExprRef>,
-    right_on: Vec<ExprRef>,
+    build_on: Vec<ExprRef>,
+    probe_on: Vec<ExprRef>,
+    join_type: JoinType,
 }
 
 impl HashJoinProber {
-    pub fn new(left_on: Vec<ExprRef>, right_on: Vec<ExprRef>) -> Self {
-        Self { left_on, right_on }
+    pub fn new(build_on: Vec<ExprRef>, probe_on: Vec<ExprRef>, join_type: JoinType) -> Self {
+        Self {
+            build_on,
+            probe_on,
+            join_type,
+        }
     }
 
     fn probe(
@@ -108,54 +114,178 @@ impl HashJoinProber {
         let _span = info_span!("HashJoinProber::execute").entered();
         let _growables = info_span!("HashJoinProber::build_growables").entered();
 
-        // Left should only be created once per probe table
-        let mut left_growable = GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20)?;
-        // right should only be created morsel
+        // build should only be created once per probe table
+        let mut build_side_growable =
+            GrowableTable::new(&tables.iter().collect::<Vec<_>>(), true, 20)?;
+        // probe should only be created morsel
 
-        let right_input_tables = input.get_tables()?;
+        let probe_side_input_tables = input.get_tables()?;
 
-        let mut right_growable =
-            GrowableTable::new(&right_input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut probe_side_growable = GrowableTable::new(
+            &probe_side_input_tables.iter().collect::<Vec<_>>(),
+            false,
+            20,
+        )?;
 
         drop(_growables);
         {
             let _loop = info_span!("HashJoinProber::eval_and_probe").entered();
-            for (r_table_idx, table) in right_input_tables.iter().enumerate() {
+            for (probe_side_table_idx, table) in probe_side_input_tables.iter().enumerate() {
                 // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(&self.right_on)?;
+                let join_keys = table.eval_expression_list(&self.probe_on)?;
                 let iter = probe_table.probe(&join_keys)?;
 
-                for (l_table_idx, l_row_idx, right_idx) in iter {
-                    left_growable.extend(l_table_idx as usize, l_row_idx as usize, 1);
-                    // we can perform run length compression for this to make this more efficient
-                    right_growable.extend(r_table_idx, right_idx as usize, 1);
+                match self.join_type {
+                    JoinType::Inner => {
+                        for (probe_row_idx, inner_iter) in iter {
+                            if let Some(inner_iter) = inner_iter {
+                                for (build_side_table_idx, build_row_idx) in inner_iter {
+                                    build_side_growable.extend(
+                                        build_side_table_idx as usize,
+                                        build_row_idx as usize,
+                                        1,
+                                    );
+                                    // we can perform run length compression for this to make this more efficient
+                                    probe_side_growable.extend(
+                                        probe_side_table_idx,
+                                        probe_row_idx as usize,
+                                        1,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    JoinType::Left | JoinType::Right => {
+                        for (probe_row_idx, inner_iter) in iter {
+                            if let Some(inner_iter) = inner_iter {
+                                for (build_side_table_idx, build_row_idx) in inner_iter {
+                                    build_side_growable.extend(
+                                        build_side_table_idx as usize,
+                                        build_row_idx as usize,
+                                        1,
+                                    );
+                                    probe_side_growable.extend(
+                                        probe_side_table_idx,
+                                        probe_row_idx as usize,
+                                        1,
+                                    );
+                                }
+                            } else {
+                                // if there's no match, we should still emit the probe side and fill the build side with nulls
+                                build_side_growable.add_nulls(1);
+                                probe_side_growable.extend(
+                                    probe_side_table_idx,
+                                    probe_row_idx as usize,
+                                    1,
+                                );
+                            }
+                        }
+                    }
+                    JoinType::Semi => {
+                        for (probe_row_idx, inner_iter) in iter {
+                            if inner_iter.is_some() {
+                                probe_side_growable.extend(
+                                    probe_side_table_idx,
+                                    probe_row_idx as usize,
+                                    1,
+                                );
+                            }
+                        }
+                    }
+                    JoinType::Anti => {
+                        for (probe_row_idx, inner_iter) in iter {
+                            if inner_iter.is_none() {
+                                probe_side_growable.extend(
+                                    probe_side_table_idx,
+                                    probe_row_idx as usize,
+                                    1,
+                                );
+                            }
+                        }
+                    }
+                    _ => todo!(),
                 }
             }
         }
-        let left_table = left_growable.build()?;
-        let right_table = right_growable.build()?;
+        if self.join_type == JoinType::Semi || self.join_type == JoinType::Anti {
+            let probe_side_table = probe_side_growable.build()?;
+            return Ok(Arc::new(MicroPartition::new_loaded(
+                probe_side_table.schema.clone(),
+                Arc::new(vec![probe_side_table]),
+                None,
+            )));
+        }
+        let probe_side_table = probe_side_growable.build()?;
+        let build_side_table = build_side_growable.build()?;
+        let common_join_keys_iter =
+            self.build_on
+                .iter()
+                .zip(self.probe_on.iter())
+                .filter_map(|(l, r)| {
+                    if l.name() == r.name() {
+                        Some(l.name())
+                    } else {
+                        None
+                    }
+                });
 
-        let common_join_keys = self
-            .left_on
-            .iter()
-            .zip(self.right_on.iter())
-            .filter_map(|(l, r)| {
-                if l.name() == r.name() {
-                    Some(l.name())
-                } else {
-                    None
+        let final_table = match self.join_type {
+            JoinType::Inner => {
+                let common_join_keys =
+                    common_join_keys_iter.collect::<std::collections::HashSet<_>>();
+                let pruned_probe_side_columns = probe_side_table
+                    .schema
+                    .fields
+                    .keys()
+                    .filter(|c| !common_join_keys.contains(c.as_str()))
+                    .collect::<Vec<_>>();
+                let pruned_probe_side_table =
+                    probe_side_table.get_columns(&pruned_probe_side_columns)?;
+                build_side_table.union(&pruned_probe_side_table)?
+            }
+            JoinType::Left => {
+                let common_join_keys =
+                    common_join_keys_iter.collect::<std::collections::HashSet<_>>();
+                let pruned_build_side_columns = build_side_table
+                    .schema
+                    .fields
+                    .keys()
+                    .filter(|c| !common_join_keys.contains(c.as_str()))
+                    .collect::<Vec<_>>();
+                let pruned_build_side_table =
+                    build_side_table.get_columns(&pruned_build_side_columns)?;
+                probe_side_table.union(&pruned_build_side_table)?
+            }
+            JoinType::Right => {
+                let len = build_side_table.len();
+                let common_join_keys_vec = common_join_keys_iter.collect::<Vec<_>>();
+                let mut join_series = common_join_keys_vec
+                    .iter()
+                    .map(|name| {
+                        let col = probe_side_table.get_column(name)?;
+                        Ok(col)
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let common_join_keys = common_join_keys_vec
+                    .into_iter()
+                    .collect::<std::collections::HashSet<_>>();
+                for col_name in build_side_table.column_names() {
+                    if !common_join_keys.contains(col_name.as_str()) {
+                        join_series.push(build_side_table.get_column(col_name)?);
+                    }
                 }
-            })
-            .collect::<std::collections::HashSet<_>>();
-        let right_table_pruned_columns = right_table
-            .schema
-            .fields
-            .keys()
-            .filter(|x| !common_join_keys.contains(x.as_str()))
-            .collect::<Vec<_>>();
-        let right_table = right_table.get_columns(&right_table_pruned_columns)?;
+                for col_name in probe_side_table.column_names() {
+                    if !common_join_keys.contains(col_name.as_str()) {
+                        join_series.push(probe_side_table.get_column(col_name)?);
+                    }
+                }
+                let schema = Schema::new(join_series.iter().map(|s| s.field().clone()).collect())?;
+                Table::new_with_size(schema, join_series.into_iter().cloned().collect(), len)?
+            }
+            _ => todo!(),
+        };
 
-        let final_table = left_table.union(&right_table)?;
+        // let final_table = pruned_left_side_table.union(&pruned_right_side_table)?;
         Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
             Arc::new(vec![final_table]),

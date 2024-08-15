@@ -21,6 +21,7 @@ use daft_core::{
     datatypes::Field,
     schema::{Schema, SchemaRef},
     utils::supertype,
+    JoinType,
 };
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
@@ -252,52 +253,61 @@ pub fn physical_plan_to_pipeline(
             join_type,
             ..
         }) => {
-            let left_schema = left.schema();
-            let right_schema = right.schema();
+            let (build, probe, build_on, probe_on) = match join_type {
+                JoinType::Inner | JoinType::Right => (left, right, left_on, right_on),
+                JoinType::Left | JoinType::Semi | JoinType::Anti => {
+                    (right, left, right_on, left_on)
+                }
+                _ => {
+                    unimplemented!("Join type not supported: {:?}", join_type);
+                }
+            };
+            let build_schema = build.schema();
+            let probe_schema = probe.schema();
 
-            let left_key_fields = left_on
+            let build_key_fields = build_on
                 .iter()
-                .map(|e| e.to_field(left_schema))
+                .map(|e| e.to_field(build_schema))
                 .collect::<DaftResult<Vec<_>>>()?;
-            let right_key_fields = right_on
+            let probe_key_fields = probe_on
                 .iter()
-                .map(|e| e.to_field(right_schema))
+                .map(|e| e.to_field(probe_schema))
                 .collect::<DaftResult<Vec<_>>>()?;
 
             let key_schema: SchemaRef = Schema::new(
-                left_key_fields
+                build_key_fields
                     .into_iter()
-                    .zip(right_key_fields.into_iter())
-                    .map(|(l, r)| {
+                    .zip(probe_key_fields.into_iter())
+                    .map(|(b, p)| {
                         // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
-                        let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
-                        Ok(Field::new(l.name, dtype))
+                        let dtype = supertype::try_get_supertype(&b.dtype, &p.dtype)?;
+                        Ok(Field::new(b.name, dtype))
                     })
                     .collect::<DaftResult<Vec<_>>>()?,
             )?
             .into();
 
-            let casted_left_on = left_on
+            let casted_build_on = build_on
                 .iter()
                 .zip(key_schema.fields.values())
                 .map(|(e, f)| e.clone().cast(&f.dtype))
                 .collect::<Vec<_>>();
-            let casted_right_on = right_on
+            let casted_probe_on = probe_on
                 .iter()
                 .zip(key_schema.fields.values())
                 .map(|(e, f)| e.clone().cast(&f.dtype))
                 .collect::<Vec<_>>();
 
-            let left_node = physical_plan_to_pipeline(left, psets)?;
-            let right_node = physical_plan_to_pipeline(right, psets)?;
+            let build_node = physical_plan_to_pipeline(build, psets)?;
+            let probe_node = physical_plan_to_pipeline(probe, psets)?;
 
             // we should move to a builder pattern
             let build_sink =
-                HashJoinBuildSink::new(casted_left_on.clone(), *join_type, &key_schema)?;
-            let build_sink_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
+                HashJoinBuildSink::new(casted_build_on.clone(), *join_type, &key_schema)?;
+            let build_sink_node = BlockingSinkNode::new(build_sink.boxed(), build_node).boxed();
 
-            let probe_op = HashJoinProber::new(casted_left_on, casted_right_on);
-            IntermediateNode::new(Arc::new(probe_op), vec![build_sink_node, right_node]).boxed()
+            let probe_op = HashJoinProber::new(casted_build_on, casted_probe_on, *join_type);
+            IntermediateNode::new(Arc::new(probe_op), vec![build_sink_node, probe_node]).boxed()
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
