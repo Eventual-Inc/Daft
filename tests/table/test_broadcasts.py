@@ -26,3 +26,16 @@ def test_broadcast_fixed_size_list():
 def test_broadcast_empty_table():
     df = daft.from_pydict({}).select(daft.lit(1)).collect()
     assert df.to_pydict() == {"literal": [1]}
+
+
+def test_all_literals_doesnt_broadcast():
+    df = (
+        daft.from_pydict(
+            {
+                "a": [1, 2, 3],
+            }
+        )
+        .select(daft.lit(1))
+        .collect()
+    )
+    assert df.to_pydict() == {"literal": [1]}

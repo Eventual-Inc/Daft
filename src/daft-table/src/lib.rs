@@ -574,11 +574,19 @@ impl Table {
         }
         let new_schema = Schema::new(fields)?;
 
+        let are_all_literal = exprs.iter().all(|e| e.is_literal());
+
+        // Fast path for all literal expressions
+        if are_all_literal {
+            return Table::new_with_size(new_schema, result_series, 1);
+        }
+
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
+
         let num_rows = match (has_agg_expr, self.len()) {
             // "Normal" case: the final cardinality is the max(*results_lens, self.len())
             // This correctly accounts for broadcasting of literals, which can have unit length
-            (false, self_len) if self_len > 0 || !result_series.is_empty() => result_series
+            (false, self_len) if self_len > 0 => result_series
                 .iter()
                 .map(|s| s.len())
                 .chain(std::iter::once(self.len()))

@@ -960,6 +960,16 @@ impl Expr {
             _ => self.children().into_iter().any(|e| e.has_agg()),
         }
     }
+
+    /// If the expression's root node is a literal, return true. Otherwise, return false.
+    pub fn is_literal(&self) -> bool {
+        match self {
+            Expr::Literal(_) => true,
+            Expr::Column(_) => false,
+            Expr::Agg(_) => false,
+            _ => self.children().into_iter().all(|e| e.is_literal()),
+        }
+    }
 }
 
 impl Display for Expr {
