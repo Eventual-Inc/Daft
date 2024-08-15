@@ -520,6 +520,7 @@ mod tests {
                 num_expressions: inputs.len(),
                 return_dtype: daft_core::DataType::Int64,
                 resource_request: Some(create_resource_request()),
+                batch_size: None,
             })),
             inputs,
         }
@@ -545,7 +546,7 @@ mod tests {
 
         // Add a Projection with StatefulUDF and resource request
         let project_plan = scan_plan
-            .with_columns(vec![stateful_project_expr.clone().alias("b")], None)?
+            .with_columns(vec![stateful_project_expr.clone().alias("b")])?
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
@@ -572,13 +573,10 @@ mod tests {
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
-            .with_columns(
-                vec![
-                    create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]).alias("a_prime"),
-                    create_stateful_udf(vec![create_stateful_udf(vec![col("b")])]).alias("b_prime"),
-                ],
-                None,
-            )?
+            .with_columns(vec![
+                create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]).alias("a_prime"),
+                create_stateful_udf(vec![create_stateful_udf(vec![col("b")])]).alias("b_prime"),
+            ])?
             .build();
 
         let intermediate_column_name_0 = "__TruncateRootStatefulUDF_0-2-0__";
@@ -669,15 +667,12 @@ mod tests {
         // NOTE: Our common-subtree elimination will build this as 2 project nodes:
         // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
         //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }) }))(a)";
+        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }), batch_size: None }))(a)";
         let project_plan = scan_plan
-            .with_columns(
-                vec![
-                    stateful_project_expr.clone().alias("b"),
-                    stateful_project_expr.clone().alias("c"),
-                ],
-                None,
-            )?
+            .with_columns(vec![
+                stateful_project_expr.clone().alias("b"),
+                stateful_project_expr.clone().alias("c"),
+            ])?
             .build();
 
         let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
@@ -741,7 +736,7 @@ mod tests {
         // Add a Projection with StatefulUDF and resource request
         // Project([col("a"), foo(foo(col("a"))).alias("b")])
         let project_plan = scan_plan
-            .with_columns(vec![stacked_stateful_project_expr.clone().alias("b")], None)?
+            .with_columns(vec![stacked_stateful_project_expr.clone().alias("b")])?
             .build();
 
         let intermediate_name = "__TruncateRootStatefulUDF_0-1-0__";
