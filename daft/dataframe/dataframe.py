@@ -1210,8 +1210,8 @@ class DataFrame:
             this may raise an error if the expression is not yet supported in the sql engine.
 
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df.where("x > 1 and y > 1").collect()
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 9, 9]})
+            >>> df.where("z = 9 AND y > 5").collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
