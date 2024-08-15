@@ -92,6 +92,8 @@ from daft.sql.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
+to_struct = Expression.to_struct
+
 __all__ = [
     "from_pylist",
     "from_pydict",
@@ -128,4 +130,5 @@ __all__ = [
     "set_execution_config",
     "sql",
     "sql_expr",
+    "to_struct",
 ]

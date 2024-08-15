@@ -839,7 +839,10 @@ impl Expr {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
-            ScalarFunction(func) => func.inputs.first().unwrap().name(),
+            ScalarFunction(func) => match func.name() {
+                "to_struct" => "struct", // FIXME: make .name() use output name from schema
+                _ => func.inputs.first().unwrap().name(),
+            },
             BinaryOp {
                 op: _,
                 left,
