@@ -1201,7 +1201,7 @@ class DataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3     ┆ 6     ┆ 9     │
             ╰───────┴───────┴───────╯
-
+            <BLANKLINE>
             (Showing first 2 of 2 rows)
 
             You can also use a string expression as a predicate.
@@ -1217,7 +1217,7 @@ class DataFrame:
             ╞═══════╪═══════╪═══════╡
             │ 3     ┆ 6     ┆ 9     │
             ╰───────┴───────┴───────╯
-
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Args:
