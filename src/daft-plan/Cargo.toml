@@ -39,6 +39,7 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "common-display/python",
   "common-error/python",
   "common-io-config/python",
   "common-daft-config/python",

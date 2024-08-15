@@ -18,7 +18,6 @@ services:
   # Use nginx to serve static files
   # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder
   nginx:
-    image: nginx-serve-static-files
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -29,7 +28,6 @@ services:
 
   # Custom FastAPI server which mocks an s3 endpoint and serves retryable objects
   s3-retry-server:
-    image: python-s3-retry-server
     build:
       context: .
       dockerfile: Dockerfile.s3_retry_server

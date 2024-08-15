@@ -7,6 +7,7 @@
 import io
 import os
 import pathlib
+import typing
 import warnings
 from dataclasses import dataclass
 from functools import partial, reduce
@@ -31,7 +32,7 @@ from urllib.parse import urlparse
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest, resolve_expr
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, resolve_expr
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     import ray
     import torch
 
+    from daft.daft import ResourceRequest
     from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
@@ -1184,25 +1186,43 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def where(self, predicate: Expression) -> "DataFrame":
+    def where(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
 
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
             >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
+            │ 2     ┆ 6     ┆ 8     │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3     ┆ 6     ┆ 9     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+
+            You can also use a string expression as a predicate.
+
+            Note: this will use the method `sql_expr` to parse the string into an expression
+            this may raise an error if the expression is not yet supported in the sql engine.
+
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 9, 9]})
+            >>> df.where("z = 9 AND y > 5").collect()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 3     ┆ 6     ┆ 9     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
@@ -1210,6 +1230,10 @@ class DataFrame:
         Returns:
             DataFrame: Filtered DataFrame.
         """
+        if isinstance(predicate, str):
+            from daft.sql.sql import sql_expr
+
+            predicate = sql_expr(predicate)
         builder = self._builder.filter(predicate)
         return DataFrame(builder)
 
@@ -1218,7 +1242,7 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: Optional[ResourceRequest] = None,
+        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1245,26 +1269,26 @@ class DataFrame:
         Args:
             column_name (str): name of new column
             expr (Expression): expression of the new column.
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
-                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new column.
         """
         if resource_request is not None:
-            warnings.warn(
-                "Specifying resource_request through `with_column` will be deprecated from Daft version >= 0.3.0! "
+            raise ValueError(
+                "Specifying resource_request through `with_column` is deprecated from Daft version >= 0.3.0! "
                 "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
+                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
                 "Check the Daft documentation for more details."
             )
 
-        return self.with_columns({column_name: expr}, resource_request)
+        return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: Optional[ResourceRequest] = None,
+        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1290,22 +1314,22 @@ class DataFrame:
 
         Args:
             columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
-            resource_request (ResourceRequest): a custom resource request for the execution of this operation (NOTE: this will be deprecated
-                in Daft version 0.3.0. Please use resource requests on your UDFs instead.)
 
         Returns:
             DataFrame: DataFrame with new columns.
         """
         if resource_request is not None:
-            warnings.warn(
-                "Specifying resource_request through `with_columns` will be deprecated from Daft version >= 0.3.0! "
+            raise ValueError(
+                "Specifying resource_request through `with_columns` is deprecated from Daft version >= 0.3.0! "
                 "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
+                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
+                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
                 "Check the Daft documentation for more details."
             )
 
         new_columns = [col.alias(name) for name, col in columns.items()]
 
-        builder = self._builder.with_columns(new_columns, resource_request)
+        builder = self._builder.with_columns(new_columns)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -1839,16 +1863,15 @@ class DataFrame:
         )
         return result
 
-    def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
-        builder = self._builder.agg(to_agg, list(group_by) if group_by is not None else None)
+    def _agg(
+        self,
+        to_agg: Iterable[Expression],
+        group_by: Optional[ExpressionsProjection] = None,
+    ) -> "DataFrame":
+        builder = self._builder.agg(list(to_agg), list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
-    def _agg_tuple_to_expression(self, agg_tuple: Tuple[ColumnInputType, str]) -> Expression:
-        expr, op = agg_tuple
-
-        if isinstance(expr, str):
-            expr = col(expr)
-
+    def _map_agg_string_to_expr(self, expr: Expression, op: str) -> Expression:
         if op == "sum":
             return expr.sum()
         elif op == "count":
@@ -1867,30 +1890,6 @@ class DataFrame:
             return expr.agg_concat()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
-
-    def _agg_inputs_to_expressions(
-        self, to_agg: Tuple[Union[Expression, Iterable[Expression]], ...]
-    ) -> List[Expression]:
-        def is_agg_column_input(x: Any) -> bool:
-            # aggs currently support Expression or tuple of (ColumnInputType, str) [deprecated]
-            if isinstance(x, Expression):
-                return True
-            if isinstance(x, tuple) and len(x) == 2:
-                tuple_type = list(map(type, x))
-                return tuple_type == [Expression, str] or tuple_type == [str, str]
-            return False
-
-        columns: Iterable[Expression] = to_agg[0] if len(to_agg) == 1 and not is_agg_column_input(to_agg[0]) else to_agg  # type: ignore
-
-        if any(isinstance(col, tuple) for col in columns):
-            warnings.warn(
-                "Tuple arguments in aggregations is deprecated and will be removed "
-                "in Daft v0.3. Please use aggregation expressions instead.",
-                DeprecationWarning,
-            )
-            return [self._agg_tuple_to_expression(col) if isinstance(col, tuple) else col for col in columns]  # type: ignore
-        else:
-            return list(columns)
 
     def _apply_agg_fn(
         self,
@@ -2035,7 +2034,17 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with aggregated results
         """
-        return self._agg(self._agg_inputs_to_expressions(to_agg), group_by=None)
+        to_agg_list = (
+            list(to_agg[0])
+            if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
+            else list(typing.cast(Tuple[Expression], to_agg))
+        )
+
+        for expr in to_agg_list:
+            if not isinstance(expr, Expression):
+                raise ValueError(f"DataFrame.agg() only accepts expression type, received: {type(expr)}")
+
+        return self._agg(to_agg_list, group_by=None)
 
     @DataframePublicAPI
     def groupby(self, *group_by: ManyColumnsInputType) -> "GroupedDataFrame":
@@ -2128,7 +2137,7 @@ class DataFrame:
         """
         group_by_expr = self._column_inputs_to_expressions(group_by)
         [pivot_col_expr, value_col_expr] = self._column_inputs_to_expressions([pivot_col, value_col])
-        agg_expr = self._agg_tuple_to_expression((value_col_expr, agg_fn))
+        agg_expr = self._map_agg_string_to_expr(value_col_expr, agg_fn)
 
         if names is None:
             names = self.select(pivot_col_expr).distinct().to_pydict()[pivot_col_expr.name()]
@@ -2682,7 +2691,17 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped aggregations
         """
-        return self.df._agg(self.df._agg_inputs_to_expressions(to_agg), group_by=self.group_by)
+        to_agg_list = (
+            list(to_agg[0])
+            if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
+            else list(typing.cast(Tuple[Expression], to_agg))
+        )
+
+        for expr in to_agg_list:
+            if not isinstance(expr, Expression):
+                raise ValueError(f"GroupedDataFrame.agg() only accepts expression type, received: {type(expr)}")
+
+        return self.df._agg(to_agg_list, group_by=self.group_by)
 
     def map_groups(self, udf: Expression) -> "DataFrame":
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.

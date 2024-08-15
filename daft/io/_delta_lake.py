@@ -1,6 +1,5 @@
 # isort: dont-add-import: from __future__ import annotations
 
-import warnings
 from typing import Optional, Union
 
 from daft import context
@@ -15,18 +14,6 @@ try:
     from daft.unity_catalog import UnityCatalogTable
 except ImportError:
     _UNITY_CATALOG_AVAILABLE = False
-
-
-def read_delta_lake(
-    table: Union[str, DataCatalogTable],
-    io_config: Optional["IOConfig"] = None,
-    _multithreaded_io: Optional[bool] = None,
-) -> DataFrame:
-    warnings.warn(
-        "read_delta_lake has been renamed to read_deltalake and will be removed in Daft v0.3",
-        DeprecationWarning,
-    )
-    return read_deltalake(table, io_config, _multithreaded_io)
 
 
 @PublicAPI

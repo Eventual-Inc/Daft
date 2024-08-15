@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use daft_core::JoinType;
 use daft_dsl::{
     col,
     optimization::{
@@ -244,55 +245,97 @@ impl OptimizerRule for PushDownFilter {
                 new_concat.into()
             }
             LogicalPlan::Join(child_join) => {
-                // Push filter into each side of the join.
-                // TODO(Clark): Merge filter predicate with on predicate, if present.
-                // TODO(Clark): Duplicate filters for joined columns so filters can be pushed down to both sides.
+                // TODO(Kevin): add more filter pushdowns for joins
+                // Example 1:
+                //      For `foo JOIN bar ON foo.a == (bar.b + 2) WHERE a > 0`, the filter `a > 0` is pushed down to the left side, but can also be pushed down to the right side as `(b + 2) > 0`
+                //
+                // Example 2:
+                //      A predicate `(a AND b) OR (c AND d)` is equivalent to `((a AND b) OR (c AND d)) AND (a OR c)`, and `a OR c` could potentially be pushed down.
 
-                // Get all input columns for predicate.
-                let predicate_cols: HashSet<_> = get_required_columns(&filter.predicate)
-                    .iter()
-                    .cloned()
-                    .collect();
-                // Only push the filter into the left side of the join if the left side of the join has all columns
-                // required by the predicate.
-                let left_cols: HashSet<_> =
-                    child_join.left.schema().names().iter().cloned().collect();
-                let can_push_left = left_cols
-                    .intersection(&predicate_cols)
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == predicate_cols.len();
-                // Only push the filter into the right side of the join if the right side of the join has all columns
-                // required by the predicate.
-                let right_cols: HashSet<_> =
-                    child_join.right.schema().names().iter().cloned().collect();
-                let can_push_right = right_cols
-                    .intersection(&predicate_cols)
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == predicate_cols.len();
-                if !can_push_left && !can_push_right {
+                // if a filter is pushed down on one side, would it preserve the output of the join+filter?
+                let (left_preserved, right_preserved) = match child_join.join_type {
+                    JoinType::Inner => (true, true),
+                    JoinType::Left => (true, false),
+                    JoinType::Right => (false, true),
+                    JoinType::Outer => (false, false),
+                    JoinType::Anti => (true, true),
+                    JoinType::Semi => (true, true),
+                };
+
+                let mut left_pushdowns = vec![];
+                let mut right_pushdowns = vec![];
+                let mut kept_predicates = vec![];
+
+                let left_cols = HashSet::<_>::from_iter(child_join.left.schema().names());
+                let right_cols = HashSet::<_>::from_iter(child_join.right.schema().names());
+
+                for predicate in split_conjuction(&filter.predicate).into_iter().cloned() {
+                    let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
+
+                    match (
+                        pred_cols.is_subset(&left_cols),
+                        pred_cols.is_subset(&right_cols),
+                    ) {
+                        (true, true) => {
+                            // predicate only depends on common join keys, so we can push it down to both sides
+                            left_pushdowns.push(predicate.clone());
+                            right_pushdowns.push(predicate);
+                        }
+                        (false, false) => {
+                            // predicate depends on unique columns on both left and right sides, so we can't push it down
+                            kept_predicates.push(predicate);
+                        }
+                        (true, false) => {
+                            if left_preserved {
+                                left_pushdowns.push(predicate);
+                            } else {
+                                kept_predicates.push(predicate);
+                            }
+                        }
+                        (false, true) => {
+                            if right_preserved {
+                                right_pushdowns.push(predicate);
+                            } else {
+                                kept_predicates.push(predicate);
+                            }
+                        }
+                    }
+                }
+
+                let left_pushdowns = conjuct(left_pushdowns);
+                let right_pushdowns = conjuct(right_pushdowns);
+
+                if left_pushdowns.is_some() || right_pushdowns.is_some() {
+                    let kept_predicates = conjuct(kept_predicates);
+
+                    let new_left = left_pushdowns.map_or_else(
+                        || child_join.left.clone(),
+                        |left_pushdowns| {
+                            Filter::try_new(child_join.left.clone(), left_pushdowns)
+                                .unwrap()
+                                .into()
+                        },
+                    );
+
+                    let new_right = right_pushdowns.map_or_else(
+                        || child_join.right.clone(),
+                        |right_pushdowns| {
+                            Filter::try_new(child_join.right.clone(), right_pushdowns)
+                                .unwrap()
+                                .into()
+                        },
+                    );
+
+                    let new_join = child_plan.with_new_children(&[new_left, new_right]).into();
+
+                    if let Some(kept_predicates) = kept_predicates {
+                        Filter::try_new(new_join, kept_predicates).unwrap().into()
+                    } else {
+                        new_join
+                    }
+                } else {
                     return Ok(Transformed::No(plan));
                 }
-                let new_left: Arc<LogicalPlan> = if can_push_left {
-                    LogicalPlan::from(Filter::try_new(
-                        child_join.left.clone(),
-                        filter.predicate.clone(),
-                    )?)
-                    .into()
-                } else {
-                    child_join.left.clone()
-                };
-                let new_right: Arc<LogicalPlan> = if can_push_right {
-                    LogicalPlan::from(Filter::try_new(
-                        child_join.right.clone(),
-                        filter.predicate.clone(),
-                    )?)
-                    .into()
-                } else {
-                    child_join.right.clone()
-                };
-                child_plan.with_new_children(&[new_left, new_right]).into()
             }
             _ => return Ok(Transformed::No(plan)),
         };
@@ -598,59 +641,11 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that Filter commutes with Join.
-    #[rstest]
-    fn filter_commutes_with_join(
-        #[values(false, true)] push_into_left_scan: bool,
-    ) -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ]);
-        let left_scan_plan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
-            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
-        );
-        let right_scan_plan =
-            dummy_scan_node_with_pushdowns(scan_op.clone(), Pushdowns::default().with_limit(None));
-        let join_on = vec![col("b")];
-        let pred = col("a").lt(lit(2));
-        let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                JoinType::Inner,
-                None,
-            )?
-            .filter(pred.clone())?
-            .build();
-        let expected_left_filter_scan = if push_into_left_scan {
-            dummy_scan_node_with_pushdowns(
-                scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
-            )
-        } else {
-            left_scan_plan.filter(pred.clone())?
-        };
-        let expected_right_filter_scan = right_scan_plan;
-        let expected = expected_left_filter_scan
-            .join(
-                &expected_right_filter_scan,
-                join_on.clone(),
-                join_on.clone(),
-                JoinType::Inner,
-                None,
-            )?
-            .build();
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
     /// Tests that Filter can be pushed into the left side of a Join.
     #[rstest]
     fn filter_commutes_with_join_left_side(
         #[values(false, true)] push_into_left_scan: bool,
+        #[values(JoinType::Inner, JoinType::Left, JoinType::Anti, JoinType::Semi)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -672,7 +667,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -690,7 +685,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
@@ -702,6 +697,7 @@ mod tests {
     #[rstest]
     fn filter_commutes_with_join_right_side(
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(JoinType::Inner, JoinType::Right)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -723,7 +719,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -741,7 +737,7 @@ mod tests {
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
@@ -754,6 +750,15 @@ mod tests {
     fn filter_commutes_with_join_on_join_key(
         #[values(false, true)] push_into_left_scan: bool,
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(
+            JoinType::Inner,
+            JoinType::Left,
+            JoinType::Right,
+            JoinType::Outer,
+            JoinType::Anti,
+            JoinType::Semi
+        )]
+        how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Utf8),
@@ -779,7 +784,7 @@ mod tests {
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .filter(pred.clone())?
@@ -805,10 +810,76 @@ mod tests {
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on.clone(),
-                JoinType::Inner,
+                how,
                 None,
             )?
             .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter can be pushed into the left side of a Join.
+    #[rstest]
+    fn filter_does_not_commute_with_join_left_side(
+        #[values(JoinType::Right, JoinType::Outer)] how: JoinType,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let join_on = vec![col("b")];
+        let pred = col("a").lt(lit(2));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                how,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        // should not push down filter
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter can be pushed into the right side of a Join.
+    #[rstest]
+    fn filter_does_not_commute_with_join_right_side(
+        #[values(JoinType::Left, JoinType::Outer)] how: JoinType,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let join_on = vec![col("b")];
+        let pred = col("c").lt(lit(2.0));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                how,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        // should not push down filter
+        let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

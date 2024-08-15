@@ -46,7 +46,7 @@ Loading a Daft Dataframe from a Delta Lake table in Unity Catalog
 
     unity_table = unity.load_table("my_catalog_name.my_schema_name.my_table_name")
 
-    df = daft.read_delta_lake(unity_table)
+    df = daft.read_deltalake(unity_table)
     df.show()
 
 Any subsequent filter operations on the Daft ``df`` DataFrame object will be correctly optimized to take advantage of DeltaLake features

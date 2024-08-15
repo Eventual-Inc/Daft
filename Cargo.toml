@@ -63,7 +63,7 @@ name = "daft"
 edition = "2021"
 name = "daft"
 publish = false
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"
 
 [package.metadata.cargo-machete]
 ignored = ["lzma_sys"]
@@ -208,4 +208,4 @@ version = "1.0.200"
 
 [workspace.package]
 edition = "2021"
-version = "0.2.0-dev0"
+version = "0.3.0-dev0"

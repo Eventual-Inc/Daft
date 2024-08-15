@@ -818,6 +818,7 @@ mod tests {
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
+                batch_size: None,
             })),
             inputs: vec![col("c")],
         }
@@ -870,6 +871,7 @@ mod tests {
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
+                batch_size: None,
             })),
             inputs: vec![col("c")],
         }
