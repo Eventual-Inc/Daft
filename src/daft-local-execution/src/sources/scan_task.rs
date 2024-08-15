@@ -27,17 +27,11 @@ use tracing::instrument;
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
-    io_stats: IOStatsRef,
-    runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl ScanTaskSource {
     pub fn new(scan_tasks: Vec<Arc<ScanTask>>) -> Self {
-        Self {
-            scan_tasks,
-            io_stats: IOStatsContext::new("StreamScanTask"),
-            runtime_stats: Arc::new(RuntimeStatsContext::new("StreamScanTask".to_string())),
-        }
+        Self { scan_tasks }
     }
 
     #[instrument(
@@ -73,6 +67,8 @@ impl Source for ScanTaskSource {
         &self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_stats: Arc<RuntimeStatsContext>,
+        io_stats: IOStatsRef,
     ) -> DaftResult<()> {
         let morsel_size = DEFAULT_MORSEL_SIZE;
         let maintain_order = destination.in_order();
@@ -83,8 +79,8 @@ impl Source for ScanTaskSource {
                 sender,
                 morsel_size,
                 maintain_order,
-                self.io_stats.clone(),
-                self.runtime_stats.clone(),
+                io_stats.clone(),
+                runtime_stats.clone(),
             ));
         }
         Ok(())
@@ -92,12 +88,6 @@ impl Source for ScanTaskSource {
 
     fn name(&self) -> &'static str {
         "ScanTask"
-    }
-}
-
-impl Drop for ScanTaskSource {
-    fn drop(&mut self) {
-        println!("ScanTaskSource out of scope: {:?}", self.io_stats)
     }
 }
 

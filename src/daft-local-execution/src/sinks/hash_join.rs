@@ -254,16 +254,57 @@ impl HashJoinNode {
     }
 }
 
-
 impl TreeDisplay for HashJoinNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
-        self.name().to_string()
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        use common_display::DisplayLevel::*;
+        match level {
+            Compact => {}
+            _ => {
+                let build_rt_result = self.build_runtime_stats.result();
+                writeln!(display).unwrap();
+                writeln!(
+                    display,
+                    "Probe Table rows received = {}",
+                    build_rt_result.rows_received
+                )
+                .unwrap();
+                writeln!(
+                    display,
+                    "Probe Table CPU-ms = {:.1}",
+                    (build_rt_result.cpu_us as f64) / 1000f64
+                )
+                .unwrap();
+                let probe_rt_result = self.probe_runtime_stats.result();
+                writeln!(display).unwrap();
+                writeln!(
+                    display,
+                    "Prober rows received = {}",
+                    probe_rt_result.rows_received
+                )
+                .unwrap();
+                writeln!(
+                    display,
+                    "Prober rows emitted = {}",
+                    probe_rt_result.rows_emitted
+                )
+                .unwrap();
+                writeln!(
+                    display,
+                    "Prober CPU-ms = {:.1}",
+                    (probe_rt_result.cpu_us as f64) / 1000f64
+                )
+                .unwrap();
+            }
+        }
+        display
     }
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.left.as_tree_display(),  self.right.as_tree_display()]
+        vec![self.left.as_tree_display(), self.right.as_tree_display()]
     }
 }
-
 
 #[async_trait]
 impl PipelineNode for HashJoinNode {
@@ -326,7 +367,7 @@ impl PipelineNode for HashJoinNode {
         ));
         Ok(())
     }
-    
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

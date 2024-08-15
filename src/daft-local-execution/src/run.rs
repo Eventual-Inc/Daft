@@ -19,7 +19,9 @@ use {
 };
 
 use crate::{
-    channel::create_channel, pipeline::{physical_plan_to_pipeline, viz_pipeline}, Error, ExecutionRuntimeHandle,
+    channel::create_channel,
+    pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    Error, ExecutionRuntimeHandle,
 };
 
 #[cfg(feature = "python")]
@@ -106,7 +108,6 @@ pub fn run_local(
 
     let res = runtime.block_on(async {
         let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
-        println!("{}", viz_pipeline(pipeline.as_ref()));
         let (sender, mut receiver) = create_channel(1, true);
 
         let mut runtime_handle = ExecutionRuntimeHandle::default();
@@ -129,6 +130,7 @@ pub fn run_local(
                 _ => {}
             }
         }
+        println!("{}", viz_pipeline(pipeline.as_ref()));
         Ok(result.into_iter())
     });
     Ok(Box::new(res?))

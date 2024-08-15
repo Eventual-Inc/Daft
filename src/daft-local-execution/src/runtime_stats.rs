@@ -10,9 +10,9 @@ pub(crate) struct RuntimeStatsContext {
 
 #[derive(Debug)]
 pub(crate) struct RuntimeStats {
-    rows_received: u64,
-    rows_emitted: u64,
-    cpu_us: u64,
+    pub rows_received: u64,
+    pub rows_emitted: u64,
+    pub cpu_us: u64,
 }
 
 impl RuntimeStatsContext {
@@ -61,11 +61,5 @@ impl RuntimeStatsContext {
             rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
             cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
         }
-    }
-}
-
-impl Drop for RuntimeStatsContext {
-    fn drop(&mut self) {
-        println!("{}={:?}", self.name, self.result());
     }
 }

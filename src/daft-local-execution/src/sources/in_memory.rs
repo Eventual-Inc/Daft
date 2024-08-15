@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use crate::{channel::MultiSender, ExecutionRuntimeHandle};
+use crate::{channel::MultiSender, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle};
 use common_error::DaftResult;
+use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -26,11 +27,15 @@ impl Source for InMemorySource {
         &self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_stats: Arc<RuntimeStatsContext>,
+        _io_stats: IOStatsRef,
     ) -> DaftResult<()> {
         let data = self.data.clone();
         runtime_handle.spawn(async move {
             for part in data {
+                let len = part.len();
                 let _ = destination.get_next_sender().send(part).await;
+                runtime_stats.mark_rows_emitted(len as u64);
             }
             Ok(())
         });

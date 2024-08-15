@@ -125,16 +125,34 @@ impl IntermediateNode {
     }
 }
 
-
 impl TreeDisplay for IntermediateNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
-        self.intermediate_op.name().to_string()
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.intermediate_op.name()).unwrap();
+        use common_display::DisplayLevel::*;
+        match level {
+            Compact => {}
+            _ => {
+                let rt_result = self.runtime_stats.result();
+                writeln!(display).unwrap();
+                writeln!(display, "rows received = {}", rt_result.rows_received).unwrap();
+                writeln!(display, "rows emitted = {}", rt_result.rows_emitted).unwrap();
+                writeln!(
+                    display,
+                    "CPU-ms = {:.1}",
+                    (rt_result.cpu_us as f64) / 1000f64
+                )
+                .unwrap();
+            }
+        }
+        display
     }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children.iter().map(|v| v.as_tree_display()).collect()
     }
 }
-
 
 #[async_trait]
 impl PipelineNode for IntermediateNode {
