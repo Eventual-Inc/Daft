@@ -45,3 +45,5 @@ impl Pivot {
         res
     }
 }
+
+crate::impl_default_tree_display!(Pivot);

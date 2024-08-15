@@ -1,10 +1,21 @@
 use mermaid::MermaidDisplayOptions;
 
+pub mod ascii;
 pub mod mermaid;
 pub mod tree;
 
-pub trait Displayable {
-    fn multiline_display(&self) -> Vec<String>;
+pub trait DisplayAs {
+    fn display_as(&self, level: DisplayLevel) -> String;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DisplayLevel {
+    /// A compact display, showing only the most important details.
+    Compact,
+    /// The default display, showing common details.
+    Default,
+    /// A verbose display, showing all available details.
+    Verbose,
 }
 
 #[derive(Debug, Clone)]

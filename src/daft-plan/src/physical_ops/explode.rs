@@ -5,6 +5,7 @@ use daft_dsl::{optimization::get_required_columns, ExprRef};
 use itertools::Itertools;
 
 use crate::{
+    impl_default_tree_display,
     partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
     physical_plan::PhysicalPlanRef,
     ClusteringSpec,
@@ -71,6 +72,8 @@ impl Explode {
         res
     }
 }
+
+impl_default_tree_display!(Explode);
 
 #[cfg(test)]
 mod tests {
