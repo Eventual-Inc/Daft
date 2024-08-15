@@ -269,8 +269,8 @@ class Expression:
         )
 
     @staticmethod
-    def to_struct(*inputs: Expression) -> Expression:
-        """Converts multiple input expressions into a struct.
+    def to_struct(*inputs: Expression | builtins.str) -> Expression:
+        """Converts multiple input expressions or column names into a struct.
 
         Example:
             >>> import daft
@@ -303,7 +303,14 @@ class Expression:
         Returns:
             An expression for a struct column with the input columns as its fields.
         """
-        pyinputs = [x._expr for x in inputs]
+        pyinputs = []
+        for x in inputs:
+            if isinstance(x, Expression):
+                pyinputs.append(x._expr)
+            elif isinstance(x, str):
+                pyinputs.append(col(x)._expr)
+            else:
+                raise TypeError("expected Expression or str as input for to_struct")
         return Expression._from_pyexpr(_to_struct(pyinputs))
 
     def __bool__(self) -> bool:

@@ -41,3 +41,22 @@ def test_to_struct_subexpr():
         {"a": 12, "b": None},
         {"a": None, "b": None},
     ]
+
+
+def test_to_struct_strs():
+    df = MicroPartition.from_pydict(
+        {
+            "a": [1, 2, 3, 4, None, 6, None],
+            "b": ["a", "b", "c", "", "e", None, None],
+        }
+    )
+    res = df.eval_expression_list([daft.to_struct("a", "b")]).to_pydict()
+    assert res["struct"] == [
+        {"a": 1, "b": "a"},
+        {"a": 2, "b": "b"},
+        {"a": 3, "b": "c"},
+        {"a": 4, "b": ""},
+        {"a": None, "b": "e"},
+        {"a": 6, "b": None},
+        {"a": None, "b": None},
+    ]
