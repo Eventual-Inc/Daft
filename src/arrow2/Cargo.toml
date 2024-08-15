@@ -16,11 +16,11 @@ async-stream = {version = "0.3.2", optional = true}
 avro-schema = {version = "0.3", optional = true}
 base64 = {version = "0.21.0", optional = true}
 bytemuck = {version = "1", features = ["derive"]}
-chrono = {version = "0.4.31", default_features = false, features = ["std"]}
+chrono = {version = "0.4.31", default-features = false, features = ["std"]}
 # for timezone support
 chrono-tz = {version = "0.8", optional = true}
 # used to print columns in a nice columnar format
-comfy-table = {version = "6.0", optional = true, default_features = false}
+comfy-table = {version = "6.0", optional = true, default-features = false}
 # for csv io
 csv = {version = "^1.1", optional = true}
 # for csv async io
@@ -38,7 +38,7 @@ futures = {version = "0.3", optional = true}
 # crate provides HashMap that assumes pre-hashed values.
 hash_hasher = "^2.0.3"
 # A Rust port of SwissTable
-hashbrown = {version = "0.14", default_features = false, features = ["ahash"]}
+hashbrown = {version = "0.14", default-features = false, features = ["ahash"]}
 hex = {version = "^0.4", optional = true}
 indexmap = {version = "^1.6", optional = true}
 itertools = {version = "^0.10", optional = true}
@@ -74,7 +74,7 @@ zstd = {version = "0.12", optional = true}
 
 # parquet support
 [dependencies.parquet2]
-default_features = false
+default-features = false
 optional = true
 path = "../parquet2"
 
@@ -85,7 +85,7 @@ crossbeam-channel = "0.5.1"
 doc-comment = "0.3"
 flate2 = "1"
 # used to run formal property testing
-proptest = {version = "1", default_features = false, features = ["std"]}
+proptest = {version = "1", default-features = false, features = ["std"]}
 # use for flaky testing
 rand = "0.8"
 # use for generating and testing random data samples

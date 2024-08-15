@@ -1,27 +1,27 @@
 [dependencies]
-common-daft-config = {path = "src/common/daft-config", default_features = false}
-common-display = {path = "src/common/display", default_features = false}
-common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default_features = false}
-common-resource-request = {path = "src/common/resource-request", default_features = false}
-common-system-info = {path = "src/common/system-info", default_features = false}
-common-tracing = {path = "src/common/tracing", default_features = false}
-daft-compression = {path = "src/daft-compression", default_features = false}
-daft-core = {path = "src/daft-core", default_features = false}
-daft-csv = {path = "src/daft-csv", default_features = false}
-daft-dsl = {path = "src/daft-dsl", default_features = false}
-daft-functions = {path = "src/daft-functions", default_features = false}
-daft-io = {path = "src/daft-io", default_features = false}
-daft-json = {path = "src/daft-json", default_features = false}
-daft-local-execution = {path = "src/daft-local-execution", default_features = false}
-daft-micropartition = {path = "src/daft-micropartition", default_features = false}
-daft-minhash = {path = "src/daft-minhash", default_features = false}
-daft-parquet = {path = "src/daft-parquet", default_features = false}
-daft-plan = {path = "src/daft-plan", default_features = false}
-daft-scan = {path = "src/daft-scan", default_features = false}
-daft-scheduler = {path = "src/daft-scheduler", default_features = false}
-daft-sql = {path = "src/daft-sql", default_features = false}
-daft-stats = {path = "src/daft-stats", default_features = false}
-daft-table = {path = "src/daft-table", default_features = false}
+common-daft-config = {path = "src/common/daft-config", default-features = false}
+common-display = {path = "src/common/display", default-features = false}
+common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-resource-request = {path = "src/common/resource-request", default-features = false}
+common-system-info = {path = "src/common/system-info", default-features = false}
+common-tracing = {path = "src/common/tracing", default-features = false}
+daft-compression = {path = "src/daft-compression", default-features = false}
+daft-core = {path = "src/daft-core", default-features = false}
+daft-csv = {path = "src/daft-csv", default-features = false}
+daft-dsl = {path = "src/daft-dsl", default-features = false}
+daft-functions = {path = "src/daft-functions", default-features = false}
+daft-io = {path = "src/daft-io", default-features = false}
+daft-json = {path = "src/daft-json", default-features = false}
+daft-local-execution = {path = "src/daft-local-execution", default-features = false}
+daft-micropartition = {path = "src/daft-micropartition", default-features = false}
+daft-minhash = {path = "src/daft-minhash", default-features = false}
+daft-parquet = {path = "src/daft-parquet", default-features = false}
+daft-plan = {path = "src/daft-plan", default-features = false}
+daft-scan = {path = "src/daft-scan", default-features = false}
+daft-scheduler = {path = "src/daft-scheduler", default-features = false}
+daft-sql = {path = "src/daft-sql", default-features = false}
+daft-stats = {path = "src/daft-stats", default-features = false}
+daft-table = {path = "src/daft-table", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -94,7 +94,7 @@ lto = 'fat'
 inherits = "dev"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-libc = {version = "^0.2.150", default_features = false}
+libc = {version = "^0.2.150", default-features = false}
 tikv-jemallocator = {version = "0.5.4", features = [
   "disable_initial_exec_tls"
 ]}

@@ -1,17 +1,17 @@
 [dependencies]
 async-stream = {version = "0.3.3", optional = true}
 brotli = {version = "^3.3", optional = true}
-flate2 = {version = "^1.0", optional = true, default_features = false}
+flate2 = {version = "^1.0", optional = true, default-features = false}
 futures = {version = "0.3", optional = true}
 lz4 = {version = "1.24", optional = true}
 lz4_flex = {version = "^0.9", optional = true}
 parquet-format-safe = "0.2"
-seq-macro = {version = "0.3", default_features = false}
+seq-macro = {version = "0.3", default-features = false}
 serde = {version = "^1.0", features = ["derive"]}
 snap = {version = "^1.1", optional = true}
 streaming-decompression = "0.1"
 xxhash-rust = {version = "0.8", optional = true, features = ["xxh64"]}
-zstd = {version = "^0.12", optional = true, default_features = false}
+zstd = {version = "^0.12", optional = true, default-features = false}
 
 [dev-dependencies]
 criterion = "0.4"

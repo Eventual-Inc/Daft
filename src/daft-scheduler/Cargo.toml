@@ -1,12 +1,12 @@
 [dependencies]
-common-daft-config = {path = "../common/daft-config", default_features = false}
-common-display = {path = "../common/display", default_features = false}
-common-error = {path = "../common/error", default_features = false}
-common-io-config = {path = "../common/io-config", default_features = false}
-daft-core = {path = "../daft-core", default_features = false}
-daft-dsl = {path = "../daft-dsl", default_features = false}
-daft-plan = {path = "../daft-plan", default_features = false}
-daft-scan = {path = "../daft-scan", default_features = false}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-plan = {path = "../daft-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 

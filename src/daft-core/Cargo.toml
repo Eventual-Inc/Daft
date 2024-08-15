@@ -20,11 +20,11 @@ bincode = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
-common-daft-config = {path = "../common/daft-config", default_features = false}
-common-error = {path = "../common/error", default_features = false}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
-daft-minhash = {path = "../daft-minhash", default_features = false}
-daft-sketch = {path = "../daft-sketch", default_features = false}
+daft-minhash = {path = "../daft-minhash", default-features = false}
+daft-sketch = {path = "../daft-sketch", default-features = false}
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
@@ -48,7 +48,7 @@ sketches-ddsketch = {workspace = true}
 unicode-normalization = "0.1.23"
 
 [dependencies.image]
-default_features = false
+default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
 version = "0.24.7"
 

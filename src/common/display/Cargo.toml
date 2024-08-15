@@ -1,6 +1,6 @@
 [dependencies]
-common-error = {path = "../error", default_features = false}
-common-treenode = {path = "../treenode", default_features = false}
+common-error = {path = "../error", default-features = false}
+common-treenode = {path = "../treenode", default-features = false}
 indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 terminal_size = {version = "0.3.0"}
