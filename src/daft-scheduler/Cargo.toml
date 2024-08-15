@@ -14,7 +14,16 @@ serde = {workspace = true, features = ["rc"]}
 rstest = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-io-config/python", "common-daft-config/python", "daft-core/python", "daft-plan/python", "daft-dsl/python"]
+python = [
+  "dep:pyo3",
+  "common-display/python",
+  "common-error/python",
+  "common-io-config/python",
+  "common-daft-config/python",
+  "daft-core/python",
+  "daft-plan/python",
+  "daft-dsl/python"
+]
 
 [package]
 edition = {workspace = true}
