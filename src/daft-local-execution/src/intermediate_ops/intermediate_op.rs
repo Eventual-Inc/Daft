@@ -6,6 +6,7 @@ use std::{
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use tokio::sync::mpsc::error::SendError;
 use tracing::{info_span, instrument};
 
 use async_trait::async_trait;
@@ -16,7 +17,7 @@ use crate::{
         SingleSender,
     },
     pipeline::PipelineNode,
-    runtime_stats::RuntimeStatsContext,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
@@ -66,22 +67,17 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
+        let sender = CountingSender::new(sender, rt_context.clone());
         while let Some(morsel) = receiver.recv().await {
             rt_context.mark_rows_received(morsel.len() as u64);
             let result = rt_context.in_span(&span, || op.execute(&morsel))?;
             state.add(result);
             if let Some(part) = state.try_clear() {
-                let part = part?;
-                let len = part.len();
-                let _ = sender.send(part).await;
-                rt_context.mark_rows_emitted(len as u64);
+                let _ = sender.send(part?).await;
             }
         }
         if let Some(part) = state.clear() {
-            let part = part?;
-            let len = part.len();
-            let _ = sender.send(part).await;
-            rt_context.mark_rows_emitted(len as u64);
+            let _ = sender.send(part?).await;
         }
         Ok(())
     }

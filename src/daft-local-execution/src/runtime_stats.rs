@@ -1,4 +1,12 @@
-use std::{sync::atomic::AtomicU64, time::Instant};
+use std::{
+    sync::{atomic::AtomicU64, Arc},
+    time::Instant,
+};
+
+use daft_micropartition::MicroPartition;
+use tokio::sync::mpsc::error::SendError;
+
+use crate::channel::SingleSender;
 
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
@@ -61,5 +69,26 @@ impl RuntimeStatsContext {
             rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
             cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
         }
+    }
+}
+
+pub(crate) struct CountingSender {
+    sender: SingleSender,
+    rt: Arc<RuntimeStatsContext>,
+}
+
+impl CountingSender {
+    pub(crate) fn new(sender: SingleSender, rt: Arc<RuntimeStatsContext>) -> Self {
+        Self { sender, rt }
+    }
+    #[inline]
+    pub(crate) async fn send(
+        &self,
+        v: Arc<MicroPartition>,
+    ) -> Result<(), SendError<Arc<MicroPartition>>> {
+        let len = v.len();
+        self.sender.send(v).await?;
+        self.rt.mark_rows_emitted(len as u64);
+        Ok(())
     }
 }

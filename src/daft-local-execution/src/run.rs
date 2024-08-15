@@ -1,8 +1,12 @@
 use std::{
-    collections::HashMap, fs::File, io::Write, sync::{
+    collections::HashMap,
+    fs::File,
+    io::Write,
+    sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
-    }, time::{Instant, SystemTime, UNIX_EPOCH}
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_error::DaftResult;
@@ -129,7 +133,10 @@ pub fn run_local(
                 _ => {}
             }
         }
-        let curr_ms = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
+        let curr_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_millis();
         let file_name = format!("explain-analyze-{}-mermaid.txt", curr_ms);
         let mut file = File::create(file_name)?;
         file.write_all(viz_pipeline(pipeline.as_ref()).as_bytes())?;

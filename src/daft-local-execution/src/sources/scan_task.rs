@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use crate::{
     channel::{MultiSender, SingleSender},
-    runtime_stats::RuntimeStatsContext,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
 };
 
@@ -49,11 +49,10 @@ impl ScanTaskSource {
     ) -> DaftResult<()> {
         let mut stream =
             stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
+        let sender = CountingSender::new(sender, runtime_stats.clone());
+
         while let Some(partition) = stream.next().await {
-            let partition = partition?;
-            let len = partition.len();
-            let _ = sender.send(partition).await;
-            runtime_stats.mark_rows_emitted(len as u64);
+            let _ = sender.send(partition?).await;
         }
         Ok(())
     }
