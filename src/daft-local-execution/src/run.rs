@@ -149,9 +149,9 @@ pub fn run_local(
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_millis();
-            let file_name = format!("explain-analyze-{}-mermaid.txt", curr_ms);
+            let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
             let mut file = File::create(file_name)?;
-            file.write_all(viz_pipeline(pipeline.as_ref()).as_bytes())?;
+            writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
         }
         Ok(result.into_iter())
     });

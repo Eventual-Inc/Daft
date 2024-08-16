@@ -173,7 +173,7 @@ mod test {
             .limit(10, false)?
             .build();
 
-        let mermaid_repr = plan.repr_mermaid(Default::default());
+        let mermaid_repr = plan.repr_mermaid(true, Default::default());
 
         let expected = r#"flowchart TD
 Limit0["Limit: 10"]
@@ -244,10 +244,13 @@ Project1 --> Limit0
             .limit(10, false)?
             .build();
 
-        let mermaid_repr = plan.repr_mermaid(MermaidDisplayOptions {
-            simple: true,
-            ..Default::default()
-        });
+        let mermaid_repr = plan.repr_mermaid(
+            true,
+            MermaidDisplayOptions {
+                simple: true,
+                ..Default::default()
+            },
+        );
         let expected = r#"flowchart TD
 Limit0["Limit"]
 Project1["Project"]
@@ -289,7 +292,7 @@ Project1 --> Limit0
             }),
         };
 
-        let mermaid_repr = plan.repr_mermaid(opts);
+        let mermaid_repr = plan.repr_mermaid(true, opts);
         let expected = r#"subgraph optimized["Optimized Logical Plan"]
 optimizedSource0["PlaceHolder:
 Source ID = 0

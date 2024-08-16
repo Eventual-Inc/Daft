@@ -615,7 +615,7 @@ impl PhysicalPlan {
 
         match format {
             DisplayFormat::Ascii { simple } => self.repr_ascii(simple),
-            DisplayFormat::Mermaid(opts) => self.repr_mermaid(opts),
+            DisplayFormat::Mermaid(opts) => self.repr_mermaid(true, opts),
         }
     }
 }

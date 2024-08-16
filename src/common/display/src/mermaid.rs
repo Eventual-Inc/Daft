@@ -4,7 +4,7 @@ use std::fmt;
 use crate::{tree::TreeDisplay, DisplayLevel};
 
 pub trait MermaidDisplay: TreeDisplay {
-    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;
+    fn repr_mermaid(&self, child_to_parent_edge: bool, options: MermaidDisplayOptions) -> String;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -31,15 +31,19 @@ pub struct SubgraphOptions {
 }
 
 impl<T: TreeDisplay> MermaidDisplay for T {
-    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
+    fn repr_mermaid(&self, child_to_parent_edge: bool, options: MermaidDisplayOptions) -> String {
         let mut s = String::new();
         let display_type = match options.simple {
             true => DisplayLevel::Compact,
             false => DisplayLevel::Default,
         };
 
-        let mut visitor =
-            MermaidDisplayVisitor::new(&mut s, display_type, options.subgraph_options);
+        let mut visitor = MermaidDisplayVisitor::new(
+            &mut s,
+            display_type,
+            child_to_parent_edge,
+            options.subgraph_options,
+        );
 
         let _ = visitor.fmt(self);
         s
@@ -49,6 +53,7 @@ impl<T: TreeDisplay> MermaidDisplay for T {
 pub struct MermaidDisplayVisitor<'a, W> {
     output: &'a mut W,
     t: DisplayLevel,
+    child_to_parent_edge: bool,
     /// each node should only appear once in the tree.
     /// the key is the node's `multiline_display` string, and the value is the node's id.
     /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
@@ -59,10 +64,16 @@ pub struct MermaidDisplayVisitor<'a, W> {
 }
 
 impl<'a, W> MermaidDisplayVisitor<'a, W> {
-    pub fn new(w: &'a mut W, t: DisplayLevel, subgraph_options: Option<SubgraphOptions>) -> Self {
+    pub fn new(
+        w: &'a mut W,
+        t: DisplayLevel,
+        child_to_parent_edge: bool,
+        subgraph_options: Option<SubgraphOptions>,
+    ) -> Self {
         Self {
             output: w,
             t,
+            child_to_parent_edge,
             nodes: IndexMap::new(),
             node_count: 0,
             subgraph_options,
@@ -112,7 +123,11 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r#"{child} --> {parent}"#)
+        if self.child_to_parent_edge {
+            writeln!(self.output, r#"{child} --> {parent}"#)
+        } else {
+            writeln!(self.output, r#"{parent} --> {child}"#)
+        }
     }
 
     fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
