@@ -208,14 +208,14 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
             after.show(10)
             after = after.sort(col("_index"))
             assert before.to_pydict() == after.to_pydict()
-            assert [x for x in before.explode(col("nested_col")).count().collect()] == [
-                x for x in after.explode(col("nested_col")).count().collect()
+            assert [x for x in before.explode(col("nested_col")).count(*before.column_names).collect()] == [
+                x for x in after.explode(col("nested_col")).count(*after.column_names).collect()
             ]
             before = before.limit(50)
             after = after.limit(50)
             assert before.to_pydict() == after.to_pydict()
-            assert [x for x in before.explode(col("nested_col")).count().collect()] == [
-                x for x in after.explode(col("nested_col")).count().collect()
+            assert [x for x in before.explode(col("nested_col")).count(*before.column_names).collect()] == [
+                x for x in after.explode(col("nested_col")).count(*after.column_names).collect()
             ]
 
         # Test Arrow write with Daft read.
@@ -242,14 +242,14 @@ def test_parquet_rows_cross_page_boundaries(tmpdir):
         assert before.to_pydict() == after.to_pydict()
         pd_table = before.to_pandas().explode("nested_col")
         assert [pd_table.count().get("nested_col")] == [
-            x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
+            x["nested_col"] for x in after.explode(col("nested_col")).count(*after.column_names).collect()
         ]
         before = before.take(list(range(min(before.num_rows, 50))))
         after = after.limit(50)
         assert before.to_pydict() == after.to_pydict()
         pd_table = before.to_pandas().explode("nested_col")
         assert [pd_table.count().get("nested_col")] == [
-            x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
+            x["nested_col"] for x in after.explode(col("nested_col")).count(*after.column_names).collect()
         ]
 
     # The normal case where the last row `nested.field1` is contained within a single data page.

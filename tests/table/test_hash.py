@@ -42,3 +42,10 @@ def test_table_expr_hash_with_seed_array():
     expected = {"utf8": [6076897603942036120, 15438169081903732554]}
     result = df.select(col("utf8").hash(seed=col("seed")))
     assert result.to_pydict() == expected
+
+
+def test_table_expr_struct_hash():
+    df = daft.from_pydict({"s": [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 1, "b": 2}, {"a": 1, "b": 4}]})
+    res = df.select(col("s").hash()).to_pydict()["s"]
+    assert res[0] == res[2]
+    assert res[0] != res[1] and res[1] != res[3] and res[0] != res[3]

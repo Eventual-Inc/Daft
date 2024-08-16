@@ -30,6 +30,7 @@ use sqlparser::{
 };
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
+#[derive(Debug, Clone)]
 pub(crate) struct Relation {
     inner: LogicalPlanBuilder,
     name: String,
@@ -43,22 +44,34 @@ impl Relation {
 
 pub struct SQLPlanner {
     catalog: SQLCatalog,
+    current_relation: Option<Relation>,
 }
 
 impl Default for SQLPlanner {
     fn default() -> Self {
         SQLPlanner {
             catalog: SQLCatalog::new(),
+            current_relation: None,
         }
     }
 }
 
 impl SQLPlanner {
     pub fn new(context: SQLCatalog) -> Self {
-        SQLPlanner { catalog: context }
+        SQLPlanner {
+            catalog: context,
+            current_relation: None,
+        }
     }
 
-    pub fn plan_sql(&self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
+    /// SAFETY: it is up to the caller to ensure that the relation is set before calling this method.
+    /// It's a programming error to call this method without setting the relation first.
+    /// Some methods such as `plan_expr` do not require the relation to be set.
+    fn relation_mut(&mut self) -> &mut Relation {
+        self.current_relation.as_mut().expect("relation not set")
+    }
+
+    pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
         let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
 
         let mut parser = Parser::new(&GenericDialect {})
@@ -76,7 +89,7 @@ impl SQLPlanner {
         }
     }
 
-    fn plan_query(&self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
+    fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         if let Some(with) = &query.with {
             unsupported_sql_err!("WITH: {with}")
         }
@@ -109,20 +122,22 @@ impl SQLPlanner {
             ))
         })?;
 
-        let mut rel = self.plan_select(selection)?;
+        self.plan_select(selection)?;
 
         if let Some(order_by) = &query.order_by {
             if order_by.interpolate.is_some() {
                 unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
             }
             // TODO: if ordering by a column not in the projection, this will fail.
-            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice(), &rel)?;
+            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
+            let rel = self.relation_mut();
             rel.inner = rel.inner.sort(exprs, descending)?;
         }
 
         if let Some(limit) = &query.limit {
-            let limit = self.plan_expr(limit, &rel)?;
+            let limit = self.plan_expr(limit)?;
             if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
+                let rel = self.relation_mut();
                 rel.inner = rel.inner.limit(*limit, true)?; // TODO: Should this be eager or not?
             } else {
                 invalid_operation_err!(
@@ -130,13 +145,13 @@ impl SQLPlanner {
                 );
             }
         }
-        Ok(rel.inner)
+
+        Ok(self.current_relation.clone().unwrap().inner)
     }
 
     fn plan_order_by_exprs(
         &self,
         expr: &[sqlparser::ast::OrderByExpr],
-        rel: &Relation,
     ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>)> {
         let mut exprs = Vec::with_capacity(expr.len());
         let mut desc = Vec::with_capacity(expr.len());
@@ -147,7 +162,7 @@ impl SQLPlanner {
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
-            let expr = self.plan_expr(&order_by_expr.expr, rel)?;
+            let expr = self.plan_expr(&order_by_expr.expr)?;
             desc.push(!order_by_expr.asc.unwrap_or(true));
 
             exprs.push(expr);
@@ -155,7 +170,7 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_select(&self, selection: &sqlparser::ast::Select) -> SQLPlannerResult<Relation> {
+    fn plan_select(&mut self, selection: &sqlparser::ast::Select) -> SQLPlannerResult<()> {
         if selection.top.is_some() {
             unsupported_sql_err!("TOP");
         }
@@ -198,12 +213,14 @@ impl SQLPlanner {
         if from.len() != 1 {
             unsupported_sql_err!("Only exactly one table is supported");
         }
-        let mut relation = self.plan_from(&from[0])?;
+
+        self.current_relation = Some(self.plan_from(&from[0])?);
 
         // WHERE
         if let Some(selection) = &selection.selection {
-            let filter = self.plan_expr(selection, &relation)?;
-            relation.inner = relation.inner.filter(filter)?;
+            let filter = self.plan_expr(selection)?;
+            let rel = self.relation_mut();
+            rel.inner = rel.inner.filter(filter)?;
         }
 
         // GROUP BY
@@ -218,7 +235,7 @@ impl SQLPlanner {
             GroupByExpr::Expressions(expressions, _) => {
                 groupby_exprs = expressions
                     .iter()
-                    .map(|expr| self.plan_expr(expr, &relation))
+                    .map(|expr| self.plan_expr(expr))
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
             }
         }
@@ -226,19 +243,21 @@ impl SQLPlanner {
         let to_select = selection
             .projection
             .iter()
-            .map(|expr| self.select_item_to_expr(expr, &relation))
+            .map(|expr| self.select_item_to_expr(expr))
             .collect::<SQLPlannerResult<Vec<_>>>()?
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
 
         if !groupby_exprs.is_empty() {
-            relation.inner = relation.inner.aggregate(to_select, groupby_exprs)?;
+            let rel = self.relation_mut();
+            rel.inner = rel.inner.aggregate(to_select, groupby_exprs)?;
         } else if !to_select.is_empty() {
-            relation.inner = relation.inner.select(to_select)?;
+            let rel = self.relation_mut();
+            rel.inner = rel.inner.select(to_select)?;
         }
 
-        Ok(relation)
+        Ok(())
     }
 
     fn plan_from(&self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
@@ -395,16 +414,19 @@ impl SQLPlanner {
         }
     }
 
-    fn plan_compound_identifier(
-        &self,
-        idents: &[Ident],
-        current_relation: &Relation,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
+    fn plan_compound_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<Vec<ExprRef>> {
         let mut idents = idents.iter();
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
-
+        let current_relation = match &self.current_relation {
+            Some(rel) => rel,
+            None => {
+                return Err(PlannerError::TableNotFound {
+                    message: "Expected table".to_string(),
+                })
+            }
+        };
         if root == current_relation.name {
             let column = idents.next().unwrap();
             let column_name = ident_to_str(column);
@@ -420,20 +442,14 @@ impl SQLPlanner {
         }
     }
 
-    fn select_item_to_expr(
-        &self,
-        item: &SelectItem,
-        current_relation: &Relation,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
+    fn select_item_to_expr(&self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
         match item {
             SelectItem::ExprWithAlias { expr, alias } => {
-                let expr = self.plan_expr(expr, current_relation)?;
+                let expr = self.plan_expr(expr)?;
                 let alias = alias.value.to_string();
                 Ok(vec![expr.alias(alias)])
             }
-            SelectItem::UnnamedExpr(expr) => {
-                self.plan_expr(expr, current_relation).map(|e| vec![e])
-            }
+            SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
             SelectItem::Wildcard(WildcardAdditionalOptions {
                 opt_ilike,
                 opt_exclude,
@@ -453,13 +469,24 @@ impl SQLPlanner {
                 if opt_rename.is_some() {
                     unsupported_sql_err!("RENAME");
                 }
+
                 if let Some(exclude) = opt_exclude {
+                    let current_relation = match &self.current_relation {
+                        Some(rel) => rel,
+                        None => {
+                            return Err(PlannerError::TableNotFound {
+                                message: "No table found to exclude columns from".to_string(),
+                            })
+                        }
+                    };
+
                     use sqlparser::ast::ExcludeSelectItem::*;
                     return match exclude {
                         Single(item) => current_relation
                             .inner
                             .schema()
                             .exclude(&[&item.to_string()]),
+
                         Multiple(items) => {
                             let items =
                                 items.iter().map(|i| i.to_string()).collect::<Vec<String>>();
@@ -483,27 +510,29 @@ impl SQLPlanner {
         }
     }
 
-    pub(crate) fn plan_expr(
-        &self,
-        expr: &sqlparser::ast::Expr,
-        current_relation: &Relation,
-    ) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
             SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
             SQLExpr::Value(Value::SingleQuotedString(s)) => Ok(lit(s.as_str())),
-            SQLExpr::Value(Value::Number(n, _)) => {
-                let n = n.parse::<i64>().expect("Failed to parse number");
-                Ok(lit(n))
-            }
+            SQLExpr::Value(Value::Number(n, _)) => n
+                .parse::<i64>()
+                .map(lit)
+                .or_else(|_| n.parse::<f64>().map(lit))
+                .map_err(|_| {
+                    PlannerError::invalid_operation(format!(
+                        "could not parse number literal '{:?}'",
+                        n
+                    ))
+                }),
             SQLExpr::Value(Value::Boolean(b)) => Ok(lit(*b)),
             SQLExpr::Value(Value::Null) => Ok(null_lit()),
             SQLExpr::Value(other) => {
                 unsupported_sql_err!("literal value '{other}' not yet supported")
             }
             SQLExpr::BinaryOp { left, op, right } => {
-                let left = self.plan_expr(left, current_relation)?;
-                let right = self.plan_expr(right, current_relation)?;
+                let left = self.plan_expr(left)?;
+                let right = self.plan_expr(right)?;
                 let op = self.sql_operator_to_operator(op)?;
                 Ok(Expr::BinaryOp { left, op, right }.arced())
             }
@@ -514,22 +543,18 @@ impl SQLPlanner {
                 format: None,
             } => {
                 let dtype = self.sql_dtype_to_dtype(data_type)?;
-                let expr = self.plan_expr(expr, current_relation)?;
+                let expr = self.plan_expr(expr)?;
                 Ok(expr.cast(&dtype))
             }
-            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr, current_relation)?.eq(lit(false))),
-            SQLExpr::IsNotFalse(_) => {
-                Ok(self.plan_expr(expr, current_relation)?.eq(lit(false)).not())
-            }
-            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr, current_relation)?.eq(lit(true))),
-            SQLExpr::IsNotTrue(expr) => {
-                Ok(self.plan_expr(expr, current_relation)?.eq(lit(true)).not())
-            }
-            SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr, current_relation)?.is_null()),
-            SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr, current_relation)?.is_null().not()),
-            SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr, current_relation),
+            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq(lit(false))),
+            SQLExpr::IsNotFalse(_) => Ok(self.plan_expr(expr)?.eq(lit(false)).not()),
+            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true))),
+            SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true)).not()),
+            SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr)?.is_null()),
+            SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
+            SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
             SQLExpr::CompoundIdentifier(idents) => self
-                .plan_compound_identifier(idents.as_slice(), current_relation)
+                .plan_compound_identifier(idents.as_slice())
                 .map(|e| e[0].clone()),
 
             SQLExpr::JsonAccess { .. } => {
@@ -598,8 +623,8 @@ impl SQLPlanner {
             SQLExpr::Cast { .. } => unsupported_sql_err!("CAST"),
             SQLExpr::AtTimeZone { .. } => unsupported_sql_err!("AT TIME ZONE"),
             SQLExpr::Extract { .. } => unsupported_sql_err!("EXTRACT"),
-            SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr, current_relation)?)),
-            SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr, current_relation)?)),
+            SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
+            SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
             SQLExpr::Position { .. } => unsupported_sql_err!("POSITION"),
             SQLExpr::Substring { .. } => unsupported_sql_err!("SUBSTRING"),
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
@@ -610,7 +635,7 @@ impl SQLPlanner {
 
             SQLExpr::TypedString { .. } => unsupported_sql_err!("TYPED STRING"),
             SQLExpr::MapAccess { .. } => unsupported_sql_err!("MAP ACCESS"),
-            SQLExpr::Function(func) => self.plan_function(func, current_relation),
+            SQLExpr::Function(func) => self.plan_function(func),
             SQLExpr::Case {
                 operand,
                 conditions,
@@ -625,7 +650,7 @@ impl SQLPlanner {
                 }
 
                 let else_expr = match else_result {
-                    Some(expr) => self.plan_expr(expr, current_relation)?,
+                    Some(expr) => self.plan_expr(expr)?,
                     None => unsupported_sql_err!("CASE with no else result"),
                 };
 
@@ -634,8 +659,8 @@ impl SQLPlanner {
                 conditions.iter().zip(results.iter()).rev().try_fold(
                     else_expr,
                     |else_expr, (condition, result)| {
-                        let cond = self.plan_expr(condition, current_relation)?;
-                        let res = self.plan_expr(result, current_relation)?;
+                        let cond = self.plan_expr(condition)?;
+                        let res = self.plan_expr(result)?;
                         Ok(cond.if_else(res, else_expr))
                     },
                 )
@@ -652,8 +677,8 @@ impl SQLPlanner {
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => match subscript.as_ref() {
                 Subscript::Index { index } => {
-                    let index = self.plan_expr(index, current_relation)?;
-                    let expr = self.plan_expr(expr, current_relation)?;
+                    let index = self.plan_expr(index)?;
+                    let expr = self.plan_expr(expr)?;
                     Ok(daft_dsl::functions::list::get(expr, index, null_lit()))
                 }
                 Subscript::Slice {
@@ -666,9 +691,9 @@ impl SQLPlanner {
                     }
                     match (lower_bound, upper_bound) {
                         (Some(lower), Some(upper)) => {
-                            let lower = self.plan_expr(lower, current_relation)?;
-                            let upper = self.plan_expr(upper, current_relation)?;
-                            let expr = self.plan_expr(expr, current_relation)?;
+                            let lower = self.plan_expr(lower)?;
+                            let upper = self.plan_expr(upper)?;
+                            let expr = self.plan_expr(expr)?;
                             Ok(daft_dsl::functions::list::slice(expr, lower, upper))
                         }
                         _ => {
@@ -865,9 +890,8 @@ impl SQLPlanner {
         &self,
         op: &UnaryOperator,
         expr: &sqlparser::ast::Expr,
-        current_relation: &Relation,
     ) -> SQLPlannerResult<ExprRef> {
-        let expr = self.plan_expr(expr, current_relation)?;
+        let expr = self.plan_expr(expr)?;
         Ok(match (op, expr.as_ref()) {
             // simplify the parse tree by special-casing common unary +/- ops
             (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(*n),
@@ -881,6 +905,26 @@ impl SQLPlanner {
             other => unsupported_sql_err!("unary operator {:?}", other),
         })
     }
+}
+
+pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
+    let planner = SQLPlanner::default();
+
+    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
+
+    let mut parser = Parser::new(&GenericDialect {})
+        .with_options(ParserOptions {
+            trailing_commas: true,
+            ..Default::default()
+        })
+        .with_tokens(tokens);
+
+    let expr = parser.parse_select_item()?;
+    let exprs = planner.select_item_to_expr(&expr)?;
+    if exprs.len() != 1 {
+        invalid_operation_err!("expected a single expression, found {}", exprs.len())
+    }
+    Ok(exprs.into_iter().next().unwrap())
 }
 
 fn ident_to_str(ident: &Ident) -> String {

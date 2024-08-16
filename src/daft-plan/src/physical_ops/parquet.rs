@@ -32,3 +32,5 @@ impl TabularWriteParquet {
         res
     }
 }
+
+crate::impl_default_tree_display!(TabularWriteParquet);

@@ -16,3 +16,5 @@ impl ReduceMerge {
         vec!["ReduceMerge".to_string()]
     }
 }
+
+crate::impl_default_tree_display!(ReduceMerge);

@@ -1,42 +1,77 @@
-use std::{
-    fmt::{self, Display},
-    sync::Arc,
-};
+use std::fmt::{self, Display};
 
-use common_display::tree::TreeDisplay;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 
 impl TreeDisplay for crate::LogicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
+    fn display_as(&self, level: DisplayLevel) -> String {
+        match level {
+            DisplayLevel::Compact => self.name(),
+            DisplayLevel::Default | DisplayLevel::Verbose => self.multiline_display().join("\n"),
+        }
     }
 
     fn get_name(&self) -> String {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<Arc<Self>> {
-        self.children()
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children().into_iter().map(|x| x as _).collect()
     }
 }
 
 impl TreeDisplay for crate::physical_plan::PhysicalPlan {
-    fn get_multiline_representation(&self) -> Vec<String> {
-        self.multiline_display()
+    fn display_as(&self, level: DisplayLevel) -> String {
+        match self {
+            crate::PhysicalPlan::InMemoryScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::TabularScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::EmptyScan(scan) => scan.display_as(level),
+            crate::PhysicalPlan::Project(p) => p.display_as(level),
+            crate::PhysicalPlan::ActorPoolProject(p) => p.display_as(level),
+            crate::PhysicalPlan::Filter(f) => f.display_as(level),
+            crate::PhysicalPlan::Limit(limit) => limit.display_as(level),
+            crate::PhysicalPlan::Explode(explode) => explode.display_as(level),
+            crate::PhysicalPlan::Unpivot(unpivot) => unpivot.display_as(level),
+            crate::PhysicalPlan::Sort(sort) => sort.display_as(level),
+            crate::PhysicalPlan::Split(split) => split.display_as(level),
+            crate::PhysicalPlan::Sample(sample) => sample.display_as(level),
+            crate::PhysicalPlan::MonotonicallyIncreasingId(id) => id.display_as(level),
+            crate::PhysicalPlan::Coalesce(coalesce) => coalesce.display_as(level),
+            crate::PhysicalPlan::Flatten(flatten) => flatten.display_as(level),
+            crate::PhysicalPlan::FanoutRandom(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::FanoutByHash(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::FanoutByRange(fanout) => fanout.display_as(level),
+            crate::PhysicalPlan::ReduceMerge(reduce) => reduce.display_as(level),
+            crate::PhysicalPlan::Aggregate(aggr) => aggr.display_as(level),
+            crate::PhysicalPlan::Pivot(pivot) => pivot.display_as(level),
+            crate::PhysicalPlan::Concat(concat) => concat.display_as(level),
+            crate::PhysicalPlan::HashJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::SortMergeJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::BroadcastJoin(join) => join.display_as(level),
+            crate::PhysicalPlan::TabularWriteParquet(write) => write.display_as(level),
+            crate::PhysicalPlan::TabularWriteJson(write) => write.display_as(level),
+            crate::PhysicalPlan::TabularWriteCsv(write) => write.display_as(level),
+            #[cfg(feature = "python")]
+            crate::PhysicalPlan::IcebergWrite(write) => write.display_as(level),
+            #[cfg(feature = "python")]
+            crate::PhysicalPlan::DeltaLakeWrite(write) => write.display_as(level),
+            #[cfg(feature = "python")]
+            crate::PhysicalPlan::LanceWrite(write) => write.display_as(level),
+        }
     }
 
     fn get_name(&self) -> String {
         self.name()
     }
 
-    fn get_children(&self) -> Vec<Arc<Self>> {
-        self.children()
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children().into_iter().map(|x| x as _).collect()
     }
 }
 
 // Single node display.
 impl Display for crate::LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
+        write!(f, "{}", self.multiline_display().join(", "))?;
         Ok(())
     }
 }
@@ -44,7 +79,7 @@ impl Display for crate::LogicalPlan {
 // Single node display.
 impl Display for crate::physical_plan::PhysicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_multiline_representation().join(", "))?;
+        write!(f, "{}", self.multiline_display().join(", "))?;
         Ok(())
     }
 }
@@ -154,6 +189,7 @@ Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 Source5 --> Filter4
+Filter4 --> Join3
 Sort6["Sort: Sort by = (col(last_name), ascending)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
@@ -169,11 +205,11 @@ Filter10 --> Limit9
 Limit9 --> MonotonicallyIncreasingId8
 MonotonicallyIncreasingId8 --> Distinct7
 Distinct7 --> Sort6
-Filter4 --> Join3
 Sort6 --> Join3
 Join3 --> Filter2
 Filter2 --> Project1
-Project1 --> Limit0"#;
+Project1 --> Limit0
+"#;
 
         assert_eq!(mermaid_repr, expected);
         Ok(())
@@ -220,6 +256,7 @@ Join3["Join"]
 Filter4["Filter"]
 Source5["Source"]
 Source5 --> Filter4
+Filter4 --> Join3
 Sort6["Sort"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
@@ -231,11 +268,11 @@ Filter10 --> Limit9
 Limit9 --> MonotonicallyIncreasingId8
 MonotonicallyIncreasingId8 --> Distinct7
 Distinct7 --> Sort6
-Filter4 --> Join3
 Sort6 --> Join3
 Join3 --> Filter2
 Filter2 --> Project1
-Project1 --> Limit0"#;
+Project1 --> Limit0
+"#;
 
         assert_eq!(mermaid_repr, expected);
         Ok(())
@@ -258,7 +295,8 @@ optimizedSource0["PlaceHolder:
 Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
-end"#;
+end
+"#;
         assert_eq!(mermaid_repr, expected);
         Ok(())
     }

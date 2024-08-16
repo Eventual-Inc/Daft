@@ -6,6 +6,8 @@ use crate::LogicalPlan;
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
+use common_treenode::DynTreeNode;
+
 /// Optimization rules for dropping unnecessary Repartitions.
 ///
 /// Dropping of Repartitions that would yield the same partitioning as their input
@@ -35,7 +37,7 @@ impl OptimizerRule for DropRepartition {
                 // Drop upstream Repartition for back-to-back Repartitions.
                 //
                 // Repartition1-Repartition2 -> Repartition1
-                plan.with_new_children(&[child_plan.children()[0].clone()])
+                plan.with_new_children(&[child_plan.arc_children()[0].clone()])
                     .into()
             }
             _ => return Ok(Transformed::No(plan)),

@@ -1242,8 +1242,6 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
- "common-treenode",
  "indexmap 2.3.0",
  "pyo3",
  "terminal_size",
@@ -1633,6 +1631,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table 7.1.1",
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-hashable-float-wrapper",
  "daft-minhash",
@@ -1951,6 +1950,7 @@ name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-io-config",
  "common-py-serde",
