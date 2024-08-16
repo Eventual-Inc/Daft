@@ -48,7 +48,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
     let mut visitor = MermaidDisplayVisitor::new(
         &mut output,
         common_display::DisplayLevel::Default,
-        false,
+        true,
         Default::default(),
     );
     visitor.fmt(root.as_tree_display()).unwrap();

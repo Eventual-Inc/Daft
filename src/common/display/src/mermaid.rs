@@ -4,7 +4,7 @@ use std::fmt;
 use crate::{tree::TreeDisplay, DisplayLevel};
 
 pub trait MermaidDisplay: TreeDisplay {
-    fn repr_mermaid(&self, child_to_parent_edge: bool, options: MermaidDisplayOptions) -> String;
+    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -14,6 +14,8 @@ pub struct MermaidDisplayOptions {
     /// This is useful for large trees.
     /// In simple mode, the display string is just the node's name.
     pub simple: bool,
+    /// Display the root node at the bottom of the diagram or at the top
+    pub bottom_up: bool,
     /// subgraph_options is used to configure the subgraph.
     /// Since some common displays (jupyter) don't support multiple mermaid graphs in a single cell, we need to use subgraphs.
     /// The subgraph_options is used to both indicate that a subgraph should be used, and to configure the subgraph.
@@ -31,7 +33,7 @@ pub struct SubgraphOptions {
 }
 
 impl<T: TreeDisplay> MermaidDisplay for T {
-    fn repr_mermaid(&self, child_to_parent_edge: bool, options: MermaidDisplayOptions) -> String {
+    fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String {
         let mut s = String::new();
         let display_type = match options.simple {
             true => DisplayLevel::Compact,
@@ -41,7 +43,7 @@ impl<T: TreeDisplay> MermaidDisplay for T {
         let mut visitor = MermaidDisplayVisitor::new(
             &mut s,
             display_type,
-            child_to_parent_edge,
+            options.bottom_up,
             options.subgraph_options,
         );
 
@@ -53,7 +55,8 @@ impl<T: TreeDisplay> MermaidDisplay for T {
 pub struct MermaidDisplayVisitor<'a, W> {
     output: &'a mut W,
     t: DisplayLevel,
-    child_to_parent_edge: bool,
+    /// Should the root node be at the bottom or the top of the diagram
+    bottom_up: bool,
     /// each node should only appear once in the tree.
     /// the key is the node's `multiline_display` string, and the value is the node's id.
     /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
@@ -67,13 +70,13 @@ impl<'a, W> MermaidDisplayVisitor<'a, W> {
     pub fn new(
         w: &'a mut W,
         t: DisplayLevel,
-        child_to_parent_edge: bool,
+        bottom_up: bool,
         subgraph_options: Option<SubgraphOptions>,
     ) -> Self {
         Self {
             output: w,
             t,
-            child_to_parent_edge,
+            bottom_up,
             nodes: IndexMap::new(),
             node_count: 0,
             subgraph_options,
@@ -123,11 +126,7 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        if self.child_to_parent_edge {
-            writeln!(self.output, r#"{child} --> {parent}"#)
-        } else {
-            writeln!(self.output, r#"{parent} --> {child}"#)
-        }
+        writeln!(self.output, r#"{child} --> {parent}"#)
     }
 
     fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
@@ -153,7 +152,12 @@ where
                 writeln!(self.output, "end")?;
             }
             None => {
-                writeln!(self.output, "flowchart TD")?;
+                if self.bottom_up {
+                    writeln!(self.output, "flowchart BT")?;
+                } else {
+                    writeln!(self.output, "flowchart TD")?;
+                }
+
                 self.fmt_node(node)?;
             }
         }

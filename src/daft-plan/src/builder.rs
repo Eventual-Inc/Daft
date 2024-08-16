@@ -483,7 +483,7 @@ impl LogicalPlanBuilder {
 
         match format {
             DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
-            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(true, opts),
+            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
         }
     }
 }
