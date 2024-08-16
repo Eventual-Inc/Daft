@@ -18,6 +18,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
@@ -30,13 +31,28 @@ use daft_plan::populate_aggregation_stages;
 use crate::channel::MultiSender;
 
 #[async_trait]
-pub trait PipelineNode: Sync + Send {
+pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    fn name(&self) -> &'static str;
     async fn start(
         &mut self,
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> DaftResult<()>;
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
+}
+
+pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
+    let mut output = String::new();
+    let mut visitor = MermaidDisplayVisitor::new(
+        &mut output,
+        common_display::DisplayLevel::Default,
+        true,
+        Default::default(),
+    );
+    visitor.fmt(root.as_tree_display()).unwrap();
+    output
 }
 
 pub fn physical_plan_to_pipeline(

@@ -283,6 +283,7 @@ Project1 --> Limit0
         let plan = plan_1();
         let opts = MermaidDisplayOptions {
             simple: false,
+            bottom_up: false,
             subgraph_options: Some(SubgraphOptions {
                 name: "Optimized Logical Plan".to_string(),
                 subgraph_id: "optimized".to_string(),

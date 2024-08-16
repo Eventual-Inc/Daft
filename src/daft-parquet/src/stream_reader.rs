@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fs::File, sync::Arc};
+use std::{
+    collections::HashSet,
+    fs::File,
+    io::{Read, Seek},
+    sync::Arc,
+};
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
@@ -8,6 +13,7 @@ use daft_core::{
     Series,
 };
 use daft_dsl::ExprRef;
+use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
@@ -118,6 +124,61 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     })
 }
 
+struct CountingReader<R> {
+    reader: R,
+    count: usize,
+    io_stats: Option<IOStatsRef>,
+}
+
+impl<R> CountingReader<R> {
+    fn update_count(&mut self) {
+        if let Some(ios) = &self.io_stats {
+            ios.mark_bytes_read(self.count);
+            self.count = 0;
+        }
+    }
+}
+
+impl<R> Read for CountingReader<R>
+where
+    R: Read + Seek,
+{
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.reader.read(buf)?;
+        self.count += read;
+        Ok(read)
+    }
+    #[inline]
+    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
+        let read = self.reader.read_vectored(bufs)?;
+        self.count += read;
+        Ok(read)
+    }
+    #[inline]
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        let read = self.reader.read_to_end(buf)?;
+        self.count += read;
+        Ok(read)
+    }
+}
+
+impl<R> Seek for CountingReader<R>
+where
+    R: Read + Seek,
+{
+    #[inline]
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.reader.seek(pos)
+    }
+}
+
+impl<R> Drop for CountingReader<R> {
+    fn drop(&mut self) {
+        self.update_count()
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn local_parquet_read_into_column_iters(
     uri: &str,
@@ -129,6 +190,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     chunk_size: usize,
+    io_stats: Option<IOStatsRef>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     SchemaRef,
@@ -141,9 +203,10 @@ pub(crate) fn local_parquet_read_into_column_iters(
         .map(|s| s.to_string())
         .unwrap_or(uri.to_string());
 
-    let mut reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
+    let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
         path: uri.to_string(),
     })?;
+    io_stats.as_ref().inspect(|ios| ios.mark_get_requests(1));
     let size = reader
         .metadata()
         .with_context(|_| super::InternalIOSnafu {
@@ -157,6 +220,11 @@ pub(crate) fn local_parquet_read_into_column_iters(
             file_size: size as usize,
         });
     }
+    let mut reader = CountingReader {
+        reader,
+        count: 0,
+        io_stats,
+    };
 
     let metadata = match metadata {
         Some(m) => m,
@@ -205,9 +273,9 @@ pub(crate) fn local_parquet_read_into_column_iters(
             None,
         )
         .with_context(|_| super::UnableToReadParquetRowGroupSnafu { path: uri.clone() })?;
+        reader.update_count();
         Ok(single_rg_column_iter)
     });
-
     Ok((
         metadata,
         Arc::new(daft_schema),
@@ -428,6 +496,7 @@ pub(crate) fn local_parquet_stream(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     maintain_order: bool,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
@@ -443,6 +512,7 @@ pub(crate) fn local_parquet_stream(
         schema_infer_options,
         metadata,
         chunk_size,
+        io_stats,
     )?;
 
     // Create a channel for each row group to send the processed tables to the stream

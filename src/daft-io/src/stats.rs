@@ -61,7 +61,7 @@ impl IOStatsContext {
     }
 
     #[inline]
-    pub(crate) fn mark_get_requests(&self, num_requests: usize) {
+    pub fn mark_get_requests(&self, num_requests: usize) {
         self.num_get_requests
             .fetch_add(num_requests, atomic::Ordering::Relaxed);
     }
@@ -105,7 +105,7 @@ impl IOStatsContext {
     }
 
     #[inline]
-    pub(crate) fn mark_bytes_read(&self, bytes_read: usize) {
+    pub fn mark_bytes_read(&self, bytes_read: usize) {
         self.bytes_read
             .fetch_add(bytes_read, atomic::Ordering::Relaxed);
     }

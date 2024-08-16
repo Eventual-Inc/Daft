@@ -4,9 +4,11 @@ use crate::{
     channel::{create_channel, MultiSender},
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 use async_trait::async_trait;
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_core::{
     datatypes::Field,
@@ -227,6 +229,8 @@ pub(crate) struct HashJoinNode {
     hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
+    build_runtime_stats: Arc<RuntimeStatsContext>,
+    probe_runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl HashJoinNode {
@@ -239,6 +243,8 @@ impl HashJoinNode {
             hash_join: Arc::new(tokio::sync::Mutex::new(op)),
             left,
             right,
+            build_runtime_stats: RuntimeStatsContext::new(),
+            probe_runtime_stats: RuntimeStatsContext::new(),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -246,10 +252,44 @@ impl HashJoinNode {
     }
 }
 
+impl TreeDisplay for HashJoinNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        use common_display::DisplayLevel::*;
+        match level {
+            Compact => {}
+            _ => {
+                let build_rt_result = self.build_runtime_stats.result();
+                writeln!(display, "Probe Table Build:").unwrap();
+
+                build_rt_result
+                    .display(&mut display, true, false, true)
+                    .unwrap();
+
+                let probe_rt_result = self.probe_runtime_stats.result();
+                writeln!(display, "\nProbe Phase:").unwrap();
+                probe_rt_result
+                    .display(&mut display, true, true, true)
+                    .unwrap();
+            }
+        }
+        display
+    }
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.left.as_tree_display(), self.right.as_tree_display()]
+    }
+}
+
 #[async_trait]
 impl PipelineNode for HashJoinNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.left.as_ref(), self.right.as_ref()]
+    }
+
+    fn name(&self) -> &'static str {
+        "HashJoin"
     }
 
     async fn start(
@@ -260,18 +300,20 @@ impl PipelineNode for HashJoinNode {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
         self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
-
+        let build_runtime_stats = self.build_runtime_stats.clone();
         let probe_table_build = tokio::spawn(async move {
             let span = info_span!("ProbeTable::sink");
             let mut guard = hash_join.lock().await;
             let sink = guard.as_sink();
             while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val))? {
+                build_runtime_stats.mark_rows_received(val.len() as u64);
+                if let BlockingSinkStatus::Finished =
+                    build_runtime_stats.in_span(&span, || sink.sink(&val))?
+                {
                     break;
                 }
             }
-
-            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
+            build_runtime_stats.in_span(&info_span!("ProbeTable::finalize"), || sink.finalize())?;
             DaftResult::Ok(())
         });
         // should wrap in context join handle
@@ -287,7 +329,11 @@ impl PipelineNode for HashJoinNode {
             let guard = hash_join.lock().await;
             guard.as_intermediate_op()
         };
-        let probing_node = IntermediateNode::new(probing_op, vec![]);
+        let probing_node = IntermediateNode::new_with_runtime_stats(
+            probing_op,
+            vec![],
+            self.probe_runtime_stats.clone(),
+        );
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;
@@ -296,5 +342,9 @@ impl PipelineNode for HashJoinNode {
             worker_senders,
         ));
         Ok(())
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

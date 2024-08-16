@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -12,20 +13,20 @@ use crate::{
         SingleSender,
     },
     pipeline::PipelineNode,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 use super::state::OperatorTaskState;
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
-    #[allow(dead_code)]
-
     fn name(&self) -> &'static str;
 }
 
 pub(crate) struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
+    runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl IntermediateNode {
@@ -33,9 +34,19 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
     ) -> Self {
-        IntermediateNode {
+        let rts = RuntimeStatsContext::new();
+        Self::new_with_runtime_stats(intermediate_op, children, rts)
+    }
+
+    pub(crate) fn new_with_runtime_stats(
+        intermediate_op: Arc<dyn IntermediateOperator>,
+        children: Vec<Box<dyn PipelineNode>>,
+        runtime_stats: Arc<RuntimeStatsContext>,
+    ) -> Self {
+        Self {
             intermediate_op,
             children,
+            runtime_stats,
         }
     }
 
@@ -48,11 +59,14 @@ impl IntermediateNode {
         op: Arc<dyn IntermediateOperator>,
         mut receiver: SingleReceiver,
         sender: SingleSender,
+        rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
+        let sender = CountingSender::new(sender, rt_context.clone());
         while let Some(morsel) = receiver.recv().await {
-            let result = span.in_scope(|| op.execute(&morsel))?;
+            rt_context.mark_rows_received(morsel.len() as u64);
+            let result = rt_context.in_span(&span, || op.execute(&morsel))?;
             state.add(result);
             if let Some(part) = state.try_clear() {
                 let _ = sender.send(part?).await;
@@ -78,6 +92,7 @@ impl IntermediateNode {
                 self.intermediate_op.clone(),
                 worker_receiver,
                 destination_sender,
+                self.runtime_stats.clone(),
             ));
             worker_senders.push(worker_sender);
         }
@@ -102,10 +117,35 @@ impl IntermediateNode {
     }
 }
 
+impl TreeDisplay for IntermediateNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.intermediate_op.name()).unwrap();
+        use common_display::DisplayLevel::*;
+        match level {
+            Compact => {}
+            _ => {
+                let rt_result = self.runtime_stats.result();
+                rt_result.display(&mut display, true, true, true).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children.iter().map(|v| v.as_tree_display()).collect()
+    }
+}
+
 #[async_trait]
 impl PipelineNode for IntermediateNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children.iter().map(|v| v.as_ref()).collect()
+    }
+
+    fn name(&self) -> &'static str {
+        self.intermediate_op.name()
     }
 
     async fn start(
@@ -128,5 +168,8 @@ impl PipelineNode for IntermediateNode {
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
         runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders));
         Ok(())
+    }
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
