@@ -93,6 +93,17 @@ impl NativeExecutor {
     }
 }
 
+fn should_enable_explain_analyze() -> bool {
+    let explain_var_name = "DAFT_DEV_ENABLE_EXPLAIN_ANALYZE";
+    if let Ok(val) = std::env::var(explain_var_name)
+        && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    {
+        true
+    } else {
+        false
+    }
+}
+
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -133,13 +144,15 @@ pub fn run_local(
                 _ => {}
             }
         }
-        let curr_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_millis();
-        let file_name = format!("explain-analyze-{}-mermaid.txt", curr_ms);
-        let mut file = File::create(file_name)?;
-        file.write_all(viz_pipeline(pipeline.as_ref()).as_bytes())?;
+        if should_enable_explain_analyze() {
+            let curr_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis();
+            let file_name = format!("explain-analyze-{}-mermaid.txt", curr_ms);
+            let mut file = File::create(file_name)?;
+            file.write_all(viz_pipeline(pipeline.as_ref()).as_bytes())?;
+        }
         Ok(result.into_iter())
     });
     Ok(Box::new(res?))
