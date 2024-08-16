@@ -32,6 +32,7 @@ enum HashJoinState {
     Probing {
         probe_table: Arc<ProbeTable>,
         tables: Arc<Vec<Table>>,
+        projection: Vec<ExprRef>,
     },
 }
 
@@ -67,7 +68,7 @@ impl HashJoinState {
         if let Self::Building {
             probe_table_builder,
             tables,
-            ..
+            projection,
         } = self
         {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
@@ -76,6 +77,7 @@ impl HashJoinState {
             *self = Self::Probing {
                 probe_table: Arc::new(pt),
                 tables: Arc::new(tables.clone()),
+                projection: projection.clone(),
             };
             Ok(())
         } else {
@@ -145,12 +147,14 @@ impl HashJoinOperator {
         if let HashJoinState::Probing {
             probe_table,
             tables,
+            projection,
         } = &self.join_state
         {
             Arc::new(HashJoinProber {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
+                left_on: projection.clone(),
             })
         } else {
             panic!("can't call as_intermediate_op when not in probing state")
@@ -161,6 +165,7 @@ impl HashJoinOperator {
 struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
+    left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
 }
 
@@ -200,7 +205,27 @@ impl IntermediateOperator for HashJoinProber {
         let left_table = left_growable.build()?;
         let right_table = right_growable.build()?;
 
-        let final_table = left_table.union(&right_table)?;
+        let common_join_keys = self
+            .left_on
+            .iter()
+            .zip(self.right_on.iter())
+            .filter_map(|(l, r)| {
+                if l.name() == r.name() {
+                    Some(l.name())
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let pruned_right_side_columns = right_table
+            .schema
+            .fields
+            .keys()
+            .filter(|k| !common_join_keys.contains(k.as_str()))
+            .collect::<Vec<_>>();
+        let pruned_right_table = right_table.get_columns(&pruned_right_side_columns)?;
+
+        let final_table = left_table.union(&pruned_right_table)?;
         Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
             Arc::new(vec![final_table]),
