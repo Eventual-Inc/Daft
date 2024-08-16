@@ -287,3 +287,14 @@ JSON
    :template: autosummary/accessor_method.rst
 
    Expression.json.query
+
+
+Embedding
+#########
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.embedding.cosine_distance
