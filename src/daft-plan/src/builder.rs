@@ -30,6 +30,7 @@ use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::source_info::InMemoryInfo,
+    common_daft_config::PyDaftPlanningConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::python::pylib::ScanOperatorHandle,
@@ -546,6 +547,13 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn table_scan(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
+    }
+
+    pub fn with_planning_config(
+        &self,
+        daft_planning_config: PyDaftPlanningConfig,
+    ) -> PyResult<Self> {
+        Ok(self.builder.with_config(daft_planning_config.config).into())
     }
 
     pub fn select(&self, to_select: Vec<PyExpr>) -> PyResult<Self> {
