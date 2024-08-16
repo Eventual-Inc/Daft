@@ -127,15 +127,7 @@ impl TreeDisplay for IntermediateNode {
             Compact => {}
             _ => {
                 let rt_result = self.runtime_stats.result();
-                writeln!(display).unwrap();
-                writeln!(display, "rows received = {}", rt_result.rows_received).unwrap();
-                writeln!(display, "rows emitted = {}", rt_result.rows_emitted).unwrap();
-                writeln!(
-                    display,
-                    "CPU-ms = {:.1}",
-                    (rt_result.cpu_us as f64) / 1000f64
-                )
-                .unwrap();
+                rt_result.display(&mut display, true, true, true).unwrap();
             }
         }
         display

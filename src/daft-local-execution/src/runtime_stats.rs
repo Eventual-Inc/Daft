@@ -1,4 +1,6 @@
+use core::fmt;
 use std::{
+    fmt::Write,
     sync::{atomic::AtomicU64, Arc},
     time::Instant,
 };
@@ -20,6 +22,41 @@ pub(crate) struct RuntimeStats {
     pub rows_received: u64,
     pub rows_emitted: u64,
     pub cpu_us: u64,
+}
+
+impl RuntimeStats {
+    pub(crate) fn display<W: Write>(
+        &self,
+        w: &mut W,
+        received: bool,
+        emitted: bool,
+        cpu_time: bool,
+    ) -> Result<(), fmt::Error> {
+        use num_format::Locale;
+        use num_format::ToFormattedString;
+        if received {
+            writeln!(
+                w,
+                "rows received =  {}",
+                self.rows_received.to_formatted_string(&Locale::en)
+            )?;
+        }
+
+        if emitted {
+            writeln!(
+                w,
+                "rows emitted =  {}",
+                self.rows_emitted.to_formatted_string(&Locale::en)
+            )?;
+        }
+
+        if cpu_time {
+            let tms = (self.cpu_us as f32) / 1000f32;
+            writeln!(w, "CPU Time = {:.2}ms", tms)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl RuntimeStatsContext {

@@ -44,7 +44,7 @@ impl TreeDisplay for SourceNode {
                 let rt_result = self.runtime_stats.result();
 
                 writeln!(display).unwrap();
-                writeln!(display, "rows emitted = {}", rt_result.rows_emitted).unwrap();
+                rt_result.display(&mut display, false, true, false).unwrap();
                 let bytes_read = self.io_stats.load_bytes_read();
                 writeln!(
                     display,

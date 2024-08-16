@@ -262,39 +262,17 @@ impl TreeDisplay for HashJoinNode {
             Compact => {}
             _ => {
                 let build_rt_result = self.build_runtime_stats.result();
-                writeln!(display).unwrap();
-                writeln!(
-                    display,
-                    "Probe Table rows received = {}",
-                    build_rt_result.rows_received
-                )
-                .unwrap();
-                writeln!(
-                    display,
-                    "Probe Table CPU-ms = {:.1}",
-                    (build_rt_result.cpu_us as f64) / 1000f64
-                )
-                .unwrap();
+                writeln!(display, "Probe Table Build:").unwrap();
+
+                build_rt_result
+                    .display(&mut display, true, false, true)
+                    .unwrap();
+
                 let probe_rt_result = self.probe_runtime_stats.result();
-                writeln!(display).unwrap();
-                writeln!(
-                    display,
-                    "Prober rows received = {}",
-                    probe_rt_result.rows_received
-                )
-                .unwrap();
-                writeln!(
-                    display,
-                    "Prober rows emitted = {}",
-                    probe_rt_result.rows_emitted
-                )
-                .unwrap();
-                writeln!(
-                    display,
-                    "Prober CPU-ms = {:.1}",
-                    (probe_rt_result.cpu_us as f64) / 1000f64
-                )
-                .unwrap();
+                writeln!(display, "\nProbe Phase:").unwrap();
+                probe_rt_result
+                    .display(&mut display, true, true, true)
+                    .unwrap();
             }
         }
         display
