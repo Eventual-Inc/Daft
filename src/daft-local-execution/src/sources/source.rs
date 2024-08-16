@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::tree::TreeDisplay;
+use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use daft_io::{IOStatsContext, IOStatsRef};
 use daft_micropartition::MicroPartition;
@@ -45,7 +45,13 @@ impl TreeDisplay for SourceNode {
 
                 writeln!(display).unwrap();
                 writeln!(display, "rows emitted = {}", rt_result.rows_emitted).unwrap();
-                writeln!(display, "bytes read = {}", self.io_stats.load_bytes_read()).unwrap();
+                let bytes_read = self.io_stats.load_bytes_read();
+                writeln!(
+                    display,
+                    "bytes read = {}",
+                    bytes_to_human_readable(bytes_read)
+                )
+                .unwrap();
             }
         }
         display

@@ -3,6 +3,7 @@ use mermaid::MermaidDisplayOptions;
 pub mod ascii;
 pub mod mermaid;
 pub mod tree;
+pub mod utils;
 
 pub trait DisplayAs {
     fn display_as(&self, level: DisplayLevel) -> String;
