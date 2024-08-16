@@ -588,8 +588,8 @@ impl SQLPlanner {
                 if escape_char.is_some() {
                     unsupported_sql_err!("LIKE with escape char")
                 }
-                let expr = self.plan_expr(expr, current_relation)?;
-                let pattern = self.plan_expr(pattern, current_relation)?;
+                let expr = self.plan_expr(expr)?;
+                let pattern = self.plan_expr(pattern)?;
                 let expr = like(expr, pattern);
                 if *negated {
                     Ok(expr.not())
@@ -606,8 +606,8 @@ impl SQLPlanner {
                 if escape_char.is_some() {
                     unsupported_sql_err!("ILIKE with escape char")
                 }
-                let expr = self.plan_expr(expr, current_relation)?;
-                let pattern = self.plan_expr(pattern, current_relation)?;
+                let expr = self.plan_expr(expr)?;
+                let pattern = self.plan_expr(pattern)?;
                 let expr = ilike(expr, pattern);
                 if *negated {
                     Ok(expr.not())
