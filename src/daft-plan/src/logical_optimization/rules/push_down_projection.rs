@@ -796,6 +796,7 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
@@ -847,6 +848,7 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;

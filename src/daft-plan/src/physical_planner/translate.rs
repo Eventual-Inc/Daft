@@ -1088,7 +1088,7 @@ mod tests {
         let logical_plan = force_repartition(logical_plan, left_partitions)?
             .select(vec![col("a"), col("b"), col("c").alias("dataL")])?
             .join(
-                &join_node,
+                join_node,
                 vec![col("a"), col("b")],
                 vec![col("a"), col("b")],
                 daft_core::JoinType::Inner,
