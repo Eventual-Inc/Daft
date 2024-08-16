@@ -4,6 +4,8 @@ import datetime
 import os
 import platform
 import time
+import urllib
+from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -68,6 +70,42 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
             ],
         }
     )
+
+
+@pytest.mark.skip(reason="Has a hardcoded timeout; could be too long for a unit test")
+def test_analytics_client_timeout():
+    def mock_urlopen(
+        req,
+        timeout,
+    ):
+        time.sleep(1)
+
+        @dataclass
+        class HTTPResponse:
+            status: int
+
+        return HTTPResponse(status=408)
+
+    urllib.request.urlopen = mock_urlopen
+    analytics_client = AnalyticsClient(
+        daft.get_version(),
+        daft.get_build_type(),
+        buffer_capacity=1,
+    )
+    analytics_client.track_import()
+
+
+@patch("urllib.request.urlopen")
+def test2(
+    mock_urlopen: MagicMock,
+):
+    mock_urlopen.return_value.status = 408
+    analytics_client = AnalyticsClient(
+        daft.get_version(),
+        daft.get_build_type(),
+        buffer_capacity=1,
+    )
+    analytics_client.track_import()
 
 
 @patch("daft.analytics.datetime")
