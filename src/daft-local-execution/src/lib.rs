@@ -81,8 +81,13 @@ pub enum Error {
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         match err {
-            Error::PipelineCreationError { .. } | Error::PipelineExecutionError { .. } => {
-                DaftError::InternalError(err.to_string())
+            Error::PipelineCreationError { source, plan_name } => {
+                log::error!("Error creating pipeline from {}", plan_name);
+                source
+            }
+            Error::PipelineExecutionError { source, node_name } => {
+                log::error!("Error when running pipeline node {}", node_name);
+                source
             }
             _ => DaftError::External(err.into()),
         }
