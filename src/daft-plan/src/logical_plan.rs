@@ -246,7 +246,7 @@ impl LogicalPlan {
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(),
                 ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, num_actors, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), *num_actors).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),

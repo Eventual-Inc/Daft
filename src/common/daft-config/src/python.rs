@@ -19,6 +19,13 @@ impl PyDaftPlanningConfig {
         PyDaftPlanningConfig::default()
     }
 
+    #[staticmethod]
+    pub fn from_env() -> Self {
+        PyDaftPlanningConfig {
+            config: Arc::new(DaftPlanningConfig::from_env()),
+        }
+    }
+
     fn with_config_values(
         &mut self,
         default_io_config: Option<PyIOConfig>,
@@ -39,6 +46,11 @@ impl PyDaftPlanningConfig {
         Ok(PyIOConfig {
             config: self.config.default_io_config.clone(),
         })
+    }
+
+    #[getter(enable_actor_pool_projections)]
+    fn enable_actor_pool_projections(&self) -> PyResult<bool> {
+        Ok(self.config.enable_actor_pool_projections)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

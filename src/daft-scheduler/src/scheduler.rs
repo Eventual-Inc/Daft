@@ -314,10 +314,7 @@ fn physical_plan_to_partition_tasks(
 
         PhysicalPlan::ActorPoolProject(
             app @ ActorPoolProject {
-                input,
-                projection,
-                num_actors,
-                ..
+                input, projection, ..
             },
         ) => {
             use daft_dsl::{
@@ -361,7 +358,6 @@ fn physical_plan_to_partition_tasks(
                         .collect::<Vec<_>>(),
                     py_partial_udfs,
                     app.resource_request(),
-                    *num_actors,
                 ))?;
             Ok(py_iter.into())
         }

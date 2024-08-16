@@ -257,7 +257,6 @@ impl PushDownProjection {
                         LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                             upstream_actor_pool_projection.input.clone(),
                             pruned_upstream_projections,
-                            upstream_actor_pool_projection.num_actors,
                         )?)
                         .arced()
                     };
@@ -820,6 +819,7 @@ mod tests {
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
+                concurrency: Some(8),
             })),
             inputs: vec![col("c")],
         }
@@ -829,7 +829,6 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            8,
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
@@ -841,7 +840,6 @@ mod tests {
         let expected_actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![mock_stateful_udf.alias("udf_results")],
-            8,
         )?)
         .arced();
 
@@ -873,6 +871,7 @@ mod tests {
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
+                concurrency: Some(8),
             })),
             inputs: vec![col("c")],
         }
@@ -882,7 +881,6 @@ mod tests {
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.clone(),
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
-            8,
         )?)
         .arced();
         let project =

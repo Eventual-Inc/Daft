@@ -199,6 +199,7 @@ pub fn stateful_udf(
     resource_request: Option<ResourceRequest>,
     init_args: Option<&PyAny>,
     batch_size: Option<usize>,
+    concurrency: Option<usize>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::stateful_udf;
 
@@ -224,6 +225,7 @@ pub fn stateful_udf(
             resource_request,
             init_args,
             batch_size,
+            concurrency,
         )?
         .into(),
     })

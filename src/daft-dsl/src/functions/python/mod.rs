@@ -53,6 +53,7 @@ pub struct StatefulPythonUDF {
     #[cfg(feature = "python")]
     pub init_args: Option<pyobj_serde::PyObjectWrapper>,
     pub batch_size: Option<usize>,
+    pub concurrency: Option<usize>,
 }
 
 #[cfg(feature = "python")]
@@ -98,6 +99,7 @@ pub fn stateless_udf(
 }
 
 #[cfg(feature = "python")]
+#[allow(clippy::too_many_arguments)]
 pub fn stateful_udf(
     name: &str,
     py_stateful_partial_func: pyo3::PyObject,
@@ -106,6 +108,7 @@ pub fn stateful_udf(
     resource_request: Option<ResourceRequest>,
     init_args: Option<pyo3::PyObject>,
     batch_size: Option<usize>,
+    concurrency: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -116,6 +119,7 @@ pub fn stateful_udf(
             resource_request,
             init_args: init_args.map(pyobj_serde::PyObjectWrapper),
             batch_size,
+            concurrency,
         })),
         inputs: expressions.into(),
     })
@@ -128,6 +132,7 @@ pub fn stateful_udf(
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
+    concurrency: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -136,6 +141,7 @@ pub fn stateful_udf(
             return_dtype,
             resource_request,
             batch_size,
+            concurrency,
         })),
         inputs: expressions.into(),
     })
@@ -187,4 +193,29 @@ pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
             merged_resource_requests.as_slice(),
         ))
     }
+}
+
+/// Gets the concurrency from the first StatefulUDF encountered in a given slice of expressions
+///
+/// NOTE: This function panics if no StatefulUDF is found
+pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
+    let mut projection_concurrency = None;
+    for expr in exprs.iter() {
+        let mut found_stateful_udf = false;
+        expr.apply(|e| match e.as_ref() {
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF{concurrency, ..})),
+                ..
+            } => {
+                found_stateful_udf = true;
+                projection_concurrency = Some(concurrency.expect("Should have concurrency specified"));
+                Ok(common_treenode::TreeNodeRecursion::Stop)
+            }
+            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+        }).unwrap();
+        if found_stateful_udf {
+            break;
+        }
+    }
+    projection_concurrency.expect("get_concurrency expects one StatefulUDF")
 }

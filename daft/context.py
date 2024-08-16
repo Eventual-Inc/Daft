@@ -98,7 +98,7 @@ class DaftContext:
     _daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig.from_env()
 
     # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
-    _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig()
+    _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig.from_env()
 
     _runner_config: _RunnerConfig | None = None
     _disallow_set_runner: bool = False

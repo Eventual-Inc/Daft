@@ -5,7 +5,7 @@ use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
     functions::{
-        python::{get_resource_request, PythonUDF, StatefulPythonUDF},
+        python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
     Expr, ExprRef,
@@ -23,39 +23,50 @@ pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
     pub clustering_spec: Arc<ClusteringSpec>,
-    pub num_actors: usize,
 }
 
 impl ActorPoolProject {
-    pub(crate) fn try_new(
-        input: PhysicalPlanRef,
-        projection: Vec<ExprRef>,
-        num_actors: usize,
-    ) -> DaftResult<Self> {
+    pub(crate) fn try_new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
 
-        if !projection.iter().any(|expr| {
-            matches!(
-                expr.as_ref(),
-                Expr::Function {
-                    func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                    ..
-                }
-            )
-        }) {
-            return Err(DaftError::InternalError("Cannot create ActorPoolProject from expressions that don't contain a stateful Python UDF".to_string()));
+        let num_stateful_udf_exprs: usize = projection
+            .iter()
+            .map(|expr| {
+                let mut num_stateful_udfs = 0;
+                expr.apply(|e| {
+                    if matches!(
+                        e.as_ref(),
+                        Expr::Function {
+                            func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+                            ..
+                        }
+                    ) {
+                        num_stateful_udfs += 1;
+                    }
+                    Ok(common_treenode::TreeNodeRecursion::Continue)
+                })
+                .unwrap();
+                num_stateful_udfs
+            })
+            .sum();
+        if !num_stateful_udf_exprs == 1 {
+            return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 stateful UDF expression but found: {num_stateful_udf_exprs}")));
         }
 
         Ok(ActorPoolProject {
             input,
             projection,
             clustering_spec,
-            num_actors,
         })
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
         get_resource_request(self.projection.as_slice())
+    }
+
+    /// Retrieves the concurrency of this ActorPoolProject
+    pub fn concurrency(&self) -> usize {
+        get_concurrency(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -90,7 +101,7 @@ impl ActorPoolProject {
                 })
                 .join(", ")
         ));
-        res.push(format!("Num actors = {}", self.num_actors,));
+        res.push(format!("Concurrency = {}", self.concurrency()));
         res.push(format!(
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
