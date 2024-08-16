@@ -10,7 +10,10 @@ use daft_core::{
 };
 use daft_dsl::{
     col,
-    functions::numeric::{ceil, floor},
+    functions::{
+        numeric::{ceil, floor},
+        utf8::{ilike, like},
+    },
     lit, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -576,8 +579,42 @@ impl SQLPlanner {
             }
             SQLExpr::InUnnest { .. } => unsupported_sql_err!("IN UNNEST"),
             SQLExpr::Between { .. } => unsupported_sql_err!("BETWEEN"),
-            SQLExpr::Like { .. } => unsupported_sql_err!("LIKE"),
-            SQLExpr::ILike { .. } => unsupported_sql_err!("ILIKE"),
+            SQLExpr::Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => {
+                if escape_char.is_some() {
+                    unsupported_sql_err!("LIKE with escape char")
+                }
+                let expr = self.plan_expr(expr)?;
+                let pattern = self.plan_expr(pattern)?;
+                let expr = like(expr, pattern);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
+            SQLExpr::ILike {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => {
+                if escape_char.is_some() {
+                    unsupported_sql_err!("ILIKE with escape char")
+                }
+                let expr = self.plan_expr(expr)?;
+                let pattern = self.plan_expr(pattern)?;
+                let expr = ilike(expr, pattern);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::SimilarTo { .. } => unsupported_sql_err!("SIMILAR TO"),
             SQLExpr::RLike { .. } => unsupported_sql_err!("RLIKE"),
             SQLExpr::AnyOp { .. } => unsupported_sql_err!("ANY"),

@@ -310,6 +310,8 @@ mod tests {
     #[case::lpad("select lpad(utf8, 1, 'a') as lpad from tbl1")]
     #[case::repeat("select repeat(utf8, 1) as repeat from tbl1")]
     #[case::to_date("select to_date(utf8, 'YYYY-MM-DD') as to_date from tbl1")]
+    #[case::like("select utf8 like 'a' as like from tbl1")]
+    #[case::ilike("select utf8 ilike 'a' as ilike from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
     fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
