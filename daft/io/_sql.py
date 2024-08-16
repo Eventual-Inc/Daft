@@ -37,7 +37,7 @@ def read_sql(
             defaults to None, which will lets Daft determine the number of partitions.
         disable_pushdowns_to_sql (bool): Whether to disable pushdowns to the SQL query, defaults to False
         infer_schema (bool): Whether to turn on schema inference, defaults to True. If set to False, the schema parameter must be provided.
-        infer_schema_length (int): The number of rows to scan when inferring the schema, defaults to 10. If infer_schema is False, this parameter is ignored.
+        infer_schema_length (int): The number of rows to scan when inferring the schema, defaults to 10. If infer_schema is False, this parameter is ignored. Note that if Daft is able to use ConnectorX to infer the schema, this parameter is ignored as ConnectorX is an Arrow backed driver.
         schema (Optional[Dict[str, DataType]]): A mapping of column names to datatypes. If infer_schema is False, this schema is used as the definitive schema for the data, otherwise it is used as a schema hint that is applied after the schema is inferred.
             This can be useful if the types can be more precisely determined than what the inference can provide (e.g., if a column can be declared as a fixed-sized list rather than a list).
 
