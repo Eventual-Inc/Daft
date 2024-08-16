@@ -1,12 +1,13 @@
 # isort: dont-add-import: from __future__ import annotations
 
 
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
 
 from daft import context, from_pydict
 from daft.api_annotations import PublicAPI
 from daft.daft import PythonStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
 from daft.sql.sql_connection import SQLConnection
 from daft.sql.sql_scan import SQLScanOperator
@@ -22,6 +23,9 @@ def read_sql(
     partition_col: Optional[str] = None,
     num_partitions: Optional[int] = None,
     disable_pushdowns_to_sql: bool = False,
+    infer_schema: bool = True,
+    infer_schema_length: int = 10,
+    schema: Optional[Dict[str, DataType]] = None,
 ) -> DataFrame:
     """Create a DataFrame from the results of a SQL query.
 
@@ -32,6 +36,10 @@ def read_sql(
         num_partitions (Optional[int]): Number of partitions to read the data into,
             defaults to None, which will lets Daft determine the number of partitions.
         disable_pushdowns_to_sql (bool): Whether to disable pushdowns to the SQL query, defaults to False
+        infer_schema (bool): Whether to turn on schema inference, defaults to True. If set to False, the schema parameter must be provided.
+        infer_schema_length (int): The number of rows to scan when inferring the schema, defaults to 10. If infer_schema is False, this parameter is ignored.
+        schema (Optional[Dict[str, DataType]]): A mapping of column names to datatypes. If infer_schema is False, this schema is used as the definitive schema for the data, otherwise it is used as a schema hint that is applied after the schema is inferred.
+            This can be useful if the types can be more precisely determined than what the inference can provide (e.g., if a column can be declared as a fixed-sized list rather than a list).
 
     Returns:
         DataFrame: Dataframe containing the results of the query
@@ -86,6 +94,11 @@ def read_sql(
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 
+    if not infer_schema and schema is None:
+        raise ValueError(
+            "Cannot read DataFrame with infer_schema=False and schema=None, please provide a schema or set infer_schema=True"
+        )
+
     io_config = context.get_context().daft_planning_config.default_io_config
     storage_config = StorageConfig.python(PythonStorageConfig(io_config))
 
@@ -95,6 +108,9 @@ def read_sql(
         sql_conn,
         storage_config,
         disable_pushdowns_to_sql,
+        infer_schema,
+        infer_schema_length,
+        schema,
         partition_col=partition_col,
         num_partitions=num_partitions,
     )

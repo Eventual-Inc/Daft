@@ -16,7 +16,9 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.datatype import DataType
 from daft.expressions.expressions import lit
+from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 from daft.sql.sql_connection import SQLConnection
@@ -37,6 +39,9 @@ class SQLScanOperator(ScanOperator):
         conn: SQLConnection,
         storage_config: StorageConfig,
         disable_pushdowns_to_sql: bool,
+        infer_schema: bool,
+        infer_schema_length: int,
+        schema: dict[str, DataType] | None,
         partition_col: str | None = None,
         num_partitions: int | None = None,
     ) -> None:
@@ -47,7 +52,7 @@ class SQLScanOperator(ScanOperator):
         self._disable_pushdowns_to_sql = disable_pushdowns_to_sql
         self._partition_col = partition_col
         self._num_partitions = num_partitions
-        self._schema = self._attempt_schema_read()
+        self._schema = self._attempt_schema_read(infer_schema, infer_schema_length, schema)
 
     def schema(self) -> Schema:
         return self._schema
@@ -106,11 +111,21 @@ class SQLScanOperator(ScanOperator):
     def can_absorb_select(self) -> bool:
         return False
 
-    def _attempt_schema_read(self) -> Schema:
-        sql = self._construct_sql_query(limit=1)
-        pa_table = self.conn.read(sql)
-        schema = Schema.from_pyarrow_schema(pa_table.schema)
-        return schema
+    def _attempt_schema_read(
+        self,
+        infer_schema: bool,
+        infer_schema_length: int,
+        schema: dict[str, DataType] | None,
+    ) -> Schema:
+        # If schema is provided and user turned off schema inference, use the provided schema
+        if schema is not None and not infer_schema:
+            return _get_schema_from_dict(schema)
+
+        # Else, attempt schema inference then apply the schema hint if provided
+        inferred_schema = self.conn.read_schema(self.sql, infer_schema_length)
+        if schema is not None:
+            return inferred_schema.apply_hints(_get_schema_from_dict(schema))
+        return inferred_schema
 
     def _get_size_estimates(self) -> tuple[int, float, int]:
         total_rows = self._get_num_rows()
@@ -124,8 +139,7 @@ class SQLScanOperator(ScanOperator):
         return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:
-        sql = self._construct_sql_query(projection=["COUNT(*)"])
-        pa_table = self.conn.read(sql)
+        pa_table = self.conn.read(self.sql, projection=["COUNT(*)"])
 
         if pa_table.num_rows != 1:
             raise RuntimeError(
@@ -142,13 +156,13 @@ class SQLScanOperator(ScanOperator):
         try:
             # Try to get percentiles using percentile_cont
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
-            sql = self._construct_sql_query(
+            pa_table = self.conn.read(
+                self.sql,
                 projection=[
                     f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
-                ]
+                ],
             )
-            pa_table = self.conn.read(sql)
             return pa_table, PartitionBoundStrategy.PERCENTILE
 
         except RuntimeError as e:
@@ -158,13 +172,13 @@ class SQLScanOperator(ScanOperator):
                 e,
             )
 
-            sql = self._construct_sql_query(
+            pa_table = self.conn.read(
+                self.sql,
                 projection=[
                     f"MIN({self._partition_col}) AS min",
                     f"MAX({self._partition_col}) AS max",
-                ]
+                ],
             )
-            pa_table = self.conn.read(sql)
             return pa_table, PartitionBoundStrategy.MIN_MAX
 
     def _get_partition_bounds_and_strategy(self, num_scan_tasks: int) -> tuple[list[Any], PartitionBoundStrategy]:
@@ -226,14 +240,15 @@ class SQLScanOperator(ScanOperator):
         )
 
         if apply_pushdowns_to_sql:
-            sql = self._construct_sql_query(
+            sql = self.conn.construct_sql_query(
+                self.sql,
                 projection=pushdowns.columns,
                 predicate=predicate_sql,
                 limit=pushdowns.limit,
                 partition_bounds=partition_bounds,
             )
         else:
-            sql = self._construct_sql_query(partition_bounds=partition_bounds)
+            sql = self.conn.construct_sql_query(self.sql, partition_bounds=partition_bounds)
 
         file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
         return ScanTask.sql_scan_task(
@@ -246,43 +261,3 @@ class SQLScanOperator(ScanOperator):
             pushdowns=pushdowns if not apply_pushdowns_to_sql else None,
             stats=stats,
         )
-
-    def _construct_sql_query(
-        self,
-        projection: list[str] | None = None,
-        predicate: str | None = None,
-        limit: int | None = None,
-        partition_bounds: tuple[str, str] | None = None,
-    ) -> str:
-        import sqlglot
-
-        target_dialect = self.conn.dialect
-        # sqlglot does not support "postgresql" dialect, it only supports "postgres"
-        if target_dialect == "postgresql":
-            target_dialect = "postgres"
-        # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
-        elif target_dialect == "mssql":
-            target_dialect = "tsql"
-
-        if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
-            raise ValueError(
-                f"Unsupported dialect: {target_dialect}, please refer to the documentation for supported dialects."
-            )
-
-        query = sqlglot.subquery(self.sql, "subquery")
-
-        if projection is not None:
-            query = query.select(*projection)
-        else:
-            query = query.select("*")
-
-        if predicate is not None:
-            query = query.where(predicate)
-
-        if partition_bounds is not None:
-            query = query.where(partition_bounds[0]).where(partition_bounds[1])
-
-        if limit is not None:
-            query = query.limit(limit)
-
-        return query.sql(dialect=target_dialect)
