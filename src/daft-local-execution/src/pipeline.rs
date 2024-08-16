@@ -19,7 +19,6 @@ use crate::{
 
 use async_trait::async_trait;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
-use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -39,7 +38,7 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()>;
+    ) -> crate::Result<()>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }

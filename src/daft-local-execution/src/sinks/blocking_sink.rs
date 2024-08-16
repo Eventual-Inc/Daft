@@ -90,28 +90,31 @@ impl PipelineNode for BlockingSinkNode {
         let op = self.op.clone();
 
         let rt_context = self.runtime_stats.clone();
-        runtime_handle.spawn(async move {
-            let span = info_span!("BlockingSinkNode::execute");
-            let mut guard = op.lock().await;
-            while let Some(val) = streaming_receiver.recv().await {
-                rt_context.mark_rows_received(val.len() as u64);
-                if let BlockingSinkStatus::Finished =
-                    rt_context.in_span(&span, || guard.sink(&val))?
-                {
-                    break;
+        runtime_handle.spawn(
+            async move {
+                let span = info_span!("BlockingSinkNode::execute");
+                let mut guard = op.lock().await;
+                while let Some(val) = streaming_receiver.recv().await {
+                    rt_context.mark_rows_received(val.len() as u64);
+                    if let BlockingSinkStatus::Finished =
+                        rt_context.in_span(&span, || guard.sink(&val))?
+                    {
+                        break;
+                    }
                 }
-            }
-            let finalized_result = rt_context
-                .in_span(&info_span!("BlockingSinkNode::finalize"), || {
-                    guard.finalize()
-                })?;
-            if let Some(part) = finalized_result {
-                let len = part.len();
-                let _ = destination.get_next_sender().send(part).await;
-                rt_context.mark_rows_emitted(len as u64);
-            }
-            Ok(())
-        });
+                let finalized_result = rt_context
+                    .in_span(&info_span!("BlockingSinkNode::finalize"), || {
+                        guard.finalize()
+                    })?;
+                if let Some(part) = finalized_result {
+                    let len = part.len();
+                    let _ = destination.get_next_sender().send(part).await;
+                    rt_context.mark_rows_emitted(len as u64);
+                }
+                Ok(())
+            },
+            self.name(),
+        );
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
