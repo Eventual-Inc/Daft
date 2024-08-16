@@ -32,7 +32,6 @@ enum HashJoinState {
     Probing {
         probe_table: Arc<ProbeTable>,
         tables: Arc<Vec<Table>>,
-        projection: Vec<ExprRef>,
     },
 }
 
@@ -68,7 +67,7 @@ impl HashJoinState {
         if let Self::Building {
             probe_table_builder,
             tables,
-            projection,
+            ..
         } = self
         {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
@@ -77,7 +76,6 @@ impl HashJoinState {
             *self = Self::Probing {
                 probe_table: Arc::new(pt),
                 tables: Arc::new(tables.clone()),
-                projection: projection.clone(),
             };
             Ok(())
         } else {
@@ -88,6 +86,7 @@ impl HashJoinState {
 
 pub(crate) struct HashJoinOperator {
     right_on: Vec<ExprRef>,
+    pruned_right_side_columns: Vec<String>,
     _join_type: JoinType,
     join_state: HashJoinState,
 }
@@ -131,9 +130,27 @@ impl HashJoinOperator {
             .zip(key_schema.fields.values())
             .map(|(e, f)| e.cast(&f.dtype))
             .collect::<Vec<_>>();
+        let common_join_keys = left_on
+            .iter()
+            .zip(right_on.iter())
+            .filter_map(|(l, r)| {
+                if l.name() == r.name() {
+                    Some(l.name())
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let pruned_right_side_columns = right_schema
+            .fields
+            .keys()
+            .filter(|k| !common_join_keys.contains(k.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(join_type, JoinType::Inner);
         Ok(Self {
             right_on,
+            pruned_right_side_columns,
             _join_type: join_type,
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
@@ -147,14 +164,13 @@ impl HashJoinOperator {
         if let HashJoinState::Probing {
             probe_table,
             tables,
-            projection,
         } = &self.join_state
         {
             Arc::new(HashJoinProber {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
-                left_on: projection.clone(),
+                pruned_right_side_columns: self.pruned_right_side_columns.clone(),
             })
         } else {
             panic!("can't call as_intermediate_op when not in probing state")
@@ -165,8 +181,8 @@ impl HashJoinOperator {
 struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
-    left_on: Vec<ExprRef>,
     right_on: Vec<ExprRef>,
+    pruned_right_side_columns: Vec<String>,
 }
 
 impl IntermediateOperator for HashJoinProber {
@@ -205,25 +221,7 @@ impl IntermediateOperator for HashJoinProber {
         let left_table = left_growable.build()?;
         let right_table = right_growable.build()?;
 
-        let common_join_keys = self
-            .left_on
-            .iter()
-            .zip(self.right_on.iter())
-            .filter_map(|(l, r)| {
-                if l.name() == r.name() {
-                    Some(l.name())
-                } else {
-                    None
-                }
-            })
-            .collect::<std::collections::HashSet<_>>();
-        let pruned_right_side_columns = right_table
-            .schema
-            .fields
-            .keys()
-            .filter(|k| !common_join_keys.contains(k.as_str()))
-            .collect::<Vec<_>>();
-        let pruned_right_table = right_table.get_columns(&pruned_right_side_columns)?;
+        let pruned_right_table = right_table.get_columns(&self.pruned_right_side_columns)?;
 
         let final_table = left_table.union(&pruned_right_table)?;
         Ok(Arc::new(MicroPartition::new_loaded(
