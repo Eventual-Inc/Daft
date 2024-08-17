@@ -17,7 +17,6 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
-use super::state::OperatorTaskState;
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     fn name(&self) -> &'static str;
@@ -61,19 +60,12 @@ impl IntermediateNode {
         sender: SingleSender,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
-        let mut state = OperatorTaskState::new();
         let span = info_span!("IntermediateOp::execute");
         let sender = CountingSender::new(sender, rt_context.clone());
         while let Some(morsel) = receiver.recv().await {
             rt_context.mark_rows_received(morsel.len() as u64);
             let result = rt_context.in_span(&span, || op.execute(&morsel))?;
-            state.add(result);
-            if let Some(part) = state.try_clear() {
-                let _ = sender.send(part?).await;
-            }
-        }
-        if let Some(part) = state.clear() {
-            let _ = sender.send(part?).await;
+            let _ = sender.send(result).await;
         }
         Ok(())
     }
