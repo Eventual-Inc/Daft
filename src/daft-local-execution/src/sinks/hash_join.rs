@@ -5,7 +5,7 @@ use crate::{
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
     runtime_stats::RuntimeStatsContext,
-    ExecutionRuntimeHandle, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, PipelineExecutionSnafu, NUM_CPUS,
 };
 use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
@@ -18,6 +18,7 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+use snafu::{futures::TryFutureExt, ResultExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
@@ -296,33 +297,38 @@ impl PipelineNode for HashJoinNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
         self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
         let build_runtime_stats = self.build_runtime_stats.clone();
-        let probe_table_build = tokio::spawn(async move {
-            let span = info_span!("ProbeTable::sink");
-            let mut guard = hash_join.lock().await;
-            let sink = guard.as_sink();
-            while let Some(val) = pt_receiver.recv().await {
-                build_runtime_stats.mark_rows_received(val.len() as u64);
-                if let BlockingSinkStatus::Finished =
-                    build_runtime_stats.in_span(&span, || sink.sink(&val))?
-                {
-                    break;
+        let name = self.name();
+        let probe_table_build = tokio::spawn(
+            async move {
+                let span = info_span!("ProbeTable::sink");
+                let mut guard = hash_join.lock().await;
+                let sink = guard.as_sink();
+                while let Some(val) = pt_receiver.recv().await {
+                    build_runtime_stats.mark_rows_received(val.len() as u64);
+                    if let BlockingSinkStatus::Finished =
+                        build_runtime_stats.in_span(&span, || sink.sink(&val))?
+                    {
+                        break;
+                    }
                 }
+                build_runtime_stats
+                    .in_span(&info_span!("ProbeTable::finalize"), || sink.finalize())?;
+                DaftResult::Ok(())
             }
-            build_runtime_stats.in_span(&info_span!("ProbeTable::finalize"), || sink.finalize())?;
-            DaftResult::Ok(())
-        });
+            .with_context(move |_| PipelineExecutionSnafu { node_name: name }),
+        );
         // should wrap in context join handle
 
         let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         self.right.start(right_sender, runtime_handle).await?;
 
-        probe_table_build.await.unwrap()?;
+        probe_table_build.await.context(JoinSnafu {})??;
 
         let hash_join = self.hash_join.clone();
         let probing_op = {
@@ -337,10 +343,10 @@ impl PipelineNode for HashJoinNode {
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;
-        runtime_handle.spawn(IntermediateNode::send_to_workers(
-            streaming_receiver,
-            worker_senders,
-        ));
+        runtime_handle.spawn(
+            IntermediateNode::send_to_workers(streaming_receiver, worker_senders),
+            self.name(),
+        );
         Ok(())
     }
 

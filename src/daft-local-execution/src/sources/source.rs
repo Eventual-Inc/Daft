@@ -23,7 +23,7 @@ pub(crate) trait Source: Send + Sync {
         runtime_handle: &mut ExecutionRuntimeHandle,
         runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
-    ) -> DaftResult<()>;
+    ) -> crate::Result<()>;
 }
 
 struct SourceNode {
@@ -76,7 +76,7 @@ impl PipelineNode for SourceNode {
         &mut self,
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         self.source.get_data(
             destination,
             runtime_handle,

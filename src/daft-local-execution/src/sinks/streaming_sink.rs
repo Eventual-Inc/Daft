@@ -89,7 +89,7 @@ impl PipelineNode for StreamingSinkNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         let child = self
@@ -99,47 +99,50 @@ impl PipelineNode for StreamingSinkNode {
         child.start(sender, runtime_handle).await?;
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
-        runtime_handle.spawn(async move {
-            // this should be a RWLock and run in concurrent workers
-            let span = info_span!("StreamingSink::execute");
+        runtime_handle.spawn(
+            async move {
+                // this should be a RWLock and run in concurrent workers
+                let span = info_span!("StreamingSink::execute");
 
-            let mut sink = op.lock().await;
-            let mut is_active = true;
-            while is_active && let Some(val) = streaming_receiver.recv().await {
-                runtime_stats.mark_rows_received(val.len() as u64);
-                loop {
-                    let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
-                    match result {
-                        StreamSinkOutput::HasMoreOutput(mp) => {
-                            let len = mp.len() as u64;
-                            let sender = destination.get_next_sender();
-                            sender.send(mp).await.unwrap();
-                            runtime_stats.mark_rows_emitted(len);
-                        }
-                        StreamSinkOutput::NeedMoreInput(mp) => {
-                            if let Some(mp) = mp {
+                let mut sink = op.lock().await;
+                let mut is_active = true;
+                while is_active && let Some(val) = streaming_receiver.recv().await {
+                    runtime_stats.mark_rows_received(val.len() as u64);
+                    loop {
+                        let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
+                        match result {
+                            StreamSinkOutput::HasMoreOutput(mp) => {
                                 let len = mp.len() as u64;
                                 let sender = destination.get_next_sender();
                                 sender.send(mp).await.unwrap();
                                 runtime_stats.mark_rows_emitted(len);
                             }
-                            break;
-                        }
-                        StreamSinkOutput::Finished(mp) => {
-                            if let Some(mp) = mp {
-                                let len = mp.len() as u64;
-                                let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
-                                runtime_stats.mark_rows_emitted(len);
+                            StreamSinkOutput::NeedMoreInput(mp) => {
+                                if let Some(mp) = mp {
+                                    let len = mp.len() as u64;
+                                    let sender = destination.get_next_sender();
+                                    sender.send(mp).await.unwrap();
+                                    runtime_stats.mark_rows_emitted(len);
+                                }
+                                break;
                             }
-                            is_active = false;
-                            break;
+                            StreamSinkOutput::Finished(mp) => {
+                                if let Some(mp) = mp {
+                                    let len = mp.len() as u64;
+                                    let sender = destination.get_next_sender();
+                                    sender.send(mp).await.unwrap();
+                                    runtime_stats.mark_rows_emitted(len);
+                                }
+                                is_active = false;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            DaftResult::Ok(())
-        });
+                DaftResult::Ok(())
+            },
+            self.name(),
+        );
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {

@@ -14,12 +14,11 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
 use async_trait::async_trait;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
-use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -27,6 +26,7 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
+use snafu::ResultExt;
 
 use crate::channel::MultiSender;
 
@@ -38,7 +38,7 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()>;
+    ) -> crate::Result<()>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
@@ -58,7 +58,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> DaftResult<Box<dyn PipelineNode>> {
+) -> crate::Result<Box<dyn PipelineNode>> {
     use crate::sources::scan_task::ScanTaskSource;
     use daft_physical_plan::PhysicalScan;
     let out: Box<dyn PipelineNode> = match physical_plan {
@@ -199,7 +199,10 @@ pub fn physical_plan_to_pipeline(
                 *join_type,
                 left_schema,
                 right_schema,
-            )?;
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             HashJoinNode::new(sink, left_node, right_node).boxed()
         }
         _ => {

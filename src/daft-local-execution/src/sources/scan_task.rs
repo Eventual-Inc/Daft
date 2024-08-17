@@ -68,19 +68,22 @@ impl Source for ScanTaskSource {
         runtime_handle: &mut ExecutionRuntimeHandle,
         runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let morsel_size = DEFAULT_MORSEL_SIZE;
         let maintain_order = destination.in_order();
         for scan_task in self.scan_tasks.clone() {
             let sender = destination.get_next_sender();
-            runtime_handle.spawn(Self::process_scan_task_stream(
-                scan_task,
-                sender,
-                morsel_size,
-                maintain_order,
-                io_stats.clone(),
-                runtime_stats.clone(),
-            ));
+            runtime_handle.spawn(
+                Self::process_scan_task_stream(
+                    scan_task,
+                    sender,
+                    morsel_size,
+                    maintain_order,
+                    io_stats.clone(),
+                    runtime_stats.clone(),
+                ),
+                self.name(),
+            );
         }
         Ok(())
     }

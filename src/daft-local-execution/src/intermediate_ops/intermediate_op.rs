@@ -88,12 +88,15 @@ impl IntermediateNode {
         for _ in 0..num_senders {
             let (worker_sender, worker_receiver) = create_single_channel(1);
             let destination_sender = destination.get_next_sender();
-            runtime_handle.spawn(Self::run_worker(
-                self.intermediate_op.clone(),
-                worker_receiver,
-                destination_sender,
-                self.runtime_stats.clone(),
-            ));
+            runtime_handle.spawn(
+                Self::run_worker(
+                    self.intermediate_op.clone(),
+                    worker_receiver,
+                    destination_sender,
+                    self.runtime_stats.clone(),
+                ),
+                self.intermediate_op.name(),
+            );
             worker_senders.push(worker_sender);
         }
         worker_senders
@@ -152,7 +155,7 @@ impl PipelineNode for IntermediateNode {
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         assert_eq!(
             self.children.len(),
             1,
@@ -166,7 +169,7 @@ impl PipelineNode for IntermediateNode {
         child.start(sender, runtime_handle).await?;
 
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
-        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders));
+        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders), self.name());
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {

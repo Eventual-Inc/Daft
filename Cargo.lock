@@ -1845,6 +1845,7 @@ dependencies = [
  "daft-table",
  "futures",
  "lazy_static",
+ "log",
  "num-format",
  "pyo3",
  "snafu",
