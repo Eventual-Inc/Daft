@@ -26,6 +26,7 @@ pub use python::register_modules;
 pub use stats::{IOStatsContext, IOStatsRef};
 use tokio::runtime::RuntimeFlavor;
 
+use std::sync::OnceLock;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
 use futures::stream::BoxStream;
@@ -394,6 +395,9 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     }
 }
 type CacheKey = (bool, Arc<IOConfig>);
+
+static THREADED_RUNTIME_ONCE: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
+
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
     static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
@@ -419,19 +423,19 @@ lazy_static! {
             ),
             1,
         ));
-    static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
-        tokio::sync::RwLock::new(HashMap::new());
+    static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
+        std::sync::RwLock::new(HashMap::new());
 }
 
 pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
-    let read_handle = CLIENT_CACHE.blocking_read();
+    let read_handle = CLIENT_CACHE.read().unwrap();
     let key = (multi_thread, config.clone());
     if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
         drop(read_handle);
 
-        let mut w_handle = CLIENT_CACHE.blocking_write();
+        let mut w_handle = CLIENT_CACHE.write().unwrap();
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
@@ -442,27 +446,27 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
     }
 }
 
-pub async fn get_io_client_async(
-    multi_thread: bool,
-    config: Arc<IOConfig>,
-) -> DaftResult<Arc<IOClient>> {
-    let read_handle = CLIENT_CACHE.read().await;
-    let key = (multi_thread, config.clone());
-    if let Some(client) = read_handle.get(&key) {
-        Ok(client.clone())
-    } else {
-        drop(read_handle);
+// pub async fn get_io_client_async(
+//     multi_thread: bool,
+//     config: Arc<IOConfig>,
+// ) -> DaftResult<Arc<IOClient>> {
+//     let read_handle = CLIENT_CACHE.read().await;
+//     let key = (multi_thread, config.clone());
+//     if let Some(client) = read_handle.get(&key) {
+//         Ok(client.clone())
+//     } else {
+//         drop(read_handle);
 
-        let mut w_handle = CLIENT_CACHE.write().await;
-        if let Some(client) = w_handle.get(&key) {
-            Ok(client.clone())
-        } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
-            w_handle.insert(key, client.clone());
-            Ok(client)
-        }
-    }
-}
+//         let mut w_handle = CLIENT_CACHE.write().await;
+//         if let Some(client) = w_handle.get(&key) {
+//             Ok(client.clone())
+//         } else {
+//             let client = Arc::new(IOClient::new(config.clone())?);
+//             w_handle.insert(key, client.clone());
+//             Ok(client)
+//         }
+//     }
+// }
 
 pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
     match multi_thread {
@@ -471,8 +475,23 @@ pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime
             Ok(guard.clone().0)
         }
         true => {
-            let guard = THREADED_RUNTIME.blocking_read();
-            Ok(guard.clone().0)
+            let runtime = THREADED_RUNTIME_ONCE
+                .get_or_init(|| {
+                    let val = std::thread::spawn(|| {
+                        Arc::new(
+                            tokio::runtime::Builder::new_multi_thread()
+                                .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
+                                .enable_all()
+                                .build()
+                                .unwrap(),
+                        )
+                    })
+                    .join()
+                    .unwrap();
+                    val
+                })
+                .clone();
+            Ok(runtime)
         }
     }
 }
@@ -484,7 +503,7 @@ pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
             return false;
         }
     }
-    let mut client_guard = CLIENT_CACHE.blocking_write();
+    let mut client_guard = CLIENT_CACHE.write().unwrap();
     let mut guard = THREADED_RUNTIME.blocking_write();
 
     client_guard.clear();

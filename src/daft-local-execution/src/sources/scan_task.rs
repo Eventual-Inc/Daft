@@ -144,7 +144,7 @@ async fn stream_scan_task(
                     .unwrap_or_default(),
             );
             let multi_threaded_io = native_storage_config.multithreaded_io;
-            let io_client = daft_io::get_io_client_async(multi_threaded_io, io_config).await?;
+            let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
