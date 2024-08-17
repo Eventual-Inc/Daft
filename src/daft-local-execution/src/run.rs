@@ -109,7 +109,7 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
     let (tx, rx) = create_single_channel(1);
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -170,7 +170,12 @@ pub fn run_local(
                 Some(part) => Some(Ok(part)),
                 None => {
                     if self.handle.is_some() {
-                        let join_result = self.handle.take().unwrap().join().unwrap();
+                        let join_result = self
+                            .handle
+                            .take()
+                            .unwrap()
+                            .join()
+                            .expect("Execution engine thread panicked");
                         match join_result {
                             Ok(_) => None,
                             Err(e) => Some(Err(e)),
