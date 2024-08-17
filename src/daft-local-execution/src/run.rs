@@ -22,9 +22,9 @@ use {
 };
 
 use crate::{
-    channel::create_channel,
+    channel::{create_channel, create_single_channel, SingleReceiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle,
+    Error, ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 #[cfg(feature = "python")]
@@ -109,20 +109,21 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .max_blocking_threads(10)
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("Executor-Worker-{}", id)
-        })
-        .build()
-        .expect("Failed to create tokio runtime");
-
-    let res = runtime.block_on(async {
-        let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-        let (sender, mut receiver) = create_channel(1, true);
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets).unwrap();
+    let (tx, rx) = create_single_channel(1);
+    let handle = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .max_blocking_threads(10)
+            .thread_name_fn(|| {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("Executor-Worker-{}", id)
+            })
+            .build()
+            .expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
 
             let mut runtime_handle = ExecutionRuntimeHandle::default();
             pipeline.start(sender, &mut runtime_handle).await?;
@@ -130,29 +131,59 @@ pub fn run_local(
                 let _ = tx.send(val).await;
             }
 
-        while let Some(result) = runtime_handle.join_next().await {
-            match result {
-                Ok(Err(e)) => {
-                    runtime_handle.shutdown().await;
-                    return DaftResult::Err(e.into());
+            while let Some(result) = runtime_handle.join_next().await {
+                match result {
+                    Ok(Err(e)) => {
+                        runtime_handle.shutdown().await;
+                        return DaftResult::Err(e.into());
+                    }
+                    Err(e) => {
+                        runtime_handle.shutdown().await;
+                        return DaftResult::Err(Error::JoinError { source: e }.into());
+                    }
+                    _ => {}
                 }
-                Err(e) => {
-                    runtime_handle.shutdown().await;
-                    return DaftResult::Err(Error::JoinError { source: e }.into());
+            }
+            if should_enable_explain_analyze() {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
+                let mut file = File::create(file_name)?;
+                writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+            }
+            Ok(())
+        })
+    });
+
+    struct ReceiverIterator {
+        receiver: SingleReceiver,
+        handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+    }
+
+    impl Iterator for ReceiverIterator {
+        type Item = DaftResult<Arc<MicroPartition>>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.receiver.blocking_recv() {
+                Some(part) => Some(Ok(part)),
+                None => {
+                    if self.handle.is_some() {
+                        let join_result = self.handle.take().unwrap().join().unwrap();
+                        match join_result {
+                            Ok(_) => None,
+                            Err(e) => Some(Err(e)),
+                        }
+                    } else {
+                        None
+                    }
                 }
-                _ => {}
             }
         }
-        if should_enable_explain_analyze() {
-            let curr_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_millis();
-            let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
-            let mut file = File::create(file_name)?;
-            writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
-        }
-        Ok(result.into_iter())
-    });
-    Ok(Box::new(res?))
+    }
+    Ok(Box::new(ReceiverIterator {
+        receiver: rx,
+        handle: Some(handle),
+    }))
 }
