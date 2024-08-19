@@ -124,6 +124,7 @@ These methods will run the dataframe and retrieve them to where the code is bein
 
     DataFrame.to_pydict
     DataFrame.iter_partitions
+    DataFrame.iter_rows
 
 Materialization
 ***************

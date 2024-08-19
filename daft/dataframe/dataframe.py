@@ -5,6 +5,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import multiprocessing
 import os
 import pathlib
 import typing
@@ -62,6 +63,9 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
+
+
+NUM_CPUS = multiprocessing.cpu_count()
 
 
 class DataFrame:
@@ -222,25 +226,23 @@ class DataFrame:
         return self.iter_rows(results_buffer_size=None)
 
     @DataframePublicAPI
-    def iter_rows(self, results_buffer_size: Optional[int] = None) -> Iterator[Dict[str, Any]]:
+    def iter_rows(self, results_buffer_size: Optional[int] = NUM_CPUS) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
         .. NOTE::
-            A quick note on asynchronous/parallel execution. The `results_buffer_size` kwarg controls how many results
-            Daft will allow to be in the buffer. Once this buffer is filled, Daft will not run any more work until
-            some partition is consumed from the buffer.
+            A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
 
-            The larger the value of `results_buffer_size`, the more memory this iterator will consume but the higher
-            the throughput of your iterator (since more partitions can run in parallel).
+            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
+            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
 
-            If you find that Daft is using too much memory, you may choose to reduce the value of `results_buffer_size`,
-            which is by default the total number of CPUs available on your current machine.
+            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
+            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
+            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
 
-            If you find that Daft is not utilizing your machine or cluster enough, you may choose to increase the
-            value of `results_buffer_size`.
+            The default value is the total number of CPUs available on the current machine.
 
         Example:
 
@@ -250,14 +252,13 @@ class DataFrame:
         >>> for row in df.iter_rows():
         >>>     print(row)
 
+        Args:
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
+                available on the machine).
+
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
         """
-        # Default results_buffer_size to the total number of CPUs available on the machine
-        import multiprocessing
-
-        results_buffer_size = results_buffer_size if results_buffer_size is not None else multiprocessing.cpu_count()
-
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -282,7 +283,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Optional[int] = None
+        self, results_buffer_size: Optional[int] = NUM_CPUS
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
@@ -290,30 +291,23 @@ class DataFrame:
         or a ray ObjectRef (if using Ray runner backend).
 
         .. NOTE::
-            A quick note on asynchronous/parallel execution. The `results_buffer_size` kwarg controls how many results
-            Daft will allow to be in the buffer. Once this buffer is filled, Daft will not run any more work until
-            some partition is consumed from the buffer.
+            A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
 
-            The larger the value of `results_buffer_size`, the more memory this iterator will consume but the higher
-            the throughput of your iterator (since more partitions can run in parallel).
+            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
+            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
 
-            If you find that Daft is using too much memory, you may choose to reduce the value of `results_buffer_size`,
-            which is by default the total number of CPUs available on your current machine.
+            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
+            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
+            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
 
-            If you find that Daft is not utilizing your machine or cluster enough, you may choose to increase the
-            value of `results_buffer_size`.
+            The default value is the total number of CPUs available on the current machine.
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
         """
-        import multiprocessing
-
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-
-        # Default results_buffer_size to the total number of CPUs available on the machine
-        results_buffer_size = results_buffer_size if results_buffer_size is not None else multiprocessing.cpu_count()
 
         if self._result is not None:
             # If the dataframe has already finished executing,
