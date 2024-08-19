@@ -203,7 +203,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
         if is_arrow:
             pd_table = before.to_pandas().explode("nested_col")
             assert [pd_table.count().get("nested_col")] == [
-                x["nested_col"] for x in after.explode(col("nested_col")).count().collect()
+                x["count"] for x in after.explode(col("nested_col")).count().collect()
             ]
             before_limit_50 = before.take(list(range(min(before.num_rows, 50))))
             before_limit_2050 = before.take(list(range(min(before.num_rows, 2050))))
@@ -211,11 +211,11 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
             pd_table = before_limit_50.to_pandas().explode("nested_col")
             assert [pd_table.count().get("nested_col")] == [
-                x["nested_col"] for x in after_limit_50.explode(col("nested_col")).count().collect()
+                x["count"] for x in after_limit_50.explode(col("nested_col")).count().collect()
             ]
             pd_table = before_limit_2050.to_pandas().explode("nested_col")
             assert [pd_table.count().get("nested_col")] == [
-                x["nested_col"] for x in after_limit_2050.explode(col("nested_col")).count().collect()
+                x["count"] for x in after_limit_2050.explode(col("nested_col")).count().collect()
             ]
         else:
             assert [x for x in before.explode(col("nested_col")).count().collect()] == [
