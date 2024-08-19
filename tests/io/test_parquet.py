@@ -70,7 +70,7 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         expected = MicroPartition.from_pydict(data)
-        df = daft.read_parquet(f, schema_hints={k: v for k, v in schema}, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(f, schema={k: v for k, v in schema}, use_native_downloader=use_native_downloader)
         assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{df.to_arrow()}"
 
 
