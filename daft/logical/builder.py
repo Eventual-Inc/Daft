@@ -13,7 +13,6 @@ from daft.daft import (
     ScanOperatorHandle,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.dataframe.display import make_display_options
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -72,12 +71,17 @@ class LogicalPlanBuilder:
         """
         Pretty prints the current underlying logical plan.
         """
-        display_opts = make_display_options(simple, format)
-        return self._builder.display_as(display_opts)
+        from daft.dataframe.display import MermaidOptions
+
+        if format == "ascii":
+            return self._builder.repr_ascii(simple)
+        elif format == "mermaid":
+            return self._builder.repr_mermaid(MermaidOptions(simple))
+        else:
+            raise ValueError(f"Unknown format: {format}")
 
     def __repr__(self) -> str:
-        display_opts = make_display_options(simple=False, format="ascii")
-        return self._builder.display_as(display_opts)
+        return self._builder.repr_ascii(simple=False)
 
     def optimize(self) -> LogicalPlanBuilder:
         """

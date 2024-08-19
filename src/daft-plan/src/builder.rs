@@ -14,7 +14,7 @@ use crate::{
     source_info::SourceInfo,
     LogicalPlanRef,
 };
-use common_display::DisplayFormat;
+use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::{
@@ -478,13 +478,9 @@ impl LogicalPlanBuilder {
         self.plan.repr_ascii(simple)
     }
 
-    pub fn display_as(&self, format: DisplayFormat) -> String {
+    pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
-
-        match format {
-            DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
-            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
-        }
+        self.plan.repr_mermaid(opts)
     }
 }
 
@@ -812,8 +808,8 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.repr_ascii(simple))
     }
 
-    pub fn display_as(&self, opts: common_display::DisplayFormat) -> PyResult<String> {
-        Ok(self.builder.display_as(opts))
+    pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
+        self.builder.repr_mermaid(opts)
     }
 }
 
