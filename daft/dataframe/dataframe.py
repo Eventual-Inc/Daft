@@ -1629,16 +1629,37 @@ class DataFrame:
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns.
+
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
             and recompute the entire tree. Caching for this is on the roadmap.
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10])
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ right.b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
             left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame. Defaults to None.
             right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
-            how (str, optional): what type of join to perform; currently "inner", "left", "right", and "outer" are supported. Defaults to "inner".
+            how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", and "semi" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
 
