@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import os
 import platform
+import socket
 import time
 import urllib
 from unittest.mock import MagicMock, patch
@@ -11,7 +12,7 @@ import pytest
 
 import daft
 from daft import context
-from daft.analytics import AnalyticsClient
+from daft.analytics import AnalyticsClient, _enable_analytics
 
 PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS = 0.1
 MOCK_DATETIME = datetime.datetime(2021, 1, 1, 0, 0, 0)
@@ -75,13 +76,17 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
 def test_analytics_client_timeout(
     mock_urlopen: MagicMock,
 ):
-    mock_urlopen.side_effect = urllib.error.URLError("Request timed out")
+    _enable_analytics()
+    mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
     analytics_client = AnalyticsClient(
         daft.get_version(),
         daft.get_build_type(),
         buffer_capacity=1,
     )
-    analytics_client.track_import()
+
+    # Call `track_import` 5 times and ensure that, after the first timeout, successive calls to `urllib.request.urlopen` are never made
+    for _ in range(5):
+        analytics_client.track_import()
     mock_urlopen.assert_called_once()
 
 
@@ -89,6 +94,7 @@ def test_analytics_client_timeout(
 def test_analytics_client_timeout_2(
     mock_urlopen: MagicMock,
 ):
+    _enable_analytics()
     mock_urlopen.return_value.status = 408
     analytics_client = AnalyticsClient(
         daft.get_version(),

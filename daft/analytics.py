@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import random
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -17,6 +18,7 @@ from typing import Any, Callable
 
 from daft import context
 
+_ANALYTICS_ACTIVE = True
 _ANALYTICS_CLIENT = None
 _WRITE_KEY = "ZU2LLq6HFW0kMEY6TiGZoGnRzogXBUwa"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
@@ -62,26 +64,38 @@ def _build_segment_batch_payload(
     }
 
 
+def _enable_analytics() -> None:
+    global _ANALYTICS_ACTIVE
+    _ANALYTICS_ACTIVE = True
+
+
 def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
     """Posts a batch of JSON data to Segment"""
-    req = urllib.request.Request(
-        _SEGMENT_BATCH_ENDPOINT,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "daft-analytics",
-            "Authorization": f"Basic {base64.b64encode(f'{_WRITE_KEY}:'.encode()).decode('utf-8')}",
-        },
-        data=json.dumps(payload).encode("utf-8"),
-    )
-    resp = urllib.request.urlopen(
-        req,
-        # Timeout after 10 seconds
-        # Arbitrarily chosen; can be changed later
-        timeout=1,
-    )
-    if resp.status != 200:
-        raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
+    global _ANALYTICS_ACTIVE
+    if _ANALYTICS_ACTIVE:
+        req = urllib.request.Request(
+            _SEGMENT_BATCH_ENDPOINT,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "daft-analytics",
+                "Authorization": f"Basic {base64.b64encode(f'{_WRITE_KEY}:'.encode()).decode('utf-8')}",
+            },
+            data=json.dumps(payload).encode("utf-8"),
+        )
+        try:
+            resp = urllib.request.urlopen(
+                req,
+                timeout=1,
+            )
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, socket.timeout):
+                _ANALYTICS_ACTIVE = False
+                # pass
+        if resp.status != 200:
+            raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
+    else:
+        logger.debug("Analytics is disabled; not sending data to segment")
 
 
 class AnalyticsClient:
