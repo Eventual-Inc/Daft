@@ -246,6 +246,25 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
+    def to_arrow_iter(self) -> Iterator["pyarrow.Table"]:
+        """
+        Return an iterator of pyarrow tables for this dataframe.
+        """
+        if self._result is not None:
+            # If the dataframe has already finished executing,
+            # use the precomputed results.
+            yield self.to_arrow()
+
+        else:
+            # Execute the dataframe in a streaming fashion.
+            context = get_context()
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=1)
+
+            # Iterate through partitions.
+            for partition in partitions_iter:
+                yield partition.to_arrow()
+
+    @DataframePublicAPI
     def iter_partitions(
         self, results_buffer_size: Optional[int] = 1
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
