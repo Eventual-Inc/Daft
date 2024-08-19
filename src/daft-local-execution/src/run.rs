@@ -1,3 +1,8 @@
+use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
+use common_tracing::refresh_chrome_trace;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{translate, LocalPhysicalPlan};
 use std::{
     collections::HashMap,
     fs::File,
@@ -9,13 +14,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
-
 #[cfg(feature = "python")]
 use {
+    common_daft_config::PyDaftExecutionConfig,
     daft_micropartition::python::PyMicroPartition,
     daft_plan::PyLogicalPlanBuilder,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
@@ -71,6 +72,7 @@ impl NativeExecutor {
         &self,
         py: Python,
         psets: HashMap<String, Vec<PyMicroPartition>>,
+        cfg: PyDaftExecutionConfig,
     ) -> PyResult<PyObject> {
         let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
             .into_iter()
@@ -84,7 +86,8 @@ impl NativeExecutor {
                 )
             })
             .collect();
-        let out = py.allow_threads(|| run_local(&self.local_physical_plan, native_psets))?;
+        let out =
+            py.allow_threads(|| run_local(&self.local_physical_plan, native_psets, cfg.config))?;
         let iter = Box::new(out.map(|part| {
             part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
         }));
@@ -107,6 +110,7 @@ fn should_enable_explain_analyze() -> bool {
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+    cfg: Arc<DaftExecutionConfig>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
@@ -125,7 +129,7 @@ pub fn run_local(
         runtime.block_on(async {
             let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
 
-            let mut runtime_handle = ExecutionRuntimeHandle::default();
+            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
             pipeline.start(sender, &mut runtime_handle).await?;
             while let Some(val) = receiver.recv().await {
                 let _ = tx.send(val).await;

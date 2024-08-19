@@ -367,7 +367,11 @@ impl PipelineNode for HashJoinNode {
             .spawn_workers(&mut destination, runtime_handle)
             .await;
         runtime_handle.spawn(
-            IntermediateNode::send_to_workers(streaming_receiver, worker_senders),
+            IntermediateNode::send_to_workers(
+                streaming_receiver,
+                worker_senders,
+                runtime_handle.default_morsel_size(),
+            ),
             self.name(),
         );
         Ok(())

@@ -17,6 +17,8 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
+use super::buffer::OperatorBuffer;
+
 pub trait IntermediateOperator: Send + Sync {
     fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>>;
     fn name(&self) -> &'static str;
@@ -97,16 +99,31 @@ impl IntermediateNode {
     pub async fn send_to_workers(
         mut receiver: MultiReceiver,
         worker_senders: Vec<SingleSender>,
+        morsel_size: usize,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
-        while let Some(morsel) = receiver.recv().await {
-            if morsel.is_empty() {
-                continue;
-            }
-
+        let mut send_to_next_worker = |morsel: Arc<MicroPartition>| {
             let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
-            let _ = next_worker_sender.send(morsel).await;
             next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
+            next_worker_sender.send(morsel)
+        };
+        let mut buffer = OperatorBuffer::new(morsel_size);
+
+        while let Some(morsel) = receiver.recv().await {
+            buffer.push(morsel);
+            if let Some(ready) = buffer.try_clear() {
+                let _ = send_to_next_worker(ready?).await;
+            }
+        }
+
+        // Buffer may still have some morsels left above the threshold
+        while let Some(ready) = buffer.try_clear() {
+            let _ = send_to_next_worker(ready?).await;
+        }
+
+        // Clear all remaining morsels
+        if let Some(last_morsel) = buffer.clear_all() {
+            let _ = send_to_next_worker(last_morsel?).await;
         }
         Ok(())
     }
@@ -161,7 +178,14 @@ impl PipelineNode for IntermediateNode {
         child.start(sender, runtime_handle).await?;
 
         let worker_senders = self.spawn_workers(&mut destination, runtime_handle).await;
-        runtime_handle.spawn(Self::send_to_workers(receiver, worker_senders), self.name());
+        runtime_handle.spawn(
+            Self::send_to_workers(
+                receiver,
+                worker_senders,
+                runtime_handle.default_morsel_size(),
+            ),
+            self.intermediate_op.name(),
+        );
         Ok(())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {

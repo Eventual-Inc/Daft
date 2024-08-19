@@ -58,6 +58,7 @@ pub struct DaftExecutionConfig {
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
+    pub default_morsel_size: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -80,6 +81,7 @@ impl Default for DaftExecutionConfig {
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,
+            default_morsel_size: 100_000,
         }
     }
 }

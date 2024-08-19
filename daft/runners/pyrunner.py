@@ -195,7 +195,8 @@ class PyRunner(Runner[MicroPartition]):
                 logger.info("Using native executor")
                 executor = NativeExecutor.from_logical_plan_builder(builder)
                 results_gen = executor.run(
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    daft_execution_config,
                 )
                 yield from results_gen
             else:
