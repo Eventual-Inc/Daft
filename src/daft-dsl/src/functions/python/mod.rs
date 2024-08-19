@@ -1,5 +1,3 @@
-#[cfg(feature = "python")]
-mod pyobj_serde;
 mod udf;
 
 use std::sync::Arc;
@@ -35,7 +33,7 @@ impl PythonUDF {
 pub struct StatelessPythonUDF {
     pub name: Arc<String>,
     #[cfg(feature = "python")]
-    partial_func: pyobj_serde::PyObjectWrapper,
+    partial_func: crate::pyobj_serde::PyObjectWrapper,
     num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
@@ -46,12 +44,12 @@ pub struct StatelessPythonUDF {
 pub struct StatefulPythonUDF {
     pub name: Arc<String>,
     #[cfg(feature = "python")]
-    pub stateful_partial_func: pyobj_serde::PyObjectWrapper,
+    pub stateful_partial_func: crate::pyobj_serde::PyObjectWrapper,
     pub num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
     #[cfg(feature = "python")]
-    pub init_args: Option<pyobj_serde::PyObjectWrapper>,
+    pub init_args: Option<crate::pyobj_serde::PyObjectWrapper>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
 }
@@ -68,7 +66,7 @@ pub fn stateless_udf(
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
             name: name.to_string().into(),
-            partial_func: pyobj_serde::PyObjectWrapper(py_partial_stateless_udf),
+            partial_func: crate::pyobj_serde::PyObjectWrapper(py_partial_stateless_udf),
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
@@ -113,11 +111,11 @@ pub fn stateful_udf(
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
             name: name.to_string().into(),
-            stateful_partial_func: pyobj_serde::PyObjectWrapper(py_stateful_partial_func),
+            stateful_partial_func: crate::pyobj_serde::PyObjectWrapper(py_stateful_partial_func),
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
-            init_args: init_args.map(pyobj_serde::PyObjectWrapper),
+            init_args: init_args.map(crate::pyobj_serde::PyObjectWrapper),
             batch_size,
             concurrency,
         })),

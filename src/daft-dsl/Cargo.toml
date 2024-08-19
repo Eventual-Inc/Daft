@@ -1,4 +1,5 @@
 [dependencies]
+bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}

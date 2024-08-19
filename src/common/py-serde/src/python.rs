@@ -7,8 +7,7 @@ where
     S: Serializer,
 {
     let bytes = Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "ray.cloudpickle"))
-            .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+        py.import(pyo3::intern!(py, "daft.pickle"))
             .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
             .and_then(|f| f.call1((obj,)))
             .and_then(|b| b.extract::<Vec<u8>>())
@@ -31,8 +30,7 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import(pyo3::intern!(py, "ray.cloudpickle"))
-                .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+            py.import(pyo3::intern!(py, "daft.pickle"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
                 .and_then(|f| Ok(f.call1((v,))?.to_object(py)))
                 .map_err(|e| DeError::custom(e.to_string()))
@@ -44,8 +42,7 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import(pyo3::intern!(py, "ray.cloudpickle"))
-                .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+            py.import(pyo3::intern!(py, "daft.pickle"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
                 .and_then(|f| Ok(f.call1((v,))?.to_object(py)))
                 .map_err(|e| DeError::custom(e.to_string()))
