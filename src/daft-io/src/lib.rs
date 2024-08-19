@@ -12,6 +12,7 @@ mod s3_like;
 mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
+use futures::FutureExt;
 use google_cloud::GCSSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
@@ -25,9 +26,13 @@ use object_io::StreamingRetryParams;
 pub use python::register_modules;
 pub use stats::{IOStatsContext, IOStatsRef};
 use tokio::runtime::RuntimeFlavor;
+use tokio::task::JoinHandle;
 
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::sync::OnceLock;
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range};
 
 use futures::stream::BoxStream;
 
@@ -396,7 +401,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 type CacheKey = (bool, Arc<IOConfig>);
 
-static THREADED_RUNTIME_ONCE: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
+static THREADED_RUNTIME_ONCE: OnceLock<RuntimeRef> = OnceLock::new();
 
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
@@ -446,39 +451,73 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
     }
 }
 
-// pub async fn get_io_client_async(
-//     multi_thread: bool,
-//     config: Arc<IOConfig>,
-// ) -> DaftResult<Arc<IOClient>> {
-//     let read_handle = CLIENT_CACHE.read().await;
-//     let key = (multi_thread, config.clone());
-//     if let Some(client) = read_handle.get(&key) {
-//         Ok(client.clone())
-//     } else {
-//         drop(read_handle);
+pub type RuntimeRef = Arc<Runtime>;
 
-//         let mut w_handle = CLIENT_CACHE.write().await;
-//         if let Some(client) = w_handle.get(&key) {
-//             Ok(client.clone())
-//         } else {
-//             let client = Arc::new(IOClient::new(config.clone())?);
-//             w_handle.insert(key, client.clone());
-//             Ok(client)
-//         }
-//     }
-// }
+pub struct Runtime {
+    runtime: tokio::runtime::Runtime,
+}
 
-pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
+impl Runtime {
+    fn new(runtime: tokio::runtime::Runtime) -> RuntimeRef {
+        Arc::new(Self { runtime })
+    }
+
+    /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
+    /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
+    pub fn block_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let (tx, rx) = oneshot::channel();
+        let _join_handle = self.spawn(async move {
+            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
+                let s = if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unknown internal error".to_string()
+                };
+                DaftError::ComputeError(format!(
+                    "Caught panic when spawning blocking task in io pool {s})"
+                ))
+            });
+
+            if tx.send(task_output).is_err() {
+                log::warn!("Spawned task output ignored: receiver dropped")
+            }
+        });
+        rx.recv().expect("Spawned task transmitter dropped")
+    }
+
+    /// Blocks current thread to compute future. Can not be called in tokio runtime context
+    ///
+    pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
+        self.runtime.block_on(future)
+    }
+
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.runtime.spawn(future)
+    }
+}
+
+pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
     match multi_thread {
         false => {
-            let guard = SINGLE_THREADED_RUNTIME.blocking_read();
-            Ok(guard.clone().0)
+            todo!();
+            // let guard = SINGLE_THREADED_RUNTIME.blocking_read();
+            // Ok(guard.clone().0)
         }
         true => {
             let runtime = THREADED_RUNTIME_ONCE
                 .get_or_init(|| {
                     let val = std::thread::spawn(|| {
-                        Arc::new(
+                        Runtime::new(
                             tokio::runtime::Builder::new_multi_thread()
                                 .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
                                 .enable_all()

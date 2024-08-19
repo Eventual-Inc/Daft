@@ -31,9 +31,8 @@ mod py {
             )?;
             let (scheme, path) = parse_url(&path)?;
             let runtime_handle = get_runtime(multithreaded_io)?;
-            let _rt_guard = runtime_handle.enter();
 
-            runtime_handle.block_on(async move {
+            runtime_handle.block_on_current_thread(async move {
                 let source = io_client.get_source(&scheme).await?;
                 let files = source
                     .glob(
@@ -72,9 +71,7 @@ mod py {
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
         let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
             let runtime = get_runtime(false)?;
-            let runtime_handle = runtime.handle();
-            let _rt_guard = runtime_handle.enter();
-            runtime_handle.block_on(async { Ok(s3_like::s3_config_from_env().await?) })
+            runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });
         Ok(common_io_config::python::S3Config { config: s3_config? })
     }

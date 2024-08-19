@@ -3,7 +3,9 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{
+    get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
+};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
@@ -25,7 +27,7 @@ pub struct GlobScanOperator {
 /// Wrapper struct that implements a sync Iterator for a BoxStream
 struct BoxStreamIterator<'a, T> {
     boxstream: BoxStream<'a, T>,
-    runtime_handle: tokio::runtime::Handle,
+    runtime_handle: RuntimeRef,
 }
 
 impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
@@ -33,7 +35,7 @@ impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.runtime_handle
-            .block_on(async { self.boxstream.next().await })
+            .block_on_current_thread(async { self.boxstream.next().await })
     }
 }
 
@@ -64,14 +66,13 @@ fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
-    runtime: Arc<tokio::runtime::Runtime>,
+    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
-    let runtime_handle = runtime.handle();
-    let boxstream = runtime_handle.block_on(async move {
+    let boxstream = runtime.block_on_current_thread(async move {
         io_client
             .glob(glob_input, None, None, limit, io_stats)
             .await
@@ -80,7 +81,7 @@ fn run_glob(
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
         boxstream,
-        runtime_handle: runtime_handle.clone(),
+        runtime_handle: runtime.clone(),
     };
     let iterator = iterator.map(|fm| Ok(fm?));
     Ok(Box::new(iterator))
@@ -89,7 +90,7 @@ fn run_glob(
 fn run_glob_parallel(
     glob_paths: Vec<String>,
     io_client: Arc<IOClient>,
-    runtime: Arc<tokio::runtime::Runtime>,
+    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<impl Iterator<Item = DaftResult<FileMetadata>>> {
     let num_parallel_tasks = 64;
@@ -118,7 +119,7 @@ fn run_glob_parallel(
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
         boxstream,
-        runtime_handle: owned_runtime.handle().clone(),
+        runtime_handle: owned_runtime.clone(),
     };
     Ok(iterator)
 }
@@ -332,7 +333,7 @@ impl ScanOperator for GlobScanOperator {
             // because the metadata can be quite large
             let parquet_metadata = if !is_ray_runner {
                 if let Some(field_id_mapping) = field_id_mapping {
-                    get_runtime(true).unwrap().block_on(async {
+                    get_runtime(true).unwrap().block_on_current_thread(async {
                         daft_parquet::read::read_parquet_metadata(
                             &path_clone,
                             io_client_clone,

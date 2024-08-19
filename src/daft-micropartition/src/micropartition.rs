@@ -27,7 +27,7 @@ use snafu::ResultExt;
 use crate::PyIOSnafu;
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_stats::TableStatistics;
 use daft_stats::{PartitionSpec, TableMetadata};
 
@@ -111,8 +111,7 @@ fn materialize_scan_task(
 
     let mut table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
-            let runtime_handle =
-                daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
+            let multithreaded_io = native_storage_config.multithreaded_io;
             let io_config = Arc::new(
                 native_storage_config
                     .io_config
@@ -120,8 +119,7 @@ fn materialize_scan_task(
                     .cloned()
                     .unwrap_or_default(),
             );
-            let io_client =
-                daft_io::get_io_client(native_storage_config.multithreaded_io, io_config).unwrap();
+            let io_client = daft_io::get_io_client(multithreaded_io, io_config).unwrap();
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
@@ -157,7 +155,7 @@ fn materialize_scan_task(
                         io_client.clone(),
                         io_stats.clone(),
                         num_parallel_tasks,
-                        runtime_handle.clone(),
+                        multithreaded_io,
                         &inference_options,
                     )
                     .context(DaftCoreComputeSnafu)?;
@@ -178,7 +176,7 @@ fn materialize_scan_task(
                         io_client.clone(),
                         io_stats,
                         num_parallel_tasks,
-                        runtime_handle,
+                        multithreaded_io,
                         &inference_options,
                         field_id_mapping.clone(),
                         metadatas,
@@ -962,7 +960,7 @@ fn _read_delete_files(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
-    runtime_handle: Arc<tokio::runtime::Runtime>,
+    multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<HashMap<String, Vec<i64>>> {
     let columns: Option<&[&str]> = Some(&["file_path", "pos"]);
@@ -977,7 +975,7 @@ fn _read_delete_files(
         io_client,
         io_stats,
         num_parallel_tasks,
-        runtime_handle,
+        multithreaded_io,
         schema_infer_options,
         None,
         None,
@@ -1012,7 +1010,7 @@ fn _read_delete_files(
 #[allow(clippy::too_many_arguments)]
 fn _read_parquet_into_loaded_micropartition(
     io_client: Arc<IOClient>,
-    runtime_handle: Arc<tokio::runtime::Runtime>,
+    multithreaded_io: bool,
     uris: &[&str],
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
@@ -1035,7 +1033,7 @@ fn _read_parquet_into_loaded_micropartition(
                 io_client.clone(),
                 io_stats.clone(),
                 num_parallel_tasks,
-                runtime_handle.clone(),
+                multithreaded_io,
                 schema_infer_options,
             )
         })
@@ -1052,7 +1050,7 @@ fn _read_parquet_into_loaded_micropartition(
         io_client,
         io_stats,
         num_parallel_tasks,
-        runtime_handle,
+        multithreaded_io,
         schema_infer_options,
         field_id_mapping,
         None,
@@ -1116,7 +1114,6 @@ pub(crate) fn read_parquet_into_micropartition(
     }
 
     // Run the required I/O to retrieve all the Parquet FileMetaData
-    let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
     // If we have a predicate or deletion files then we no longer have an accurate accounting of required metadata
@@ -1128,7 +1125,7 @@ pub(crate) fn read_parquet_into_micropartition(
     {
         return _read_parquet_into_loaded_micropartition(
             io_client,
-            runtime_handle,
+            multithreaded_io,
             uris,
             columns,
             start_offset,
@@ -1144,7 +1141,7 @@ pub(crate) fn read_parquet_into_micropartition(
             field_id_mapping,
         );
     }
-
+    let runtime_handle = get_runtime(multithreaded_io)?;
     // Attempt to read TableStatistics from the Parquet file
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
@@ -1161,7 +1158,7 @@ pub(crate) fn read_parquet_into_micropartition(
         (metadata, schemas)
     } else {
         let metadata = runtime_handle
-            .block_on(async move {
+            .block_on_current_thread(async move {
                 read_parquet_metadata_bulk(
                     uris,
                     meta_io_client,
@@ -1303,7 +1300,7 @@ pub(crate) fn read_parquet_into_micropartition(
         // If no TableStatistics are available, we perform an eager read
         _read_parquet_into_loaded_micropartition(
             io_client,
-            runtime_handle,
+            multithreaded_io,
             uris,
             columns,
             start_offset,

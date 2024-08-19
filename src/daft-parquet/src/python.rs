@@ -37,7 +37,6 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
-            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
 
             let result = crate::read::read_parquet(
                 uri,
@@ -48,7 +47,7 @@ pub mod pylib {
                 predicate.map(|e| e.expr),
                 io_client,
                 Some(io_stats.clone()),
-                runtime_handle,
+                multithreaded_io.unwrap_or(true),
                 schema_infer_options,
                 None,
             )?
@@ -111,8 +110,6 @@ pub mod pylib {
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
 
-            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
-
             crate::read::read_parquet_into_pyarrow(
                 uri,
                 columns.as_deref(),
@@ -121,7 +118,7 @@ pub mod pylib {
                 row_groups,
                 io_client,
                 None,
-                runtime_handle,
+                multithreaded_io.unwrap_or(true),
                 schema_infer_options,
                 file_timeout_ms,
             )
@@ -155,8 +152,6 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
-            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
-
             Ok(crate::read::read_parquet_bulk(
                 uris.as_ref(),
                 columns.as_deref(),
@@ -167,7 +162,7 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,
-                runtime_handle,
+                multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
                 None,
                 None,
