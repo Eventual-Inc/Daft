@@ -78,7 +78,7 @@ def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
         req,
         # Timeout after 10 seconds
         # Arbitrarily chosen; can be changed later
-        timeout=10,
+        timeout=1,
     )
     if resp.status != 200:
         raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
