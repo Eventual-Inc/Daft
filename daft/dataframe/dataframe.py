@@ -342,6 +342,7 @@ class DataFrame:
         <BLANKLINE>
         <BLANKLINE>
         Statistics: missing
+        <BLANKLINE>
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
