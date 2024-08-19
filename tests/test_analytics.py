@@ -12,7 +12,7 @@ import pytest
 
 import daft
 from daft import context
-from daft.analytics import AnalyticsClient, _enable_analytics
+from daft.analytics import AnalyticsClient
 
 PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS = 0.1
 MOCK_DATETIME = datetime.datetime(2021, 1, 1, 0, 0, 0)
@@ -46,6 +46,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
     time.sleep(PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS + 0.5)
 
     mock_publish.assert_called_once_with(
+        analytics_client,
         {
             "batch": [
                 {
@@ -68,7 +69,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     },
                 }
             ],
-        }
+        },
     )
 
 
@@ -76,7 +77,6 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
 def test_analytics_client_timeout(
     mock_urlopen: MagicMock,
 ):
-    _enable_analytics()
     mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
     analytics_client = AnalyticsClient(
         daft.get_version(),
@@ -94,7 +94,6 @@ def test_analytics_client_timeout(
 def test_analytics_client_timeout_2(
     mock_urlopen: MagicMock,
 ):
-    _enable_analytics()
     mock_urlopen.return_value.status = 408
     analytics_client = AnalyticsClient(
         daft.get_version(),
@@ -123,6 +122,7 @@ def test_analytics_client_track_dataframe_method(
     time.sleep(PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS + 0.5)
 
     mock_publish.assert_called_once_with(
+        analytics_client,
         {
             "batch": [
                 {
@@ -144,5 +144,5 @@ def test_analytics_client_track_dataframe_method(
                     },
                 }
             ],
-        }
+        },
     )

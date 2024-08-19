@@ -18,7 +18,6 @@ from typing import Any, Callable
 
 from daft import context
 
-_ANALYTICS_ACTIVE = True
 _ANALYTICS_CLIENT = None
 _WRITE_KEY = "ZU2LLq6HFW0kMEY6TiGZoGnRzogXBUwa"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
@@ -64,38 +63,28 @@ def _build_segment_batch_payload(
     }
 
 
-def _enable_analytics() -> None:
-    global _ANALYTICS_ACTIVE
-    _ANALYTICS_ACTIVE = True
-
-
-def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
+def _post_segment_track_endpoint(analytics_client: AnalyticsClient, payload: dict[str, Any]) -> None:
     """Posts a batch of JSON data to Segment"""
-    global _ANALYTICS_ACTIVE
-    if _ANALYTICS_ACTIVE:
-        req = urllib.request.Request(
-            _SEGMENT_BATCH_ENDPOINT,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "daft-analytics",
-                "Authorization": f"Basic {base64.b64encode(f'{_WRITE_KEY}:'.encode()).decode('utf-8')}",
-            },
-            data=json.dumps(payload).encode("utf-8"),
+    req = urllib.request.Request(
+        _SEGMENT_BATCH_ENDPOINT,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "daft-analytics",
+            "Authorization": f"Basic {base64.b64encode(f'{_WRITE_KEY}:'.encode()).decode('utf-8')}",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    try:
+        resp = urllib.request.urlopen(
+            req,
+            timeout=1,
         )
-        try:
-            resp = urllib.request.urlopen(
-                req,
-                timeout=1,
-            )
-        except urllib.error.URLError as error:
-            if isinstance(error.reason, socket.timeout):
-                _ANALYTICS_ACTIVE = False
-                # pass
-        if resp.status != 200:
-            raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
-    else:
-        logger.debug("Analytics is disabled; not sending data to segment")
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, socket.timeout):
+            analytics_client._is_active = False
+    if resp.status != 200:
+        raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
 
 
 class AnalyticsClient:
@@ -105,9 +94,10 @@ class AnalyticsClient:
         self,
         daft_version: str,
         daft_build_type: str,
-        publish_payload_function: Callable[[dict[str, Any]], None] = _post_segment_track_endpoint,
+        publish_payload_function: Callable[[AnalyticsClient, dict[str, Any]], None] = _post_segment_track_endpoint,
         buffer_capacity: int = 100,
     ) -> None:
+        self._is_active = True
         self._daft_version = daft_version
         self._daft_build_type = daft_build_type
         self._session_key = _get_session_key()
@@ -119,22 +109,28 @@ class AnalyticsClient:
         self._buffer_capacity = buffer_capacity
         self._buffer: list[AnalyticsEvent] = []
 
+    def _enable_analytics(self) -> None:
+        self._is_active = True
+
     def _append_to_log(self, event_name: str, data: dict[str, Any]) -> None:
-        self._buffer.append(
-            AnalyticsEvent(
-                session_id=self._session_key,
-                event_name=event_name,
-                event_time=datetime.datetime.utcnow(),
-                data=data,
+        if self._is_active:
+            self._buffer.append(
+                AnalyticsEvent(
+                    session_id=self._session_key,
+                    event_name=event_name,
+                    event_time=datetime.datetime.utcnow(),
+                    data=data,
+                )
             )
-        )
-        if len(self._buffer) >= self._buffer_capacity:
-            self._flush()
+            if len(self._buffer) >= self._buffer_capacity:
+                self._flush()
+        else:
+            logger.debug("Analytics is disabled; not sending data to segment")
 
     def _flush(self) -> None:
         try:
             payload = _build_segment_batch_payload(self._buffer, self._daft_version, self._daft_build_type)
-            self._publish(payload)
+            self._publish(self, payload)
         except Exception as e:
             # No-op on failure to avoid crashing the program - TODO: add retries for more robust logging
             logger.debug("Error in analytics publisher thread: %s", e)
