@@ -246,10 +246,12 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def to_arrow_iter(self) -> Iterator["pyarrow.Table"]:
+    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.Table"]:
         """
         Return an iterator of pyarrow tables for this dataframe.
         """
+        if results_buffer_size is not None and not results_buffer_size > 0:
+            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -258,7 +260,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=1)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size)
 
             # Iterate through partitions.
             for partition in partitions_iter:
