@@ -10,7 +10,6 @@ import logging
 import os
 import platform
 import random
-import socket
 import time
 import urllib.error
 import urllib.request
@@ -80,9 +79,8 @@ def _post_segment_track_endpoint(analytics_client: AnalyticsClient, payload: dic
             req,
             timeout=1,
         )
-    except urllib.error.URLError as error:
-        if isinstance(error.reason, socket.timeout):
-            analytics_client._is_active = False
+    except urllib.error.URLError:
+        analytics_client._is_active = False
     if resp.status != 200:
         raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
 
