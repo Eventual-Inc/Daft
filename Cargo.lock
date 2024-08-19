@@ -1724,7 +1724,6 @@ dependencies = [
  "log",
  "pyo3",
  "serde",
- "serde_json",
  "typetag",
 ]
 
