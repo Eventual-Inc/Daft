@@ -417,10 +417,10 @@ fn try_optimize_project(
         .all(|e| matches!(e.as_ref(), Expr::Column(_)))
     {
         // Nothing remaining, we're done splitting and should wire the new node up with the child of the Project
-        plan.children()[0].clone()
+        projection.input.clone()
     } else {
         // Recursively run the rule on the new child Project
-        let new_project = Project::try_new(plan.children()[0].clone(), remaining)?;
+        let new_project = Project::try_new(projection.input.clone(), remaining)?;
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
         let optimized_child_plan =
             try_optimize_project(&new_project, new_child_project.clone(), recursive_count + 1)?;
