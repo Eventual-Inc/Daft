@@ -5,6 +5,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import multiprocessing
 import os
 import pathlib
 import typing
@@ -62,6 +63,9 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
+
+
+NUM_CPUS = multiprocessing.cpu_count()
 
 
 class DataFrame:
@@ -218,11 +222,47 @@ class DataFrame:
 
     @DataframePublicAPI
     def __iter__(self) -> Iterator[Dict[str, Any]]:
+        """Alias of `self.iter_rows()` with default arguments for convenient access of data."""
+        return self.iter_rows(results_buffer_size=None)
+
+    @DataframePublicAPI
+    def iter_rows(self, results_buffer_size: Optional[int] = NUM_CPUS) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
-        Each row will be a pydict of the form { "key" : value }.
-        """
+        Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
+        entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
+        .. NOTE::
+            A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
+
+            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
+            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
+
+            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
+            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
+            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
+
+            The default value is the total number of CPUs available on the current machine.
+
+        Example:
+
+        >>> import daft
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+        >>> for row in df.iter_rows():
+        ...     print(row)
+        {'foo': 1, 'bar': 'a'}
+        {'foo': 2, 'bar': 'b'}
+        {'foo': 3, 'bar': 'c'}
+
+
+        Args:
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
+                available on the machine).
+
+        .. seealso::
+            :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
+        """
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -234,7 +274,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=1)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -268,19 +308,62 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Optional[int] = 1
+        self, results_buffer_size: Optional[int] = NUM_CPUS
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
+        .. NOTE::
+            A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
+
+            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
+            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
+
+            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
+            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
+            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
+
+            The default value is the total number of CPUs available on the current machine.
+
         Args:
-            results_buffer_size: how many partitions to allow in the results buffer (defaults to 1).
-                Setting this value will buffer results up to the provided size and provide backpressure
-                to dataframe execution based on the rate of consumption from the returned iterator. Setting this to
-                `None` will result in a buffer of unbounded size, causing the dataframe to run asynchronously
-                to completion.
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
+                available on the machine).
+
+        >>> import daft
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
+        >>> for part in df.iter_partitions():
+        ...     print(part)
+        MicroPartition with 2 rows:
+        TableState: Loaded. 1 tables
+        ╭───────┬──────╮
+        │ foo   ┆ bar  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ a    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ b    │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        <BLANKLINE>
+        Statistics: missing
+        <BLANKLINE>
+        MicroPartition with 1 rows:
+        TableState: Loaded. 1 tables
+        ╭───────┬──────╮
+        │ foo   ┆ bar  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 3     ┆ c    │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        <BLANKLINE>
+        Statistics: missing
+        <BLANKLINE>
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
