@@ -5,6 +5,7 @@
 mod azure_blob;
 mod google_cloud;
 mod http;
+mod huggingface;
 mod local;
 mod object_io;
 mod object_store_glob;
@@ -13,6 +14,7 @@ mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;
+use huggingface::HFSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
@@ -184,6 +186,7 @@ impl IOClient {
     }
 
     async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
+        println!("Getting source for {:?}", source_type);
         {
             if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
                 return Ok(client.clone());
@@ -209,6 +212,10 @@ impl IOClient {
 
             SourceType::GCS => {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+            }
+            SourceType::HF => {
+                println!("Getting HF source");
+                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
             }
         };
 
@@ -338,6 +345,7 @@ pub enum SourceType {
     S3,
     AzureBlob,
     GCS,
+    HF,
 }
 
 impl std::fmt::Display for SourceType {
@@ -348,6 +356,7 @@ impl std::fmt::Display for SourceType {
             SourceType::S3 => write!(f, "s3"),
             SourceType::AzureBlob => write!(f, "AzureBlob"),
             SourceType::GCS => write!(f, "gcs"),
+            SourceType::HF => write!(f, "hf"),
         }
     }
 }
@@ -366,6 +375,9 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
             });
+    }
+    if input.starts_with("hf://") {
+        return Ok((SourceType::HF, Cow::Borrowed(input)));
     }
 
     let url = match url::Url::parse(input) {
@@ -386,6 +398,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
+        "hf" => Ok((SourceType::HF, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))

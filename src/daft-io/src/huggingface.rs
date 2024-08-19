@@ -12,6 +12,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
 use crate::{
+    http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
@@ -79,6 +80,8 @@ enum Error {
 
     #[snafu(display("Unable to create HTTP header: {source}"))]
     UnableToCreateHeader { source: header::InvalidHeaderValue },
+    #[snafu(display("Invalid path: {}", path))]
+    InvalidPath { path: String },
 }
 
 /// Finds and retrieves FileMetadata from HTML text
@@ -139,8 +142,120 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
     Ok(metas.into_iter().flatten().collect())
 }
 
-pub(crate) struct HttpSource {
-    pub(crate) client: reqwest::Client,
+#[derive(Debug, PartialEq)]
+struct HFPathParts {
+    bucket: String,
+    repository: String,
+    revision: String,
+    path: String,
+}
+
+struct HFRepoLocation {
+    api_base_path: String,
+    download_base_path: String,
+}
+
+impl HFRepoLocation {
+    fn new(bucket: &str, repository: &str, revision: &str) -> Self {
+        // let bucket = percent_encode(bucket.as_bytes());
+        // let repository = percent_encode(repository.as_bytes());
+
+        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
+        let api_base_path = format!(
+            "{}{}{}{}{}{}{}",
+            "https://huggingface.co/api/", bucket, "/", repository, "/tree/", revision, "/"
+        );
+        let download_base_path = format!(
+            "{}{}{}{}{}{}{}",
+            "https://huggingface.co/", bucket, "/", repository, "/resolve/", revision, "/"
+        );
+
+        Self {
+            api_base_path,
+            download_base_path,
+        }
+    }
+
+    fn get_file_uri(&self, rel_path: &str) -> String {
+        format!("{}{}", self.download_base_path, rel_path)
+    }
+
+    fn get_api_uri(&self, rel_path: &str) -> String {
+        format!("{}{}", self.api_base_path, rel_path)
+    }
+}
+
+impl HFPathParts {
+    /// Extracts path components from a hugging face path:
+    /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
+    fn try_from_uri(uri: &str) -> super::Result<Self> {
+        // hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}
+        //       !>
+        if !uri.starts_with("hf://") {
+            return Err(Error::InvalidPath {
+                path: uri.to_string(),
+            }
+            .into());
+        }
+        (|| {
+            let uri = &uri[5..];
+
+            // [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}
+            // ^-----------------^   !>
+            let i = memchr::memchr(b'/', uri.as_bytes())?;
+            let bucket = uri.get(..i)?.to_string();
+            let uri = uri.get(1 + i..)?;
+
+            // {username} / {reponame} @ {revision} / {path from root}
+            // ^----------------------------------^   !>
+            let i = memchr::memchr(b'/', uri.as_bytes())?;
+            let i = {
+                // Also handle if they just give the repository, i.e.:
+                // hf:// [datasets | spaces] / {username} / {reponame} @ {revision}
+                let uri = uri.get(1 + i..)?;
+                if uri.is_empty() {
+                    return None;
+                }
+                1 + i + memchr::memchr(b'/', uri.as_bytes()).unwrap_or(uri.len())
+            };
+            let repository = uri.get(..i)?;
+            let uri = uri.get(1 + i..).unwrap_or("");
+
+            let (repository, revision) =
+                if let Some(i) = memchr::memchr(b'@', repository.as_bytes()) {
+                    (repository[..i].to_string(), repository[1 + i..].to_string())
+                } else {
+                    // No @revision in uri, default to `main`
+                    (repository.to_string(), "main".to_string())
+                };
+
+            // {path from root}
+            // ^--------------^
+            let path = uri.to_string();
+
+            Some(HFPathParts {
+                bucket,
+                repository,
+                revision,
+                path,
+            })
+        })()
+        .ok_or_else(|| {
+            Error::InvalidPath {
+                path: uri.to_string(),
+            }
+            .into()
+        })
+    }
+}
+
+pub(crate) struct HFSource {
+    http_source: HttpSource,
+}
+impl From<HttpSource> for HFSource {
+    fn from(http_source: HttpSource) -> Self {
+        Self { http_source }
+    }
 }
 
 impl From<Error> for super::Error {
@@ -166,7 +281,7 @@ impl From<Error> for super::Error {
     }
 }
 
-impl HttpSource {
+impl HFSource {
     pub async fn get_client(config: &HTTPConfig) -> super::Result<Arc<Self>> {
         let mut default_headers = header::HeaderMap::new();
         default_headers.append(
@@ -175,26 +290,30 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(HttpSource {
-            client: reqwest::ClientBuilder::default()
-                .pool_max_idle_per_host(70)
-                .default_headers(default_headers)
-                .build()
-                .context(UnableToCreateClientSnafu)?,
+        Ok(HFSource {
+            http_source: HttpSource {
+                client: reqwest::ClientBuilder::default()
+                    .pool_max_idle_per_host(70)
+                    .default_headers(default_headers)
+                    .build()
+                    .context(UnableToCreateClientSnafu)?,
+            },
         }
         .into())
     }
 }
 
 #[async_trait]
-impl ObjectSource for HttpSource {
+impl ObjectSource for HFSource {
     async fn get(
         &self,
         uri: &str,
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let request = self.client.get(uri);
+    
+        println!("uri: {}", uri);
+        let request = self.http_source.client.get(uri);
         let request = match range {
             None => request,
             Some(range) => request.header(
@@ -241,7 +360,8 @@ impl ObjectSource for HttpSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let request = self.client.head(uri);
+        println!("hf get size for uri: {}", uri);
+        let request = self.http_source.client.head(uri);
         let response = request
             .send()
             .await
@@ -277,6 +397,7 @@ impl ObjectSource for HttpSource {
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+        println!("hf glob for path: {}", glob_path);
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
@@ -294,11 +415,22 @@ impl ObjectSource for HttpSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
+        let path_parts = &HFPathParts::try_from_uri(path)?;
+        let repo_location = &HFRepoLocation::new(
+            &path_parts.bucket,
+            &path_parts.repository,
+            &path_parts.revision,
+        );
+
+        let rel_path = path_parts.path.as_str();
+        let api_uri = repo_location.get_api_uri(rel_path);
+
+        println!("hf ls for path: {}", api_uri);
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
         }
 
-        let request = self.client.get(path);
+        let request = self.http_source.client.get(api_uri);
         let response = request
             .send()
             .await
@@ -317,6 +449,7 @@ impl ObjectSource for HttpSource {
         } else {
             path
         };
+        
 
         match response.headers().get("content-type") {
             // If the content-type is text/html, we treat the data on this path as a traversable "directory"
@@ -348,55 +481,23 @@ impl ObjectSource for HttpSource {
 
 #[cfg(test)]
 mod tests {
+    use common_error::DaftResult;
 
-    use std::default;
+    use crate::huggingface::HFPathParts;
 
-    use crate::object_io::ObjectSource;
-    use crate::HttpSource;
-    use crate::Result;
+    #[test]
+    fn test_parse_hf_parts() -> DaftResult<()> {
+        let uri = "hf://datasets/wikimedia/wikipedia/20231101.ab/*.parquet";
+        let parts = HFPathParts::try_from_uri(uri)?;
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "wikimedia/wikipedia".to_string(),
+            revision: "main".to_string(),
+            path: "20231101.ab/*.parquet".to_string(),
+        };
 
-    #[tokio::test]
-    async fn test_full_get_from_http() -> Result<()> {
-        let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
-        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
+        assert_eq!(parts, expected);
 
-        let client = HttpSource::get_client(&default::Default::default()).await?;
-        let parquet_file = client.get(parquet_file_path, None, None).await?;
-        let bytes = parquet_file.bytes().await?;
-        let all_bytes = bytes.as_ref();
-        let checksum = format!("{:x}", md5::compute(all_bytes));
-        assert_eq!(checksum, parquet_expected_md5);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(0..10), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 10);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(10..100), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 90);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
-
-        let last_bytes = client
-            .get(
-                parquet_file_path,
-                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
-                None,
-            )
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(last_bytes.len(), 10);
-        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
-
-        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
-        assert_eq!(size_from_get_size, all_bytes.len());
         Ok(())
     }
 }
