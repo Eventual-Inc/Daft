@@ -250,7 +250,11 @@ class DataFrame:
         >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
         >>> for row in df.iter_rows():
-        >>>     print(row)
+        ...     print(row)
+        {'foo': 1, 'bar': 'a'}
+        {'foo': 2, 'bar': 'b'}
+        {'foo': 3, 'bar': 'c'}
+
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
@@ -305,6 +309,39 @@ class DataFrame:
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
+
+        >>> import daft
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
+        >>> for part in df.iter_partitions():
+        ...     print(part)
+        MicroPartition with 2 rows:
+        TableState: Loaded. 1 tables
+        ╭───────┬──────╮
+        │ foo   ┆ bar  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ a    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ b    │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        <BLANKLINE>
+        Statistics: missing
+        <BLANKLINE>
+        MicroPartition with 1 rows:
+        TableState: Loaded. 1 tables
+        ╭───────┬──────╮
+        │ foo   ┆ bar  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 3     ┆ c    │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        <BLANKLINE>
+        Statistics: missing
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
