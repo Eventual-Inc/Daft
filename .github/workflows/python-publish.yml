@@ -150,8 +150,8 @@ jobs:
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: DaftPythonPackageGitHubWorkflow
+        role-to-assume: ${{ secrets.ACTIONS_AWS_CODE_ARTIFACT_ROLE_ARN }}
+        role-session-name: DaftPythonPublish
     - id: install-aws-cli
       uses: unfor19/install-aws-cli-action@v1
       with:
