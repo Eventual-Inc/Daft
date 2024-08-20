@@ -25,12 +25,11 @@ hyper-tls = "0.5.0"
 itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
-memchr = "2.7.4"
 openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
-serde.workspace = true
+serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
@@ -40,6 +39,7 @@ url = {workspace = true}
 default-features = false
 features = ["stream", "native-tls", "json"]
 version = "0.11.18"
+serde.workspace = true
 
 [dev-dependencies]
 md5 = "0.7.0"

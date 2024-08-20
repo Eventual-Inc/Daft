@@ -60,14 +60,6 @@ enum Error {
     InvalidPath { path: String },
 }
 
-#[derive(Debug, PartialEq)]
-struct HFPathParts {
-    bucket: String,
-    repository: String,
-    revision: String,
-    path: String,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum ItemType {
@@ -84,12 +76,19 @@ struct Item {
     path: String,
 }
 
+#[derive(Debug, PartialEq)]
+struct HFPathParts {
+    bucket: String,
+    repository: String,
+    revision: String,
+    path: String,
+}
 impl FromStr for HFPathParts {
     type Err = super::Error;
     /// Extracts path components from a hugging face path:
     /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
     fn from_str(uri: &str) -> super::Result<Self, Self::Err> {
-        // hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}
+        // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
         if !uri.starts_with("hf://") {
             return Err(Error::InvalidPath {
@@ -100,41 +99,41 @@ impl FromStr for HFPathParts {
         (|| {
             let uri = &uri[5..];
 
-            // [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}
-            // ^-----------------^   !>
-            let i = memchr::memchr(b'/', uri.as_bytes())?;
-            let bucket = uri.get(..i)?.to_string();
-            let uri = uri.get(1 + i..)?;
-
+            // [datasets] / {username} / {reponame} @ {revision} / {path from root}
+            // ^--------^   !>
+            let (bucket, uri) = uri.split_once('/')?;
             // {username} / {reponame} @ {revision} / {path from root}
-            // ^----------------------------------^   !>
-            let i = memchr::memchr(b'/', uri.as_bytes())?;
-            let i = {
-                // Also handle if they just give the repository, i.e.:
-                // hf:// [datasets | spaces] / {username} / {reponame} @ {revision}
-                let uri = uri.get(1 + i..)?;
-                if uri.is_empty() {
-                    return None;
-                }
-                1 + i + memchr::memchr(b'/', uri.as_bytes()).unwrap_or(uri.len())
+            // ^--------^   !>
+            let (username, uri) = uri.split_once('/')?;
+            // {reponame} @ {revision} / {path from root}
+            // ^--------^   !>
+            let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
+                (repo, uri)
+            } else {
+                return Some(HFPathParts {
+                    bucket: bucket.to_string(),
+                    repository: format!("{}/{}", username, uri),
+                    revision: "main".to_string(),
+                    path: "".to_string(),
+                });
             };
-            let repository = uri.get(..i)?;
-            let uri = uri.get(1 + i..).unwrap_or("");
 
-            let (repository, revision) =
-                if let Some(i) = memchr::memchr(b'@', repository.as_bytes()) {
-                    (repository[..i].to_string(), repository[1 + i..].to_string())
-                } else {
-                    // No @revision in uri, default to `main`
-                    (repository.to_string(), "main".to_string())
-                };
+            // {revision} / {path from root}
+            // ^--------^   !>
+            let (repository, revision) = if let Some((repo, rev)) = repository.split_once('@') {
+                (repo, rev.to_string())
+            } else {
+                (repository, "main".to_string())
+            };
 
+            // {username}/{reponame}
+            let repository = format!("{}/{}", username, repository);
             // {path from root}
             // ^--------------^
             let path = uri.to_string();
 
             Some(HFPathParts {
-                bucket,
+                bucket: bucket.to_string(),
                 repository,
                 revision,
                 path,
@@ -148,6 +147,7 @@ impl FromStr for HFPathParts {
         })
     }
 }
+
 impl std::fmt::Display for HFPathParts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -172,7 +172,7 @@ impl HFPathParts {
     }
 
     fn get_api_uri(&self) -> String {
-        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
+        // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
         format!(
             "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
             BUCKET = self.bucket,
@@ -341,12 +341,13 @@ impl ObjectSource for HFSource {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
+        // const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+        // const DEFAULT_GLOB_PAGE_SIZE: i32 = 1000;
 
-        // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
-        let fanout_limit = None;
-        let page_size = None;
+        // let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
+        // let page_size = page_size.or(Some(DEFAULT_GLOB_PAGE_SIZE));
 
-        glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+        glob(self, glob_path, None, None, limit, io_stats).await
     }
 
     async fn ls(
@@ -378,7 +379,13 @@ impl ObjectSource for HFSource {
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1)
         }
-        let response = response.json::<Vec<Item>>().await.unwrap();
+        let response = response
+            .json::<Vec<Item>>()
+            .await
+            .context(UnableToReadBytesSnafu {
+                path: api_uri.clone(),
+            })?;
+
         let files = response
             .into_iter()
             .map(|item| {
@@ -429,6 +436,54 @@ mod tests {
             repository: "wikimedia/wikipedia".to_string(),
             revision: "main".to_string(),
             path: "20231101.ab/*.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_revision() -> DaftResult<()> {
+        let uri = "hf://datasets/wikimedia/wikipedia@dev/20231101.ab/*.parquet";
+        let parts = uri.parse::<HFPathParts>()?;
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "wikimedia/wikipedia".to_string(),
+            revision: "dev".to_string(),
+            path: "20231101.ab/*.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_exact_path() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo@dev/config/my_file.parquet";
+        let parts = uri.parse::<HFPathParts>()?;
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "dev".to_string(),
+            path: "config/my_file.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_wildcard() -> DaftResult<()> {
+        let uri = "hf://datasets/wikimedia/wikipedia/**/*.parquet";
+        let parts = uri.parse::<HFPathParts>()?;
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "wikimedia/wikipedia".to_string(),
+            revision: "main".to_string(),
+            path: "**/*.parquet".to_string(),
         };
 
         assert_eq!(parts, expected);

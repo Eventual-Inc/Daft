@@ -1780,7 +1780,6 @@ dependencies = [
  "lazy_static",
  "log",
  "md5",
- "memchr",
  "openssl-sys",
  "pyo3",
  "rand 0.8.5",
