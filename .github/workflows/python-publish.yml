@@ -166,11 +166,18 @@ jobs:
         merge-multiple: true
         path: dist
     - run: ls -R ./dist
-    - name: Publish bdist package to PYPI
+    - name: Publish bdist package to Code Artifact
       if: ${{ success() && (((env.IS_SCHEDULE_DISPATCH == 'true') && (github.ref == 'refs/heads/main')) || env.IS_PUSH == 'true') }}
       run: |
         aws codeartifact login --tool twine --repository daft-nightlies --domain eventual --domain-owner 941892620273 --region us-west-2
         python -m twine upload --repository codeartifact --skip-existing --disable-progress-bar ./dist/*
+    # - name: Publish bdist package to PYPI
+    #   if: ${{ success() && (env.IS_PUSH == 'true') }}
+    #   run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
+    #   env:
+    #     TWINE_USERNAME: __token__
+    #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
 
     # - name: Send Slack notification on failure
     #   uses: slackapi/slack-github-action@v1.26.0
