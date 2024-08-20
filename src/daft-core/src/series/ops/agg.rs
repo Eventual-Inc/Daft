@@ -76,14 +76,13 @@ impl Series {
         self.data_type().assert_is_numeric()?;
 
         let casted = self.cast(&Float64)?;
-        match groups {
-            Some(groups) => Ok(DaftApproxSketchAggable::grouped_approx_sketch(
-                &casted.f64()?,
-                groups,
-            )?
-            .into_series()),
-            None => Ok(DaftApproxSketchAggable::approx_sketch(&casted.f64()?)?.into_series()),
-        }
+        let float_array = casted.f64()?;
+        let series = match groups {
+            Some(groups) => DaftApproxSketchAggable::grouped_approx_sketch(&float_array, groups),
+            None => DaftApproxSketchAggable::approx_sketch(&float_array),
+        }?
+        .into_series();
+        Ok(series)
     }
 
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
