@@ -186,28 +186,31 @@ pub fn split_by_row_groups(
                             Some(io_stats),
                             field_id_mapping.clone(),
                         ))?;
+                        let file_arc = Arc::new(file);
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_groups = Vec::new();
                         let mut curr_size_bytes = 0;
                         let mut curr_num_rows = 0;
 
-                        for (i, rg) in file.row_groups.iter().enumerate() {
+                        for (i, rg) in file_arc.row_groups.iter().enumerate() {
                             curr_row_groups.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
                             curr_num_rows += rg.num_rows();
 
-                            if curr_size_bytes >= min_size_bytes || i == file.row_groups.len() - 1 {
+                            if curr_size_bytes >= min_size_bytes || i == file_arc.row_groups.len() - 1 {
                                 let mut new_source = source.clone();
 
                                 if let DataSource::File {
                                     chunk_spec,
                                     size_bytes,
+                                    parquet_metadata,
                                     ..
                                 } = &mut new_source
                                 {
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                     *size_bytes = Some(curr_size_bytes as u64);
+                                    *parquet_metadata = Some(file_arc.clone());
                                 } else {
                                     unreachable!("Parquet file format should only be used with DataSource::File");
                                 }
