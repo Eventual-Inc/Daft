@@ -627,13 +627,17 @@ jobs:
     strategy:
       fail-fast: false
     steps:
+    - name: Set up the environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y sqlite3 libsqlite3-dev
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-profile
+        key: ${{ runner.os }}-profile-codspeed
         cache-all-crates: 'true'
     - uses: actions/setup-python@v5
       with:
