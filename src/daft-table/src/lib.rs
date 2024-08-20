@@ -439,16 +439,29 @@ impl Table {
             Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
             ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
-            ApproxPercentile(ApproxPercentileParams {
-                child: expr,
-                percentiles,
+            &ApproxPercentile(ApproxPercentileParams {
+                child: ref expr,
+                ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
-                Series::approx_sketch(&self.eval_expression(expr)?, groups)?
-                    .sketch_percentile(&percentiles, *force_list_output)
+                let series = self
+                    .eval_expression(expr)?
+                    .approx_sketch(groups)?
+                    .sketch_percentile(&percentiles, force_list_output)?;
+                Ok(series)
             }
-            CountDistinct(CountDistinctParams { .. }) => todo!(),
+            &CountDistinct(CountDistinctParams {
+                ref child,
+                approximate,
+            }) => {
+                if approximate {
+                    let series = self.eval_expression(child)?.approx_sketch(None)?;
+                    Ok(series)
+                } else {
+                    unimplemented!("Exact `count_distinct` is not yet implemented")
+                }
+            }
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
