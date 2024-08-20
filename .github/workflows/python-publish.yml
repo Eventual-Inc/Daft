@@ -159,7 +159,6 @@ jobs:
         verbose: false                     # default
         arch: amd64                        # allowed values: amd64, arm64
     - run: pip install -U twine
-    - run: 
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -167,11 +166,10 @@ jobs:
         merge-multiple: true
         path: dist
     - run: ls -R ./dist
-
-
     - name: Publish bdist package to PYPI
       if: ${{ success() && (env.IS_PUSH == 'true') }}
-      run: aws codeartifact login --tool twine --repository daft-nightlies --domain eventual --domain-owner 941892620273 --region us-west-2
+      run: |
+        aws codeartifact login --tool twine --repository daft-nightlies --domain eventual --domain-owner 941892620273 --region us-west-2
         python -m twine upload --skip-existing --disable-progress-bar ./dist/*
       # env:
         # TWINE_USERNAME: __token__
