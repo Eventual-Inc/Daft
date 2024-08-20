@@ -19,11 +19,13 @@ import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
-SCALE_FACTOR = 0.01 if os.getenv("CI") else 1
+SCALE_FACTOR = 0.2
 ENGINES = ["native"] if os.getenv("CI") else ["native", "python"]
+NUM_PARTS = [1] if os.getenv("CI") else [1, 2]
+SOURCE_TYPES = ["in-memory"] if os.getenv("CI") else ["parquet"]
 
 
-@pytest.fixture(scope="session", params=[1, 2])
+@pytest.fixture(scope="session", params=NUM_PARTS)
 def gen_tpch(request):
     # Parametrize the number of parts for each file so that we run tests on single-partition files and multi-partition files
     num_parts = request.param
@@ -34,21 +36,31 @@ def gen_tpch(request):
     daft.context.set_execution_config(enable_native_executor=False)
     parquet_files_location = data_generation.gen_parquet(csv_files_location)
 
+    in_memory_tables = {}
+    for tbl_name in data_generation.SCHEMA.keys():
+        arrow_table = daft.read_parquet(f"{parquet_files_location}/{tbl_name}/*").to_arrow()
+        in_memory_tables[tbl_name] = daft.from_arrow(arrow_table)
+
     sqlite_path = data_generation.gen_sqlite_db(
         csv_filepath=csv_files_location,
         num_parts=num_parts,
     )
 
-    return (csv_files_location, parquet_files_location, num_parts), sqlite_path
+    return (
+        csv_files_location,
+        parquet_files_location,
+        in_memory_tables,
+        num_parts,
+    ), sqlite_path
 
 
 @pytest.fixture(scope="module", params=["parquet"])  # TODO: Enable CSV after improving the CSV reader
 def get_df(gen_tpch, request):
-    (csv_files_location, parquet_files_location, num_parts), _ = gen_tpch
-    file_type = request.param
+    (csv_files_location, parquet_files_location, in_memory_tables, num_parts), _ = gen_tpch
+    source_type = request.param
 
     def _get_df(tbl_name: str):
-        if file_type == "csv":
+        if source_type == "csv":
             local_fs = LocalFileSystem()
             nonchunked_filepath = f"{csv_files_location}/{tbl_name}.tbl"
             chunked_filepath = nonchunked_filepath + ".*"
@@ -69,9 +81,11 @@ def get_df(gen_tpch, request):
                     for autoname, colname in zip(df.column_names, data_generation.SCHEMA[tbl_name])
                 ]
             )
-        elif file_type == "parquet":
+        elif source_type == "parquet":
             fp = f"{parquet_files_location}/{tbl_name}/*"
             df = daft.read_parquet(fp)
+        elif source_type == "in-memory":
+            df = in_memory_tables[tbl_name]
 
         return df
 
@@ -82,7 +96,8 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use"
+    daft.context.get_context().runner_config.name not in {"py"},
+    reason="requires PyRunner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
