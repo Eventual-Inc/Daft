@@ -18,7 +18,7 @@ import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
-SCALE_FACTOR = 1.0
+SCALE_FACTOR = 0.2
 
 
 @pytest.fixture(scope="session", params=[1, 2])
