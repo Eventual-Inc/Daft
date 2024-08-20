@@ -18,7 +18,7 @@ import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
-SCALE_FACTOR = 0.2
+SCALE_FACTOR = 0.1
 
 
 @pytest.fixture(scope="session", params=[1, 2])
@@ -80,7 +80,7 @@ TPCH_QUESTIONS = list(range(1, 11))
     daft.context.get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use"
 )
 @pytest.mark.benchmark(group="tpch")
-@pytest.mark.parametrize("engine, q", itertools.product(["native"], TPCH_QUESTIONS))
+@pytest.mark.parametrize("engine, q", itertools.product(["native", "python"], TPCH_QUESTIONS))
 def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
     if engine == "native":
         daft.context.set_execution_config(enable_native_executor=True)
