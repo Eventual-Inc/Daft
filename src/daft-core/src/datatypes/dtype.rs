@@ -274,21 +274,27 @@ impl DataType {
     #[inline]
     pub fn is_numeric(&self) -> bool {
         match self {
-             DataType::Int8
-             | DataType::Int16
-             | DataType::Int32
-             | DataType::Int64
-             | DataType::Int128
-             | DataType::UInt8
-             | DataType::UInt16
-             | DataType::UInt32
-             | DataType::UInt64
-             // DataType::Float16
-             | DataType::Float32
-             | DataType::Float64 => true,
-             DataType::Extension(_, inner, _) => inner.is_numeric(),
-             _ => false
-         }
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Int128
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Float32
+            | DataType::Float64 => true,
+            DataType::Extension(_, inner, _) => inner.is_numeric(),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn assert_is_numeric(&self) -> DaftResult<()> {
+        self.is_numeric().then_some(()).ok_or_else(|| {
+            DaftError::TypeError(format!("Expected numeric type, instead got {}", self))
+        })
     }
 
     #[inline]

@@ -4,7 +4,7 @@ use daft_core::{
     schema::Schema,
 };
 
-use crate::{col, AggExpr, ApproxPercentileParams, Expr, ExprRef};
+use crate::expr::{col, AggExpr, ApproxPercentileParams, CountDistinctParams, Expr, ExprRef};
 
 use common_error::{DaftError, DaftResult};
 
@@ -231,6 +231,13 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     child: Alias(e, name.clone()).into(),
                     percentiles,
                     force_list_output,
+                }),
+                CountDistinct(CountDistinctParams {
+                    child: e,
+                    approximate,
+                }) => CountDistinct(CountDistinctParams {
+                    child: Alias(e, name.clone()).into(),
+                    approximate,
                 }),
                 MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),

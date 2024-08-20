@@ -12,7 +12,7 @@ use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::{col, ApproxPercentileParams};
+use daft_dsl::{col, ApproxPercentileParams, CountDistinctParams};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
@@ -918,6 +918,7 @@ pub fn populate_aggregation_stages(
                         .alias(output_name),
                 );
             }
+            CountDistinct(CountDistinctParams { .. }) => todo!(),
         }
     }
     (first_stage_aggs, second_stage_aggs, final_exprs)

@@ -18,7 +18,10 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue};
+use daft_dsl::{
+    col, null_lit, AggExpr, ApproxPercentileParams, CountDistinctParams, Expr, ExprRef,
+    LiteralValue,
+};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod growable;
@@ -445,6 +448,7 @@ impl Table {
                 Series::approx_sketch(&self.eval_expression(expr)?, groups)?
                     .sketch_percentile(&percentiles, *force_list_output)
             }
+            CountDistinct(CountDistinctParams { .. }) => todo!(),
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),

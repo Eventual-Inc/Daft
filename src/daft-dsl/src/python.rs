@@ -426,6 +426,10 @@ impl PyExpr {
             .into())
     }
 
+    pub fn count_distinct(&self, approximate: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().count_distinct(approximate).into())
+    }
+
     pub fn mean(&self) -> PyResult<Self> {
         Ok(self.expr.clone().mean().into())
     }
