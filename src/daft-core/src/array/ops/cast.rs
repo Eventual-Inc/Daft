@@ -1040,7 +1040,6 @@ impl PythonArray {
             | dt @ DataType::Int16
             | dt @ DataType::Int32
             | dt @ DataType::Int64 => pycast_then_arrowcast!(self, dt, "int"),
-            // DataType::Float16 => todo!(),
             dt @ DataType::Float32 | dt @ DataType::Float64 => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
