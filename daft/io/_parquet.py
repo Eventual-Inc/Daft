@@ -28,6 +28,7 @@ def read_parquet(
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
     schema_hints: Optional[Dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
+    _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -79,7 +80,7 @@ def read_parquet(
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
     file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups)
+        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
     )
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))

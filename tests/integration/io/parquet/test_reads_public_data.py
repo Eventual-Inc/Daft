@@ -19,6 +19,8 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
     return fs
 
 
+# TODO(desmond): Expected some of these non-working cases to work after recent fixes, but that
+#                doesn't seem to be the case.
 # Taken from our spreadsheet of files that Daft should be able to handle
 DAFT_CAN_READ_FILES = [
     (

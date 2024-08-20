@@ -136,6 +136,7 @@ pub struct ParquetSourceConfig {
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
+    pub chunk_size: Option<usize>,
 }
 
 impl ParquetSourceConfig {
@@ -187,6 +188,7 @@ impl ParquetSourceConfig {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
+        chunk_size: Option<usize>,
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
@@ -198,6 +200,7 @@ impl ParquetSourceConfig {
                 ))
             }),
             row_groups,
+            chunk_size,
         }
     }
 

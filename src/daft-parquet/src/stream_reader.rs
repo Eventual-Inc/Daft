@@ -294,6 +294,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
@@ -339,7 +340,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
         })?;
-    let chunk_size = 128 * 1024;
+    let chunk_size = chunk_size.unwrap_or(128 * 1024);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
@@ -433,6 +434,7 @@ pub(crate) async fn local_parquet_read_async(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
@@ -447,6 +449,7 @@ pub(crate) async fn local_parquet_read_async(
                 predicate,
                 schema_infer_options,
                 metadata,
+                chunk_size,
             );
             let (metadata, schema, arrays, num_rows_read) = v?;
 
@@ -590,6 +593,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
@@ -608,6 +612,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
             predicate,
             schema_infer_options,
             metadata,
+            chunk_size,
         );
         let _ = send.send(v);
     });
