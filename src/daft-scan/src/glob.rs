@@ -19,7 +19,6 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
-    is_ray_runner: bool,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -130,7 +129,6 @@ impl GlobScanOperator {
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
-        is_ray_runner: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -244,7 +242,6 @@ impl GlobScanOperator {
             file_format_config,
             schema,
             storage_config,
-            is_ray_runner,
         })
     }
 }

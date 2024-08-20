@@ -93,6 +93,5 @@ def read_parquet(
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
-        is_ray_runner=is_ray_runner,
     )
     return DataFrame(builder)
