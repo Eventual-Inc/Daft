@@ -34,7 +34,6 @@ def get_tabular_files_scan(
     elif isinstance(path, str):
         paths = [path]
     else:
-        print(f"get_tabular_files_scan cannot construct ScanOperatorHandle for input: {path}")
         raise NotImplementedError(f"get_tabular_files_scan cannot construct ScanOperatorHandle for input: {path}")
 
     scan_op = ScanOperatorHandle.glob_scan(

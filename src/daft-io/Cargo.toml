@@ -39,7 +39,6 @@ url = {workspace = true}
 default-features = false
 features = ["stream", "native-tls", "json"]
 version = "0.11.18"
-serde.workspace = true
 
 [dev-dependencies]
 md5 = "0.7.0"
