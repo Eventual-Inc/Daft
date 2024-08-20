@@ -8,6 +8,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
@@ -665,8 +666,7 @@ jobs:
     - name: Run TPCH benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: |
-          pytest tests/benchmarks/test_local_tpch.py --codspeed
+        run: pytest tests/benchmarks/test_local_tpch.py -m benchmark --codspeed
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
