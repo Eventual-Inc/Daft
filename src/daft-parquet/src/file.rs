@@ -130,7 +130,7 @@ pub(crate) fn build_row_ranges(
             if rows_to_add <= 0 {
                 break;
             }
-            let rg = metadata.row_groups.get(i).unwrap();
+            let rg = metadata.row_groups.get(&i).unwrap();
             if let Some(ref pred) = predicate {
                 let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                     .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
@@ -158,7 +158,7 @@ pub(crate) fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in metadata.row_groups.iter().enumerate() {
+        for (i, rg) in metadata.row_groups.iter() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
@@ -179,7 +179,7 @@ pub(crate) fn build_row_ranges(
                     }
                 }
                 let range_to_add = RowGroupRange {
-                    row_group_index: i,
+                    row_group_index: *i,
                     start: row_start_offset.saturating_sub(curr_row_index),
                     num_rows: rg.num_rows().min(rows_to_add as usize),
                 };
@@ -349,7 +349,7 @@ impl ParquetFileReader {
             let rg = self
                 .metadata
                 .row_groups
-                .get(row_group_range.row_group_index)
+                .get(&row_group_range.row_group_index)
                 .unwrap();
 
             let columns = rg.columns();
@@ -441,7 +441,7 @@ impl ParquetFileReader {
                             tokio::task::spawn(async move {
                                 let rg = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds");
                                 let num_rows =
                                     rg.num_rows().min(row_range.start + row_range.num_rows);
@@ -565,7 +565,7 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
@@ -609,7 +609,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)
@@ -751,7 +751,7 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(128 * 1024);
@@ -793,7 +793,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)

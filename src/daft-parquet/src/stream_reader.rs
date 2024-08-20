@@ -259,7 +259,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 
     // Read all the required row groups into memory sequentially
     let column_iters_per_rg = row_ranges.clone().into_iter().map(move |rg_range| {
-        let rg_metadata = all_row_groups.get(rg_range.row_group_index).unwrap();
+        let rg_metadata = all_row_groups.get(&rg_range.row_group_index).unwrap();
 
         // This operation is IO-bounded O(C) where C is the number of columns in the row group.
         // It reads all the columns to memory from the row group associated to the requested fields,
@@ -358,7 +358,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         .iter()
         .enumerate()
         .map(|(req_idx, rg_range)| {
-            let rg = metadata.row_groups.get(rg_range.row_group_index).unwrap();
+            let rg = metadata.row_groups.get(&rg_range.row_group_index).unwrap();
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
                 rg,

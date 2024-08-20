@@ -3,6 +3,7 @@ async-stream = {version = "0.3.3", optional = true}
 brotli = {version = "^3.3", optional = true}
 flate2 = {version = "^1.0", optional = true, default-features = false}
 futures = {version = "0.3", optional = true}
+indexmap = {workspace = true, features = ["serde"]}
 lz4 = {version = "1.24", optional = true}
 lz4_flex = {version = "^0.9", optional = true}
 parquet-format-safe = "0.2"
