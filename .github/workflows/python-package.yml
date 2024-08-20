@@ -664,8 +664,9 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run TPCH benchmarks
       uses: CodSpeedHQ/action@v3
-      run: |
-        pytest tests/benchmarks/test_local_tpch.py --codspeed
+      with:
+        run: |
+          pytest tests/benchmarks/test_local_tpch.py --codspeed
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
