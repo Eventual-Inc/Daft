@@ -14,6 +14,10 @@ on:
     tags:
     - v*
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    
+
 env:
   PACKAGE_NAME: getdaft
   PYTHON_VERSION: 3.11
@@ -24,75 +28,75 @@ env:
   RUST_DAFT_PKG_BUILD_TYPE: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0'))) && 'release' || 'nightly' }}
 
 jobs:
-  build-and-test:
+  # build-and-test:
 
-    name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
-    runs-on: ${{ matrix.os }}-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu, macos, windows]
-        compile_arch: [x86_64, aarch64]
-        exclude:
-        - os: windows
-          compile_arch: aarch64
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        architecture: x64
-    - run: pip install -U twine toml
-    - run: python tools/patch_package_version.py
-    - name: Build wheels - Mac and Windows x86
-      if: ${{ ((matrix.os == 'macos') || (matrix.os == 'windows')) && (matrix.compile_arch == 'x86_64')  }}
-      uses: messense/maturin-action@v1
-      with:
-        target: x86_64
-        args: --profile release-lto --out dist
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
-    - name: Build wheels - Linux x86
-      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
-      uses: messense/maturin-action@v1
-      with:
-        target: x86_64
-        manylinux: auto
-        # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile release-lto --out dist --sdist
-        before-script-linux: yum -y install perl-IPC-Cmd
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-    - name: Build wheels - Linux aarch64
-      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
-      uses: messense/maturin-action@v1
-      with:
-        target: aarch64-unknown-linux-gnu
-        manylinux: auto
-        # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
-        container: messense/manylinux_2_24-cross:aarch64
-        args: --profile release-lto --out dist
-        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+  #   name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
+  #   runs-on: ${{ matrix.os }}-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu, macos, windows]
+  #       compile_arch: [x86_64, aarch64]
+  #       exclude:
+  #       - os: windows
+  #         compile_arch: aarch64
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - uses: actions/setup-python@v5
+  #     with:
+  #       python-version: ${{ env.PYTHON_VERSION }}
+  #       architecture: x64
+  #   - run: pip install -U twine toml
+  #   - run: python tools/patch_package_version.py
+  #   - name: Build wheels - Mac and Windows x86
+  #     if: ${{ ((matrix.os == 'macos') || (matrix.os == 'windows')) && (matrix.compile_arch == 'x86_64')  }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: x86_64
+  #       args: --profile release-lto --out dist
+  #     env:
+  #       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
+  #   - name: Build wheels - Linux x86
+  #     if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: x86_64
+  #       manylinux: auto
+  #       # only produce sdist for linux x86 to avoid multiple copies
+  #       args: --profile release-lto --out dist --sdist
+  #       before-script-linux: yum -y install perl-IPC-Cmd
+  #     env:
+  #       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+  #   - name: Build wheels - Linux aarch64
+  #     if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: aarch64-unknown-linux-gnu
+  #       manylinux: auto
+  #       # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
+  #       container: messense/manylinux_2_24-cross:aarch64
+  #       args: --profile release-lto --out dist
+  #       before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
 
-    - name: Build wheels - Mac aarch64
-      if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
-      uses: messense/maturin-action@v1
-      with:
-        target: aarch64
-        manylinux: auto
-        args: --profile release-lto --out dist
-      env:
-        RUSTFLAGS: -Ctarget-cpu=apple-m1
+  #   - name: Build wheels - Mac aarch64
+  #     if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: aarch64
+  #       manylinux: auto
+  #       args: --profile release-lto --out dist
+  #     env:
+  #       RUSTFLAGS: -Ctarget-cpu=apple-m1
 
-    - name: Install and test built wheel - Linux and Mac x86_64
-      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64')  }}
-      run: |
-        pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
-        pytest -v
+  #   - name: Install and test built wheel - Linux and Mac x86_64
+  #     if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64')  }}
+  #     run: |
+  #       pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
+  #       rm -rf daft
+  #       pytest -v
     # Disable until we figure out why are we getting FileNotFoundError: [WinError 3] Failed to open local file
     # - name: Install and test built wheel - Windows x86_64
     #   if: ${{ (matrix.os == 'windows') && (matrix.compile_arch == 'x86_64')  }}
@@ -132,14 +136,30 @@ jobs:
   publish:
     name: Publish wheels to PYPI and Anaconda
     runs-on: ubuntu-latest
-    needs:
-    - build-and-test
+    # needs:
+    # - build-and-test
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - id: install-aws-cli
+      uses: unfor19/install-aws-cli-action@v1
+      with:
+        version: 2                         # default
+        verbose: false                     # default
+        arch: amd64                        # allowed values: amd64, arm64
     - run: pip install -U twine
+    - run: aws codeartifact login --tool twine --repository daft-nightlies --domain eventual --domain-owner 941892620273 --region us-west-2
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -147,58 +167,60 @@ jobs:
         merge-multiple: true
         path: dist
     - run: ls -R ./dist
+
+
     - name: Publish bdist package to PYPI
       if: ${{ success() && (env.IS_PUSH == 'true') }}
       run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      # env:
+        # TWINE_USERNAME: __token__
+        # TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
-    - uses: conda-incubator/setup-miniconda@v3
-      with:
-        # Really doesn't matter what version we upload with
-        # just the version we test with
-        python-version: '3.8'
-        channels: conda-forge
-        channel-priority: true
+    # - uses: conda-incubator/setup-miniconda@v3
+    #   with:
+    #     # Really doesn't matter what version we upload with
+    #     # just the version we test with
+    #     python-version: '3.8'
+    #     channels: conda-forge
+    #     channel-priority: true
 
-    - name: Install anaconda client
-      shell: bash -el {0}
-      run: conda install -q -y anaconda-client "urllib3<2.0"
+    # - name: Install anaconda client
+    #   shell: bash -el {0}
+    #   run: conda install -q -y anaconda-client "urllib3<2.0"
 
-    - name: Upload wheels to anaconda nightly
-      if: ${{ success() && (((env.IS_SCHEDULE_DISPATCH == 'true') && (github.ref == 'refs/heads/main')) || env.IS_PUSH == 'true') }}
-      shell: bash -el {0}
-      env:
-        DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
-        DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
-      run: |
-        source ci/upload_wheels.sh
-        set_upload_vars
-        # trigger an upload to
-        # https://anaconda.org/daft-nightly/getdaft
-        # for cron jobs or "Run workflow" (restricted to main branch).
-        # Tags will upload to
-        # https://anaconda.org/daft/getdaft
-        # The tokens were originally generated at anaconda.org
-        upload_wheels
+    # - name: Upload wheels to anaconda nightly
+    #   if: ${{ success() && (((env.IS_SCHEDULE_DISPATCH == 'true') && (github.ref == 'refs/heads/main')) || env.IS_PUSH == 'true') }}
+    #   shell: bash -el {0}
+    #   env:
+    #     DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
+    #     DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
+    #   run: |
+    #     source ci/upload_wheels.sh
+    #     set_upload_vars
+    #     # trigger an upload to
+    #     # https://anaconda.org/daft-nightly/getdaft
+    #     # for cron jobs or "Run workflow" (restricted to main branch).
+    #     # Tags will upload to
+    #     # https://anaconda.org/daft/getdaft
+    #     # The tokens were originally generated at anaconda.org
+    #     upload_wheels
 
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
-      if: failure()
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    # - name: Send Slack notification on failure
+    #   uses: slackapi/slack-github-action@v1.26.0
+    #   if: failure()
+    #   with:
+    #     payload: |
+    #       {
+    #         "blocks": [
+    #           {
+    #             "type": "section",
+    #             "text": {
+    #               "type": "mrkdwn",
+    #               "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+    #             }
+    #           }
+    #         ]
+    #       }
+    #   env:
+    #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
