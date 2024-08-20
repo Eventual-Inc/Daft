@@ -956,6 +956,7 @@ mod test {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
             row_groups: None,
+            chunk_size: None,
         });
 
         ScanTask::new(
