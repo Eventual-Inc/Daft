@@ -203,8 +203,8 @@ async fn read_parquet_single(
 
     let rows_per_row_groups = metadata
         .row_groups
-        .iter()
-        .map(|(_, m)| m.num_rows())
+        .values()
+        .map(|m| m.num_rows())
         .collect::<Vec<_>>();
 
     let metadata_num_rows = metadata.num_rows;
