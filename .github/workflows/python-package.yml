@@ -8,6 +8,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
   workflow_dispatch:
 
 env:
@@ -617,7 +619,7 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
 
-  benchmark-tpch:
+  benchmark-local-tpch:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -679,7 +681,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Benchmark Local TPCH <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
