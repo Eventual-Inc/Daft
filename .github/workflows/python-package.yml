@@ -330,7 +330,7 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
-        pytest tests/integration/io -m 'integration' --durations=50
+        pytest tests/integration/io -m 'integration and not benchmark' --durations=50
         pytest tests/io -m 'integration'
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
