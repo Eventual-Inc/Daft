@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::{error::Error, metadata::get_sort_order};
 
 use super::{column_order::ColumnOrder, schema_descriptor::SchemaDescriptor, RowGroupMetaData};
@@ -170,12 +168,16 @@ impl FileMetaData {
     }
 
     /// Clone this metadata and return a new one with only the specified range of row group indices.
-    pub fn clone_with_row_groups(&self, indices: Range<usize>) -> Self {
+    pub fn clone_with_row_groups(
+        &self,
+        num_rows: usize,
+        row_groups: Vec<RowGroupMetaData>,
+    ) -> Self {
         Self {
             version: self.version,
-            num_rows: indices.len(),
+            num_rows,
             created_by: self.created_by.clone(),
-            row_groups: self.row_groups[indices].to_vec(),
+            row_groups,
             key_value_metadata: self.key_value_metadata.clone(),
             schema_descr: self.schema_descr.clone(),
             column_orders: self.column_orders.clone(),

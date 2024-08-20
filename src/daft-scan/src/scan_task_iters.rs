@@ -180,7 +180,7 @@ pub fn split_by_row_groups(
 
                         let runtime_handle = io_runtime.handle();
 
-                        let file = runtime_handle.block_on(read_parquet_metadata(
+                        let mut file = runtime_handle.block_on(read_parquet_metadata(
                             path,
                             io_client,
                             Some(io_stats),
@@ -189,15 +189,20 @@ pub fn split_by_row_groups(
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_groups = Vec::new();
+                        let mut curr_row_group_indices = Vec::new();
                         let mut curr_size_bytes = 0;
                         let mut curr_num_rows = 0;
 
-                        for (i, rg) in file.row_groups.iter().enumerate() {
-                            curr_row_groups.push(i as i64);
+                        let row_groups = std::mem::take(&mut file.row_groups);
+                        let num_row_groups = row_groups.len();
+                        for (i, rg) in row_groups.into_iter().enumerate() {
+                            curr_row_groups.push(rg);
+                            let rg = curr_row_groups.last().unwrap();
+                            curr_row_group_indices.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
                             curr_num_rows += rg.num_rows();
 
-                            if curr_size_bytes >= min_size_bytes || i == file.row_groups.len() - 1 {
+                            if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
                                 let mut new_source = source.clone();
 
                                 if let DataSource::File {
@@ -208,10 +213,10 @@ pub fn split_by_row_groups(
                                 } = &mut new_source
                                 {
                                     // only keep relevant row groups in the metadata
-                                    let new_metadata = file.clone_with_row_groups((curr_row_groups[0] as usize)..(i+1));
+                                    let new_metadata = file.clone_with_row_groups(curr_num_rows, curr_row_groups);
                                     *parquet_metadata = Some(Arc::new(new_metadata));
 
-                                    *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
+                                    *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
                                 } else {
                                     unreachable!("Parquet file format should only be used with DataSource::File");
@@ -227,6 +232,7 @@ pub fn split_by_row_groups(
 
                                 // Reset accumulators
                                 curr_row_groups = Vec::new();
+                                curr_row_group_indices = Vec::new();
                                 curr_size_bytes = 0;
                                 curr_num_rows = 0;
 
