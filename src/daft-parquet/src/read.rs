@@ -115,6 +115,7 @@ async fn read_parquet_single(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns;
@@ -153,6 +154,7 @@ async fn read_parquet_single(
             predicate.clone(),
             schema_infer_options,
             metadata,
+            chunk_size,
         )
         .await
     } else {
@@ -188,6 +190,8 @@ async fn read_parquet_single(
         } else {
             builder
         };
+
+        let builder = builder.set_chunk_size(chunk_size);
 
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
@@ -492,6 +496,7 @@ async fn read_parquet_single_into_arrow(
                 None,
                 schema_infer_options,
                 metadata,
+                None,
             )
             .await?;
         (metadata, Arc::new(schema), all_arrays, num_rows_read)
@@ -642,6 +647,7 @@ pub fn read_parquet(
             None,
             metadata,
             None,
+            None,
         )
         .await
     })
@@ -709,6 +715,7 @@ pub fn read_parquet_bulk(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Vec<Arc<FileMetaData>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -754,6 +761,7 @@ pub fn read_parquet_bulk(
                             owned_field_id_mapping,
                             metadata,
                             delete_rows,
+                            chunk_size,
                         )
                         .await?,
                     ))

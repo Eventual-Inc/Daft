@@ -192,6 +192,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 init,
                 items,
                 None,
+                remaining,
                 // TODO(issue#2537): Daft does not currently support Arrow's dictionary logical
                 // type, so we don't currently have a way to encounter or test this code.
                 // We should fix this when support for dictionary type is added by replacing this
