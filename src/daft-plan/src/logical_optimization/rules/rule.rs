@@ -60,6 +60,28 @@ impl<T> Transformed<T> {
         }
     }
 
+    /// Map just the `Transformed::Yes` variant by applying `f` to the inner value.
+    ///
+    /// If `self` is `Transformed::No`, nothing is done.
+    #[inline]
+    pub fn map_yes<F: FnOnce(T) -> T>(self, f: F) -> Self {
+        match self {
+            Self::Yes(yes) => Self::Yes(f(yes)),
+            Self::No(..) => self,
+        }
+    }
+
+    /// Map just the `Transformed::No` variant by applying `f` to the inner value.
+    ///
+    /// If `self` is `Transformed::Yes`, nothing is done.
+    #[inline]
+    pub fn map_no<F: FnOnce(T) -> T>(self, f: F) -> Self {
+        match self {
+            Self::Yes(..) => self,
+            Self::No(no) => Self::No(f(no)),
+        }
+    }
+
     /// Maps a `Transformed<T>` to `Transformed<U>`,
     /// by supplying a function to apply to a contained Yes value
     /// as well as a function to apply to a contained No value.
