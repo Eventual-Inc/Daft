@@ -57,14 +57,14 @@ pub fn from_arrow2(
         return Ok(vec![]);
     }
 
-    let item_vec = serde_arrow::from_arrow2::<Vec<Item<Option<DDSketch>>>, _>(
-        &ARROW2_DDSKETCH_ITEM_FIELDS,
-        &[arrow_array],
-    );
-    item_vec
-        .map(|item_vec| item_vec.into_iter().map(|item| item.0).collect())
-        .with_context(|_| DeserializationSnafu {})
-        .map_err(|e| e.into())
+    let sketches =
+        serde_arrow::from_arrow2::<Vec<_>, _>(&ARROW2_DDSKETCH_ITEM_FIELDS, &[arrow_array])
+            .context(DeserializationSnafu)?
+            .into_iter()
+            .map(|Item(item)| item)
+            .collect();
+
+    Ok(sketches)
 }
 
 #[cfg(test)]
