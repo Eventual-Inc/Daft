@@ -1,3 +1,4 @@
+use crate::array::ops::DaftApproxSketchAggable;
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -69,13 +70,10 @@ impl Series {
     }
 
     pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftApproxSketchAggable;
-        use crate::datatypes::DataType::*;
-
         // Upcast all numeric types to float64 and compute approx_sketch.
         self.data_type().assert_is_numeric()?;
 
-        let casted = self.cast(&Float64)?;
+        let casted = self.cast(&DataType::Float64)?;
         let float_array = casted.f64()?;
         let series = match groups {
             Some(groups) => DaftApproxSketchAggable::grouped_approx_sketch(&float_array, groups),
