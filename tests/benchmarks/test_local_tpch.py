@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -18,7 +19,8 @@ import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
-SCALE_FACTOR = 1.0
+SCALE_FACTOR = 0.01 if os.getenv("CI") else 1
+ENGINES = ["native"] if os.getenv("CI") else ["native", "python"]
 
 
 @pytest.fixture(scope="session", params=[1, 2])
@@ -27,6 +29,9 @@ def gen_tpch(request):
     num_parts = request.param
 
     csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
+
+    # Disable native executor to generate parquet files, remove once native executor supports writing parquet files
+    daft.context.set_execution_config(enable_native_executor=False)
     parquet_files_location = data_generation.gen_parquet(csv_files_location)
 
     sqlite_path = data_generation.gen_sqlite_db(
@@ -76,18 +81,21 @@ def get_df(gen_tpch, request):
 TPCH_QUESTIONS = list(range(1, 11))
 
 
-@pytest.mark.parametrize("engine, q", itertools.product(["native", "python"], TPCH_QUESTIONS))
+@pytest.mark.skipif(
+    daft.context.get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use"
+)
+@pytest.mark.benchmark(group="tpch")
+@pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
 def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
-    if engine == "native":
-        daft.context.set_execution_config(enable_native_executor=True)
-    elif engine == "python":
-        daft.context.set_execution_config(enable_native_executor=False)
-    else:
-        raise ValueError(f"{engine} unsupported")
-
     get_df, num_parts = get_df
 
     def f():
+        if engine == "native":
+            daft.context.set_execution_config(enable_native_executor=True)
+        elif engine == "python":
+            daft.context.set_execution_config(enable_native_executor=False)
+        else:
+            raise ValueError(f"{engine} unsupported")
         question = getattr(answers, f"q{q}")
         daft_df = question(get_df)
         return daft_df.to_arrow()

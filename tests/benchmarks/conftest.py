@@ -59,7 +59,11 @@ def benchmark_with_memray(request, benchmark):
 
     def benchmark_wrapper(func, group):
         benchmark.group = group
-        benchmark(func)
-        return track_mem(func, group)
+        # If running in CI, just run the benchmark
+        if os.getenv("CI"):
+            return benchmark(func)
+        else:
+            benchmark(func)
+            return track_mem(func, group)
 
     return benchmark_wrapper

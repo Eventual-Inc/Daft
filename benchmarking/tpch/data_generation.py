@@ -253,7 +253,7 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
     Returns:
         str: path to folder with generated CSV files
     """
-    cachedir = os.path.join(basedir, ("%.1f" % scale_factor).replace(".", "_"), str(num_parts))
+    cachedir = os.path.join(basedir, ("%.2f" % scale_factor).replace(".", "_"), str(num_parts))
     if not os.path.exists(cachedir):
         # If running in CI, use a scale factor of 0.2
         # Otherwise, check for SCALE_FACTOR env variable or default to 1
