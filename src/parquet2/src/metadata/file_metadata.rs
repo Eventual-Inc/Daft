@@ -167,7 +167,7 @@ impl FileMetaData {
         }
     }
 
-    /// Clone this metadata and return a new one with only the specified range of row group indices.
+    /// Clone this metadata and return a new one with the given row groups.
     pub fn clone_with_row_groups(
         &self,
         num_rows: usize,
