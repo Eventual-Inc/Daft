@@ -186,7 +186,6 @@ impl IOClient {
     }
 
     async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
-        println!("Getting source for {:?}", source_type);
         {
             if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
                 return Ok(client.clone());
@@ -214,7 +213,6 @@ impl IOClient {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                println!("Getting HF source");
                 HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
             }
         };

@@ -1,15 +1,12 @@
-use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
+use std::{num::ParseIntError, ops::Range, str::FromStr, string::FromUtf8Error, sync::Arc};
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
 
 use hyper::header;
-use lazy_static::lazy_static;
-use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
-use url::Position;
 
 use crate::{
     http::HttpSource,
@@ -17,16 +14,9 @@ use crate::{
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
 };
+use serde::{Deserialize, Serialize};
 
 use super::object_io::{GetResult, ObjectSource};
-
-const HTTP_DELIMITER: &str = "/";
-
-lazy_static! {
-    // Taken from: https://stackoverflow.com/a/15926317/3821154
-    static ref HTML_A_TAG_HREF_RE: Regex =
-        Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap();
-}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -54,24 +44,10 @@ enum Error {
     #[snafu(display("Unable to create Http Client {}", source))]
     UnableToCreateClient { source: reqwest::Error },
 
-    #[snafu(display("Unable to parse URL: \"{}\"", path))]
-    InvalidUrl {
-        path: String,
-        source: url::ParseError,
-    },
-
     #[snafu(display(
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8Header { path: String, source: FromUtf8Error },
-
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading body for file: {path}. {source}"
-    ))]
-    UnableToParseUtf8Body {
-        path: String,
-        source: reqwest::Error,
-    },
 
     #[snafu(display(
         "Unable to parse data as Integer while reading header for file: {path}. {source}"
@@ -84,64 +60,6 @@ enum Error {
     InvalidPath { path: String },
 }
 
-/// Finds and retrieves FileMetadata from HTML text
-///
-/// This function will look for `<a href=***>` tags and return all the links that it finds as
-/// absolute URLs
-fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
-    let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
-    let metas = HTML_A_TAG_HREF_RE
-        .captures_iter(text)
-        .map(|captures| {
-            // Parse the matched URL into an absolute URL
-            let matched_url = captures.name("url").unwrap().as_str();
-            let absolute_path = if let Ok(parsed_matched_url) = url::Url::parse(matched_url) {
-                // matched_url is already an absolute path
-                parsed_matched_url
-            } else if matched_url.starts_with(HTTP_DELIMITER) {
-                // matched_url is a path relative to the origin of `path`
-                let base = url::Url::parse(&path_url[..Position::BeforePath]).unwrap();
-                base.join(matched_url)
-                    .with_context(|_| InvalidUrlSnafu { path: matched_url })?
-            } else {
-                // matched_url is a path relative to `path` and needs to be joined
-                path_url
-                    .join(matched_url)
-                    .with_context(|_| InvalidUrlSnafu { path: matched_url })?
-            };
-
-            // Ignore any links that are not descendants of `path` to avoid cycles
-            let relative = path_url.make_relative(&absolute_path);
-            match relative {
-                None => {
-                    return Ok(None);
-                }
-                Some(relative_path)
-                    if relative_path.is_empty() || relative_path.starts_with("..") =>
-                {
-                    return Ok(None);
-                }
-                _ => (),
-            };
-
-            let filetype = if matched_url.ends_with(HTTP_DELIMITER) {
-                FileType::Directory
-            } else {
-                FileType::File
-            };
-            Ok(Some(FileMetadata {
-                filepath: absolute_path.to_string(),
-                // NOTE: This is consistent with fsspec behavior, but we may choose to HEAD the files to grab Content-Length
-                // for populating `size` if necessary
-                size: None,
-                filetype,
-            }))
-        })
-        .collect::<super::Result<Vec<_>>>()?;
-
-    Ok(metas.into_iter().flatten().collect())
-}
-
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
     bucket: String,
@@ -150,45 +68,27 @@ struct HFPathParts {
     path: String,
 }
 
-struct HFRepoLocation {
-    api_base_path: String,
-    download_base_path: String,
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+enum ItemType {
+    File,
+    Directory,
 }
 
-impl HFRepoLocation {
-    fn new(bucket: &str, repository: &str, revision: &str) -> Self {
-        // let bucket = percent_encode(bucket.as_bytes());
-        // let repository = percent_encode(repository.as_bytes());
-
-        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
-        let api_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/api/", bucket, "/", repository, "/tree/", revision, "/"
-        );
-        let download_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/", bucket, "/", repository, "/resolve/", revision, "/"
-        );
-
-        Self {
-            api_base_path,
-            download_base_path,
-        }
-    }
-
-    fn get_file_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.download_base_path, rel_path)
-    }
-
-    fn get_api_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.api_base_path, rel_path)
-    }
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+struct Item {
+    r#type: ItemType,
+    oid: String,
+    size: u64,
+    path: String,
 }
 
-impl HFPathParts {
+impl FromStr for HFPathParts {
+    type Err = super::Error;
     /// Extracts path components from a hugging face path:
     /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
-    fn try_from_uri(uri: &str) -> super::Result<Self> {
+    fn from_str(uri: &str) -> super::Result<Self, Self::Err> {
         // hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
         if !uri.starts_with("hf://") {
@@ -248,6 +148,40 @@ impl HFPathParts {
         })
     }
 }
+impl std::fmt::Display for HFPathParts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "hf://{BUCKET}/{REPOSITORY}/{PATH}",
+            BUCKET = self.bucket,
+            REPOSITORY = self.repository,
+            PATH = self.path
+        )
+    }
+}
+
+impl HFPathParts {
+    fn get_file_uri(&self) -> String {
+        format!(
+            "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
+            BUCKET = self.bucket,
+            REPOSITORY = self.repository,
+            REVISION = self.revision,
+            PATH = self.path
+        )
+    }
+
+    fn get_api_uri(&self) -> String {
+        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
+        format!(
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+            BUCKET = self.bucket,
+            REPOSITORY = self.repository,
+            REVISION = self.revision,
+            PATH = self.path
+        )
+    }
+}
 
 pub(crate) struct HFSource {
     http_source: HttpSource,
@@ -289,6 +223,13 @@ impl HFSource {
             header::HeaderValue::from_str(config.user_agent.as_str())
                 .context(UnableToCreateHeaderSnafu)?,
         );
+        if let Some(token) = &config.bearer_token {
+            default_headers.append(
+                "Authorization",
+                header::HeaderValue::from_str(&format!("Bearer {}", token))
+                    .context(UnableToCreateHeaderSnafu)?,
+            );
+        }
 
         Ok(HFSource {
             http_source: HttpSource {
@@ -311,8 +252,8 @@ impl ObjectSource for HFSource {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-    
-        println!("uri: {}", uri);
+        let path_parts = uri.parse::<HFPathParts>()?;
+        let uri = &path_parts.get_file_uri();
         let request = self.http_source.client.get(uri);
         let request = match range {
             None => request,
@@ -360,7 +301,9 @@ impl ObjectSource for HFSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        println!("hf get size for uri: {}", uri);
+        let path_parts = uri.parse::<HFPathParts>()?;
+        let uri = &path_parts.get_file_uri();
+
         let request = self.http_source.client.head(uri);
         let response = request
             .send()
@@ -397,7 +340,6 @@ impl ObjectSource for HFSource {
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
-        println!("hf glob for path: {}", glob_path);
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
@@ -415,67 +357,60 @@ impl ObjectSource for HFSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let path_parts = &HFPathParts::try_from_uri(path)?;
-        let repo_location = &HFRepoLocation::new(
-            &path_parts.bucket,
-            &path_parts.repository,
-            &path_parts.revision,
-        );
-
-        let rel_path = path_parts.path.as_str();
-        let api_uri = repo_location.get_api_uri(rel_path);
-
-        println!("hf ls for path: {}", api_uri);
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
         }
+        let path_parts = path.parse::<HFPathParts>()?;
 
-        let request = self.http_source.client.get(api_uri);
+        let api_uri = path_parts.get_api_uri();
+
+        let request = self.http_source.client.get(api_uri.clone());
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: path.into() })?
+            .context(UnableToConnectSnafu::<String> {
+                path: api_uri.clone(),
+            })?
             .error_for_status()
-            .with_context(|_| UnableToOpenFileSnafu { path })?;
+            .with_context(|_| UnableToOpenFileSnafu {
+                path: api_uri.clone(),
+            })?;
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1)
         }
+        let response = response.json::<Vec<Item>>().await.unwrap();
+        let files = response
+            .into_iter()
+            .map(|item| {
+                let filepath = HFPathParts {
+                    bucket: path_parts.bucket.clone(),
+                    repository: path_parts.repository.clone(),
+                    revision: path_parts.revision.clone(),
+                    path: item.path,
+                };
 
-        // Reconstruct the actual path of the request, which may have been redirected via a 301
-        // This is important because downstream URL joining logic relies on proper trailing-slashes/index.html
-        let path = response.url().to_string();
-        let path = if path.ends_with(HTTP_DELIMITER) {
-            format!("{}/", path.trim_end_matches(HTTP_DELIMITER))
-        } else {
-            path
-        };
-        
+                let size = match item.size {
+                    0 => None,
+                    size => Some(size),
+                };
+                let filepath = filepath.to_string();
 
-        match response.headers().get("content-type") {
-            // If the content-type is text/html, we treat the data on this path as a traversable "directory"
-            Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
-                let text = response
-                    .text()
-                    .await
-                    .with_context(|_| UnableToParseUtf8BodySnafu {
-                        path: path.to_string(),
-                    })?;
-                let file_metadatas = _get_file_metadata_from_html(path.as_str(), text.as_str())?;
-                Ok(LSResult {
-                    files: file_metadatas,
-                    continuation_token: None,
-                })
-            }
-            // All other forms of content-type is treated as a raw file
-            _ => Ok(LSResult {
-                files: vec![FileMetadata {
-                    filepath: path.to_string(),
-                    filetype: FileType::File,
-                    size: response.content_length(),
-                }],
-                continuation_token: None,
-            }),
-        }
+                let filetype = match item.r#type {
+                    ItemType::File => FileType::File,
+                    ItemType::Directory => FileType::Directory,
+                };
+
+                FileMetadata {
+                    filepath,
+                    size,
+                    filetype,
+                }
+            })
+            .collect();
+        Ok(LSResult {
+            files,
+            continuation_token: None,
+        })
     }
 }
 
@@ -488,7 +423,7 @@ mod tests {
     #[test]
     fn test_parse_hf_parts() -> DaftResult<()> {
         let uri = "hf://datasets/wikimedia/wikipedia/20231101.ab/*.parquet";
-        let parts = HFPathParts::try_from_uri(uri)?;
+        let parts = uri.parse::<HFPathParts>()?;
         let expected = HFPathParts {
             bucket: "datasets".to_string(),
             repository: "wikimedia/wikipedia".to_string(),

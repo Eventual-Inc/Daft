@@ -136,7 +136,7 @@ pub struct IOConfig {
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
 ///
 /// Example:
-///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1"))
+///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]

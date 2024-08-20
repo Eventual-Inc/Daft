@@ -447,6 +447,7 @@ class HTTPConfig:
     """
 
     user_agent: str | None
+    bearer_token: str | None
 
 class S3Config:
     """
