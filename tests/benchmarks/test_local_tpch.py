@@ -54,7 +54,7 @@ def gen_tpch(request):
     ), sqlite_path
 
 
-@pytest.fixture(scope="module", params=["parquet"])  # TODO: Enable CSV after improving the CSV reader
+@pytest.fixture(scope="module", params=SOURCE_TYPES)  # TODO: Enable CSV after improving the CSV reader
 def get_df(gen_tpch, request):
     (csv_files_location, parquet_files_location, in_memory_tables, num_parts), _ = gen_tpch
     source_type = request.param
