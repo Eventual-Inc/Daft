@@ -76,6 +76,7 @@ def get_df(gen_tpch, request):
 TPCH_QUESTIONS = list(range(1, 11))
 
 
+@pytest.skipif(daft.context.get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(["native", "python"], TPCH_QUESTIONS))
 def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):

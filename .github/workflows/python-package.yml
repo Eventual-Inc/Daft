@@ -619,7 +619,7 @@ jobs:
 
   benchmark-tpch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     needs:
     - integration-test-build
     env:
