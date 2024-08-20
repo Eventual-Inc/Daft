@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 import pyarrow as pa
 
+from daft.logical.schema import Schema
+
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
@@ -48,10 +50,68 @@ class SQLConnection:
         except Exception as e:
             raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
 
-    def read(self, sql: str) -> pa.Table:
+    def read_schema(self, sql: str, infer_schema_length: int) -> Schema:
+        if self._should_use_connectorx():
+            sql = self.construct_sql_query(sql, limit=0)
+        else:
+            sql = self.construct_sql_query(sql, limit=infer_schema_length)
+        table = self._execute_sql_query(sql)
+        schema = Schema.from_pyarrow_schema(table.schema)
+        return schema
+
+    def read(
+        self,
+        sql: str,
+        projection: list[str] | None = None,
+        limit: int | None = None,
+        predicate: str | None = None,
+        partition_bounds: tuple[str, str] | None = None,
+    ) -> pa.Table:
+        sql = self.construct_sql_query(sql, projection, predicate, limit, partition_bounds)
         return self._execute_sql_query(sql)
 
-    def _execute_sql_query(self, sql: str) -> pa.Table:
+    def construct_sql_query(
+        self,
+        sql: str,
+        projection: list[str] | None = None,
+        predicate: str | None = None,
+        limit: int | None = None,
+        partition_bounds: tuple[str, str] | None = None,
+    ) -> str:
+        import sqlglot
+
+        target_dialect = self.dialect
+        # sqlglot does not support "postgresql" dialect, it only supports "postgres"
+        if target_dialect == "postgresql":
+            target_dialect = "postgres"
+        # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
+        elif target_dialect == "mssql":
+            target_dialect = "tsql"
+
+        if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
+            raise ValueError(
+                f"Unsupported dialect: {target_dialect}, please refer to the documentation for supported dialects."
+            )
+
+        query = sqlglot.subquery(sql, "subquery")
+
+        if projection is not None:
+            query = query.select(*projection)
+        else:
+            query = query.select("*")
+
+        if predicate is not None:
+            query = query.where(predicate)
+
+        if partition_bounds is not None:
+            query = query.where(partition_bounds[0]).where(partition_bounds[1])
+
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.sql(dialect=target_dialect)
+
+    def _should_use_connectorx(self) -> bool:
         # Supported DBs extracted from here https://github.com/sfu-db/connector-x/tree/7b3147436b7e20b96691348143d605e2249d6119?tab=readme-ov-file#sources
         connectorx_supported_dbs = {
             "postgres",
@@ -67,9 +127,12 @@ class SQLConnection:
 
         if isinstance(self.conn, str):
             if self.dialect in connectorx_supported_dbs and self.driver == "":
-                return self._execute_sql_query_with_connectorx(sql)
-            else:
-                return self._execute_sql_query_with_sqlalchemy(sql)
+                return True
+        return False
+
+    def _execute_sql_query(self, sql: str) -> pa.Table:
+        if self._should_use_connectorx():
+            return self._execute_sql_query_with_connectorx(sql)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql)
 

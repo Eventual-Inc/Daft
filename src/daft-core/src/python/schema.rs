@@ -92,6 +92,11 @@ impl PySchema {
     pub fn _truncated_table_string(&self) -> PyResult<String> {
         Ok(self.schema.truncated_table_string())
     }
+
+    pub fn apply_hints(&self, hints: &PySchema) -> PyResult<PySchema> {
+        let new_schema = Arc::new(self.schema.apply_hints(&hints.schema)?);
+        Ok(new_schema.into())
+    }
 }
 
 impl_bincode_py_state_serialization!(PySchema);

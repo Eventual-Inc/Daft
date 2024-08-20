@@ -590,28 +590,33 @@ impl ScanTask {
 
 impl DisplayAs for ScanTask {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        // take first 3 and last 3 if more than 6 sources
+        let condensed_sources = if self.sources.len() <= 6 {
+            self.sources.iter().map(|s| s.display_as(level)).join(", ")
+        } else {
+            let len = self.sources.len();
+            self.sources
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| match i {
+                    0..3 => Some(s.display_as(level)),
+                    3 => Some("...".to_string()),
+                    _ if i >= len - 3 => Some(s.display_as(level)),
+                    _ => None,
+                })
+                .join(", ")
+        };
+
         match level {
-            common_display::DisplayLevel::Compact => format!(
-                "{{{sources}}}",
-                sources = self
-                    .sources
-                    .iter()
-                    .map(|s| s.display_as(common_display::DisplayLevel::Compact))
-                    .join(", ")
-            )
-            .trim_start()
-            .to_string(),
+            common_display::DisplayLevel::Compact => {
+                format!("{{{condensed_sources}}}",).trim_start().to_string()
+            }
             common_display::DisplayLevel::Default => {
                 format!(
                     "ScanTask:
-Sources = [{sources}]
+Sources = [{condensed_sources}]
 Pushdowns = {pushdowns}
 ",
-                    sources = self
-                        .sources
-                        .iter()
-                        .map(|s| s.display_as(common_display::DisplayLevel::Default))
-                        .join(", "),
                     pushdowns = self
                         .pushdowns
                         .display_as(common_display::DisplayLevel::Default)
@@ -914,5 +919,89 @@ impl DisplayAs for Pushdowns {
             }
             _ => self.multiline_display().join("\n"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use common_display::{DisplayAs, DisplayLevel};
+    use common_error::DaftResult;
+    use daft_core::{datatypes::TimeUnit, schema::Schema};
+    use itertools::Itertools;
+
+    use crate::{
+        file_format::{FileFormatConfig, ParquetSourceConfig},
+        storage_config::{NativeStorageConfig, StorageConfig},
+        DataSource, Pushdowns, ScanTask,
+    };
+
+    fn make_scan_task(num_sources: usize) -> ScanTask {
+        let sources = (0..num_sources)
+            .into_iter()
+            .map(|i| DataSource::File {
+                path: format!("test{}", i),
+                chunk_spec: None,
+                size_bytes: None,
+                iceberg_delete_files: None,
+                metadata: None,
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            })
+            .collect_vec();
+
+        let file_format_config = FileFormatConfig::Parquet(ParquetSourceConfig {
+            coerce_int96_timestamp_unit: TimeUnit::Seconds,
+            field_id_mapping: None,
+            row_groups: None,
+        });
+
+        ScanTask::new(
+            sources,
+            Arc::new(file_format_config),
+            Arc::new(Schema::empty()),
+            Arc::new(StorageConfig::Native(Arc::new(
+                NativeStorageConfig::new_internal(false, None),
+            ))),
+            Pushdowns::default(),
+        )
+    }
+
+    #[test]
+    fn test_display_condenses() -> DaftResult<()> {
+        let scan_task = make_scan_task(7);
+        let condensed = scan_task.display_as(DisplayLevel::Compact);
+        assert_eq!(condensed, "{File {test0}, File {test1}, File {test2}, ..., File {test4}, File {test5}, File {test6}}".to_string());
+        Ok(())
+    }
+
+    #[test]
+    fn test_display_no_condense() -> DaftResult<()> {
+        let scan_task = make_scan_task(6);
+        let condensed = scan_task.display_as(DisplayLevel::Compact);
+        assert_eq!(
+            condensed,
+            "{File {test0}, File {test1}, File {test2}, File {test3}, File {test4}, File {test5}}"
+                .to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_display_condenses_default() -> DaftResult<()> {
+        let scan_task = make_scan_task(7);
+        let condensed = scan_task.display_as(DisplayLevel::Default);
+        assert_eq!(condensed, "ScanTask:\nSources = [File {test0}, File {test1}, File {test2}, ..., File {test4}, File {test5}, File {test6}]\nPushdowns = \n".to_string());
+        Ok(())
+    }
+
+    #[test]
+    fn test_display_no_condense_default() -> DaftResult<()> {
+        let scan_task = make_scan_task(6);
+        let condensed = scan_task.display_as(DisplayLevel::Default);
+        assert_eq!(condensed, "ScanTask:\nSources = [File {test0}, File {test1}, File {test2}, File {test3}, File {test4}, File {test5}]\nPushdowns = \n".to_string());
+        Ok(())
     }
 }

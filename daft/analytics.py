@@ -62,7 +62,7 @@ def _build_segment_batch_payload(
     }
 
 
-def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
+def _post_segment_track_endpoint(analytics_client: AnalyticsClient, payload: dict[str, Any]) -> None:
     """Posts a batch of JSON data to Segment"""
     req = urllib.request.Request(
         _SEGMENT_BATCH_ENDPOINT,
@@ -74,7 +74,13 @@ def _post_segment_track_endpoint(payload: dict[str, Any]) -> None:
         },
         data=json.dumps(payload).encode("utf-8"),
     )
-    resp = urllib.request.urlopen(req)
+    try:
+        resp = urllib.request.urlopen(
+            req,
+            timeout=1,
+        )
+    except urllib.error.URLError:
+        analytics_client._is_active = False
     if resp.status != 200:
         raise RuntimeError(f"HTTP request to segment returned status code: {resp.status}")
 
@@ -86,9 +92,10 @@ class AnalyticsClient:
         self,
         daft_version: str,
         daft_build_type: str,
-        publish_payload_function: Callable[[dict[str, Any]], None] = _post_segment_track_endpoint,
+        publish_payload_function: Callable[[AnalyticsClient, dict[str, Any]], None] = _post_segment_track_endpoint,
         buffer_capacity: int = 100,
     ) -> None:
+        self._is_active = True
         self._daft_version = daft_version
         self._daft_build_type = daft_build_type
         self._session_key = _get_session_key()
@@ -100,22 +107,28 @@ class AnalyticsClient:
         self._buffer_capacity = buffer_capacity
         self._buffer: list[AnalyticsEvent] = []
 
+    def _enable_analytics(self) -> None:
+        self._is_active = True
+
     def _append_to_log(self, event_name: str, data: dict[str, Any]) -> None:
-        self._buffer.append(
-            AnalyticsEvent(
-                session_id=self._session_key,
-                event_name=event_name,
-                event_time=datetime.datetime.utcnow(),
-                data=data,
+        if self._is_active:
+            self._buffer.append(
+                AnalyticsEvent(
+                    session_id=self._session_key,
+                    event_name=event_name,
+                    event_time=datetime.datetime.utcnow(),
+                    data=data,
+                )
             )
-        )
-        if len(self._buffer) >= self._buffer_capacity:
-            self._flush()
+            if len(self._buffer) >= self._buffer_capacity:
+                self._flush()
+        else:
+            logger.debug("Analytics is disabled; not sending data to segment")
 
     def _flush(self) -> None:
         try:
             payload = _build_segment_batch_payload(self._buffer, self._daft_version, self._daft_build_type)
-            self._publish(payload)
+            self._publish(self, payload)
         except Exception as e:
             # No-op on failure to avoid crashing the program - TODO: add retries for more robust logging
             logger.debug("Error in analytics publisher thread: %s", e)
