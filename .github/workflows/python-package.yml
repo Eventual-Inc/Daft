@@ -649,7 +649,7 @@ jobs:
     - name: Build Rust Library
       run: |
         source activate
-        maturin develop --profile dev-bench
+        maturin develop --release
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - uses: actions/cache@v4
