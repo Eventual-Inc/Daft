@@ -2,7 +2,10 @@ use std::{num::ParseIntError, ops::Range, str::FromStr, string::FromUtf8Error, s
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{
+    stream::{self, BoxStream},
+    StreamExt, TryStreamExt,
+};
 
 use hyper::header;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
@@ -13,6 +16,7 @@ use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
+    FileFormat,
 };
 use serde::{Deserialize, Serialize};
 
@@ -130,7 +134,7 @@ impl FromStr for HFPathParts {
             let repository = format!("{}/{}", username, repository);
             // {path from root}
             // ^--------------^
-            let path = uri.to_string();
+            let path = uri.to_string().trim_end_matches('/').to_string();
 
             Some(HFPathParts {
                 bucket: bucket.to_string(),
@@ -181,11 +185,21 @@ impl HFPathParts {
             PATH = self.path
         )
     }
+
+    fn get_parquet_api_uri(&self) -> String {
+        // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
+        format!(
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
+            BUCKET = self.bucket,
+            REPOSITORY = self.repository,
+        )
+    }
 }
 
 pub(crate) struct HFSource {
     http_source: HttpSource,
 }
+
 impl From<HttpSource> for HFSource {
     fn from(http_source: HttpSource) -> Self {
         Self { http_source }
@@ -339,13 +353,70 @@ impl ObjectSource for HFSource {
         _page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
-        // const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-        // const DEFAULT_GLOB_PAGE_SIZE: i32 = 1000;
 
-        // let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
-        // let page_size = page_size.or(Some(DEFAULT_GLOB_PAGE_SIZE));
+        // Huggingface has a special API for parquet files
+        // So we'll try to use that API to get the parquet files
+        // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+
+        // We only want to use this api for datasets, not specific files
+        // such as
+        // hf://datasets/user/repo
+        // but not
+        // hf://datasets/user/repo/file.parquet
+        if let Some(FileFormat::Parquet) = file_format {
+            // datatypes for deserialization from Huggingface API
+            #[derive(Serialize, Deserialize, Debug)]
+            #[serde(rename_all = "snake_case")]
+            struct HFParquetAPIDefaultObject {
+                train: Vec<String>,
+            }
+
+            #[derive(Serialize, Deserialize, Debug)]
+            #[serde(rename_all = "snake_case")]
+            struct HFParquetAPIResponse {
+                r#default: HFParquetAPIDefaultObject,
+            }
+
+            let hf_glob_path = glob_path.parse::<HFPathParts>()?;
+            if hf_glob_path.path.is_empty() {
+                let api_path = hf_glob_path.get_parquet_api_uri();
+
+                let response = self
+                    .http_source
+                    .client
+                    .get(api_path.clone())
+                    .send()
+                    .await
+                    .unwrap()
+                    .error_for_status()
+                    .with_context(|_| UnableToOpenFileSnafu {
+                        path: api_path.to_string(),
+                    })?;
+
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_list_requests(1)
+                }
+
+                let body = response.json::<HFParquetAPIResponse>().await.context(
+                    UnableToReadBytesSnafu {
+                        path: api_path.clone(),
+                    },
+                )?;
+
+                let files = body.r#default.train.into_iter().map(|uri| {
+                    Ok(FileMetadata {
+                        filepath: uri,
+                        size: None,
+                        filetype: FileType::File,
+                    })
+                });
+
+                return Ok(stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed());
+            }
+        }
 
         glob(self, glob_path, None, None, limit, io_stats).await
     }

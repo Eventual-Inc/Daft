@@ -6,10 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_table::python::PyTable,
-    pyo3::{
-        exceptions::PyKeyError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-        Python, ToPyObject,
-    },
+    pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyResult, ToPyObject},
 };
 
 /// Metadata for a single file.

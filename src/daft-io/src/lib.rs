@@ -16,8 +16,10 @@ use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 use lazy_static::lazy_static;
+mod file_format;
 #[cfg(feature = "python")]
 pub mod python;
+pub use file_format::FileFormat;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;
@@ -230,11 +232,19 @@ impl IOClient {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
+        file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
         let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
         let files = source
-            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
+            .glob(
+                input.as_str(),
+                fanout_limit,
+                page_size,
+                limit,
+                io_stats,
+                file_format,
+            )
             .await?;
         Ok(files)
     }

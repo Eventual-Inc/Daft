@@ -12,6 +12,7 @@ use tokio::sync::OwnedSemaphorePermit;
 
 use crate::local::{collect_file, LocalFile};
 use crate::stats::IOStatsRef;
+use crate::FileFormat;
 
 pub struct StreamingRetryParams {
     source: Arc<dyn ObjectSource>,
@@ -195,6 +196,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>>;
 
     async fn ls(

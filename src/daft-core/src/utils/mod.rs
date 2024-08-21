@@ -21,25 +21,34 @@ macro_rules! impl_binary_trait_by_reference {
 macro_rules! impl_bincode_py_state_serialization {
     ($ty:ty) => {
         #[cfg(feature = "python")]
-        #[pymethods]
+        #[pyo3::pymethods]
         impl $ty {
-            pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
+            pub fn __reduce__(
+                &self,
+                py: pyo3::Python,
+            ) -> pyo3::PyResult<(pyo3::PyObject, pyo3::PyObject)> {
+                use pyo3::PyTypeInfo;
+
                 Ok((
                     Self::type_object(py)
                         .getattr("_from_serialized")?
                         .to_object(py),
-                    (
-                        PyBytes::new(py, &$crate::utils::bincode::serialize(&self).unwrap())
-                            .to_object(py),
+                    (pyo3::types::PyBytes::new(
+                        py,
+                        &$crate::utils::bincode::serialize(&self).unwrap(),
                     )
+                    .to_object(py),)
                         .to_object(py),
                 ))
             }
 
             #[staticmethod]
-            pub fn _from_serialized(py: Python, serialized: PyObject) -> PyResult<Self> {
+            pub fn _from_serialized(
+                py: pyo3::Python,
+                serialized: pyo3::PyObject,
+            ) -> pyo3::PyResult<Self> {
                 serialized
-                    .extract::<&PyBytes>(py)
+                    .extract::<&pyo3::types::PyBytes>(py)
                     .map(|s| $crate::utils::bincode::deserialize(s.as_bytes()).unwrap())
             }
         }

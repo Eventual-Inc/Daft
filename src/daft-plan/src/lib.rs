@@ -21,7 +21,7 @@ mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 pub use daft_core::join::{JoinStrategy, JoinType};
-use daft_scan::file_format::FileFormat;
+use daft_io::FileFormat;
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
 pub use physical_plan::{PhysicalPlan, PhysicalPlanRef};

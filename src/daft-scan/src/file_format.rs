@@ -1,70 +1,19 @@
-use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{Field, TimeUnit},
     impl_bincode_py_state_serialization,
 };
+use daft_io::FileFormat;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
-use std::{collections::BTreeMap, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_core::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
-        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
-        PyTypeInfo, Python, ToPyObject,
+        pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, Python, ToPyObject,
     },
 };
-
-/// Format of a file, e.g. Parquet, CSV, JSON.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
-pub enum FileFormat {
-    Parquet,
-    Csv,
-    Json,
-    Database,
-    Python,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl FileFormat {
-    fn ext(&self) -> &'static str {
-        match self {
-            Self::Parquet => "parquet",
-            Self::Csv => "csv",
-            Self::Json => "json",
-            Self::Database => "db",
-            Self::Python => "py",
-        }
-    }
-}
-
-impl FromStr for FileFormat {
-    type Err = DaftError;
-
-    fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::*;
-
-        if file_format.trim().eq_ignore_ascii_case("parquet") {
-            Ok(Parquet)
-        } else if file_format.trim().eq_ignore_ascii_case("csv") {
-            Ok(Csv)
-        } else if file_format.trim().eq_ignore_ascii_case("json") {
-            Ok(Json)
-        } else if file_format.trim().eq_ignore_ascii_case("database") {
-            Ok(Database)
-        } else {
-            Err(DaftError::TypeError(format!(
-                "FileFormat {} not supported!",
-                file_format
-            )))
-        }
-    }
-}
-
-impl_bincode_py_state_serialization!(FileFormat);
 
 impl From<&FileFormatConfig> for FileFormat {
     fn from(file_format_config: &FileFormatConfig) -> Self {
@@ -93,6 +42,10 @@ pub enum FileFormatConfig {
 }
 
 impl FileFormatConfig {
+    pub fn file_format(&self) -> FileFormat {
+        self.into()
+    }
+
     pub fn var_name(&self) -> &'static str {
         use FileFormatConfig::*;
 

@@ -1,5 +1,5 @@
 #[cfg(feature = "python")]
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;

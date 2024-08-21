@@ -6,8 +6,7 @@ use pyo3::{
     class::basic::CompareOp,
     exceptions::PyValueError,
     prelude::*,
-    types::{PyBytes, PyDict, PyString},
-    PyTypeInfo,
+    types::{PyDict, PyString},
 };
 use serde::{Deserialize, Serialize};
 

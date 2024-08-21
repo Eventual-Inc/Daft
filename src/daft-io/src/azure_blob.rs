@@ -15,7 +15,7 @@ use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    GetResult,
+    FileFormat, GetResult,
 };
 use common_io_config::AzureConfig;
 
@@ -577,6 +577,7 @@ impl ObjectSource for AzureBlobSource {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

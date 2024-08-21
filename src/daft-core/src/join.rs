@@ -6,10 +6,7 @@ use std::{
 use crate::impl_bincode_py_state_serialization;
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
-use pyo3::{
-    exceptions::PyValueError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-    Python, ToPyObject,
-};
+use pyo3::{exceptions::PyValueError, pyclass, pymethods, PyResult, ToPyObject};
 
 use serde::{Deserialize, Serialize};
 
