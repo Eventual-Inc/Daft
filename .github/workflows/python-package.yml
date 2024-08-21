@@ -661,7 +661,7 @@ jobs:
     - name: Run TPCH benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks/test_local_tpch.py -m benchmark --codspeed -s
+        run: pytest tests/benchmarks/test_local_tpch.py -m benchmark --codspeed
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}

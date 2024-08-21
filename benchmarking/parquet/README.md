@@ -26,13 +26,13 @@ pip install getdaft
 ### Goal 1: Find Parquet features that Daft underperforms on
 
 ```bash
-pytest benchmarking/parquet/ --benchmark-only --benchmark-group-by=group -k daft
+pytest benchmarking/parquet/ -m benchmark --benchmark-group-by=group -k daft
 ```
 
 ### Goal 2: Compare Daft against other frameworks
 
 ```bash
-pytest benchmarking/parquet/ --benchmark-only --benchmark-group-by=param:path
+pytest benchmarking/parquet/ -m benchmark --benchmark-group-by=param:path
 ```
 
 ### Check peak memory usage
@@ -40,5 +40,5 @@ pytest benchmarking/parquet/ --benchmark-only --benchmark-group-by=param:path
 Ensure that you have `pytest-memray` installed.
 
 ```bash
-pytest benchmarking/parquet/ --benchmark-only --memray
+pytest benchmarking/parquet/ -m benchmark --memray
 ```
