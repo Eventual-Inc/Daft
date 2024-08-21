@@ -38,6 +38,7 @@ impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)
     }
+
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
