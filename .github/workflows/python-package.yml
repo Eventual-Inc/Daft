@@ -633,7 +633,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-profile
+        key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
     - uses: actions/setup-python@v5
       with:
