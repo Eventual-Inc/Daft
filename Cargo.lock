@@ -1769,7 +1769,6 @@ dependencies = [
  "bytes",
  "common-error",
  "common-io-config",
- "common-py-serde",
  "daft-core",
  "futures",
  "globset",
