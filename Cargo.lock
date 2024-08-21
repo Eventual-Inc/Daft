@@ -1891,6 +1891,7 @@ dependencies = [
  "arrow2",
  "async-compat",
  "async-stream",
+ "bincode",
  "bytes",
  "common-error",
  "crossbeam-channel",

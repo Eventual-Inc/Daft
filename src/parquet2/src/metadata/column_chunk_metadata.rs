@@ -32,10 +32,11 @@ where
     S: Serializer,
 {
     let mut buf = vec![];
-    let cursor = Cursor::new(&mut buf[..]);
+    let cursor = Cursor::new(&mut buf);
     let mut protocol = TCompactOutputProtocol::new(cursor);
     column_chunk
         .write_to_out_protocol(&mut protocol)
+        .inspect_err(|e| println!("{:?}", e))
         .map_err(S::Error::custom)?;
     serializer.serialize_bytes(&buf)
 }
