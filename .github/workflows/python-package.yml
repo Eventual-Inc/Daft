@@ -333,7 +333,7 @@ jobs:
     - name: Run IO integration tests
       run: |
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
-        pytest tests/io -m 'integration'
+        pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
