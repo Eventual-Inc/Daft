@@ -939,7 +939,6 @@ mod test {
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
-            .into_iter()
             .map(|i| DataSource::File {
                 path: format!("test{}", i),
                 chunk_spec: None,

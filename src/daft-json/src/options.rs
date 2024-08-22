@@ -7,8 +7,7 @@ use {
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     pyo3::{
-        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-        Python, ToPyObject,
+        pyclass, pyclass::CompareOp, pymethods, PyObject, PyResult, PyTypeInfo, Python, ToPyObject,
     },
 };
 

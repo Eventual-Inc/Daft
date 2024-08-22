@@ -51,7 +51,7 @@ pub mod pylib {
     use daft_table::python::PyTable;
     use daft_table::Table;
     use pyo3::prelude::*;
-    use pyo3::types::PyBytes;
+
     use pyo3::types::PyIterator;
     use pyo3::types::PyList;
     use pyo3::PyTypeInfo;

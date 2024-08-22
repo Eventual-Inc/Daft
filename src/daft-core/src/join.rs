@@ -7,8 +7,8 @@ use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{
-    exceptions::PyValueError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-    Python, ToPyObject,
+    exceptions::PyValueError, pyclass, pymethods, PyObject, PyResult, PyTypeInfo, Python,
+    ToPyObject,
 };
 
 use serde::{Deserialize, Serialize};

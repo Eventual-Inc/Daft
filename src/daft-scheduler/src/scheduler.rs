@@ -16,8 +16,7 @@ use {
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
     pyo3::{
-        pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
-        Python, ToPyObject,
+        pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo, Python, ToPyObject,
     },
     std::collections::HashMap,
 };

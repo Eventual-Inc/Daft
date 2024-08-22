@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_io_config::python,
-    pyo3::{
-        pyclass, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo, Python,
-        ToPyObject,
-    },
+    pyo3::{pyclass, pymethods, IntoPy, PyObject, PyResult, PyTypeInfo, Python, ToPyObject},
     std::hash::{Hash, Hasher},
 };
 

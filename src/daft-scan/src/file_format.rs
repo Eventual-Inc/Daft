@@ -11,8 +11,8 @@ use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_core::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
-        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
-        PyTypeInfo, Python, ToPyObject,
+        pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, PyTypeInfo, Python,
+        ToPyObject,
     },
 };
 

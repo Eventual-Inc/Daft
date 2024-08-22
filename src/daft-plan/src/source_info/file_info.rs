@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use {
     daft_table::python::PyTable,
     pyo3::{
-        exceptions::PyKeyError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-        Python, ToPyObject,
+        exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, PyTypeInfo, Python,
+        ToPyObject,
     },
 };
 
