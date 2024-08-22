@@ -1290,6 +1290,7 @@ dependencies = [
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "pyo3",
  "serde",
 ]
@@ -1299,6 +1300,7 @@ name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
@@ -1640,6 +1642,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "daft-minhash",
  "daft-sketch",
  "fastrand 2.1.0",
@@ -1677,6 +1680,7 @@ dependencies = [
  "async-compression",
  "async-stream",
  "common-error",
+ "common-py-serde",
  "csv-async",
  "daft-compression",
  "daft-core",
@@ -1769,6 +1773,7 @@ dependencies = [
  "bytes",
  "common-error",
  "common-io-config",
+ "common-py-serde",
  "daft-core",
  "futures",
  "globset",
@@ -1801,6 +1806,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "common-error",
+ "common-py-serde",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -1893,6 +1899,7 @@ dependencies = [
  "arrow2",
  "async-compat",
  "async-stream",
+ "bincode",
  "bytes",
  "common-error",
  "crossbeam-channel",
@@ -1992,6 +1999,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-io-config",
+ "common-py-serde",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3671,6 +3679,7 @@ dependencies = [
  "criterion",
  "flate2",
  "futures",
+ "indexmap 2.3.0",
  "lz4",
  "lz4_flex",
  "parquet-format-safe",

@@ -15,6 +15,7 @@ azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], defaul
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
 globset = "0.4"
@@ -46,7 +47,13 @@ md5 = "0.7.0"
 tempfile = "3.8.1"
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-io-config/python", "daft-core/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-io-config/python",
+  "common-py-serde/python",
+  "daft-core/python"
+]
 
 [package]
 edition = {workspace = true}

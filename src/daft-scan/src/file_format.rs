@@ -1,18 +1,16 @@
-use daft_core::{
-    datatypes::{Field, TimeUnit},
-    impl_bincode_py_state_serialization,
-};
+use daft_core::datatypes::{Field, TimeUnit};
 use daft_io::FileFormat;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::BTreeMap, sync::Arc};
+
+use common_py_serde::impl_bincode_py_state_serialization;
+
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_core::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{
-        pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, Python, ToPyObject,
-    },
+    pyo3::{pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, Python},
 };
 
 impl From<&FileFormatConfig> for FileFormat {

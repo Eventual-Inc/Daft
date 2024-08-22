@@ -24,6 +24,7 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 fastrand = "2.1.0"
@@ -62,7 +63,7 @@ features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
 
 [features]
-python = ["dep:pyo3", "dep:numpy", "common-error/python"]
+python = ["dep:pyo3", "dep:numpy", "common-error/python", "common-py-serde/python"]
 
 [package]
 edition = {workspace = true}

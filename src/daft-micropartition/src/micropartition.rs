@@ -1196,7 +1196,7 @@ pub(crate) fn read_parquet_into_micropartition(
 
     let any_stats_avail = metadata
         .iter()
-        .flat_map(|m| m.row_groups.iter())
+        .flat_map(|m| m.row_groups.values())
         .flat_map(|rg| rg.columns().iter())
         .any(|col| col.statistics().is_some());
     let stats = if any_stats_avail {
@@ -1205,7 +1205,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .zip(schemas.iter())
             .flat_map(|(fm, schema)| {
                 fm.row_groups
-                    .iter()
+                    .values()
                     .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
@@ -1237,7 +1237,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .map(|(fm, rg)| match rg {
                     Some(rg) => rg
                         .iter()
-                        .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
+                        .map(|rg_idx| fm.row_groups.get(&(*rg_idx as usize)).unwrap().num_rows())
                         .sum::<usize>(),
                     None => fm.num_rows,
                 })
@@ -1251,7 +1251,7 @@ pub(crate) fn read_parquet_into_micropartition(
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {
-                std::iter::Sum::sum(m.row_groups.iter().map(|m| m.total_byte_size() as u64))
+                std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
             })
             .sum();
 

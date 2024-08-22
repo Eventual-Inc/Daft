@@ -384,9 +384,6 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 msg: "Could not convert expanded path to string".to_string(),
             });
     }
-    // if input.starts_with("hf://") {
-    //     return Ok((SourceType::HF, Cow::Borrowed(input)));
-    // }
 
     let url = match url::Url::parse(input) {
         Ok(url) => Ok(url),

@@ -40,11 +40,11 @@ impl PartialEq for PythonTablesFactoryArgs {
 
 pub mod pylib {
     use common_error::DaftResult;
+    use common_py_serde::impl_bincode_py_state_serialization;
     use daft_core::python::field::PyField;
     use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
 
-    use daft_core::impl_bincode_py_state_serialization;
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
     use daft_stats::TableStatistics;
@@ -54,7 +54,6 @@ pub mod pylib {
 
     use pyo3::types::PyIterator;
     use pyo3::types::PyList;
-
     use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
@@ -120,7 +119,6 @@ pub mod pylib {
             storage_config: PyStorageConfig,
             infer_schema: bool,
             schema: Option<PySchema>,
-            is_ray_runner: Option<bool>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
@@ -129,7 +127,6 @@ pub mod pylib {
                     storage_config.into(),
                     infer_schema,
                     schema.map(|s| s.schema),
-                    is_ray_runner.unwrap_or(false),
                 )?);
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),

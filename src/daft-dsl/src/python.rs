@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use common_error::DaftError;
+use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_core::python::datatype::PyTimeUnit;
@@ -14,7 +15,6 @@ use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
     datatypes::{ImageFormat, ImageMode},
-    impl_bincode_py_state_serialization,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 

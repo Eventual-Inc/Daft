@@ -1,5 +1,6 @@
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
 
 use serde::{Deserialize, Serialize};
@@ -15,11 +16,10 @@ use {
     daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
-    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python, ToPyObject},
+    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
 
-use daft_core::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_plan::InMemoryInfo;
 use std::sync::Arc;
