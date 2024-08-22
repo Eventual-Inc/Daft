@@ -69,21 +69,17 @@ pub mod pylib {
             .getattr("getLogger")?
             .call0()?
             .getattr("level")?
-            .extract::<i32>()?;
+            .extract::<usize>()
+            .unwrap_or(0);
 
         // https://docs.python.org/3/library/logging.html#logging-levels
-        let level_filter = if python_log_level <= 0 {
-            LevelFilter::Off
-        } else if python_log_level <= 5 {
-            LevelFilter::Trace
-        } else if python_log_level <= 10 {
-            LevelFilter::Debug
-        } else if python_log_level <= 20 {
-            LevelFilter::Info
-        } else if python_log_level <= 30 {
-            LevelFilter::Warn
-        } else {
-            LevelFilter::Error
+        let level_filter = match python_log_level {
+            0 => LevelFilter::Off,
+            1..=5 => LevelFilter::Trace,
+            6..=10 => LevelFilter::Debug,
+            11..=20 => LevelFilter::Info,
+            21..=30 => LevelFilter::Warn,
+            _ => LevelFilter::Error,
         };
 
         let logger = pyo3_log::Logger::default().filter(level_filter);
