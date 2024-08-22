@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
+  workflow_dispatch:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
@@ -329,8 +332,8 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
-        pytest tests/integration/io -m 'integration' --durations=50
-        pytest tests/io -m 'integration'
+        pytest tests/integration/io -m 'integration and not benchmark' --durations=50
+        pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
@@ -615,6 +618,69 @@ jobs:
     - name: Some tests failed
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
+
+  benchmark-local-tpch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-benchmark-build
+        cache-all-crates: 'true'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12' # Codspeed requires Python 3.12
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: Build Rust Library
+      run: |
+        source activate
+        maturin develop --profile dev-bench
+      env:
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
+    - uses: actions/cache@v4
+      env:
+        cache-name: cache-tpch-data
+      with:
+        path: data/tpch-dbgen
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+    - name: Run TPCH benchmarks
+      uses: CodSpeedHQ/action@v3
+      with:
+        run: pytest tests/benchmarks/test_local_tpch.py -m benchmark --codspeed
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.26.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Benchmark Local TPCH <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
