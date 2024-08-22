@@ -36,7 +36,11 @@ def test_sql_create_dataframe_ok(test_db, pdf) -> None:
 def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
     row_size_bytes = daft.from_pandas(pdf).schema().estimate_row_size_bytes()
     num_rows_per_partition = len(pdf) / num_partitions
-    set_execution_config(read_sql_partition_size_bytes=math.ceil(row_size_bytes * num_rows_per_partition))
+    set_execution_config(
+        read_sql_partition_size_bytes=math.ceil(row_size_bytes * num_rows_per_partition),
+        scan_tasks_min_size_bytes=0,
+        scan_tasks_max_size_bytes=0,
+    )
 
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id")
     assert df.num_partitions() == num_partitions
@@ -49,6 +53,7 @@ def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
 def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
     test_db, num_partitions, partition_col, pdf
 ) -> None:
+    set_execution_config(scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=0)
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
@@ -62,6 +67,7 @@ def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
 def test_sql_partitioned_read_with_non_uniformly_distributed_column(test_db, num_partitions, pdf) -> None:
+    set_execution_config(scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=0)
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
