@@ -33,6 +33,9 @@ Not only can you read entire datasets, but you can also read individual files fr
     # or a csv file
     df = daft.read_csv("hf://username/dataset_name/file_name.csv")
 
+    # or a glob pattern
+    df = daft.read_parquet("hf://username/dataset_name/**/*.parquet")
+
 
 Authorization
 -------------
