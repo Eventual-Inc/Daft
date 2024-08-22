@@ -213,6 +213,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
         after = after.sort(col("_index"))
         if is_arrow:
             if has_dict:
+                # Compare using to_pydict if there is a dictionary column because Daft does not support dictionary columns.
                 assert before.to_pydict() == after.to_pydict()
             else:
                 assert before == after.to_arrow()
@@ -228,6 +229,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             before_limit_50 = before.take(list(range(min(before.num_rows, 50))))
             before_limit_2050 = before.take(list(range(min(before.num_rows, 2050))))
             if has_dict:
+                # Compare using to_pydict if there is a dictionary column because Daft does not support dictionary columns.
                 assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
                 assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
             else:
