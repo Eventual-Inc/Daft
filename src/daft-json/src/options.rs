@@ -115,7 +115,6 @@ impl JsonConvertOptions {
         Ok(format!("{:?}", self))
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(JsonConvertOptions);
 
 /// Options for parsing JSON files.
@@ -158,7 +157,6 @@ impl JsonParseOptions {
         Ok(format!("{:?}", self))
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(JsonParseOptions);
 
 /// Options for reading JSON files.
@@ -225,5 +223,4 @@ impl JsonReadOptions {
         Ok(format!("{:?}", self))
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(JsonReadOptions);

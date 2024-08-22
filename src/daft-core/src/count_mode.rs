@@ -37,7 +37,6 @@ impl CountMode {
     }
 }
 
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(CountMode);
 
 impl CountMode {

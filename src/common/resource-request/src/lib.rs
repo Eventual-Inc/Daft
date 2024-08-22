@@ -221,7 +221,6 @@ impl ResourceRequest {
         Ok(format!("{:?}", self))
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(ResourceRequest);
 
 #[cfg(feature = "python")]

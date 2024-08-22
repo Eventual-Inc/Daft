@@ -38,7 +38,6 @@ impl JoinType {
         Ok(self.to_string())
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(JoinType);
 
 impl JoinType {
@@ -103,7 +102,6 @@ impl JoinStrategy {
         Ok(self.to_string())
     }
 }
-#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(JoinStrategy);
 
 impl JoinStrategy {
