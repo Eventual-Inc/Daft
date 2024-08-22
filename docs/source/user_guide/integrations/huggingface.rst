@@ -40,19 +40,6 @@ Not only can you read entire datasets, but you can also read individual files fr
     df = daft.read_csv("hf://username/dataset_name/file_name.csv")
 
 
-We also support reading non parquet datasets using Huggingface's parquet conversion.
-
-.. code:: python
-
-    import daft
-    from daft.io import IOConfig, HTTPConfig
-
-    io_config = IoConfig(http=HTTPConfig(bearer_token="your_token"))
-
-    # read the entire dataset
-    df = daft.read_parquet("hf://username/my_public_dataset")
-
-
 this will not work with standard tier private datasets
 
 .. code:: python
