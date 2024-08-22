@@ -24,7 +24,7 @@ pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageRe
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use stream::read_metadata as read_metadata_async;
 
-use crate::metadata::{ColumnChunkMetaData, RowGroupMetaData};
+use crate::metadata::{ColumnChunkMetaData, RowGroupList, RowGroupMetaData};
 use crate::{error::Result, metadata::FileMetaData};
 
 pub use indexes::{read_columns_indexes, read_pages_locations};
@@ -36,14 +36,15 @@ pub fn filter_row_groups(
     predicate: &dyn Fn(&RowGroupMetaData, usize) -> bool,
 ) -> FileMetaData {
     let mut filtered_row_groups = Vec::<RowGroupMetaData>::new();
-    for (i, row_group_metadata) in metadata.row_groups.iter().enumerate() {
-        if predicate(row_group_metadata, i) {
+    let mut num_rows = 0;
+    for (i, row_group_metadata) in metadata.row_groups.iter() {
+        if predicate(row_group_metadata, *i) {
             filtered_row_groups.push(row_group_metadata.clone());
+            num_rows += row_group_metadata.num_rows();
         }
     }
-    let mut metadata = metadata.clone();
-    metadata.row_groups = filtered_row_groups;
-    metadata
+    let filtered_row_groups = RowGroupList::from_iter(filtered_row_groups.into_iter().enumerate());
+    metadata.clone_with_row_groups(num_rows, filtered_row_groups)
 }
 
 /// Returns a new [`PageReader`] by seeking `reader` to the beginning of `column_chunk`.

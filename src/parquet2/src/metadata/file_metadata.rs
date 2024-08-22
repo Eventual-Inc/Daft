@@ -1,6 +1,7 @@
 use crate::{error::Error, metadata::get_sort_order};
 
 use super::{column_order::ColumnOrder, schema_descriptor::SchemaDescriptor, RowGroupMetaData};
+use indexmap::IndexMap;
 use parquet_format_safe::ColumnOrder as TColumnOrder;
 use serde::{Deserialize, Serialize};
 
@@ -68,6 +69,9 @@ mod key_value_metadata_serde {
         }
     }
 }
+
+pub type RowGroupList = IndexMap<usize, RowGroupMetaData>;
+
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
@@ -87,7 +91,7 @@ pub struct FileMetaData {
     /// ```
     pub created_by: Option<String>,
     /// The row groups of this file
-    pub row_groups: Vec<RowGroupMetaData>,
+    pub row_groups: RowGroupList,
     /// key_value_metadata of this file.
     #[serde(with = "key_value_metadata_serde")]
     pub key_value_metadata: Option<Vec<KeyValue>>,
@@ -127,11 +131,13 @@ impl FileMetaData {
     pub fn try_from_thrift(metadata: parquet_format_safe::FileMetaData) -> Result<Self, Error> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 
-        let row_groups = metadata
+        let row_groups_list = metadata
             .row_groups
             .into_iter()
             .map(|rg| RowGroupMetaData::try_from_thrift(&schema_descr, rg))
-            .collect::<Result<_, Error>>()?;
+            .collect::<Result<Vec<RowGroupMetaData>, Error>>()?;
+
+        let row_groups = RowGroupList::from_iter(row_groups_list.into_iter().enumerate());
 
         let column_orders = metadata
             .column_orders
@@ -156,7 +162,7 @@ impl FileMetaData {
             num_rows: self.num_rows as i64,
             row_groups: self
                 .row_groups
-                .into_iter()
+                .into_values()
                 .map(|v| v.into_thrift())
                 .collect(),
             key_value_metadata: self.key_value_metadata,
@@ -164,6 +170,19 @@ impl FileMetaData {
             column_orders: None, // todo
             encryption_algorithm: None,
             footer_signing_key_metadata: None,
+        }
+    }
+
+    /// Clone this metadata and return a new one with the given row groups.
+    pub fn clone_with_row_groups(&self, num_rows: usize, row_groups: RowGroupList) -> Self {
+        Self {
+            version: self.version,
+            num_rows,
+            created_by: self.created_by.clone(),
+            row_groups,
+            key_value_metadata: self.key_value_metadata.clone(),
+            schema_descr: self.schema_descr.clone(),
+            column_orders: self.column_orders.clone(),
         }
     }
 }

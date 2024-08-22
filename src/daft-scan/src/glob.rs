@@ -3,7 +3,7 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
@@ -19,7 +19,6 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
-    is_ray_runner: bool,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -130,7 +129,6 @@ impl GlobScanOperator {
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
-        is_ray_runner: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -244,7 +242,6 @@ impl GlobScanOperator {
             file_format_config,
             schema,
             storage_config,
-            is_ray_runner,
         })
     }
 }
@@ -299,7 +296,6 @@ impl ScanOperator for GlobScanOperator {
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
-        let is_ray_runner = self.is_ray_runner;
 
         let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
             row_groups: Some(row_groups),
@@ -319,36 +315,6 @@ impl ScanOperator for GlobScanOperator {
                 ..
             } = f?;
 
-            let path_clone = path.clone();
-            let io_client_clone = io_client.clone();
-            let field_id_mapping = match file_format_config.as_ref() {
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    field_id_mapping, ..
-                }) => Some(field_id_mapping.clone()),
-                _ => None,
-            };
-
-            // We skip reading parquet metadata if we are running in Ray
-            // because the metadata can be quite large
-            let parquet_metadata = if !is_ray_runner {
-                if let Some(field_id_mapping) = field_id_mapping {
-                    get_runtime(true).unwrap().block_on(async {
-                        daft_parquet::read::read_parquet_metadata(
-                            &path_clone,
-                            io_client_clone,
-                            Some(io_stats.clone()),
-                            field_id_mapping.clone(),
-                        )
-                        .await
-                        .ok()
-                        .map(Arc::new)
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
             let row_group = row_groups
                 .as_ref()
                 .and_then(|rgs| rgs.get(idx).cloned())
@@ -363,7 +329,7 @@ impl ScanOperator for GlobScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
-                    parquet_metadata,
+                    parquet_metadata: None,
                 }],
                 file_format_config.clone(),
                 schema.clone(),
