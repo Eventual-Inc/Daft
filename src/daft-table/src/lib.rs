@@ -433,31 +433,29 @@ impl Table {
     ) -> DaftResult<Series> {
         use daft_dsl::AggExpr::*;
         match agg_expr {
-            Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
-            Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
-            ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
+            &Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
+            Sum(expr) => self.eval_expression(expr)?.sum(groups),
+            ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
             &ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
-                let series = self
-                    .eval_expression(expr)?
+                self.eval_expression(expr)?
                     .approx_sketch(groups)?
-                    .sketch_percentile(&percentiles, force_list_output)?;
-                Ok(series)
+                    .sketch_percentile(&percentiles, force_list_output)
             }
             CountDistinct(..) => todo!(),
-            MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
-            Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
-            Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
-            Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
-            AnyValue(expr, ignore_nulls) => {
-                Series::any_value(&self.eval_expression(expr)?, groups, *ignore_nulls)
+            MergeSketch(expr) => self.eval_expression(expr)?.merge_sketch(groups),
+            Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            Min(expr) => self.eval_expression(expr)?.min(groups),
+            Max(expr) => self.eval_expression(expr)?.max(groups),
+            &AnyValue(ref expr, ignore_nulls) => {
+                self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
-            List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
-            Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
+            List(expr) => self.eval_expression(expr)?.agg_list(groups),
+            Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
             MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
