@@ -1,4 +1,4 @@
-use crate::array::ops::DaftApproxSketchAggable;
+use crate::array::ops::{DaftApproxSketchAggable, DaftCountDistinctAggable};
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -18,6 +18,18 @@ impl Series {
                 None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
             }
         })
+    }
+
+    pub fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let s = self.as_physical()?;
+        Ok(with_match_physical_daft_types!(s.data_type(), |$T| {
+            match groups {
+                Some(groups) => s.downcast::<<$T as DaftDataType>::ArrayType>()?.grouped_count_distinct(groups)?.into_series(),
+                None => {
+                    s.downcast::<<$T as DaftDataType>::ArrayType>()?.count_distinct()?.into_series()
+                },
+            }
+        }))
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
@@ -76,8 +88,8 @@ impl Series {
         let casted = self.cast(&DataType::Float64)?;
         let float_array = casted.f64()?;
         let series = match groups {
-            Some(groups) => DaftApproxSketchAggable::grouped_approx_sketch(&float_array, groups),
-            None => DaftApproxSketchAggable::approx_sketch(&float_array),
+            Some(groups) => float_array.grouped_approx_sketch(groups),
+            None => float_array.approx_sketch(),
         }?
         .into_series();
         Ok(series)

@@ -16,6 +16,7 @@ mod comparison;
 mod concat;
 mod concat_agg;
 mod count;
+mod count_distinct;
 mod exp;
 mod filter;
 mod float;
@@ -168,6 +169,12 @@ pub trait DaftApproxSketchAggable {
     type Output;
     fn approx_sketch(&self) -> Self::Output;
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftCountDistinctAggable {
+    type Output;
+    fn count_distinct(&self) -> Self::Output;
+    fn grouped_count_distinct(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMergeSketchAggable {

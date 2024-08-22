@@ -431,12 +431,11 @@ impl Table {
         agg_expr: &AggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
-        use daft_dsl::AggExpr::*;
         match agg_expr {
-            &Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
-            Sum(expr) => self.eval_expression(expr)?.sum(groups),
-            ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
-            &ApproxPercentile(ApproxPercentileParams {
+            &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
+            AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
+            AggExpr::ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
+            &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
                 force_list_output,
@@ -446,19 +445,17 @@ impl Table {
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
-            CountDistinct(..) => todo!(),
-            MergeSketch(expr) => self.eval_expression(expr)?.merge_sketch(groups),
-            Mean(expr) => self.eval_expression(expr)?.mean(groups),
-            Min(expr) => self.eval_expression(expr)?.min(groups),
-            Max(expr) => self.eval_expression(expr)?.max(groups),
-            &AnyValue(ref expr, ignore_nulls) => {
+            AggExpr::CountDistinct(expr) => self.eval_expression(expr)?.count_distinct(groups),
+            AggExpr::MergeSketch(expr) => self.eval_expression(expr)?.merge_sketch(groups),
+            AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
+            AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
+            &AggExpr::AnyValue(ref expr, ignore_nulls) => {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
-            List(expr) => self.eval_expression(expr)?.agg_list(groups),
-            Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
-            MapGroups { .. } => Err(DaftError::ValueError(
-                "MapGroups not supported via aggregation, use map_groups instead".to_string(),
-            )),
+            AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
+            AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
+            AggExpr::MapGroups { .. } => unreachable!(),
         }
     }
 
@@ -759,13 +756,33 @@ impl<'a> IntoIterator for &'a Table {
 
 #[cfg(test)]
 mod test {
-
     use crate::Table;
     use common_error::DaftResult;
-    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
+    use daft_core::datatypes::{DataType, Float64Array, Int64Array, UInt64Array};
     use daft_core::schema::Schema;
     use daft_core::series::IntoSeries;
-    use daft_dsl::col;
+    use daft_core::{CountMode, Series};
+    use daft_dsl::{col, ExprRef};
+
+    struct TestData {
+        table: Table,
+        expr: ExprRef,
+        expected: Series,
+    }
+
+    fn run_tests(tests: Vec<TestData>) -> DaftResult<()> {
+        for TestData {
+            table,
+            expr,
+            expected,
+        } in tests
+        {
+            let actual = table.eval_expression(&expr)?;
+            assert_eq!(expected, actual);
+        }
+        Ok(())
+    }
+
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
@@ -777,6 +794,8 @@ mod test {
         let table = Table::from_nonempty_columns(vec![a, b])?;
         let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
+        let comfy_table = result.to_comfy_table();
+        println!("{}", comfy_table);
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
@@ -784,6 +803,72 @@ mod test {
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
+
+        Ok(())
+    }
+
+    fn simple_table(data: Vec<i64>) -> DaftResult<Table> {
+        let column = Int64Array::from(("a", data)).into_series();
+        let table = Table::from_nonempty_columns(vec![column])?;
+        Ok(table)
+    }
+
+    #[test]
+    fn test_count() -> DaftResult<()> {
+        run_tests(vec![
+            TestData {
+                table: simple_table(vec![])?,
+                expr: col("a").count(CountMode::All),
+                expected: UInt64Array::from(("a", vec![0])).into_series(),
+            },
+            TestData {
+                table: simple_table(vec![1, 2, 3])?,
+                expr: col("a").count(CountMode::All),
+                expected: UInt64Array::from(("a", vec![3])).into_series(),
+            },
+            TestData {
+                table: simple_table(vec![1, 2, 3])?,
+                expr: col("a").sum().count(CountMode::All),
+                expected: UInt64Array::from(("a", vec![1])).into_series(),
+            },
+        ])?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_count_distinct() -> DaftResult<()> {
+        // let tests = [
+        //     (
+        //         {
+        //             let a = Int64Array::from(("a", vec![])).into_series();
+        //             Table::from_nonempty_columns(vec![a])?
+        //         },
+        //         col("a").count(CountMode::All),
+        //         UInt64Array::from(("a", vec![0])).into_series(),
+        //     ),
+        //     (
+        //         {
+        //             let a = Int64Array::from(("a", vec![1, 1, 2, 2, 3])).into_series();
+        //             Table::from_nonempty_columns(vec![a])?
+        //         },
+        //         col("a").count(CountMode::All),
+        //         UInt64Array::from(("a", vec![5])).into_series(),
+        //     ),
+        //     (
+        //         {
+        //             let a = Int64Array::from(("a", vec![1, 1, 2, 2, 3])).into_series();
+        //             Table::from_nonempty_columns(vec![a])?
+        //         },
+        //         col("a").sum().count(CountMode::All),
+        //         UInt64Array::from(("a", vec![1])).into_series(),
+        //     ),
+        // ];
+
+        // for (table, expr, expected) in tests {
+        //     let actual = table.eval_expression(&expr)?;
+        //     assert_eq!(actual, expected);
+        // }
 
         Ok(())
     }
