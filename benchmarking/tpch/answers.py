@@ -106,12 +106,12 @@ def q4(get_df: GetDFFunc) -> DataFrame:
         (col("O_ORDERDATE") >= datetime.date(1993, 7, 1)) & (col("O_ORDERDATE") < datetime.date(1993, 10, 1))
     )
 
-    lineitems = lineitems.where(col("L_COMMITDATE") < col("L_RECEIPTDATE"))
+    lineitems = lineitems.where(col("L_COMMITDATE") < col("L_RECEIPTDATE")).select(col("L_ORDERKEY")).distinct()
 
     daft_df = (
-        orders.join(lineitems, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"), how="semi")
+        lineitems.join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .groupby(col("O_ORDERPRIORITY"))
-        .agg(col("O_ORDERKEY").count().alias("order_count"))
+        .agg(col("L_ORDERKEY").count().alias("order_count"))
         .sort(col("O_ORDERPRIORITY"))
     )
     return daft_df
@@ -660,8 +660,11 @@ def q22(get_df: GetDFFunc) -> DataFrame:
         res_1.where(col("C_ACCTBAL") > 0).agg(col("C_ACCTBAL").mean().alias("avg_acctbal")).with_column("lit", lit(1))
     )
 
+    res_3 = orders.select("O_CUSTKEY")
+
     daft_df = (
-        res_1.join(orders, left_on="C_CUSTKEY", right_on="O_CUSTKEY", how="anti")
+        res_1.join(res_3, left_on="C_CUSTKEY", right_on="O_CUSTKEY", how="left")
+        .where(col("O_CUSTKEY").is_null())
         .with_column("lit", lit(1))
         .join(res_2, on="lit")
         .where(col("C_ACCTBAL") > col("avg_acctbal"))
