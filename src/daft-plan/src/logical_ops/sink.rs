@@ -39,7 +39,7 @@ impl Sink {
 
                 Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
                     root_dir: root_dir.clone(),
-                    file_format: file_format.clone(),
+                    file_format: *file_format,
                     partition_cols: resolved_partition_cols,
                     compression: compression.clone(),
                     io_config: io_config.clone(),

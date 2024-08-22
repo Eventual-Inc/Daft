@@ -23,6 +23,7 @@ use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
+use crate::FileFormat;
 use crate::GetResult;
 use common_io_config::GCSConfig;
 
@@ -436,6 +437,7 @@ impl ObjectSource for GCSSource {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

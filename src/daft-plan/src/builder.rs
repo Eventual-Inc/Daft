@@ -22,7 +22,8 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 use daft_dsl::{col, ExprRef};
-use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_io::FileFormat;
+use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
 use {

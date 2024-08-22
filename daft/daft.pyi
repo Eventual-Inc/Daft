@@ -448,7 +448,9 @@ class HTTPConfig:
     I/O configuration for accessing HTTP systems
     """
 
-    user_agent: str | None
+    bearer_token: str | None
+
+    def __init__(self, bearer_token: str | None = None): ...
 
 class S3Config:
     """
