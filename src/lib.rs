@@ -82,9 +82,12 @@ pub mod pylib {
             _ => LevelFilter::Error,
         };
 
-        let logger = pyo3_log::Logger::default().filter(level_filter);
-        let handle = logger.install().unwrap();
-        LOG_RESET_HANDLE.get_or_init(|| handle);
+        let install_handle = || {
+            let logger = pyo3_log::Logger::default().filter(level_filter);
+            logger.install().unwrap()
+        };
+
+        LOG_RESET_HANDLE.get_or_init(install_handle).reset();
         Ok(())
     }
 
