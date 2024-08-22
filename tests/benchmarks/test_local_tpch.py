@@ -22,7 +22,7 @@ from tests.integration.conftest import *  # noqa: F403
 SCALE_FACTOR = 0.2
 ENGINES = ["native"] if os.getenv("CI") else ["native", "python"]
 NUM_PARTS = [1] if os.getenv("CI") else [1, 2]
-SOURCE_TYPES = ["in-memory"] if os.getenv("CI") else ["parquet"]
+SOURCE_TYPES = ["in-memory"] if os.getenv("CI") else ["parquet", "in-memory"]
 
 
 @pytest.fixture(scope="session", params=NUM_PARTS)
