@@ -1,4 +1,5 @@
 use common_hashable_float_wrapper::FloatWrapper;
+use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyModule, PyResult, Python};
 use std::hash::{Hash, Hasher};
@@ -219,6 +220,10 @@ impl ResourceRequest {
         Ok(format!("{:?}", self))
     }
 }
+
+
+use pyo3::PyObject;
+impl_bincode_py_state_serialization!(ResourceRequest);
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {

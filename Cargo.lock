@@ -1290,6 +1290,7 @@ dependencies = [
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "pyo3",
  "serde",
 ]
@@ -1299,6 +1300,7 @@ name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
