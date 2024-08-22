@@ -1,11 +1,11 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::{Field, TimeUnit},
-    impl_bincode_py_state_serialization,
-};
+use daft_core::datatypes::{Field, TimeUnit};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
+
+use common_py_serde::impl_bincode_py_state_serialization;
+
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},

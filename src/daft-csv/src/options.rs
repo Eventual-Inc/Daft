@@ -1,4 +1,5 @@
-use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
+use common_py_serde::impl_bincode_py_state_serialization;
+use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -148,7 +149,7 @@ impl CsvConvertOptions {
         Ok(format!("{:?}", self))
     }
 }
-
+#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(CsvConvertOptions);
 
 /// Options for parsing CSV files.
@@ -308,6 +309,7 @@ pub fn char_to_byte(c: Option<char>) -> Result<Option<u8>, super::Error> {
     }
 }
 
+#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(CsvParseOptions);
 
 /// Options for reading CSV files.
@@ -374,5 +376,5 @@ impl CsvReadOptions {
         Ok(format!("{:?}", self))
     }
 }
-
+#[cfg(feature = "python")]
 impl_bincode_py_state_serialization!(CsvReadOptions);

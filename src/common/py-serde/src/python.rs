@@ -1,10 +1,11 @@
-use pyo3::{Python, ToPyObject};
-
+#[cfg(feature = "python")]
 pub use pyo3::PyObject;
-
+#[cfg(feature = "python")]
+use pyo3::{Python, ToPyObject};
 
 use serde::{de::Error as DeError, de::Visitor, ser::Error as SerError, Deserializer, Serializer};
 use std::fmt;
+#[cfg(feature = "python")]
 
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
@@ -19,8 +20,10 @@ where
     })?;
     s.serialize_bytes(bytes.as_slice())
 }
+#[cfg(feature = "python")]
 
 struct PyObjectVisitor;
+#[cfg(feature = "python")]
 
 impl<'de> Visitor<'de> for PyObjectVisitor {
     type Value = PyObject;
@@ -62,8 +65,6 @@ where
     d.deserialize_bytes(PyObjectVisitor)
 }
 
-
-
 #[macro_export]
 macro_rules! impl_bincode_py_state_serialization {
     ($ty:ty) => {
@@ -71,17 +72,14 @@ macro_rules! impl_bincode_py_state_serialization {
         #[pymethods]
         impl $ty {
             pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
+                use pyo3::types::PyBytes;
                 use pyo3::PyTypeInfo;
                 use pyo3::ToPyObject;
-                use pyo3::types::PyBytes;
                 Ok((
                     Self::type_object(py)
                         .getattr("_from_serialized")?
                         .to_object(py),
-                    (
-                        PyBytes::new(py, &$crate::bincode::serialize(&self).unwrap())
-                            .to_object(py),
-                    )
+                    (PyBytes::new(py, &$crate::bincode::serialize(&self).unwrap()).to_object(py),)
                         .to_object(py),
                 ))
             }

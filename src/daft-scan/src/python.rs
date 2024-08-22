@@ -40,11 +40,11 @@ impl PartialEq for PythonTablesFactoryArgs {
 
 pub mod pylib {
     use common_error::DaftResult;
+    use common_py_serde::impl_bincode_py_state_serialization;
     use daft_core::python::field::PyField;
     use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
 
-    use daft_core::impl_bincode_py_state_serialization;
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
     use daft_stats::TableStatistics;
