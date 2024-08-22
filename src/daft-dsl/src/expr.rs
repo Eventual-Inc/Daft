@@ -68,19 +68,13 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
-pub struct CountDistinctParams {
-    pub child: ExprRef,
-    pub approximate: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
     ApproxSketch(ExprRef),
     ApproxPercentile(ApproxPercentileParams),
-    CountDistinct(CountDistinctParams),
+    CountDistinct(ExprRef),
     MergeSketch(ExprRef),
     Mean(ExprRef),
     Min(ExprRef),
@@ -110,7 +104,7 @@ impl AggExpr {
             | Sum(expr)
             | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | CountDistinct(CountDistinctParams { child: expr, .. })
+            | CountDistinct(expr)
             | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
@@ -148,15 +142,9 @@ impl AggExpr {
                     percentiles,
                 ))
             }
-            CountDistinct(CountDistinctParams {
-                child: expr,
-                approximate,
-            }) => {
+            CountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!(
-                    "{}.local_count_distinct(approximate={})",
-                    child_id, approximate,
-                ))
+                FieldID::new(format!("{}.local_count_distinct()", child_id))
             }
             MergeSketch(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -199,7 +187,7 @@ impl AggExpr {
             | Sum(expr)
             | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | CountDistinct(CountDistinctParams { child: expr, .. })
+            | CountDistinct(expr)
             | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
@@ -241,12 +229,7 @@ impl AggExpr {
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
             }),
-            &CountDistinct(CountDistinctParams { approximate, .. }) => {
-                CountDistinct(CountDistinctParams {
-                    child: children[0].clone(),
-                    approximate,
-                })
-            }
+            CountDistinct(_) => CountDistinct(children[0].clone()),
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
         }
@@ -305,7 +288,7 @@ impl AggExpr {
                 })?;
                 Ok(Field::new(field.name, dtype))
             }
-            CountDistinct(CountDistinctParams { child: expr, .. }) => {
+            CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 let dtype = field
                     .dtype
@@ -360,10 +343,7 @@ impl AggExpr {
         use AggExpr::*;
         match name {
             "count" => Ok(Count(child, CountMode::Valid)),
-            "count_distinct" => Ok(CountDistinct(CountDistinctParams {
-                child,
-                approximate: true,
-            })),
+            "count_distinct" => Ok(CountDistinct(child)),
             "sum" => Ok(Sum(child)),
             "mean" => Ok(Mean(child)),
             "min" => Ok(Min(child)),
@@ -436,12 +416,8 @@ impl Expr {
         .into()
     }
 
-    pub fn count_distinct(self: ExprRef, approximate: bool) -> ExprRef {
-        Expr::Agg(AggExpr::CountDistinct(CountDistinctParams {
-            child: self,
-            approximate,
-        }))
-        .into()
+    pub fn count_distinct(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::CountDistinct(self)).into()
     }
 
     pub fn sketch_percentile(
@@ -1055,11 +1031,10 @@ impl Display for AggExpr {
                 f,
                 "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
             ),
-            CountDistinct(CountDistinctParams { child, approximate }) => write!(
+            CountDistinct(child) => write!(
                 f,
-                "count_distinct({}, approximate={})",
+                "count_distinct({})",
                 child,
-                approximate,
             ),
             MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),

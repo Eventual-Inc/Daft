@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{
-    optimization, resolve_exprs, AggExpr, ApproxPercentileParams, CountDistinctParams, Expr,
-    ExprRef,
-};
+use daft_dsl::{optimization, resolve_exprs, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -407,14 +404,10 @@ fn replace_column_with_semantic_id_aggexpr(
                 },
                 |_| e.clone(),
             ),
-        AggExpr::CountDistinct(CountDistinctParams {
-            ref child,
-            approximate,
-        }) => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-            .map_yes_no(
-                |child| AggExpr::CountDistinct(CountDistinctParams { child, approximate }),
-                |_| e.clone(),
-            ),
+        AggExpr::CountDistinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::CountDistinct, |_| e.clone())
+        }
         AggExpr::MergeSketch(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::MergeSketch, |_| e.clone())
