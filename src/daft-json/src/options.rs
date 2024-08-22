@@ -1,14 +1,12 @@
-use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
+use common_py_serde::impl_bincode_py_state_serialization;
+use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::{
-        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-        Python, ToPyObject,
-    },
+    pyo3::{pyclass, pyclass::CompareOp, pymethods, PyObject, PyResult, Python},
 };
 
 /// Options for converting JSON data to Daft data.
@@ -117,7 +115,6 @@ impl JsonConvertOptions {
         Ok(format!("{:?}", self))
     }
 }
-
 impl_bincode_py_state_serialization!(JsonConvertOptions);
 
 /// Options for parsing JSON files.
@@ -160,7 +157,6 @@ impl JsonParseOptions {
         Ok(format!("{:?}", self))
     }
 }
-
 impl_bincode_py_state_serialization!(JsonParseOptions);
 
 /// Options for reading JSON files.
@@ -227,5 +223,4 @@ impl JsonReadOptions {
         Ok(format!("{:?}", self))
     }
 }
-
 impl_bincode_py_state_serialization!(JsonReadOptions);

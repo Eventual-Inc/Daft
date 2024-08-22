@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use pyo3::PyTypeInfo;
 
 use serde::{Deserialize, Serialize};
 
@@ -10,8 +8,8 @@ use super::datatype::PyDataType;
 use super::field::PyField;
 use crate::datatypes;
 use crate::ffi::field_to_py;
-use crate::impl_bincode_py_state_serialization;
 use crate::schema;
+use common_py_serde::impl_bincode_py_state_serialization;
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]

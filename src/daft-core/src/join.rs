@@ -3,13 +3,10 @@ use std::{
     str::FromStr,
 };
 
-use crate::impl_bincode_py_state_serialization;
 use common_error::{DaftError, DaftResult};
+use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
-use pyo3::{
-    exceptions::PyValueError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-    Python, ToPyObject,
-};
+use pyo3::{exceptions::PyValueError, pyclass, pymethods, PyObject, PyResult, Python};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +38,6 @@ impl JoinType {
         Ok(self.to_string())
     }
 }
-
 impl_bincode_py_state_serialization!(JoinType);
 
 impl JoinType {
@@ -106,7 +102,6 @@ impl JoinStrategy {
         Ok(self.to_string())
     }
 }
-
 impl_bincode_py_state_serialization!(JoinStrategy);
 
 impl JoinStrategy {

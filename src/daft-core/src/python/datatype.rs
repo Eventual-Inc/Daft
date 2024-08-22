@@ -1,13 +1,14 @@
 use crate::{
     datatypes::{DataType, Field, ImageMode, TimeUnit},
-    ffi, impl_bincode_py_state_serialization,
+    ffi,
 };
+
+use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{
     class::basic::CompareOp,
     exceptions::PyValueError,
     prelude::*,
-    types::{PyBytes, PyDict, PyString},
-    PyTypeInfo,
+    types::{PyDict, PyString},
 };
 use serde::{Deserialize, Serialize};
 

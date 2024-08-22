@@ -1,4 +1,5 @@
 [dependencies]
+bincode = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
