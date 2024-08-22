@@ -762,6 +762,14 @@ class Expression:
         expr = self._expr.approx_percentiles(percentiles)
         return Expression._from_pyexpr(expr)
 
+    def count_distinct(self) -> Expression:
+        """
+        todo!()
+        """
+
+        expr = self._expr.count_distinct()
+        return Expression._from_pyexpr(expr)
+
     def mean(self) -> Expression:
         """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
