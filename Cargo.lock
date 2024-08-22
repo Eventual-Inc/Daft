@@ -2009,11 +2009,11 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-plan",
+ "once_cell",
  "pyo3",
  "rstest",
  "snafu",
  "sqlparser",
- "strum 0.26.3",
 ]
 
 [[package]]
