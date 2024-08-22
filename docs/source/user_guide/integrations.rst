@@ -11,3 +11,4 @@ Integrations
     integrations/microsoft-azure
     integrations/aws
     integrations/sql
+    integrations/huggingface

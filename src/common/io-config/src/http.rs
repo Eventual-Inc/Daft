@@ -22,8 +22,22 @@ impl Default for HTTPConfig {
 }
 
 impl HTTPConfig {
+    pub fn new<S: Into<ObfuscatedString>>(bearer_token: Option<S>) -> Self {
+        HTTPConfig {
+            bearer_token: bearer_token.map(|t| t.into()),
+            ..Default::default()
+        }
+    }
+}
+
+impl HTTPConfig {
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("user_agent = {}", self.user_agent)]
+        let mut v = vec![format!("user_agent = {}", self.user_agent)];
+        if let Some(bearer_token) = &self.bearer_token {
+            v.push(format!("bearer_token = {}", bearer_token));
+        }
+
+        v
     }
 }
 

@@ -8,7 +8,10 @@ use futures::{
 };
 
 use hyper::header;
-use reqwest::header::{CONTENT_LENGTH, RANGE};
+use reqwest::{
+    header::{CONTENT_LENGTH, RANGE},
+    Client,
+};
 use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
@@ -62,6 +65,17 @@ enum Error {
     UnableToCreateHeader { source: header::InvalidHeaderValue },
     #[snafu(display("Invalid path: {}", path))]
     InvalidPath { path: String },
+
+    #[snafu(display(r#"
+Implicit Parquet conversion not supported for private datasets.
+You can use glob patterns, or request a specific file to access your dataset instead.
+Example:
+    instead of `hf://datasets/username/dataset_name`, use `hf://datasets/username/dataset_name/file_name.parquet`
+    or `hf://datasets/username/dataset_name/*.parquet
+"#))]
+    PrivateDataset,
+    #[snafu(display("Unauthorized access to dataset, please check your credentials."))]
+    Unauthorized,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,18 +101,18 @@ struct HFPathParts {
     revision: String,
     path: String,
 }
+
 impl FromStr for HFPathParts {
-    type Err = super::Error;
+    type Err = Error;
     /// Extracts path components from a hugging face path:
     /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
-    fn from_str(uri: &str) -> super::Result<Self, Self::Err> {
+    fn from_str(uri: &str) -> Result<Self, Self::Err> {
         // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
         if !uri.starts_with("hf://") {
             return Err(Error::InvalidPath {
                 path: uri.to_string(),
-            }
-            .into());
+            });
         }
         (|| {
             let uri = &uri[5..];
@@ -143,11 +157,8 @@ impl FromStr for HFPathParts {
                 path,
             })
         })()
-        .ok_or_else(|| {
-            Error::InvalidPath {
-                path: uri.to_string(),
-            }
-            .into()
+        .ok_or_else(|| Error::InvalidPath {
+            path: uri.to_string(),
         })
     }
 }
@@ -186,11 +197,9 @@ impl HFPathParts {
         )
     }
 
-    fn get_parquet_api_uri(&self) -> String {
-        // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
+    fn get_datasets_server_uri(&self) -> String {
         format!(
-            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
-            BUCKET = self.bucket,
+            "https://datasets-server.huggingface.co/parquet?dataset={REPOSITORY}",
             REPOSITORY = self.repository,
         )
     }
@@ -237,10 +246,11 @@ impl HFSource {
             header::HeaderValue::from_str(config.user_agent.as_str())
                 .context(UnableToCreateHeaderSnafu)?,
         );
+
         if let Some(token) = &config.bearer_token {
             default_headers.append(
                 "Authorization",
-                header::HeaderValue::from_str(&format!("Bearer {}", token))
+                header::HeaderValue::from_str(&format!("Bearer {}", token.as_string()))
                     .context(UnableToCreateHeaderSnafu)?,
             );
         }
@@ -281,9 +291,18 @@ impl ObjectSource for HFSource {
             .send()
             .await
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
-        let response = response
-            .error_for_status()
-            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        let response = response.error_for_status().map_err(|e| {
+            if let Some(401) = e.status().map(|s| s.as_u16()) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: uri.clone(),
+                    source: e,
+                }
+            }
+        })?;
+
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1)
         }
@@ -323,9 +342,16 @@ impl ObjectSource for HFSource {
             .send()
             .await
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
-        let response = response
-            .error_for_status()
-            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+        let response = response.error_for_status().map_err(|e| {
+            if let Some(401) = e.status().map(|s| s.as_u16()) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: uri.clone(),
+                    source: e,
+                }
+            }
+        })?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1)
@@ -367,54 +393,15 @@ impl ObjectSource for HFSource {
         // but not
         // hf://datasets/user/repo/file.parquet
         if let Some(FileFormat::Parquet) = file_format {
-            // datatypes for deserialization from Huggingface API
-            #[derive(Serialize, Deserialize, Debug)]
-            #[serde(rename_all = "snake_case")]
-            struct HFParquetAPIDefaultObject {
-                train: Vec<String>,
-            }
-
-            #[derive(Serialize, Deserialize, Debug)]
-            #[serde(rename_all = "snake_case")]
-            struct HFParquetAPIResponse {
-                r#default: HFParquetAPIDefaultObject,
-            }
-
-            let hf_glob_path = glob_path.parse::<HFPathParts>()?;
-            if hf_glob_path.path.is_empty() {
-                let api_path = hf_glob_path.get_parquet_api_uri();
-
-                let response = self
-                    .http_source
-                    .client
-                    .get(api_path.clone())
-                    .send()
-                    .await
-                    .unwrap()
-                    .error_for_status()
-                    .with_context(|_| UnableToOpenFileSnafu {
-                        path: api_path.to_string(),
-                    })?;
-
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_list_requests(1)
+            let res =
+                try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
+            match res {
+                Ok(Some(stream)) => return Ok(stream),
+                Err(e) => return Err(e.into()),
+                Ok(None) => {
+                    // INTENTIONALLY EMPTY
+                    // If we can't determine if the dataset is private, we'll fall back to the default globbing
                 }
-
-                let body = response.json::<HFParquetAPIResponse>().await.context(
-                    UnableToReadBytesSnafu {
-                        path: api_path.clone(),
-                    },
-                )?;
-
-                let files = body.r#default.train.into_iter().map(|uri| {
-                    Ok(FileMetadata {
-                        filepath: uri,
-                        size: None,
-                        filetype: FileType::File,
-                    })
-                });
-
-                return Ok(stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed());
             }
         }
 
@@ -442,11 +429,19 @@ impl ObjectSource for HFSource {
             .await
             .context(UnableToConnectSnafu::<String> {
                 path: api_uri.clone(),
-            })?
-            .error_for_status()
-            .with_context(|_| UnableToOpenFileSnafu {
-                path: api_uri.clone(),
             })?;
+
+        let response = response.error_for_status().map_err(|e| {
+            if let Some(401) = e.status().map(|s| s.as_u16()) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: api_uri.clone(),
+                    source: e,
+                }
+            }
+        })?;
+
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1)
         }
@@ -492,6 +487,111 @@ impl ObjectSource for HFSource {
     }
 }
 
+async fn try_parquet_api(
+    glob_path: &str,
+    limit: Option<usize>,
+    io_stats: Option<IOStatsRef>,
+    client: &Client,
+) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
+    let hf_glob_path = glob_path.parse::<HFPathParts>()?;
+    if hf_glob_path.path.is_empty() {
+        let api_path = hf_glob_path.get_datasets_server_uri();
+
+        let response = client
+            .get(api_path.clone())
+            .send()
+            .await
+            .with_context(|_| UnableToOpenFileSnafu {
+                path: api_path.to_string(),
+            })?;
+
+        match response.status().as_u16() {
+            400 => {
+                if let Some(error_message) = response
+                    .headers()
+                    .get("x-error-message")
+                    .and_then(|v| v.to_str().ok())
+                {
+                    const PRIVATE_DATASET_ERROR: &str =
+                        "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
+                    if error_message.ends_with(PRIVATE_DATASET_ERROR) {
+                        return Err(Error::PrivateDataset);
+                    }
+                }
+            }
+            401 => return Err(Error::Unauthorized),
+            501 => {
+                if let Some(error_code) = response
+                    .headers()
+                    .get("x-error-code")
+                    .and_then(|v| v.to_str().ok())
+                {
+                    if error_code == "NotSupportedPrivateRepositoryError" {
+                        return Err(Error::PrivateDataset);
+                    }
+                }
+            }
+            _ => {}
+        };
+
+        let response = response
+            .error_for_status()
+            .with_context(|_| UnableToOpenFileSnafu {
+                path: api_path.to_string(),
+            })?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_list_requests(1)
+        }
+
+        #[derive(Deserialize)]
+        struct ParquetFile {
+            #[serde(rename = "dataset")]
+            _dataset: String,
+            #[serde(rename = "config")]
+            _config: String,
+            #[serde(rename = "split")]
+            _split: String,
+            url: String,
+            #[serde(rename = "filename")]
+            _filename: String,
+            size: u64,
+        }
+
+        #[derive(Deserialize)]
+        struct ParquetData {
+            parquet_files: Vec<ParquetFile>,
+            #[serde(rename = "pending")]
+            _pending: Vec<String>,
+            #[serde(rename = "failed")]
+            _failed: Vec<String>,
+            #[serde(rename = "partial")]
+            _partial: bool,
+        }
+
+        let body = response
+            .json::<ParquetData>()
+            .await
+            .context(UnableToReadBytesSnafu {
+                path: api_path.clone(),
+            })?;
+
+        let files = body.parquet_files.into_iter().map(|file| {
+            Ok(FileMetadata {
+                filepath: file.url,
+                size: Some(file.size),
+                filetype: FileType::File,
+            })
+        });
+
+        return Ok(Some(
+            stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed(),
+        ));
+    } else {
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
@@ -501,7 +601,7 @@ mod tests {
     #[test]
     fn test_parse_hf_parts() -> DaftResult<()> {
         let uri = "hf://datasets/wikimedia/wikipedia/20231101.ab/*.parquet";
-        let parts = uri.parse::<HFPathParts>()?;
+        let parts = uri.parse::<HFPathParts>().unwrap();
         let expected = HFPathParts {
             bucket: "datasets".to_string(),
             repository: "wikimedia/wikipedia".to_string(),
@@ -517,7 +617,7 @@ mod tests {
     #[test]
     fn test_parse_hf_parts_with_revision() -> DaftResult<()> {
         let uri = "hf://datasets/wikimedia/wikipedia@dev/20231101.ab/*.parquet";
-        let parts = uri.parse::<HFPathParts>()?;
+        let parts = uri.parse::<HFPathParts>().unwrap();
         let expected = HFPathParts {
             bucket: "datasets".to_string(),
             repository: "wikimedia/wikipedia".to_string(),
@@ -533,7 +633,7 @@ mod tests {
     #[test]
     fn test_parse_hf_parts_with_exact_path() -> DaftResult<()> {
         let uri = "hf://datasets/user/repo@dev/config/my_file.parquet";
-        let parts = uri.parse::<HFPathParts>()?;
+        let parts = uri.parse::<HFPathParts>().unwrap();
         let expected = HFPathParts {
             bucket: "datasets".to_string(),
             repository: "user/repo".to_string(),
@@ -549,7 +649,7 @@ mod tests {
     #[test]
     fn test_parse_hf_parts_with_wildcard() -> DaftResult<()> {
         let uri = "hf://datasets/wikimedia/wikipedia/**/*.parquet";
-        let parts = uri.parse::<HFPathParts>()?;
+        let parts = uri.parse::<HFPathParts>().unwrap();
         let expected = HFPathParts {
             bucket: "datasets".to_string(),
             repository: "wikimedia/wikipedia".to_string(),
