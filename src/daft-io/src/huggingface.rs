@@ -1,4 +1,7 @@
-use std::{num::ParseIntError, ops::Range, str::FromStr, string::FromUtf8Error, sync::Arc};
+use std::{
+    collections::HashMap, num::ParseIntError, ops::Range, str::FromStr, string::FromUtf8Error,
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
@@ -101,7 +104,6 @@ struct HFPathParts {
     revision: String,
     path: String,
 }
-
 impl FromStr for HFPathParts {
     type Err = Error;
     /// Extracts path components from a hugging face path:
@@ -197,9 +199,10 @@ impl HFPathParts {
         )
     }
 
-    fn get_datasets_server_uri(&self) -> String {
+    fn get_parquet_api_uri(&self) -> String {
         format!(
-            "https://datasets-server.huggingface.co/parquet?dataset={REPOSITORY}",
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
+            BUCKET = self.bucket,
             REPOSITORY = self.repository,
         )
     }
@@ -495,7 +498,7 @@ async fn try_parquet_api(
 ) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
     let hf_glob_path = glob_path.parse::<HFPathParts>()?;
     if hf_glob_path.path.is_empty() {
-        let api_path = hf_glob_path.get_datasets_server_uri();
+        let api_path = hf_glob_path.get_parquet_api_uri();
 
         let response = client
             .get(api_path.clone())
@@ -504,36 +507,21 @@ async fn try_parquet_api(
             .with_context(|_| UnableToOpenFileSnafu {
                 path: api_path.to_string(),
             })?;
-
-        match response.status().as_u16() {
-            400 => {
-                if let Some(error_message) = response
-                    .headers()
-                    .get("x-error-message")
-                    .and_then(|v| v.to_str().ok())
-                {
-                    const PRIVATE_DATASET_ERROR: &str =
-                        "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
-                    if error_message.ends_with(PRIVATE_DATASET_ERROR) {
-                        return Err(Error::PrivateDataset);
-                    }
+        if response.status() == 400 {
+            if let Some(error_message) = response
+                .headers()
+                .get("x-error-message")
+                .and_then(|v| v.to_str().ok())
+            {
+                const PRIVATE_DATASET_ERROR: &str =
+                    "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
+                if error_message.ends_with(PRIVATE_DATASET_ERROR) {
+                    return Err(Error::PrivateDataset);
                 }
+            } else {
+                return Err(Error::Unauthorized);
             }
-            401 => return Err(Error::Unauthorized),
-            501 => {
-                if let Some(error_code) = response
-                    .headers()
-                    .get("x-error-code")
-                    .and_then(|v| v.to_str().ok())
-                {
-                    if error_code == "NotSupportedPrivateRepositoryError" {
-                        return Err(Error::PrivateDataset);
-                    }
-                }
-            }
-            _ => {}
-        };
-
+        }
         let response = response
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu {
@@ -544,45 +532,26 @@ async fn try_parquet_api(
             is.mark_list_requests(1)
         }
 
-        #[derive(Deserialize)]
-        struct ParquetFile {
-            #[serde(rename = "dataset")]
-            _dataset: String,
-            #[serde(rename = "config")]
-            _config: String,
-            #[serde(rename = "split")]
-            _split: String,
-            url: String,
-            #[serde(rename = "filename")]
-            _filename: String,
-            size: u64,
-        }
-
-        #[derive(Deserialize)]
-        struct ParquetData {
-            parquet_files: Vec<ParquetFile>,
-            #[serde(rename = "pending")]
-            _pending: Vec<String>,
-            #[serde(rename = "failed")]
-            _failed: Vec<String>,
-            #[serde(rename = "partial")]
-            _partial: bool,
-        }
-
+        // {<dataset_name>: {<split_name>: [<uri>, ...]}}
+        type DatasetResponse = HashMap<String, HashMap<String, Vec<String>>>;
         let body = response
-            .json::<ParquetData>()
+            .json::<DatasetResponse>()
             .await
             .context(UnableToReadBytesSnafu {
                 path: api_path.clone(),
             })?;
 
-        let files = body.parquet_files.into_iter().map(|file| {
-            Ok(FileMetadata {
-                filepath: file.url,
-                size: Some(file.size),
-                filetype: FileType::File,
-            })
-        });
+        let files = body
+            .into_values()
+            .flat_map(|splits| splits.into_values())
+            .flatten()
+            .map(|uri| {
+                Ok(FileMetadata {
+                    filepath: uri,
+                    size: None,
+                    filetype: FileType::File,
+                })
+            });
 
         return Ok(Some(
             stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed(),
