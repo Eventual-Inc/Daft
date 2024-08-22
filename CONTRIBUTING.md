@@ -52,7 +52,7 @@ To use a remote Ray cluster, run the following steps on the same operating syste
 
 Benchmark tests are located in `tests/benchmarks`. If you would like to run benchmarks, make sure to first do `make build-release` instead of `make build` in order to compile an optimized build of Daft.
 
-1. `pytest tests/benchmarks/[test_file.py] --benchmark-only`: Run all benchmarks in a file
-2. `pytest tests/benchmarks/[test_file.py] -k [test_name] --benchmark-only`: Run a specific benchmark in a file
+1. `pytest tests/benchmarks/[test_file.py] -m benchmark`: Run all benchmarks in a file
+2. `pytest tests/benchmarks/[test_file.py] -k [test_name] -m benchmark`: Run a specific benchmark in a file
 
 More information about writing and using benchmarks can be found on the [pytest-benchmark docs](https://pytest-benchmark.readthedocs.io/en/latest/).
