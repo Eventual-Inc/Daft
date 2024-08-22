@@ -9,7 +9,6 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyString},
-    PyTypeInfo,
 };
 use serde::{Deserialize, Serialize};
 

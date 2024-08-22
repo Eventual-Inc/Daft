@@ -54,8 +54,6 @@ pub mod pylib {
 
     use pyo3::types::PyIterator;
     use pyo3::types::PyList;
-    use pyo3::PyTypeInfo;
-
     use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;

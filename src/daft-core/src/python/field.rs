@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, PyTypeInfo};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::datatype::PyDataType;

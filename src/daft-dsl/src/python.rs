@@ -23,7 +23,6 @@ use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
-    PyTypeInfo,
 };
 
 #[pyfunction]
