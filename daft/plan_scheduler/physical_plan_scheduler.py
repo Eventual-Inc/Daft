@@ -7,7 +7,6 @@ from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.daft import (
     PyDaftExecutionConfig,
 )
-from daft.dataframe.display import make_display_options
 from daft.execution import physical_plan
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
@@ -38,8 +37,14 @@ class PhysicalPlanScheduler:
         """
         Pretty prints the current underlying physical plan.
         """
-        display_opts = make_display_options(simple, format)
-        return self._scheduler.display_as(display_opts)
+        from daft.dataframe.display import MermaidOptions
+
+        if format == "ascii":
+            return self._scheduler.repr_ascii(simple)
+        elif format == "mermaid":
+            return self._scheduler.repr_mermaid(MermaidOptions(simple))
+        else:
+            raise ValueError(f"Unknown format: {format}")
 
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)

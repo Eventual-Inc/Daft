@@ -113,6 +113,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf7d0a018de4f6aa429b9d33d69edf69072b1c5b1cb8d3e4a5f7ef898fc3eb76"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
+
+[[package]]
 name = "arrow-array"
 version = "51.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1284,6 +1290,7 @@ dependencies = [
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "pyo3",
  "serde",
 ]
@@ -1293,6 +1300,7 @@ name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
@@ -1634,6 +1642,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "daft-minhash",
  "daft-sketch",
  "fastrand 2.1.0",
@@ -1671,6 +1680,7 @@ dependencies = [
  "async-compression",
  "async-stream",
  "common-error",
+ "common-py-serde",
  "csv-async",
  "daft-compression",
  "daft-core",
@@ -1705,6 +1715,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
@@ -1717,7 +1728,6 @@ dependencies = [
  "log",
  "pyo3",
  "serde",
- "serde_json",
  "typetag",
 ]
 
@@ -1793,6 +1803,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "common-error",
+ "common-py-serde",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -1822,6 +1833,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "async-stream",
  "async-trait",
+ "common-display",
  "common-error",
  "common-tracing",
  "daft-core",
@@ -1838,6 +1850,8 @@ dependencies = [
  "daft-table",
  "futures",
  "lazy_static",
+ "log",
+ "num-format",
  "pyo3",
  "snafu",
  "tokio",
@@ -1882,6 +1896,7 @@ dependencies = [
  "arrow2",
  "async-compat",
  "async-stream",
+ "bincode",
  "bytes",
  "common-error",
  "crossbeam-channel",
@@ -1980,6 +1995,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-io-config",
+ "common-py-serde",
  "daft-core",
  "daft-dsl",
  "daft-plan",
@@ -3413,6 +3429,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-format"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a652d9771a63711fd3c3deb670acfbe5c30a4072e664d7a3bf5a9e1056ac72c3"
+dependencies = [
+ "arrayvec",
+ "itoa",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3648,6 +3674,7 @@ dependencies = [
  "criterion",
  "flate2",
  "futures",
+ "indexmap 2.3.0",
  "lz4",
  "lz4_flex",
  "parquet-format-safe",

@@ -1,9 +1,9 @@
-use pyo3::{prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::datatype::PyDataType;
 use crate::datatypes;
-use crate::impl_bincode_py_state_serialization;
+use common_py_serde::impl_bincode_py_state_serialization;
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -21,11 +21,14 @@ from daft.io.common import get_tabular_files_scan
 def read_parquet(
     path: Union[str, List[str]],
     row_groups: Optional[List[List[int]]] = None,
-    schema_hints: Optional[Dict[str, DataType]] = None,
+    infer_schema: bool = True,
+    schema: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
+    schema_hints: Optional[Dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
+    _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -39,8 +42,8 @@ def read_parquet(
     Args:
         path (str): Path to Parquet file (allows for wildcards)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
-        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option
-            will override the specified columns on the inferred schema with the specified DataTypes
+        infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
+        schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
@@ -55,6 +58,11 @@ def read_parquet(
 
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of Parquet filepaths")
+
+    if schema_hints is not None:
+        raise ValueError(
+            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
+        )
 
     is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
@@ -72,7 +80,7 @@ def read_parquet(
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
     file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups)
+        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
     )
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
@@ -81,10 +89,9 @@ def read_parquet(
 
     builder = get_tabular_files_scan(
         path=path,
-        infer_schema=True,
-        schema=schema_hints,
+        infer_schema=infer_schema,
+        schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
-        is_ray_runner=is_ray_runner,
     )
     return DataFrame(builder)

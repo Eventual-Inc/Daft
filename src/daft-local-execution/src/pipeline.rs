@@ -14,11 +14,11 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -26,23 +26,39 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
+use snafu::ResultExt;
 
 use crate::channel::MultiSender;
 
 #[async_trait]
-pub trait PipelineNode: Sync + Send {
+pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    fn name(&self) -> &'static str;
     async fn start(
         &mut self,
         destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()>;
+    ) -> crate::Result<()>;
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
+}
+
+pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
+    let mut output = String::new();
+    let mut visitor = MermaidDisplayVisitor::new(
+        &mut output,
+        common_display::DisplayLevel::Default,
+        true,
+        Default::default(),
+    );
+    visitor.fmt(root.as_tree_display()).unwrap();
+    output
 }
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
-) -> DaftResult<Box<dyn PipelineNode>> {
+) -> crate::Result<Box<dyn PipelineNode>> {
     use crate::sources::scan_task::ScanTaskSource;
     use daft_physical_plan::PhysicalScan;
     let out: Box<dyn PipelineNode> = match physical_plan {
@@ -183,7 +199,10 @@ pub fn physical_plan_to_pipeline(
                 *join_type,
                 left_schema,
                 right_schema,
-            )?;
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             HashJoinNode::new(sink, left_node, right_node).boxed()
         }
         _ => {

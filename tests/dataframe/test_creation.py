@@ -982,7 +982,7 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_parquet_provided_schema(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -991,7 +991,8 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
 
         df = daft.read_parquet(
             fname,
-            schema_hints={
+            infer_schema=False,
+            schema={
                 "sepal_length": DataType.float64(),
                 "sepal_width": DataType.float64(),
                 "petal_length": DataType.float64(),
@@ -1006,7 +1007,7 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_parquet_schema_hints_partial(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_parquet_partial_schema(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -1015,7 +1016,8 @@ def test_create_dataframe_parquet_schema_hints_partial(valid_data: list[dict[str
 
         df = daft.read_parquet(
             fname,
-            schema_hints={
+            infer_schema=True,
+            schema={
                 "sepal_length": DataType.float64(),
                 "sepal_width": DataType.float64(),
             },
@@ -1027,7 +1029,7 @@ def test_create_dataframe_parquet_schema_hints_partial(valid_data: list[dict[str
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_parquet_schema_hints_override_types(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_parquet_schema_override_types(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -1036,7 +1038,8 @@ def test_create_dataframe_parquet_schema_hints_override_types(valid_data: list[d
 
         df = daft.read_parquet(
             fname,
-            schema_hints={
+            infer_schema=True,
+            schema={
                 "sepal_length": DataType.string(),  # Override the inferred float64 type to string
             },
         )
@@ -1059,7 +1062,8 @@ def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: li
 
         df = daft.read_parquet(
             fname,
-            schema_hints={
+            infer_schema=True,
+            schema={
                 "foo": DataType.string(),  # Random column name that is not in the table
             },
         )

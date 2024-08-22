@@ -42,9 +42,7 @@ impl BlockingSink for SortSink {
         }
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
-    fn name(&self) -> &'static str {
-        "Sort"
-    }
+
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if let SortState::Building(parts) = &mut self.state {
@@ -60,5 +58,8 @@ impl BlockingSink for SortSink {
         } else {
             panic!("SortSink should be in Building state");
         }
+    }
+    fn name(&self) -> &'static str {
+        "SortResult"
     }
 }

@@ -130,6 +130,7 @@ fn materialize_scan_task(
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
+                    chunk_size,
                     ..
                 }) => {
                     let inference_options =
@@ -183,6 +184,7 @@ fn materialize_scan_task(
                         field_id_mapping.clone(),
                         metadatas,
                         Some(delete_map),
+                        *chunk_size,
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -598,6 +600,7 @@ impl MicroPartition {
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     field_id_mapping,
+                    chunk_size,
                     ..
                 }),
                 StorageConfig::Native(cfg),
@@ -649,6 +652,7 @@ impl MicroPartition {
                     Some(schema.clone()),
                     field_id_mapping.clone(),
                     parquet_metadata,
+                    *chunk_size,
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -982,6 +986,7 @@ fn _read_delete_files(
         None,
         None,
         None,
+        None,
     )?;
 
     let mut delete_map: HashMap<String, Vec<i64>> =
@@ -1026,6 +1031,7 @@ fn _read_parquet_into_loaded_micropartition(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
     let delete_map = iceberg_delete_files
         .map(|files| {
@@ -1057,6 +1063,7 @@ fn _read_parquet_into_loaded_micropartition(
         field_id_mapping,
         None,
         delete_map,
+        chunk_size,
     )?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
@@ -1106,6 +1113,7 @@ pub(crate) fn read_parquet_into_micropartition(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1142,6 +1150,7 @@ pub(crate) fn read_parquet_into_micropartition(
             schema_infer_options,
             catalog_provided_schema,
             field_id_mapping,
+            chunk_size,
         );
     }
 
@@ -1187,7 +1196,7 @@ pub(crate) fn read_parquet_into_micropartition(
 
     let any_stats_avail = metadata
         .iter()
-        .flat_map(|m| m.row_groups.iter())
+        .flat_map(|m| m.row_groups.values())
         .flat_map(|rg| rg.columns().iter())
         .any(|col| col.statistics().is_some());
     let stats = if any_stats_avail {
@@ -1196,7 +1205,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .zip(schemas.iter())
             .flat_map(|(fm, schema)| {
                 fm.row_groups
-                    .iter()
+                    .values()
                     .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
@@ -1228,7 +1237,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .map(|(fm, rg)| match rg {
                     Some(rg) => rg
                         .iter()
-                        .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
+                        .map(|rg_idx| fm.row_groups.get(&(*rg_idx as usize)).unwrap().num_rows())
                         .sum::<usize>(),
                     None => fm.num_rows,
                 })
@@ -1242,7 +1251,7 @@ pub(crate) fn read_parquet_into_micropartition(
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {
-                std::iter::Sum::sum(m.row_groups.iter().map(|m| m.total_byte_size() as u64))
+                std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
             })
             .sum();
 
@@ -1270,6 +1279,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
                 field_id_mapping,
                 row_groups,
+                chunk_size,
             })
             .into(),
             scan_task_daft_schema,
@@ -1317,6 +1327,7 @@ pub(crate) fn read_parquet_into_micropartition(
             schema_infer_options,
             catalog_provided_schema,
             field_id_mapping,
+            chunk_size,
         )
     }
 }

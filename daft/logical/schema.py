@@ -142,6 +142,9 @@ class Schema:
     def _truncated_table_string(self) -> str:
         return self._schema._truncated_table_string()
 
+    def apply_hints(self, hints: Schema) -> Schema:
+        return Schema._from_pyschema(self._schema.apply_hints(hints._schema))
+
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")

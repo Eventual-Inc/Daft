@@ -4,9 +4,11 @@ use crate::{
     channel::{create_channel, MultiSender},
     intermediate_ops::intermediate_op::{IntermediateNode, IntermediateOperator},
     pipeline::PipelineNode,
-    ExecutionRuntimeHandle, NUM_CPUS,
+    runtime_stats::RuntimeStatsContext,
+    ExecutionRuntimeHandle, JoinSnafu, PipelineExecutionSnafu, NUM_CPUS,
 };
 use async_trait::async_trait;
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_core::{
     datatypes::Field,
@@ -16,6 +18,7 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
+use snafu::{futures::TryFutureExt, ResultExt};
 use tracing::info_span;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
@@ -84,6 +87,7 @@ impl HashJoinState {
 
 pub(crate) struct HashJoinOperator {
     right_on: Vec<ExprRef>,
+    pruned_right_side_columns: Vec<String>,
     _join_type: JoinType,
     join_state: HashJoinState,
 }
@@ -127,9 +131,27 @@ impl HashJoinOperator {
             .zip(key_schema.fields.values())
             .map(|(e, f)| e.cast(&f.dtype))
             .collect::<Vec<_>>();
+        let common_join_keys = left_on
+            .iter()
+            .zip(right_on.iter())
+            .filter_map(|(l, r)| {
+                if l.name() == r.name() {
+                    Some(l.name())
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let pruned_right_side_columns = right_schema
+            .fields
+            .keys()
+            .filter(|k| !common_join_keys.contains(k.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(join_type, JoinType::Inner);
         Ok(Self {
             right_on,
+            pruned_right_side_columns,
             _join_type: join_type,
             join_state: HashJoinState::new(&key_schema, left_on)?,
         })
@@ -149,6 +171,7 @@ impl HashJoinOperator {
                 probe_table: probe_table.clone(),
                 tables: tables.clone(),
                 right_on: self.right_on.clone(),
+                pruned_right_side_columns: self.pruned_right_side_columns.clone(),
             })
         } else {
             panic!("can't call as_intermediate_op when not in probing state")
@@ -160,6 +183,7 @@ struct HashJoinProber {
     probe_table: Arc<ProbeTable>,
     tables: Arc<Vec<Table>>,
     right_on: Vec<ExprRef>,
+    pruned_right_side_columns: Vec<String>,
 }
 
 impl IntermediateOperator for HashJoinProber {
@@ -198,7 +222,9 @@ impl IntermediateOperator for HashJoinProber {
         let left_table = left_growable.build()?;
         let right_table = right_growable.build()?;
 
-        let final_table = left_table.union(&right_table)?;
+        let pruned_right_table = right_table.get_columns(&self.pruned_right_side_columns)?;
+
+        let final_table = left_table.union(&pruned_right_table)?;
         Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
             Arc::new(vec![final_table]),
@@ -227,6 +253,8 @@ pub(crate) struct HashJoinNode {
     hash_join: Arc<tokio::sync::Mutex<HashJoinOperator>>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
+    build_runtime_stats: Arc<RuntimeStatsContext>,
+    probe_runtime_stats: Arc<RuntimeStatsContext>,
 }
 
 impl HashJoinNode {
@@ -239,10 +267,42 @@ impl HashJoinNode {
             hash_join: Arc::new(tokio::sync::Mutex::new(op)),
             left,
             right,
+            build_runtime_stats: RuntimeStatsContext::new(),
+            probe_runtime_stats: RuntimeStatsContext::new(),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
+    }
+}
+
+impl TreeDisplay for HashJoinNode {
+    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        use common_display::DisplayLevel::*;
+        match level {
+            Compact => {}
+            _ => {
+                let build_rt_result = self.build_runtime_stats.result();
+                writeln!(display, "Probe Table Build:").unwrap();
+
+                build_rt_result
+                    .display(&mut display, true, false, true)
+                    .unwrap();
+
+                let probe_rt_result = self.probe_runtime_stats.result();
+                writeln!(display, "\nProbe Phase:").unwrap();
+                probe_rt_result
+                    .display(&mut display, true, true, true)
+                    .unwrap();
+            }
+        }
+        display
+    }
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.left.as_tree_display(), self.right.as_tree_display()]
     }
 }
 
@@ -252,49 +312,68 @@ impl PipelineNode for HashJoinNode {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
 
+    fn name(&self) -> &'static str {
+        "HashJoin"
+    }
+
     async fn start(
         &mut self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+    ) -> crate::Result<()> {
         let (sender, mut pt_receiver) = create_channel(*NUM_CPUS, false);
         self.left.start(sender, runtime_handle).await?;
         let hash_join = self.hash_join.clone();
-
-        let probe_table_build = tokio::spawn(async move {
-            let span = info_span!("ProbeTable::sink");
-            let mut guard = hash_join.lock().await;
-            let sink = guard.as_sink();
-            while let Some(val) = pt_receiver.recv().await {
-                if let BlockingSinkStatus::Finished = span.in_scope(|| sink.sink(&val))? {
-                    break;
+        let build_runtime_stats = self.build_runtime_stats.clone();
+        let name = self.name();
+        let probe_table_build = tokio::spawn(
+            async move {
+                let span = info_span!("ProbeTable::sink");
+                let mut guard = hash_join.lock().await;
+                let sink = guard.as_sink();
+                while let Some(val) = pt_receiver.recv().await {
+                    build_runtime_stats.mark_rows_received(val.len() as u64);
+                    if let BlockingSinkStatus::Finished =
+                        build_runtime_stats.in_span(&span, || sink.sink(&val))?
+                    {
+                        break;
+                    }
                 }
+                build_runtime_stats
+                    .in_span(&info_span!("ProbeTable::finalize"), || sink.finalize())?;
+                DaftResult::Ok(())
             }
-
-            info_span!("ProbeTable::finalize").in_scope(|| sink.finalize())?;
-            DaftResult::Ok(())
-        });
+            .with_context(move |_| PipelineExecutionSnafu { node_name: name }),
+        );
         // should wrap in context join handle
 
         let (right_sender, streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
         // now we can start building the right side
         self.right.start(right_sender, runtime_handle).await?;
 
-        probe_table_build.await.unwrap()?;
+        probe_table_build.await.context(JoinSnafu {})??;
 
         let hash_join = self.hash_join.clone();
         let probing_op = {
             let guard = hash_join.lock().await;
             guard.as_intermediate_op()
         };
-        let probing_node = IntermediateNode::new(probing_op, vec![]);
+        let probing_node = IntermediateNode::new_with_runtime_stats(
+            probing_op,
+            vec![],
+            self.probe_runtime_stats.clone(),
+        );
         let worker_senders = probing_node
             .spawn_workers(&mut destination, runtime_handle)
             .await;
-        runtime_handle.spawn(IntermediateNode::send_to_workers(
-            streaming_receiver,
-            worker_senders,
-        ));
+        runtime_handle.spawn(
+            IntermediateNode::send_to_workers(streaming_receiver, worker_senders),
+            self.name(),
+        );
         Ok(())
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::{IOStatsContext, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::{
     channel::{MultiSender, SingleSender},
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
 };
 
@@ -24,7 +25,6 @@ use super::source::{Source, SourceStream};
 
 use tracing::instrument;
 
-#[derive(Debug)]
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
 }
@@ -44,10 +44,13 @@ impl ScanTaskSource {
         sender: SingleSender,
         morsel_size: usize,
         maintain_order: bool,
+        io_stats: IOStatsRef,
+        runtime_stats: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
-        let io_stats = IOStatsContext::new("StreamScanTask");
         let mut stream =
             stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
+        let sender = CountingSender::new(sender, runtime_stats.clone());
+
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
         }
@@ -63,19 +66,30 @@ impl Source for ScanTaskSource {
         &self,
         mut destination: MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> DaftResult<()> {
+        runtime_stats: Arc<RuntimeStatsContext>,
+        io_stats: IOStatsRef,
+    ) -> crate::Result<()> {
         let morsel_size = DEFAULT_MORSEL_SIZE;
         let maintain_order = destination.in_order();
         for scan_task in self.scan_tasks.clone() {
             let sender = destination.get_next_sender();
-            runtime_handle.spawn(Self::process_scan_task_stream(
-                scan_task,
-                sender,
-                morsel_size,
-                maintain_order,
-            ));
+            runtime_handle.spawn(
+                Self::process_scan_task_stream(
+                    scan_task,
+                    sender,
+                    morsel_size,
+                    maintain_order,
+                    io_stats.clone(),
+                    runtime_stats.clone(),
+                ),
+                self.name(),
+            );
         }
         Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "ScanTask"
     }
 }
 

@@ -22,7 +22,7 @@ use std::{
 };
 
 #[cfg(feature = "python")]
-use crate::pyobject::DaftPyObject;
+use crate::pyobj_serde::PyObjectWrapper;
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -71,7 +71,7 @@ pub enum LiteralValue {
     Series(Series),
     /// Python object.
     #[cfg(feature = "python")]
-    Python(DaftPyObject),
+    Python(PyObjectWrapper),
 }
 
 impl Eq for LiteralValue {}
@@ -144,12 +144,8 @@ impl Display for LiteralValue {
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
-                Python::with_gil(|py| {
-                    pyobj
-                        .pyobject
-                        .call_method0(py, pyo3::intern!(py, "__str__"))
-                })
-                .unwrap()
+                Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
+                    .unwrap()
             }),
         }
     }
@@ -212,7 +208,7 @@ impl LiteralValue {
             }
             Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
-            Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
+            Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
         };
         result
     }
@@ -356,7 +352,7 @@ impl Literal for Series {
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
     fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Python(DaftPyObject { pyobject: self })).into()
+        Expr::Literal(LiteralValue::Python(PyObjectWrapper(self))).into()
     }
 }
 

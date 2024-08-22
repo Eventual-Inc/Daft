@@ -14,6 +14,8 @@ pub struct MermaidDisplayOptions {
     /// This is useful for large trees.
     /// In simple mode, the display string is just the node's name.
     pub simple: bool,
+    /// Display the root node at the bottom of the diagram or at the top
+    pub bottom_up: bool,
     /// subgraph_options is used to configure the subgraph.
     /// Since some common displays (jupyter) don't support multiple mermaid graphs in a single cell, we need to use subgraphs.
     /// The subgraph_options is used to both indicate that a subgraph should be used, and to configure the subgraph.
@@ -38,8 +40,12 @@ impl<T: TreeDisplay> MermaidDisplay for T {
             false => DisplayLevel::Default,
         };
 
-        let mut visitor =
-            MermaidDisplayVisitor::new(&mut s, display_type, options.subgraph_options);
+        let mut visitor = MermaidDisplayVisitor::new(
+            &mut s,
+            display_type,
+            options.bottom_up,
+            options.subgraph_options,
+        );
 
         let _ = visitor.fmt(self);
         s
@@ -49,6 +55,8 @@ impl<T: TreeDisplay> MermaidDisplay for T {
 pub struct MermaidDisplayVisitor<'a, W> {
     output: &'a mut W,
     t: DisplayLevel,
+    /// Should the root node be at the bottom or the top of the diagram
+    bottom_up: bool,
     /// each node should only appear once in the tree.
     /// the key is the node's `multiline_display` string, and the value is the node's id.
     /// This is necessary because the same kind of node can appear multiple times in the tree. (such as multiple filters)
@@ -59,10 +67,16 @@ pub struct MermaidDisplayVisitor<'a, W> {
 }
 
 impl<'a, W> MermaidDisplayVisitor<'a, W> {
-    pub fn new(w: &'a mut W, t: DisplayLevel, subgraph_options: Option<SubgraphOptions>) -> Self {
+    pub fn new(
+        w: &'a mut W,
+        t: DisplayLevel,
+        bottom_up: bool,
+        subgraph_options: Option<SubgraphOptions>,
+    ) -> Self {
         Self {
             output: w,
             t,
+            bottom_up,
             nodes: IndexMap::new(),
             node_count: 0,
             subgraph_options,
@@ -138,7 +152,12 @@ where
                 writeln!(self.output, "end")?;
             }
             None => {
-                writeln!(self.output, "flowchart TD")?;
+                if self.bottom_up {
+                    writeln!(self.output, "flowchart BT")?;
+                } else {
+                    writeln!(self.output, "flowchart TD")?;
+                }
+
                 self.fmt_node(node)?;
             }
         }
