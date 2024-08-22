@@ -120,7 +120,7 @@ pub(crate) fn build_row_ranges(
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
             let i = *i as usize;
-            if !(0..metadata.row_groups.len()).contains(&i) {
+            if !metadata.row_groups.keys().any(|x| *x == i) {
                 return Err(super::Error::ParquetRowGroupOutOfIndex {
                     path: uri.to_string(),
                     row_group: i as i64,

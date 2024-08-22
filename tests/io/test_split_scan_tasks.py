@@ -37,3 +37,4 @@ def test_split_parquet_read(parquet_files):
     with override_merge_scan_tasks_configs(1, 10):
         df = daft.read_parquet(str(parquet_files))
         assert df.num_partitions() == 10, "Should have 10 partitions since we will split the file"
+        assert df.to_pydict() == {"data": ["aaa"] * 100}
