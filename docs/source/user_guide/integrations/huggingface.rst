@@ -12,7 +12,17 @@ we can read these datasets using the ``read_parquet`` method.
 For other file formats, you will need to manually specify the path or glob pattern to the files you want to read, similar to how you would read from a local file system.
 
 
-Authorization/Authentication
+Authorization
+-------------
+
+For authenticated datasets:
+
+.. code:: python
+
+    from daft.io import IOConfig, HTTPConfig
+
+    io_config = IoConfig(http=HTTPConfig(bearer_token="your_token"))
+    df = daft.read_parquet("hf://username/dataset_name", io_config=io_config)
 ----------------------------
 
 If you have a dataset that requires authentication, you can pass the ``bearer_token`` parameter to the ``HTTPConfig``.
