@@ -36,7 +36,6 @@ where
     let mut protocol = TCompactOutputProtocol::new(cursor);
     column_chunk
         .write_to_out_protocol(&mut protocol)
-        .inspect_err(|e| println!("{:?}", e))
         .map_err(S::Error::custom)?;
     serializer.serialize_bytes(&buf)
 }
