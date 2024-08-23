@@ -9,6 +9,7 @@ on:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
+  UV_SYSTEM_PYTHON: 1
 
 jobs:
   build:
@@ -40,21 +41,20 @@ jobs:
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
-    - name: Upgrade Pip
-      run: pip install --upgrade pip
+    - name: Install uv
+      run: pip install uv
 
     - name: Install to pin Ray versions
-      run: pip install ray[data,default]==${{ matrix.ray-version }}
+      run: uv pip install ray[data,default]==${{ matrix.ray-version }}
 
     # Ray requires a pinned protobuf<4.0 for versions of Ray <1.13 (see: https://github.com/ray-project/ray/pull/25211)
     - name: Install to pin Protobuf version (for Ray <1.13)
       if: ${{ matrix.ray-version == '1.12.0' || matrix.ray-version == '1.11.0' || matrix.ray-version == '1.10.0' }}
-      run: pip install protobuf==3.20.3
+      run: uv pip install protobuf==3.20.3
 
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
 
     - name: Build Rust Library
       run: |

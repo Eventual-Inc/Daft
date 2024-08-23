@@ -85,11 +85,11 @@ jobs:
 
     - name: Override pyarrow
       if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
-      run: pip install pyarrow==${{ matrix.pyarrow-version }}
+      run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
       if: ${{ (matrix.pyarrow-version == '7.0.0') }}
-      run: pip install deltalake==0.10.0
+      run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
       if: ${{ (runner.os != 'Windows') }}
