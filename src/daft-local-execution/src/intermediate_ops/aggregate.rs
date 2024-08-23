@@ -2,10 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
-use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::intermediate_op::IntermediateOperator;
+use crate::pipeline::PipelineResultType;
+
+use super::intermediate_op::{
+    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+};
 
 pub struct AggregateOperator {
     agg_exprs: Vec<ExprRef>,
@@ -23,9 +26,17 @@ impl AggregateOperator {
 
 impl IntermediateOperator for AggregateOperator {
     #[instrument(skip_all, name = "AggregateOperator::execute")]
-    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn execute(
+        &self,
+        _idx: usize,
+        input: &PipelineResultType,
+        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+    ) -> DaftResult<IntermediateOperatorResult> {
+        let input = input.as_data();
         let out = input.agg(&self.agg_exprs, &self.group_by)?;
-        Ok(Arc::new(out))
+        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+            out,
+        ))))
     }
 
     fn name(&self) -> &'static str {

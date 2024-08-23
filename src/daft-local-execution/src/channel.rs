@@ -1,96 +1,74 @@
-use std::sync::Arc;
+pub type OneShotSender<T> = tokio::sync::oneshot::Sender<T>;
+pub type OneShotReceiver<T> = tokio::sync::oneshot::Receiver<T>;
 
-use daft_micropartition::MicroPartition;
+pub fn create_one_shot_channel<T>() -> (OneShotSender<T>, OneShotReceiver<T>) {
+    tokio::sync::oneshot::channel()
+}
 
-pub type SingleSender = tokio::sync::mpsc::Sender<Arc<MicroPartition>>;
-pub type SingleReceiver = tokio::sync::mpsc::Receiver<Arc<MicroPartition>>;
+pub type Sender<T> = tokio::sync::mpsc::Sender<T>;
+pub type Receiver<T> = tokio::sync::mpsc::Receiver<T>;
 
-pub fn create_single_channel(buffer_size: usize) -> (SingleSender, SingleReceiver) {
+pub fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     tokio::sync::mpsc::channel(buffer_size)
 }
 
-pub fn create_channel(buffer_size: usize, in_order: bool) -> (MultiSender, MultiReceiver) {
+pub fn create_multi_channel<T>(
+    buffer_size: usize,
+    in_order: bool,
+) -> (MultiSender<T>, MultiReceiver<T>) {
     if in_order {
-        let (senders, receivers) = (0..buffer_size).map(|_| create_single_channel(1)).unzip();
-        let sender = MultiSender::InOrder(InOrderSender::new(senders));
-        let receiver = MultiReceiver::InOrder(InOrderReceiver::new(receivers));
+        let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
+        let sender = MultiSender::InOrder(RoundRobinSender::new(senders));
+        let receiver = MultiReceiver::InOrder(RoundRobinReceiver::new(receivers));
         (sender, receiver)
     } else {
-        let (sender, receiver) = create_single_channel(buffer_size);
-        let sender = MultiSender::OutOfOrder(OutOfOrderSender::new(sender));
-        let receiver = MultiReceiver::OutOfOrder(OutOfOrderReceiver::new(receiver));
+        let (sender, receiver) = create_channel(buffer_size);
+        let sender = MultiSender::OutOfOrder(sender);
+        let receiver = MultiReceiver::OutOfOrder(receiver);
         (sender, receiver)
     }
 }
 
-pub enum MultiSender {
-    InOrder(InOrderSender),
-    OutOfOrder(OutOfOrderSender),
+pub enum MultiSender<T> {
+    InOrder(RoundRobinSender<T>),
+    OutOfOrder(Sender<T>),
 }
 
-impl MultiSender {
-    pub fn get_next_sender(&mut self) -> SingleSender {
+impl<T> MultiSender<T> {
+    pub fn get_next_sender(&mut self) -> Sender<T> {
         match self {
             Self::InOrder(sender) => sender.get_next_sender(),
-            Self::OutOfOrder(sender) => sender.get_sender(),
-        }
-    }
-
-    pub fn buffer_size(&self) -> usize {
-        match self {
-            Self::InOrder(sender) => sender.senders.len(),
-            Self::OutOfOrder(sender) => sender.sender.max_capacity(),
-        }
-    }
-
-    pub fn in_order(&self) -> bool {
-        match self {
-            Self::InOrder(_) => true,
-            Self::OutOfOrder(_) => false,
+            Self::OutOfOrder(sender) => sender.clone(),
         }
     }
 }
-pub struct InOrderSender {
-    senders: Vec<SingleSender>,
+pub struct RoundRobinSender<T> {
+    senders: Vec<Sender<T>>,
     curr_sender_idx: usize,
 }
 
-impl InOrderSender {
-    pub fn new(senders: Vec<SingleSender>) -> Self {
+impl<T> RoundRobinSender<T> {
+    pub fn new(senders: Vec<Sender<T>>) -> Self {
         Self {
             senders,
             curr_sender_idx: 0,
         }
     }
 
-    pub fn get_next_sender(&mut self) -> SingleSender {
+    pub fn get_next_sender(&mut self) -> Sender<T> {
         let next_idx = self.curr_sender_idx;
         self.curr_sender_idx = (next_idx + 1) % self.senders.len();
         self.senders[next_idx].clone()
     }
 }
 
-pub struct OutOfOrderSender {
-    sender: SingleSender,
+pub enum MultiReceiver<T> {
+    InOrder(RoundRobinReceiver<T>),
+    OutOfOrder(Receiver<T>),
 }
 
-impl OutOfOrderSender {
-    pub fn new(sender: SingleSender) -> Self {
-        Self { sender }
-    }
-
-    pub fn get_sender(&self) -> SingleSender {
-        self.sender.clone()
-    }
-}
-
-pub enum MultiReceiver {
-    InOrder(InOrderReceiver),
-    OutOfOrder(OutOfOrderReceiver),
-}
-
-impl MultiReceiver {
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
+impl<T> MultiReceiver<T> {
+    pub async fn recv(&mut self) -> Option<T> {
         match self {
             Self::InOrder(receiver) => receiver.recv().await,
             Self::OutOfOrder(receiver) => receiver.recv().await,
@@ -98,14 +76,14 @@ impl MultiReceiver {
     }
 }
 
-pub struct InOrderReceiver {
-    receivers: Vec<SingleReceiver>,
+pub struct RoundRobinReceiver<T> {
+    receivers: Vec<Receiver<T>>,
     curr_receiver_idx: usize,
     is_done: bool,
 }
 
-impl InOrderReceiver {
-    pub fn new(receivers: Vec<SingleReceiver>) -> Self {
+impl<T> RoundRobinReceiver<T> {
+    pub fn new(receivers: Vec<Receiver<T>>) -> Self {
         Self {
             receivers,
             curr_receiver_idx: 0,
@@ -113,7 +91,7 @@ impl InOrderReceiver {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
+    pub async fn recv(&mut self) -> Option<T> {
         if self.is_done {
             return None;
         }
@@ -125,23 +103,6 @@ impl InOrderReceiver {
             }
         }
         self.is_done = true;
-        None
-    }
-}
-
-pub struct OutOfOrderReceiver {
-    receiver: SingleReceiver,
-}
-
-impl OutOfOrderReceiver {
-    pub fn new(receiver: SingleReceiver) -> Self {
-        Self { receiver }
-    }
-
-    pub async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
-        if let Some(val) = self.receiver.recv().await {
-            return Some(val);
-        }
         None
     }
 }
