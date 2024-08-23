@@ -47,9 +47,11 @@ fn should_enable_chrome_trace() -> bool {
 #[cfg(feature = "python")]
 pub mod pylib {
     use common_tracing::init_tracing;
+    use lazy_static::lazy_static;
     use pyo3::prelude::*;
-    static LOG_RESET_HANDLE: std::sync::OnceLock<pyo3_log::ResetHandle> =
-        std::sync::OnceLock::new();
+    lazy_static! {
+        static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
+    }
 
     #[pyfunction]
     pub fn version() -> &'static str {
@@ -59,6 +61,14 @@ pub mod pylib {
     #[pyfunction]
     pub fn build_type() -> &'static str {
         daft_core::DAFT_BUILD_TYPE
+    }
+
+    #[pyfunction]
+    pub fn test_logging() {
+        log::debug!("DEBUG from rust");
+        log::info!("INFO from rust");
+        log::warn!("WARN from rust");
+        log::error!("ERROR from rust");
     }
 
     #[pyfunction]
@@ -75,19 +85,14 @@ pub mod pylib {
         // https://docs.python.org/3/library/logging.html#logging-levels
         let level_filter = match python_log_level {
             0 => LevelFilter::Off,
-            1..=5 => LevelFilter::Trace,
-            6..=10 => LevelFilter::Debug,
+            1..=10 => LevelFilter::Debug,
             11..=20 => LevelFilter::Info,
             21..=30 => LevelFilter::Warn,
             _ => LevelFilter::Error,
         };
 
-        let install_handle = || {
-            let logger = pyo3_log::Logger::default().filter(level_filter);
-            logger.install().unwrap()
-        };
-
-        LOG_RESET_HANDLE.get_or_init(install_handle).reset();
+        LOG_RESET_HANDLE.reset();
+        log::set_max_level(level_filter);
         Ok(())
     }
 
@@ -117,6 +122,7 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
+        m.add_wrapped(wrap_pyfunction!(test_logging))?;
         Ok(())
     }
 }

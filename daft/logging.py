@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+from daft import refresh_logger
+
 
 def setup_debug_logger(
     exclude_prefix: list[str] = [],
@@ -18,3 +20,5 @@ def setup_debug_logger(
         for prefix in exclude_prefix:
             for handler in root_logger.handlers:
                 handler.addFilter(lambda record: not record.name.startswith(prefix))
+
+    refresh_logger()
