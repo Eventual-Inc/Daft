@@ -65,19 +65,11 @@ jobs:
           pyproject.toml
           requirements-dev.txt
 
-    - name: Set up uv
-      if: ${{ (runner.os != 'Windows') }}
-      run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-    - name: Set up uv
-      if: ${{ (runner.os == 'Windows') }}
-      run: irm https://astral.sh/uv/install.ps1 | iex
-      shell: powershell
-
     - name: Setup Virtual Env
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
 
     - name: Install dependencies
       if: ${{ (runner.os != 'Windows') }}
