@@ -29,7 +29,7 @@ General rule of thumb:
 
 1. **Have Enough Partitions**: our general recommendation for high throughput and maximal resource utilization is to have *at least* ``2 x TOTAL_NUM_CPUS`` partitions, which allows Daft to fully saturate your CPUs.
 2. **More Partitions**: if you are observing memory issues (excessive spilling or out-of-memory (OOM) issues) then you may choose to increase the number of partitions. This increases the amount of overhead in your system, but improves overall memory stability (since each partition will be smaller).
-3. **Fewer Partitions**: if you are observing a large amount of overhead (especially during shuffle operations such as joins and sorts), then you may choose to decrease the number of partitions. This decreases the amount of overhead in the system, at the cost of using more memory (since each partition will be larger).
+3. **Fewer Partitions**: if you are observing a large amount of overhead (e.g. if you observe that shuffle operations such as joins and sorts are taking too much time), then you may choose to decrease the number of partitions. This decreases the amount of overhead in the system, at the cost of using more memory (since each partition will be larger).
 
 .. seealso::
     :doc:`./memory` - a guide for dealing with memory issues when using Daft
@@ -37,9 +37,8 @@ General rule of thumb:
 How is my data partitioned?
 ---------------------------
 
-Daft will automatically use certain heuristics to determine the number of partitions for you when you create a DataFrame. When reading data from files (e.g. Parquet, CSV or JSON),
-each file is by default one partition on its own, but Daft will also perform splitting of partitions (for files that are egregiously large) and coalescing of partitions (for small files)
-to improve the sizing and number of partitions in your system.
+Daft will automatically use certain heuristics to determine the number of partitions for you when you create a DataFrame. When reading data from files (e.g. Parquet, CSV or JSON), Daft will group small files/split large files appropriately
+into nicely-sized partitions based on their estimated in-memory data sizes.
 
 To interrogate the partitioning of your current DataFrame, you may use the :meth:`df.explain(show_all=True) <daft.DataFrame.explain>` method. Here is an example output from a simple
 ``df = daft.read_parquet(...)`` call on a fairly large number of Parquet files.
