@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
@@ -10,18 +9,15 @@ use daft_scan::{
     storage_config::StorageConfig,
     ChunkSpec, ScanTask,
 };
-use daft_stats::{PartitionSpec, TableStatistics};
-use daft_table::Table;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{Stream, StreamExt};
 use std::sync::Arc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    channel::{MultiSender, SingleSender},
-    runtime_stats::{CountingSender, RuntimeStatsContext},
+    channel::{create_channel, Sender},
+    sources::source::{Source, SourceStream},
     ExecutionRuntimeHandle,
 };
-
-use super::source::{Source, SourceStream};
 
 use tracing::instrument;
 
@@ -41,16 +37,11 @@ impl ScanTaskSource {
     )]
     async fn process_scan_task_stream(
         scan_task: Arc<ScanTask>,
-        sender: SingleSender,
-        morsel_size: usize,
+        sender: Sender<Arc<MicroPartition>>,
         maintain_order: bool,
         io_stats: IOStatsRef,
-        runtime_stats: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
-        let mut stream =
-            stream_scan_task(scan_task, Some(io_stats), maintain_order, morsel_size).await?;
-        let sender = CountingSender::new(sender, runtime_stats.clone());
-
+        let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
         }
@@ -64,28 +55,45 @@ impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
         &self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-        runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
-    ) -> crate::Result<()> {
-        let morsel_size = runtime_handle.default_morsel_size();
-        let maintain_order = destination.in_order();
-        for scan_task in self.scan_tasks.clone() {
-            let sender = destination.get_next_sender();
-            runtime_handle.spawn(
-                Self::process_scan_task_stream(
-                    scan_task,
-                    sender,
-                    morsel_size,
-                    maintain_order,
-                    io_stats.clone(),
-                    runtime_stats.clone(),
-                ),
-                self.name(),
-            );
+    ) -> crate::Result<SourceStream<'static>> {
+        match maintain_order {
+            true => {
+                let (senders, receivers): (Vec<_>, Vec<_>) = (0..self.scan_tasks.len())
+                    .map(|_| create_channel(1))
+                    .unzip();
+                for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
+                    runtime_handle.spawn(
+                        Self::process_scan_task_stream(
+                            scan_task.clone(),
+                            sender,
+                            maintain_order,
+                            io_stats.clone(),
+                        ),
+                        self.name(),
+                    );
+                }
+                let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
+                Ok(Box::pin(stream.flatten()))
+            }
+            false => {
+                let (sender, receiver) = create_channel(self.scan_tasks.len());
+                for scan_task in self.scan_tasks.iter() {
+                    runtime_handle.spawn(
+                        Self::process_scan_task_stream(
+                            scan_task.clone(),
+                            sender.clone(),
+                            maintain_order,
+                            io_stats.clone(),
+                        ),
+                        self.name(),
+                    );
+                }
+                Ok(Box::pin(ReceiverStream::new(receiver)))
+            }
         }
-        Ok(())
     }
 
     fn name(&self) -> &'static str {
@@ -97,8 +105,7 @@ async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
     maintain_order: bool,
-    morsel_size: usize,
-) -> DaftResult<SourceStream<'static>> {
+) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -294,43 +301,21 @@ async fn stream_scan_task(
         }
     };
 
-    let mp_stream = chunk_tables_into_micropartition_stream(
-        table_stream,
-        scan_task.materialized_schema(),
-        scan_task.partition_spec().cloned(),
-        scan_task.statistics.clone(),
-        morsel_size,
-    );
-    Ok(Box::pin(mp_stream))
-}
-
-fn chunk_tables_into_micropartition_stream(
-    mut table_stream: BoxStream<'static, DaftResult<Table>>,
-    schema: SchemaRef,
-    partition_spec: Option<PartitionSpec>,
-    statistics: Option<TableStatistics>,
-    morsel_size: usize,
-) -> SourceStream<'static> {
-    let chunked_stream = async_stream::try_stream! {
-        let mut buffer = vec![];
-        let mut total_rows = 0;
-        while let Some(table) = table_stream.next().await {
-            let table = table?;
-            let casted_table = table.cast_to_schema_with_fill(schema.as_ref(), partition_spec.as_ref().map(|pspec| pspec.to_fill_map()).as_ref())?;
-            total_rows += casted_table.len();
-            buffer.push(casted_table);
-
-            if total_rows >= morsel_size {
-                let mp = Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(buffer), statistics.clone()));
-                buffer = vec![];
-                total_rows = 0;
-                yield mp;
-            }
-        }
-        if !buffer.is_empty() {
-            let mp = Arc::new(MicroPartition::new_loaded(schema, Arc::new(buffer), statistics));
-            yield mp;
-        }
-    };
-    Box::pin(chunked_stream)
+    Ok(table_stream.map(move |table| {
+        let table = table?;
+        let casted_table = table.cast_to_schema_with_fill(
+            scan_task.materialized_schema().as_ref(),
+            scan_task
+                .partition_spec()
+                .as_ref()
+                .map(|pspec| pspec.to_fill_map())
+                .as_ref(),
+        )?;
+        let mp = Arc::new(MicroPartition::new_loaded(
+            scan_task.materialized_schema().clone(),
+            Arc::new(vec![casted_table]),
+            scan_task.statistics.clone(),
+        ));
+        Ok(mp)
+    }))
 }

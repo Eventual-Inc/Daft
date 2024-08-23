@@ -5,10 +5,9 @@ use std::{
     time::Instant,
 };
 
-use daft_micropartition::MicroPartition;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::channel::SingleSender;
+use crate::{channel::Sender, pipeline::PipelineResultType};
 
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
@@ -108,20 +107,23 @@ impl RuntimeStatsContext {
 }
 
 pub(crate) struct CountingSender {
-    sender: SingleSender,
+    sender: Sender<PipelineResultType>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: SingleSender, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(sender: Sender<PipelineResultType>, rt: Arc<RuntimeStatsContext>) -> Self {
         Self { sender, rt }
     }
     #[inline]
     pub(crate) async fn send(
         &self,
-        v: Arc<MicroPartition>,
-    ) -> Result<(), SendError<Arc<MicroPartition>>> {
-        let len = v.len();
+        v: PipelineResultType,
+    ) -> Result<(), SendError<PipelineResultType>> {
+        let len = match v {
+            PipelineResultType::Data(ref mp) => mp.len(),
+            PipelineResultType::ProbeTable(_, ref tables) => tables.iter().map(|t| t.len()).sum(),
+        };
         self.sender.send(v).await?;
         self.rt.mark_rows_emitted(len as u64);
         Ok(())

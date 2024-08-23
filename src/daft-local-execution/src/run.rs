@@ -23,9 +23,9 @@ use {
 };
 
 use crate::{
-    channel::{create_channel, create_single_channel, SingleReceiver},
+    channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle, NUM_CPUS,
+    Error, ExecutionRuntimeHandle,
 };
 
 #[cfg(feature = "python")]
@@ -122,7 +122,7 @@ pub fn run_local(
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let (tx, rx) = create_single_channel(results_buffer_size.unwrap_or(1));
+    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -135,12 +135,10 @@ pub fn run_local(
             .build()
             .expect("Failed to create tokio runtime");
         runtime.block_on(async {
-            let (sender, mut receiver) = create_channel(*NUM_CPUS, true);
-
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            pipeline.start(sender, &mut runtime_handle).await?;
+            let mut receiver = pipeline.start(true, &mut runtime_handle).await?;
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val).await;
+                let _ = tx.send(val?.as_data().clone()).await;
             }
 
             while let Some(result) = runtime_handle.join_next().await {
@@ -170,7 +168,7 @@ pub fn run_local(
     });
 
     struct ReceiverIterator {
-        receiver: SingleReceiver,
+        receiver: Receiver<Arc<MicroPartition>>,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
     }
 

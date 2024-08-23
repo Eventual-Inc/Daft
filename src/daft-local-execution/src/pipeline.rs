@@ -1,24 +1,29 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    channel::{MultiReceiver, OneShotReceiver, Receiver},
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
+        aggregate::AggregateOperator, filter::FilterOperator,
+        hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator,
     },
     sinks::{
-        aggregate::AggregateSink,
-        blocking_sink::BlockingSinkNode,
-        hash_join::{HashJoinNode, HashJoinOperator},
-        limit::LimitSink,
-        sort::SortSink,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle, PipelineCreationSnafu,
+    ExecutionRuntimeHandle, OneShotRecvSnafu, PipelineCreationSnafu,
 };
 
 use async_trait::async_trait;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
+use common_error::DaftResult;
+use daft_core::{
+    datatypes::Field,
+    schema::{Schema, SchemaRef},
+    utils::supertype,
+};
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
@@ -26,9 +31,88 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
+use daft_table::{ProbeTable, Table};
 use snafu::ResultExt;
 
-use crate::channel::MultiSender;
+#[derive(Clone)]
+pub enum PipelineResultType {
+    Data(Arc<MicroPartition>),
+    ProbeTable(Arc<ProbeTable>, Arc<Vec<Table>>),
+}
+
+impl From<Arc<MicroPartition>> for PipelineResultType {
+    fn from(data: Arc<MicroPartition>) -> Self {
+        PipelineResultType::Data(data)
+    }
+}
+
+impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineResultType {
+    fn from((probe_table, tables): (Arc<ProbeTable>, Arc<Vec<Table>>)) -> Self {
+        PipelineResultType::ProbeTable(probe_table, tables)
+    }
+}
+
+impl PipelineResultType {
+    pub fn as_data(&self) -> &Arc<MicroPartition> {
+        match self {
+            PipelineResultType::Data(data) => data,
+            _ => panic!("Expected data"),
+        }
+    }
+
+    pub fn as_probe_table(&self) -> (&Arc<ProbeTable>, &Arc<Vec<Table>>) {
+        match self {
+            PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
+            _ => panic!("Expected probe table"),
+        }
+    }
+
+    pub fn should_broadcast(&self) -> bool {
+        matches!(self, PipelineResultType::ProbeTable(_, _))
+    }
+}
+
+pub enum PipelineResultReceiver {
+    Single(Receiver<PipelineResultType>),
+    Multi(MultiReceiver<PipelineResultType>),
+    OneShot(OneShotReceiver<PipelineResultType>, bool),
+}
+
+impl From<Receiver<PipelineResultType>> for PipelineResultReceiver {
+    fn from(rx: Receiver<PipelineResultType>) -> Self {
+        PipelineResultReceiver::Multi(MultiReceiver::OutOfOrder(rx))
+    }
+}
+
+impl From<MultiReceiver<PipelineResultType>> for PipelineResultReceiver {
+    fn from(rx: MultiReceiver<PipelineResultType>) -> Self {
+        PipelineResultReceiver::Multi(rx)
+    }
+}
+
+impl From<OneShotReceiver<PipelineResultType>> for PipelineResultReceiver {
+    fn from(rx: OneShotReceiver<PipelineResultType>) -> Self {
+        PipelineResultReceiver::OneShot(rx, false)
+    }
+}
+
+impl PipelineResultReceiver {
+    pub async fn recv(&mut self) -> Option<crate::Result<PipelineResultType>> {
+        match self {
+            PipelineResultReceiver::Single(rx) => rx.recv().await.map(Ok),
+            PipelineResultReceiver::Multi(rx) => rx.recv().await.map(Ok),
+            PipelineResultReceiver::OneShot(rx, done) => {
+                if *done {
+                    None
+                } else {
+                    let result = rx.await.context(OneShotRecvSnafu);
+                    *done = true;
+                    Some(result)
+                }
+            }
+        }
+    }
+}
 
 #[async_trait]
 pub trait PipelineNode: Sync + Send + TreeDisplay {
@@ -36,9 +120,9 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn name(&self) -> &'static str;
     async fn start(
         &mut self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<()>;
+    ) -> crate::Result<PipelineResultReceiver>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
@@ -192,18 +276,71 @@ pub fn physical_plan_to_pipeline(
             let left_node = physical_plan_to_pipeline(left, psets)?;
             let right_node = physical_plan_to_pipeline(right, psets)?;
 
-            // we should move to a builder pattern
-            let sink = HashJoinOperator::new(
-                left_on.clone(),
-                right_on.clone(),
-                *join_type,
-                left_schema,
-                right_schema,
-            )
+            let probe_node = || -> DaftResult<_> {
+                let left_key_fields = left_on
+                    .iter()
+                    .map(|e| e.to_field(left_schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let right_key_fields = right_on
+                    .iter()
+                    .map(|e| e.to_field(right_schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let key_schema: SchemaRef = Schema::new(
+                    left_key_fields
+                        .into_iter()
+                        .zip(right_key_fields.into_iter())
+                        .map(|(l, r)| {
+                            // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
+                            let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
+                            Ok(Field::new(l.name, dtype))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?,
+                )?
+                .into();
+
+                let left_on = left_on
+                    .iter()
+                    .zip(key_schema.fields.values())
+                    .map(|(e, f)| e.clone().cast(&f.dtype))
+                    .collect::<Vec<_>>();
+                let right_on = right_on
+                    .iter()
+                    .zip(key_schema.fields.values())
+                    .map(|(e, f)| e.clone().cast(&f.dtype))
+                    .collect::<Vec<_>>();
+                let common_join_keys = left_on
+                    .iter()
+                    .zip(right_on.iter())
+                    .filter_map(|(l, r)| {
+                        if l.name() == r.name() {
+                            Some(l.name())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<std::collections::HashSet<_>>();
+                let pruned_right_side_columns = right_schema
+                    .fields
+                    .keys()
+                    .filter(|k| !common_join_keys.contains(k.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                // we should move to a builder pattern
+                let build_sink = HashJoinBuildSink::new(key_schema.clone(), left_on)?;
+                let build_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
+
+                let probe_op =
+                    HashJoinProbeOperator::new(right_on, pruned_right_side_columns, *join_type);
+                DaftResult::Ok(IntermediateNode::new(
+                    Arc::new(probe_op),
+                    vec![build_node, right_node],
+                ))
+            }()
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            HashJoinNode::new(sink, left_node, right_node).boxed()
+            probe_node.boxed()
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());

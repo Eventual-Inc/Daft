@@ -1,29 +1,29 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
-use common_error::DaftResult;
 use daft_io::{IOStatsContext, IOStatsRef};
 use daft_micropartition::MicroPartition;
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, StreamExt};
 
 use async_trait::async_trait;
 
 use crate::{
-    channel::MultiSender, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
+    channel::create_multi_channel,
+    pipeline::{PipelineNode, PipelineResultReceiver},
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
 
 pub(crate) trait Source: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_data(
         &self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-        runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
-    ) -> crate::Result<()>;
+    ) -> crate::Result<SourceStream<'static>>;
 }
 
 struct SourceNode {
@@ -74,15 +74,25 @@ impl PipelineNode for SourceNode {
     }
     async fn start(
         &mut self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<()> {
-        self.source.get_data(
-            destination,
-            runtime_handle,
-            self.runtime_stats.clone(),
-            self.io_stats.clone(),
-        )
+    ) -> crate::Result<PipelineResultReceiver> {
+        let mut source_stream =
+            self.source
+                .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
+
+        let (mut tx, rx) = create_multi_channel(1, maintain_order);
+        let counting_sender = CountingSender::new(tx.get_next_sender(), self.runtime_stats.clone());
+        runtime_handle.spawn(
+            async move {
+                while let Some(part) = source_stream.next().await {
+                    let _ = counting_sender.send(part.into()).await;
+                }
+                Ok(())
+            },
+            self.name(),
+        );
+        Ok(rx.into())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

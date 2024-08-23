@@ -6,8 +6,8 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender},
-    pipeline::PipelineNode,
+    channel::create_multi_channel,
+    pipeline::{PipelineNode, PipelineResultReceiver},
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
@@ -87,16 +87,16 @@ impl PipelineNode for StreamingSinkNode {
 
     async fn start(
         &mut self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
-        // now we can start building the right side
+    ) -> crate::Result<PipelineResultReceiver> {
         let child = self
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender, runtime_handle).await?;
+        let mut child_results_receiver = child.start(true, runtime_handle).await?;
+        let (mut destination_sender, destination_receiver) =
+            create_multi_channel(*NUM_CPUS, maintain_order);
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
@@ -106,22 +106,24 @@ impl PipelineNode for StreamingSinkNode {
 
                 let mut sink = op.lock().await;
                 let mut is_active = true;
-                while is_active && let Some(val) = streaming_receiver.recv().await {
+                while is_active && let Some(val) = child_results_receiver.recv().await {
+                    let val = val?;
+                    let val = val.as_data();
                     runtime_stats.mark_rows_received(val.len() as u64);
                     loop {
-                        let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
+                        let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
                         match result {
                             StreamSinkOutput::HasMoreOutput(mp) => {
                                 let len = mp.len() as u64;
-                                let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
+                                let sender = destination_sender.get_next_sender();
+                                sender.send(mp.into()).await.unwrap();
                                 runtime_stats.mark_rows_emitted(len);
                             }
                             StreamSinkOutput::NeedMoreInput(mp) => {
                                 if let Some(mp) = mp {
                                     let len = mp.len() as u64;
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
+                                    let sender = destination_sender.get_next_sender();
+                                    sender.send(mp.into()).await.unwrap();
                                     runtime_stats.mark_rows_emitted(len);
                                 }
                                 break;
@@ -129,8 +131,8 @@ impl PipelineNode for StreamingSinkNode {
                             StreamSinkOutput::Finished(mp) => {
                                 if let Some(mp) = mp {
                                     let len = mp.len() as u64;
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
+                                    let sender = destination_sender.get_next_sender();
+                                    sender.send(mp.into()).await.unwrap();
                                     runtime_stats.mark_rows_emitted(len);
                                 }
                                 is_active = false;
@@ -143,7 +145,7 @@ impl PipelineNode for StreamingSinkNode {
             },
             self.name(),
         );
-        Ok(())
+        Ok(destination_receiver.into())
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
