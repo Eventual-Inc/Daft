@@ -662,7 +662,6 @@ def q22(get_df: GetDFFunc) -> DataFrame:
 
     daft_df = (
         res_1.join(orders, left_on="C_CUSTKEY", right_on="O_CUSTKEY", how="anti")
-        .where(col("O_CUSTKEY").is_null())
         .with_column("lit", lit(1))
         .join(res_2, on="lit")
         .where(col("C_ACCTBAL") > col("avg_acctbal"))
