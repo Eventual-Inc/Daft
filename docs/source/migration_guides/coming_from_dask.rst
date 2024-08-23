@@ -84,7 +84,7 @@ Daft implements two APIs for mapping computations over the data in your DataFram
 .. code:: python
 
     # Add 1 to each element in column "A"
-    df = df.with_column("A_add_one", daft.col(“A”) + 1)
+    df = df.with_column("A_add_one", daft.col("A") + 1)
 
 
 You can use User-Defined Functions (UDFs) to run computations over multiple rows or columns:
@@ -99,7 +99,7 @@ You can use User-Defined Functions (UDFs) to run computations over multiple rows
 
     df = df.with_column(
         "cropped",
-        crop_image(daft.col(“image”), **kwargs),
+        crop_image(daft.col("image"), **kwargs),
     )
 
 

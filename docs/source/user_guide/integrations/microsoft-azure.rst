@@ -64,7 +64,7 @@ pass a different :class:`daft.io.AzureConfig` per function call if you wish!
     df2 = daft.read_csv("az://my_container/my_other_path/**/*", io_config=io_config)
 
 Connect to Microsoft Fabric/OneLake
-****************************
+***********************************
 
 If you are connecting to storage in OneLake or another Microsoft Fabric service, set the `use_fabric_endpoint` parameter to ``True`` in the :class:`daft.io.AzureConfig` object.
 
