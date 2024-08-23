@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import sys
 
 import pyarrow as pa
@@ -9,19 +8,6 @@ import pytest
 import daft
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
-
-
-@contextlib.contextmanager
-def split_small_pq_files():
-    old_config = daft.context.get_context().daft_execution_config
-    daft.set_execution_config(
-        # Splits any parquet files >100 bytes in size
-        scan_tasks_min_size_bytes=1,
-        scan_tasks_max_size_bytes=100,
-    )
-    yield
-    daft.set_execution_config(config=old_config)
-
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
 PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
