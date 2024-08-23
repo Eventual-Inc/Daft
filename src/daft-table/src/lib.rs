@@ -758,13 +758,13 @@ impl<'a> IntoIterator for &'a Table {
 
 #[cfg(test)]
 mod test {
-
     use crate::Table;
     use common_error::DaftResult;
     use daft_core::datatypes::{DataType, Float64Array, Int64Array};
     use daft_core::schema::Schema;
     use daft_core::series::IntoSeries;
     use daft_dsl::col;
+
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
@@ -783,6 +783,17 @@ mod test {
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hll() -> DaftResult<()> {
+        let k = Int64Array::from(("k", vec![1, 1, 2])).into_series();
+        let table = Table::from_nonempty_columns(vec![k])?;
+
+        let result = table.eval_expression(&col("k"))?.hll()?;
+        println!("{}", result.to_comfy_table());
 
         Ok(())
     }

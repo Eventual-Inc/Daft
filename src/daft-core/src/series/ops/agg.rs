@@ -217,4 +217,9 @@ impl Series {
             ))),
         }
     }
+
+    pub fn hll(&self) -> DaftResult<Series> {
+        // let x = self.hash(None)?.into_series();
+        todo!()
+    }
 }

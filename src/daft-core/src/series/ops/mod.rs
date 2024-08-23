@@ -20,7 +20,6 @@ pub mod float;
 pub mod floor;
 pub mod groups;
 pub mod hash;
-pub mod hll;
 pub mod if_else;
 pub mod image;
 pub mod is_in;

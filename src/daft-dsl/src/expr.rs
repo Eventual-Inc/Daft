@@ -487,6 +487,10 @@ impl Expr {
         Expr::Between(self, lower, upper).into()
     }
 
+    pub fn hll(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Hll(self)).into()
+    }
+
     pub fn eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::Eq, self, other)
     }
