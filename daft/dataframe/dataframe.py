@@ -1984,7 +1984,7 @@ class DataFrame:
         """
         result = func(self, *args, **kwargs)
         assert isinstance(result, DataFrame), (
-            "Func returned an instance of type [%s], " "should have been DataFrame." % type(result)
+            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
         )
         return result
 
