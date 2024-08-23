@@ -1,9 +1,7 @@
 Partitioning
 ============
 
-Daft is a **distributed** dataframe. This means internally, data is represented as partitions which are then spread out across your system:
-
-<TODO: Diagram of how partitions are spread in a cluster>
+Daft is a **distributed** dataframe. This means internally, data is represented as partitions which are then spread out across your system
 
 Why do we need partitions?
 --------------------------
@@ -15,8 +13,6 @@ Additionally, certain global operations in a distributed setting requires data t
 all the data matching a certain criteria needs to be on the same machine and in the same partition. For example, in a groupby-aggregation Daft needs to bring
 together all the data for a given key into the same partition before it can perform a definitive local groupby-aggregation which is then globally correct.
 Daft refers to this as a "clustering specification", and you are able to see this in the plans that it constructs as well.
-
-<TODO: Diagram of how groupby partitioning works>
 
 .. NOTE::
     When running locally on just a single machine, Daft is currently still using partitioning as well. This is still useful for
@@ -46,9 +42,36 @@ each file is by default one partition on its own, but Daft will also perform spl
 to improve the sizing and number of partitions in your system.
 
 To interrogate the partitioning of your current DataFrame, you may use the :meth:`df.explain(show_all=True) <daft.DataFrame.explain>` method. Here is an example output from a simple
-`df = daft.read_parquet(...)` call on a fairly large number of Parquet files.
+``df = daft.read_parquet(...)`` call on a fairly large number of Parquet files.
 
-<TODO: show output of a read parquet which demonstrates coalescing and splitting>
+.. code::python
+
+    import daft
+
+    df = daft.read_parquet("s3://bucket/path_to_100_parquet_files/**")
+    df.explain(show_all=True)
+
+.. code::
+
+    == Unoptimized Logical Plan ==
+
+    * GlobScanOperator
+    |   Glob paths = [s3://bucket/path_to_100_parquet_files/**]
+    |   ...
+
+
+    ...
+
+
+    == Physical Plan ==
+
+    * TabularScan:
+    |   Num Scan Tasks = 3
+    |   Estimated Scan Bytes = 72000000
+    |   Clustering spec = { Num partitions = 3 }
+    |   ...
+
+In the above example, the call to ``df.read_parquet`` read 100 Parquet files, but the Physical Plan indicates that Daft will only create 3 partitions. This is because these files are quite small (in this example, totalling about 72MB of data) and Daft recognizes that it should be able to read them as just 3 partitions, each with about 33 files each!
 
 How can I change the way my data is partitioned?
 ------------------------------------------------
@@ -61,8 +84,34 @@ You can change the way your data is partitioned by leveraging certain DataFrame 
 
 Note that many of these methods will change both the *number of partitions* as well as the *clustering specification* of the new partitioning. For example, when calling ``df.repartition(8, col("x"))``, the resultant dataframe will now have 8 partitions in total with the additional guarantee that all rows with the same value of ``col("x")`` are in the same partition! This is called "hash partitioning".
 
-<TODO: Add diagram>
+.. code::python
 
-Another example is after a sort - `df.sort(col("x"))` will globally sort your dataframe by `col("x")`, and after the sort your data has the same number of partitions but now has a new clustering scheme called a "range partitioning". Range partitioning gives an ordering guarantee to your partitions, where all rows with values of ``LOWER <= col("x") <= UPPER`` end up in the same partition.
+    df = df.repartition(8, daft.col("x"))
+    df.explain(show_all=True)
 
-<TODO: Add diagram>
+.. code::
+
+    == Unoptimized Logical Plan ==
+
+    * Repartition: Scheme = Hash
+    |   Num partitions = Some(8)
+    |   By = col(x)
+    |
+    * GlobScanOperator
+    |   Glob paths = [s3://bucket/path_to_1000_parquet_files/**]
+    |   ...
+
+    ...
+
+    == Physical Plan ==
+
+    * ReduceMerge
+    |
+    * FanoutByHash: 8
+    |   Partition by = col(url)
+    |
+    * TabularScan:
+    |   Num Scan Tasks = 3
+    |   Estimated Scan Bytes = 72000000
+    |   Clustering spec = { Num partitions = 3 }
+    |   ...
