@@ -1155,4 +1155,56 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_stateless_expr_with_only_some_stateful_children() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
+        let scan_plan = dummy_scan_node(scan_op);
+
+        // (col("a") + col("a"))  +  foo(col("a"))
+        let stateful_project_expr = col("a")
+            .add(col("a"))
+            .add(create_stateful_udf(vec![col("a")]))
+            .alias("result");
+        let project_plan = scan_plan
+            .select(vec![col("a"), stateful_project_expr])?
+            .build();
+
+        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_0-1-0__";
+        // let intermediate_name_1 = "__TruncateRootStatefulUDF_0-1-0__";
+        let expected = scan_plan.build();
+        let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("a")])?).arced();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected,
+            vec![
+                col("a"),
+                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+            ],
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![col("a"), col(intermediate_name_0)],
+        )?)
+        .arced();
+        let expected = LogicalPlan::Project(Project::try_new(
+            expected,
+            vec![
+                col(intermediate_name_0),
+                col("a"),
+                col("a")
+                    .add(col("a"))
+                    .add(col(intermediate_name_0))
+                    .alias("result"),
+            ],
+        )?)
+        .arced();
+        let expected =
+            LogicalPlan::Project(Project::try_new(expected, vec![col("a"), col("result")])?)
+                .arced();
+
+        assert_optimized_plan_eq(project_plan.clone(), expected.clone())?;
+
+        Ok(())
+    }
 }
