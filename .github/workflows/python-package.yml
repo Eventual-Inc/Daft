@@ -64,6 +64,15 @@ jobs:
           pyproject.toml
           requirements-dev.txt
 
+    - name: Set up uv
+      if: ${{ (runner.os != 'Windows') }}
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    - name: Set up uv
+      if: ${{ (runner.os == 'Windows') }}
+      run: irm https://astral.sh/uv/install.ps1 | iex
+      shell: powershell
+
     - name: Setup Virtual Env
       run: |
         python -m venv venv
@@ -72,15 +81,14 @@ jobs:
     - name: Install dependencies
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        activate
+        uv pip install -r requirements-dev.txt
 
     - name: Install dependencies (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
-        python -m pip install --upgrade pip
-        python -m pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
 
     - name: Override pyarrow
       if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
