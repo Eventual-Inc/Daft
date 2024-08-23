@@ -37,11 +37,11 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
 
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
 
     - name: Build Rust Library
       run: |
