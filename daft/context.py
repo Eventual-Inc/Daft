@@ -288,6 +288,7 @@ def set_execution_config(
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
+    default_morsel_size: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -323,6 +324,7 @@ def set_execution_config(
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
+        default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -346,6 +348,7 @@ def set_execution_config(
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
+            default_morsel_size=default_morsel_size,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

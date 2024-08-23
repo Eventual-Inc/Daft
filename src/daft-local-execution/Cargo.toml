@@ -1,6 +1,7 @@
 [dependencies]
 async-stream = {workspace = true}
 async-trait = {workspace = true}
+common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
@@ -26,7 +27,7 @@ tokio = {workspace = true}
 tracing = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python", "common-display/python"]
+python = ["dep:pyo3", "common-daft-config/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python", "common-display/python"]
 
 [package]
 edition = {workspace = true}
