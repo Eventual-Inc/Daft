@@ -365,7 +365,7 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
     else:
         min_partitions = shuffle_aggregation_default_partitions
 
-    with daft.with_execution_config(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions):
+    with daft.execution_config_ctx(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions):
         for partition_size in [1, min_partitions, min_partitions + 1]:
             df = daft.from_pydict(
                 {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}

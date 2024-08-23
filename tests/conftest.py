@@ -72,7 +72,7 @@ def join_strategy(request):
     if request.param != "sort_merge_aligned_boundaries":
         yield request.param
     else:
-        with daft.with_execution_config(sort_merge_join_sort_with_aligned_boundaries=True):
+        with daft.execution_config_ctx(sort_merge_join_sort_with_aligned_boundaries=True):
             yield "sort_merge"
 
 
@@ -119,7 +119,7 @@ def make_df(data_source, tmp_path) -> daft.Dataframe:
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         # Disables merging of ScanTasks of Parquet when reading small Parquet files
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,

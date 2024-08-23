@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
-from daft.context import get_context, with_execution_config
+from daft.context import execution_config_ctx, get_context
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -350,7 +350,7 @@ def single_partition_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with with_execution_config(
+    with execution_config_ctx(
         config=daft_execution_config,
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
@@ -363,7 +363,7 @@ def fanout_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with with_execution_config(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -376,7 +376,7 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with with_execution_config(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -389,7 +389,7 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with with_execution_config(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 

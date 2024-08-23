@@ -8,7 +8,7 @@ from daft.context import get_context
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_clean_up_df_show():
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
@@ -21,7 +21,7 @@ def test_active_plan_clean_up_df_show():
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_single_iter_partitions():
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
@@ -37,7 +37,7 @@ def test_active_plan_single_iter_partitions():
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_multiple_iter_partitions():
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
@@ -62,7 +62,7 @@ def test_active_plan_multiple_iter_partitions():
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_with_show_and_write_parquet(tmpdir):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):

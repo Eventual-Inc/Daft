@@ -51,7 +51,7 @@ def test_deltalake_read_row_group_splits(tmp_path, base_table):
     deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
 
     # Force file splitting
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=1,
         scan_tasks_max_size_bytes=100,
     ):
@@ -68,7 +68,7 @@ def test_deltalake_read_row_group_splits_with_filter(tmp_path, base_table):
     deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
 
     # Force file splitting
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=1,
         scan_tasks_max_size_bytes=100,
     ):
@@ -86,7 +86,7 @@ def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
     deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
 
     # Force file splitting
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=1,
         scan_tasks_max_size_bytes=100,
     ):

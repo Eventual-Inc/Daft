@@ -17,7 +17,7 @@ def csv_files(tmpdir):
 
 
 def test_merge_scan_task_exceed_max(csv_files):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
@@ -28,7 +28,7 @@ def test_merge_scan_task_exceed_max(csv_files):
 
 
 def test_merge_scan_task_below_max(csv_files):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=11,
         scan_tasks_max_size_bytes=12,
     ):
@@ -39,7 +39,7 @@ def test_merge_scan_task_below_max(csv_files):
 
 
 def test_merge_scan_task_above_min(csv_files):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=9,
         scan_tasks_max_size_bytes=20,
     ):
@@ -50,7 +50,7 @@ def test_merge_scan_task_above_min(csv_files):
 
 
 def test_merge_scan_task_below_min(csv_files):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=17,
         scan_tasks_max_size_bytes=20,
     ):

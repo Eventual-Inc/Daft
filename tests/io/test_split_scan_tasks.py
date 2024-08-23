@@ -18,7 +18,7 @@ def parquet_files(tmpdir):
 
 
 def test_split_parquet_read(parquet_files):
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=1,
         scan_tasks_max_size_bytes=10,
     ):

@@ -160,7 +160,7 @@ def test_parquet_write_with_null_values(tmp_path):
 
 @pytest.fixture()
 def smaller_parquet_target_filesize():
-    with daft.with_execution_config(parquet_target_filesize=1024):
+    with daft.execution_config_ctx(parquet_target_filesize=1024):
         yield
 
 

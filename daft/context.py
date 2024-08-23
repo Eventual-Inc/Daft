@@ -246,7 +246,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
 
 
 @contextlib.contextmanager
-def with_planning_config(**kwargs):
+def planning_config_ctx(**kwargs):
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
     original_config = get_context().daft_planning_config
     try:
@@ -282,7 +282,7 @@ def set_planning_config(
 
 
 @contextlib.contextmanager
-def with_execution_config(**kwargs):
+def execution_config_ctx(**kwargs):
     """Context manager that wraps set_execution_config to reset the config to its original setting afternwards"""
     original_config = get_context().daft_execution_config
     try:

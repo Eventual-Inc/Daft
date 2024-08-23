@@ -217,7 +217,7 @@ def set_split_config(request):
     max_size = 0 if request.param[0] else 384 * 1024 * 1024
     min_size = 0 if request.param[1] else 96 * 1024 * 1024
 
-    with daft.with_execution_config(
+    with daft.execution_config_ctx(
         scan_tasks_max_size_bytes=max_size,
         scan_tasks_min_size_bytes=min_size,
     ):
