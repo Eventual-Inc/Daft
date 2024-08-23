@@ -440,7 +440,9 @@ class Expression:
 
     def __rshift__(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``e1 >> e2``)
+
         .. NOTE::
+
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.
 
@@ -675,6 +677,7 @@ class Expression:
 
     def shift_right(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``expr >> other``)
+
         .. NOTE::
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.
