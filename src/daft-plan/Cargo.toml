@@ -36,6 +36,7 @@ snafu = {workspace = true}
 daft-functions = {path = "../daft-functions", default-features = false}
 pretty_assertions = {workspace = true}
 rstest = {workspace = true}
+test-log = {workspace = true}
 
 [features]
 python = [
