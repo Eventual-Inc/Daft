@@ -381,6 +381,14 @@ fn replace_column_with_semantic_id_aggexpr(
                 |_| e.clone(),
             )
         }
+        AggExpr::Distinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Distinct, |_| e.clone())
+        }
+        AggExpr::Union(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Union, |_| e.clone())
+        }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())

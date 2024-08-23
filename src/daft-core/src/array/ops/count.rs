@@ -79,6 +79,7 @@ where
             result_arrow_array,
         )
     }
+
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
         let counts_per_group: Vec<u64> = if self.data_type() == &DataType::Null {
             match &mode {

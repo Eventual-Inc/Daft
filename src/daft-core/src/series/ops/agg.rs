@@ -1,9 +1,14 @@
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
-use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
+use crate::{
+    array::ops::GroupIndices, series::Series, with_match_comparable_daft_types,
+    with_match_physical_daft_types,
+};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
+
+use crate::array::ops::DaftDistinctAggable;
 
 use crate::datatypes::*;
 
@@ -17,6 +22,17 @@ impl Series {
                 None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
             }
         })
+    }
+
+    pub fn distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let physical_series = self.as_physical()?;
+        let series = with_match_comparable_daft_types!(physical_series.data_type(), |$T| {
+            match groups {
+                Some(groups) => physical_series.downcast::<<$T as DaftDataType>::ArrayType>()?.grouped_distinct(groups)?.into_series(),
+                None => physical_series.downcast::<<$T as DaftDataType>::ArrayType>()?.distinct()?.into_series(),
+            }
+        });
+        Ok(series)
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

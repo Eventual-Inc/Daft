@@ -789,6 +789,18 @@ pub fn populate_aggregation_stages(
                     .or_insert(Sum(col(count_id.clone()).alias(sum_of_count_id.clone())));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
             }
+            Distinct(e) => {
+                let distinct_id = agg_expr.semantic_id(schema).id;
+                let union_id = Union(col(distinct_id.clone())).semantic_id(schema).id;
+                first_stage_aggs
+                    .entry(distinct_id.clone())
+                    .or_insert(Distinct(e.alias(distinct_id.clone())));
+                second_stage_aggs
+                    .entry(union_id.clone())
+                    .or_insert(Union(col(distinct_id).alias(union_id.clone())));
+                final_exprs.push(col(union_id).count(CountMode::All).alias(output_name));
+            }
+            Union(..) => unreachable!("User facing API will not expose `union` for now"),
             Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;
                 let sum_of_sum_id = Sum(col(sum_id.clone())).semantic_id(schema).id;
