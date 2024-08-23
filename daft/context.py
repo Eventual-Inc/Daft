@@ -17,7 +17,7 @@ import threading
 
 
 class _RunnerConfig:
-    name = ClassVar[str]
+    name: ClassVar[str]
 
 
 @dataclasses.dataclass(frozen=True)
