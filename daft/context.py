@@ -324,7 +324,7 @@ def set_execution_config(
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
-        default_morsel_size: Default size of morsels used for the new local executor. Defaults to 100_000 rows.
+        default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()

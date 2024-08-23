@@ -73,6 +73,7 @@ impl NativeExecutor {
         py: Python,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
+        results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
         let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
             .into_iter()
@@ -86,8 +87,14 @@ impl NativeExecutor {
                 )
             })
             .collect();
-        let out =
-            py.allow_threads(|| run_local(&self.local_physical_plan, native_psets, cfg.config))?;
+        let out = py.allow_threads(|| {
+            run_local(
+                &self.local_physical_plan,
+                native_psets,
+                cfg.config,
+                results_buffer_size,
+            )
+        })?;
         let iter = Box::new(out.map(|part| {
             part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
         }));
@@ -111,10 +118,11 @@ pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
+    results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let (tx, rx) = create_single_channel(1);
+    let (tx, rx) = create_single_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

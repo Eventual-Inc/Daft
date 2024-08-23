@@ -27,12 +27,15 @@ class NativeExecutor:
         return cls(executor)
 
     def run(
-        self, psets: dict[str, list[MaterializedResult[PartitionT]]], daft_execution_config: PyDaftExecutionConfig
+        self,
+        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None,
     ) -> Iterator[PyMaterializedResult]:
         from daft.runners.pyrunner import PyMaterializedResult
 
         psets_mp = {part_id: [part.vpartition()._micropartition for part in parts] for part_id, parts in psets.items()}
         return (
             PyMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(psets_mp, daft_execution_config)
+            for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)
         )

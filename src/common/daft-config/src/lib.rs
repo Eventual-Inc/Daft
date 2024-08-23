@@ -81,7 +81,7 @@ impl Default for DaftExecutionConfig {
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,
-            default_morsel_size: 100_000,
+            default_morsel_size: 128 * 1024,
         }
     }
 }
