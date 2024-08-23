@@ -14,6 +14,7 @@ on:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
+  UV_SYSTEM_PYTHON: 1
 
 jobs:
 

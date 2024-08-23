@@ -10,6 +10,7 @@ env:
   TPCH_SCALE_FACTOR: '4'
   TPCH_NUM_PARTS: '32'
   PYTHON_VERSION: '3.9'
+  UV_SYSTEM_PYTHON: 1
 
 
 jobs:
