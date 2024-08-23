@@ -5,7 +5,7 @@ Apache Hudi
 
 Daft currently supports:
 
-1. **Parallel + Distributed Reads:** Daft parallelizes Hudi table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the :ref:`distributed Ray runner <scaling_up>`.
+1. **Parallel + Distributed Reads:** Daft parallelizes Hudi table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the :ref:`distributed Ray runner <distributed_computing>`.
 2. **Skipping Filtered Data:** Daft ensures that only data that matches your :meth:`df.where(...) <daft.DataFrame.where>` filter will be read, often skipping entire files/partitions.
 3. **Multi-cloud Support:** Daft supports reading Hudi tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 

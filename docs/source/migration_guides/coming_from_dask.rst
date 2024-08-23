@@ -32,20 +32,20 @@ Dask aims for as much feature-parity with pandas as possible, including maintain
 
 Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API](/user_guide/basic_concepts/expressions.rst).
 
-In Dask you would index your DataFrame to return row `b` as follows:
+In Dask you would index your DataFrame to return row ``b`` as follows:
 
-`ddf.loc[[“b”]]`
+``ddf.loc[[“b”]]``
 
-In Daft, you would accomplish the same by using a `col` Expression to refer to the column that contains `b`:
+In Daft, you would accomplish the same by using a ``col`` Expression to refer to the column that contains ``b``:
 
-`df.where(daft.col(“alpha”)==”b”)`
+``df.where(daft.col(“alpha”)==”b”)``
 
 More about Expressions in the sections below.
 
 Daft does not try to copy the pandas syntax
 -------------------------------------------
 
-Dask is built as a parallelizable version of pandas and Dask partitions are in fact pandas DataFrames. When you call a Dask function you are often applying a pandas function on each partition. This makes Dask relatively easy to learn for people familiar with pandas, but it also causes complications when pandas logic (built for sequential processing) does not translate well to a distributed context. When reading the documentation, Dask users will often encounter this phrase `“This docstring was copied from pandas.core… Some inconsistencies with the Dask version may exist.”` It is often unclear what these inconsistencies are and how they might affect performance.
+Dask is built as a parallelizable version of pandas and Dask partitions are in fact pandas DataFrames. When you call a Dask function you are often applying a pandas function on each partition. This makes Dask relatively easy to learn for people familiar with pandas, but it also causes complications when pandas logic (built for sequential processing) does not translate well to a distributed context. When reading the documentation, Dask users will often encounter this phrase ``“This docstring was copied from pandas.core… Some inconsistencies with the Dask version may exist.”`` It is often unclear what these inconsistencies are and how they might affect performance.
 
 Daft does not try to copy the pandas syntax. Instead, we believe that efficiency is best achieved by defining logic specifically for the unique challenges of distributed computing. This means that we trade a slightly higher learning curve for pandas users against improved performance and more clarity for the developer experience.
 
@@ -68,13 +68,14 @@ Dask currently does not support full-featured query optimization.
 Daft uses Expressions and UDFs to perform computations in parallel
 ------------------------------------------------------------------
 
-Dask provides a `map_partitions` method to map computations over the partitions in your DataFrame. Since Dask partitions are pandas DataFrames, you can pass pandas functions to `map_partitions`. You can also map arbitrary Python functions over Dask partitions using `map_partitions`.
+Dask provides a ``map_partitions`` method to map computations over the partitions in your DataFrame. Since Dask partitions are pandas DataFrames, you can pass pandas functions to ``map_partitions``. You can also map arbitrary Python functions over Dask partitions using `map_partitions`.
 
 For example:
 
 .. code:: python
+
     def my_function(**kwargs):
-        return …
+        return ...
 
     res = ddf.map_partitions(my_function, **kwargs)
 
@@ -84,7 +85,7 @@ Daft implements two APIs for mapping computations over the data in your DataFram
 .. code:: python
 
     # Add 1 to each element in column "A"
-    df = df.with_column("A_add_one", daft.col(“A”) + 1)
+    df = df.with_column("A_add_one", daft.col("A") + 1)
 
 
 You can use User-Defined Functions (UDFs) to run computations over multiple rows or columns:
@@ -94,12 +95,11 @@ You can use User-Defined Functions (UDFs) to run computations over multiple rows
     # apply a custom function “crop_image” to the image column
     @daft.udf(...)
     def crop_image(**kwargs):
-        …
-        return …
+        return ...
 
     df = df.with_column(
         "cropped",
-        crop_image(daft.col(“image”), **kwargs),
+        crop_image(daft.col("image"), **kwargs),
     )
 
 

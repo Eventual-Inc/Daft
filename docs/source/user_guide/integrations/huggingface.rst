@@ -1,5 +1,5 @@
 Huggingface Datasets
-===========
+====================
 
 Daft is able to read datasets directly from Huggingface via the ``hf://`` protocol.
 
