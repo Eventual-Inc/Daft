@@ -72,7 +72,7 @@ def join_strategy(request):
     if request.param != "sort_merge_aligned_boundaries":
         yield request.param
     else:
-        with daft.with_planning_config(sort_merge_join_sort_with_aligned_boundaries=True):
+        with daft.with_execution_config(sort_merge_join_sort_with_aligned_boundaries=True):
             yield "sort_merge"
 
 
