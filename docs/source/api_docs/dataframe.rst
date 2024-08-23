@@ -73,6 +73,7 @@ Reordering
 
     DataFrame.sort
     DataFrame.repartition
+    DataFrame.into_partitions
 
 Combining
 *********

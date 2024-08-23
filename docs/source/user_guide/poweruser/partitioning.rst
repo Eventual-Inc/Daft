@@ -78,9 +78,9 @@ How can I change the way my data is partitioned?
 
 You can change the way your data is partitioned by leveraging certain DataFrame methods:
 
-1. :meth:`df.repartition(N, col("x"), col("y"), ...) <daft.DataFrame.repartition>`: repartitions your data into `N` partitions by performing a hash-bucketing that ensure that all data with the same values for the specified columns ends up in the same partition. Expensive, requires data movement between partitions and machines.
-2. :meth:`df.into_partitions(N) <daft.DataFrame.into_partitions>`: splits or coalesces adjacent partitions to meet the specified target number of total partitions. This is less expensive than a call to ``df.repartition`` because it does not require shuffling or moving data between partitions.
-3. Many global dataframe operations such as :meth:`daft.DataFrame.join`, :meth:`daft.DataFrame.sort` and :meth:`daft.Dataframe.agg` will change the partitioning of your data. This is because they require shuffling data between partitions to be globally correct.
+1. :meth:`daft.DataFrame.repartition`: repartitions your data into `N` partitions by performing a hash-bucketing that ensure that all data with the same values for the specified columns ends up in the same partition. Expensive, requires data movement between partitions and machines.
+2. :meth:`daft.DataFrame.into_partitions`: splits or coalesces adjacent partitions to meet the specified target number of total partitions. This is less expensive than a call to ``df.repartition`` because it does not require shuffling or moving data between partitions.
+3. Many global dataframe operations such as :meth:`daft.DataFrame.join`, :meth:`daft.DataFrame.sort` and :meth:`daft.GroupedDataframe.agg` will change the partitioning of your data. This is because they require shuffling data between partitions to be globally correct.
 
 Note that many of these methods will change both the *number of partitions* as well as the *clustering specification* of the new partitioning. For example, when calling ``df.repartition(8, col("x"))``, the resultant dataframe will now have 8 partitions in total with the additional guarantee that all rows with the same value of ``col("x")`` are in the same partition! This is called "hash partitioning".
 
