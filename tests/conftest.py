@@ -72,14 +72,8 @@ def join_strategy(request):
     if request.param != "sort_merge_aligned_boundaries":
         yield request.param
     else:
-        old_execution_config = daft.context.get_context().daft_execution_config
-        try:
-            daft.set_execution_config(
-                sort_merge_join_sort_with_aligned_boundaries=True,
-            )
+        with daft.with_planning_config(sort_merge_join_sort_with_aligned_boundaries=True):
             yield "sort_merge"
-        finally:
-            daft.set_execution_config(old_execution_config)
 
 
 @pytest.fixture(scope="function")
@@ -125,16 +119,12 @@ def make_df(data_source, tmp_path) -> daft.Dataframe:
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
-    try:
-        old_execution_config = daft.context.get_context().daft_execution_config
-        daft.set_execution_config(
-            # Disables merging of ScanTasks of Parquet when reading small Parquet files
-            scan_tasks_min_size_bytes=0,
-            scan_tasks_max_size_bytes=0,
-        )
+    with daft.with_execution_config(
+        # Disables merging of ScanTasks of Parquet when reading small Parquet files
+        scan_tasks_min_size_bytes=0,
+        scan_tasks_max_size_bytes=0,
+    ):
         yield _make_df
-    finally:
-        daft.set_execution_config(config=old_execution_config)
 
 
 def assert_df_equals(

@@ -363,26 +363,26 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
     if shuffle_aggregation_default_partitions is None:
         min_partitions = get_context().daft_execution_config.shuffle_aggregation_default_partitions
     else:
-        daft.set_execution_config(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions)
         min_partitions = shuffle_aggregation_default_partitions
 
-    for partition_size in [1, min_partitions, min_partitions + 1]:
-        df = daft.from_pydict(
-            {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
-        )
-        df = df.into_partitions(partition_size)
+    with daft.with_execution_config(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions):
+        for partition_size in [1, min_partitions, min_partitions + 1]:
+            df = daft.from_pydict(
+                {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
+            )
+            df = df.into_partitions(partition_size)
 
-        df = df.groupby(col("group")).agg(
-            [
-                col("value").sum().alias("sum"),
-                col("value").mean().alias("mean"),
-                col("value").min().alias("min"),
-            ]
-        )
+            df = df.groupby(col("group")).agg(
+                [
+                    col("value").sum().alias("sum"),
+                    col("value").mean().alias("mean"),
+                    col("value").min().alias("min"),
+                ]
+            )
 
-        df = df.collect()
+            df = df.collect()
 
-        assert df.num_partitions() == min(min_partitions, partition_size)
+            assert df.num_partitions() == min(min_partitions, partition_size)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])

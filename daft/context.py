@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import os
@@ -244,6 +245,17 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         return ctx
 
 
+@contextlib.contextmanager
+def with_planning_config(**kwargs):
+    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
+    original_config = get_context().daft_execution_config
+    try:
+        set_planning_config(**kwargs)
+        yield
+    finally:
+        set_planning_config(config=original_config)
+
+
 def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
@@ -267,6 +279,17 @@ def set_planning_config(
 
         ctx._daft_planning_config = new_daft_planning_config
         return ctx
+
+
+@contextlib.contextmanager
+def with_execution_config(**kwargs):
+    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards"""
+    original_config = get_context().daft_execution_config
+    try:
+        set_execution_config(**kwargs)
+        yield
+    finally:
+        set_execution_config(config=original_config)
 
 
 def set_execution_config(

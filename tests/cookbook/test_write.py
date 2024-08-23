@@ -160,12 +160,8 @@ def test_parquet_write_with_null_values(tmp_path):
 
 @pytest.fixture()
 def smaller_parquet_target_filesize():
-    old_execution_config = daft.context.get_context().daft_execution_config
-    try:
-        daft.set_execution_config(parquet_target_filesize=1024)
+    with daft.with_execution_config(parquet_target_filesize=1024):
         yield
-    finally:
-        daft.set_execution_config(old_execution_config)
 
 
 @pytest.mark.skipif(

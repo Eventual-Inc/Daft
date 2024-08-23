@@ -33,8 +33,8 @@ def gen_tpch(request):
     csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
 
     # Disable native executor to generate parquet files, remove once native executor supports writing parquet files
-    daft.context.set_execution_config(enable_native_executor=False)
-    parquet_files_location = data_generation.gen_parquet(csv_files_location)
+    with daft.context.with_execution_config(enable_native_executor=False):
+        parquet_files_location = data_generation.gen_parquet(csv_files_location)
 
     in_memory_tables = {}
     for tbl_name in data_generation.SCHEMA.keys():
@@ -106,14 +106,16 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
 
     def f():
         if engine == "native":
-            daft.context.set_execution_config(enable_native_executor=True)
+            ctx = daft.context.with_execution_config(enable_native_executor=True)
         elif engine == "python":
-            daft.context.set_execution_config(enable_native_executor=False)
+            ctx = daft.context.with_execution_config(enable_native_executor=False)
         else:
             raise ValueError(f"{engine} unsupported")
-        question = getattr(answers, f"q{q}")
-        daft_df = question(get_df)
-        return daft_df.to_arrow()
+
+        with ctx:
+            question = getattr(answers, f"q{q}")
+            daft_df = question(get_df)
+            return daft_df.to_arrow()
 
     benchmark_group = f"q{q}-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()
