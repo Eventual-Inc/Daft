@@ -3,30 +3,39 @@ import logging
 import pytest
 
 
-def test_logger_initialization(caplog):
+def test_logger_initialization():
     import daft
 
-    daft.daft.test_logging()
+    rust_level = daft.daft.get_max_log_level()
 
-    assert len(caplog.records) == 2
-    assert caplog.records[0].levelname == "WARNING"
-    assert caplog.records[1].levelname == "ERROR"
+    assert rust_level == "WARN"
+
+
+def test_debug_logger():
+    import daft
+    from daft.logging import setup_debug_logger
+
+    setup_debug_logger()
+    rust_level = daft.daft.get_max_log_level()
+    assert rust_level == "DEBUG"
 
 
 @pytest.mark.parametrize(
     "level, expected",
     [
-        (logging.DEBUG, 4),
-        (logging.INFO, 3),
-        (logging.WARNING, 2),
-        (logging.ERROR, 1),
+        (logging.DEBUG, "DEBUG"),
+        (logging.INFO, "INFO"),
+        (logging.WARNING, "WARN"),
+        (logging.ERROR, "ERROR"),
     ],
 )
-def test_refresh_logger(level, expected, caplog):
+def test_refresh_logger(level, expected):
+    import logging
+
     import daft
 
-    caplog.set_level(level)
-    daft.refresh_logger()
+    logging.getLogger().setLevel(level)
+    daft.daft.refresh_logger()
 
-    daft.daft.test_logging()
-    assert len(caplog.records) == expected
+    rust_level = daft.daft.get_max_log_level()
+    assert rust_level == expected

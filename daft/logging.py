@@ -11,6 +11,7 @@ def setup_debug_logger(
 ):
     logging.basicConfig(level="DEBUG")
     root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
 
     if daft_only:
         for handler in root_logger.handlers:

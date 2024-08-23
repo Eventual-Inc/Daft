@@ -64,11 +64,8 @@ pub mod pylib {
     }
 
     #[pyfunction]
-    pub fn test_logging() {
-        log::debug!("DEBUG from rust");
-        log::info!("INFO from rust");
-        log::warn!("WARN from rust");
-        log::error!("ERROR from rust");
+    pub fn get_max_log_level() -> &'static str {
+        log::max_level().as_str()
     }
 
     #[pyfunction]
@@ -122,7 +119,7 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
-        m.add_wrapped(wrap_pyfunction!(test_logging))?;
+        m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         Ok(())
     }
 }
