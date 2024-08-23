@@ -166,7 +166,7 @@ def run_all_benchmarks(
             answer = getattr(answers, f"q{i}")
             daft_df = answer(get_df)
 
-            with open("output/explain.mmd", "w") as f:
+            with open(f"output/explain-q{i}.md", "w") as f:
                 daft_df.explain(show_all=True, format="mermaid", file=f)
 
             with metrics_builder.collect_metrics(i):
