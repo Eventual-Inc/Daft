@@ -800,8 +800,7 @@ def _build_partitions_on_actor_pool(
 @ray.remote
 class DaftRayActor:
     def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
-        set_execution_config(daft_execution_config)
-
+        self.daft_execution_config = daft_execution_config
         partial_stateful_udfs = {
             name: psu
             for expr in uninitialized_projection
@@ -819,21 +818,22 @@ class DaftRayActor:
         partial_metadatas: list[PartitionMetadata],
         *inputs: MicroPartition,
     ) -> list[list[PartitionMetadata] | MicroPartition]:
-        assert len(inputs) == 1, "DaftRayActor can only process single partitions"
-        assert len(partial_metadatas) == 1, "DaftRayActor can only process single partitions (and single metadata)"
-        part = inputs[0]
-        partial = partial_metadatas[0]
+        with execution_config_ctx(config=self.daft_execution_config):
+            assert len(inputs) == 1, "DaftRayActor can only process single partitions"
+            assert len(partial_metadatas) == 1, "DaftRayActor can only process single partitions (and single metadata)"
+            part = inputs[0]
+            partial = partial_metadatas[0]
 
-        # Bind the ExpressionsProjection to the initialized UDFs
-        initialized_projection = ExpressionsProjection(
-            [e._bind_stateful_udfs(self.initialized_stateful_udfs) for e in uninitialized_projection]
-        )
-        new_part = part.eval_expression_list(initialized_projection)
+            # Bind the ExpressionsProjection to the initialized UDFs
+            initialized_projection = ExpressionsProjection(
+                [e._bind_stateful_udfs(self.initialized_stateful_udfs) for e in uninitialized_projection]
+            )
+            new_part = part.eval_expression_list(initialized_projection)
 
-        return [
-            [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
-            new_part,
-        ]
+            return [
+                [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+                new_part,
+            ]
 
 
 class RayRoundRobinActorPool:

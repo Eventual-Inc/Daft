@@ -215,9 +215,17 @@ def actor_pool_project(
     # Keep track of materializations of the actor_pool tasks
     actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
+    # Perform separate accounting for the tasks' resource request and the actors' resource request:
+    # * When spinning up an actor, we consider resources that are required for the persistent state in an actor (namely, GPUs and memory)
+    # * When running a task, we consider resources that are required for placement of tasks (namely CPUs)
+    task_resource_request = ResourceRequest(num_cpus=resource_request.num_cpus)
+    actor_resource_request = ResourceRequest(
+        num_gpus=resource_request.num_gpus, memory_bytes=resource_request.memory_bytes
+    )
+
     with get_context().runner().actor_pool_context(
         actor_pool_name,
-        resource_request,
+        actor_resource_request,
         num_actors,
         projection,
     ) as actor_pool_id:
@@ -232,11 +240,11 @@ def actor_pool_project(
                     PartitionTaskBuilder[PartitionT](
                         inputs=[next_ready_child.partition()],
                         partial_metadatas=[next_ready_child.partition_metadata()],
-                        resource_request=resource_request,
                         actor_pool_id=actor_pool_id,
                     )
                     .add_instruction(
                         instruction=execution_step.StatefulUDFProject(projection),
+                        resource_request=task_resource_request,
                     )
                     .finalize_partition_task_single_output(
                         stage_id=stage_id,
