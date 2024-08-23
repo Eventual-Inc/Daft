@@ -923,6 +923,18 @@ pub fn populate_aggregation_stages(
                         .alias(output_name),
                 );
             }
+            Hll(expr) => {
+                let a = agg_expr.semantic_id(schema).id;
+                let b = agg_expr.semantic_id(schema).id; // Change to HllMerge
+                first_stage_aggs
+                    .entry(a.clone())
+                    .or_insert_with(|| Hll(expr.alias(&*a)));
+                second_stage_aggs.entry(b.clone()).or_insert_with(|| {
+                    // Hll Merge
+                    todo!()
+                });
+                todo!()
+            }
         }
     }
     (first_stage_aggs, second_stage_aggs, final_exprs)

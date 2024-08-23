@@ -85,6 +85,7 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+    Hll(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -109,7 +110,8 @@ impl AggExpr {
             | Max(expr)
             | AnyValue(expr, _)
             | List(expr)
-            | Concat(expr) => expr.name(),
+            | Concat(expr)
+            | Hll(expr) => expr.name(),
             MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -171,6 +173,10 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
             MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
+            Hll(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.hll()"))
+            }
         }
     }
 
@@ -187,7 +193,8 @@ impl AggExpr {
             | Max(expr)
             | AnyValue(expr, _)
             | List(expr)
-            | Concat(expr) => vec![expr.clone()],
+            | Concat(expr)
+            | Hll(expr) => vec![expr.clone()],
             MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -224,6 +231,7 @@ impl AggExpr {
             }),
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
+            Hll(_) => Hll(children[0].clone()),
         }
     }
 
@@ -328,6 +336,10 @@ impl AggExpr {
                 }
             }
             MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
+            Hll(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name, DataType::UInt64))
+            }
         }
     }
 
@@ -1028,6 +1040,7 @@ impl Display for AggExpr {
             List(expr) => write!(f, "list({expr})"),
             Concat(expr) => write!(f, "list({expr})"),
             MapGroups { func, inputs } => function_display(f, func, inputs),
+            Hll(expr) => write!(f, "hll({expr})"),
         }
     }
 }
