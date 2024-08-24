@@ -834,16 +834,11 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                col("a"),
                 create_stateful_udf(vec![col("a")])
                     .clone()
                     .alias(intermediate_name),
+                col("a"),
             ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![col(intermediate_name), col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -933,11 +928,10 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                col("a"), // TODO: This should be able to be pruned as well, but it seems Projection Pushdown isn't working as intended
-                col("b"),
                 create_stateful_udf(vec![col("a")])
                     .clone()
                     .alias(intermediate_name_0),
+                col("b"),
             ],
         )?)
         .arced();
@@ -1049,11 +1043,10 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                col("a"), // TODO: This should be pruned by Projection Pushdown, but isn't for some reason
-                col("b"),
                 create_stateful_udf(vec![col("a")])
                     .clone()
                     .alias(intermediate_name_0),
+                col("b"),
             ],
         )?)
         .arced();
