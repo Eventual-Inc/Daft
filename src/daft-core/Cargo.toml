@@ -30,6 +30,7 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
+hyperloglogplus = "0.4.1"
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 jaq-core = {workspace = true}

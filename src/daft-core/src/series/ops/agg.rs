@@ -1,7 +1,10 @@
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
-use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
+use crate::{
+    array::ops::GroupIndices, series::Series, with_match_hashable_daft_types,
+    with_match_physical_daft_types,
+};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 
@@ -218,8 +221,15 @@ impl Series {
         }
     }
 
-    pub fn hll(&self) -> DaftResult<Series> {
-        // let x = self.hash(None)?.into_series();
-        todo!()
+    pub fn hll(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let series = self.as_physical()?;
+        with_match_hashable_daft_types!(series.data_type(), |$T| {
+            match groups {
+                Some(..) => todo!(),
+                None => todo!(),
+                // Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, groups, mode)?.into_series()),
+                // None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
+            }
+        })
     }
 }

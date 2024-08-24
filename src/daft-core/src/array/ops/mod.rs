@@ -25,6 +25,7 @@ pub mod full;
 mod get;
 pub(crate) mod groups;
 mod hash;
+mod hll;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
@@ -200,4 +201,10 @@ pub trait DaftConcatAggable {
     type Output;
     fn concat(&self) -> Self::Output;
     fn grouped_concat(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftHllAggable {
+    type Output;
+    fn hll(&self) -> Self::Output;
+    fn grouped_hll(&self, groups: &GroupIndices) -> Self::Output;
 }

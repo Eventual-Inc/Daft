@@ -457,7 +457,11 @@ impl Table {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
-            AggExpr::Hll(expr) => self.eval_expression(expr)?.hll(),
+            AggExpr::Hll(expr) => self
+                .eval_expression(expr)?
+                .hash(None)?
+                .into_series()
+                .hll(groups),
         }
     }
 
@@ -792,7 +796,7 @@ mod test {
         let k = Int64Array::from(("k", vec![1, 1, 2])).into_series();
         let table = Table::from_nonempty_columns(vec![k])?;
 
-        let result = table.eval_expression(&col("k"))?.hll()?;
+        let result = table.eval_expression(&col("k"))?.hll(None)?;
         println!("{}", result.to_comfy_table());
 
         Ok(())
