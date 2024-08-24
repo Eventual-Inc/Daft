@@ -52,6 +52,7 @@ pub mod pylib {
     lazy_static! {
         static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
     }
+
     #[pyfunction]
     pub fn version() -> &'static str {
         daft_core::VERSION
@@ -63,13 +64,38 @@ pub mod pylib {
     }
 
     #[pyfunction]
-    pub fn refresh_logger() {
+    pub fn get_max_log_level() -> &'static str {
+        log::max_level().as_str()
+    }
+
+    #[pyfunction]
+    pub fn refresh_logger(py: Python) -> PyResult<()> {
+        use log::LevelFilter;
+        let logging = py.import("logging")?;
+        let python_log_level = logging
+            .getattr("getLogger")?
+            .call0()?
+            .getattr("level")?
+            .extract::<usize>()
+            .unwrap_or(0);
+
+        // https://docs.python.org/3/library/logging.html#logging-levels
+        let level_filter = match python_log_level {
+            0 => LevelFilter::Off,
+            1..=10 => LevelFilter::Debug,
+            11..=20 => LevelFilter::Info,
+            21..=30 => LevelFilter::Warn,
+            _ => LevelFilter::Error,
+        };
+
         LOG_RESET_HANDLE.reset();
+        log::set_max_level(level_filter);
+        Ok(())
     }
 
     #[pymodule]
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-        refresh_logger();
+        refresh_logger(_py)?;
         init_tracing(crate::should_enable_chrome_trace());
 
         common_daft_config::register_modules(_py, m)?;
@@ -93,6 +119,7 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
+        m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         Ok(())
     }
 }
