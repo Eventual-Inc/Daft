@@ -1,8 +1,8 @@
-use std::{hash::RandomState, sync::Arc};
+use std::sync::Arc;
 
-use arrow2::array::PrimitiveArray;
+use crate::utils::hyperloglog::{HyperLogLog, NUM_REGISTERS};
+use arrow2::{array::PrimitiveArray, buffer::Buffer};
 use common_error::DaftResult;
-use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
 
 use crate::{
     array::{
@@ -13,8 +13,6 @@ use crate::{
     DataType,
 };
 
-const PRECISION: u8 = 16;
-
 impl<T> DaftHllAggable for &DataArray<T>
 where
     T: DaftPhysicalType,
@@ -22,21 +20,21 @@ where
     type Output = DaftResult<DataArray<UInt64Type>>;
 
     fn hll(&self) -> Self::Output {
-        let mut hll_plus =
-            HyperLogLogPlus::<u64, _>::new(PRECISION, RandomState::default()).unwrap();
-        for value in self
+        let mut hll = HyperLogLog::default();
+        for &value in self
             .as_any()
             .downcast_ref::<DataArray<UInt64Type>>()
             .unwrap()
             .as_arrow()
             .values_iter()
         {
-            hll_plus.insert(value);
+            hll.add_already_hashed(value);
         }
-        let result = hll_plus.count().trunc() as u64;
-        let field = Field::new(self.name(), DataType::Float64);
-        let field = Arc::new(field);
-        let data = Box::new(PrimitiveArray::from([Some(result)]));
+        let registers = &hll.registers;
+        let dtype = DataType::FixedSizeBinary(NUM_REGISTERS);
+        let values = Buffer::from(registers.to_vec());
+        let data = Box::new(PrimitiveArray::new(dtype.to_arrow()?, values, None));
+        let field = Arc::new(Field::new(self.name(), dtype));
         DataArray::new(field, data)
     }
 

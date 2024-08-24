@@ -16,6 +16,20 @@ use super::{as_arrow::AsArrow, IntoGroups};
 
 use std::hash::Hash;
 
+/// Given a list of values, return a `Vec<Vec<u64>>` where each sub-vector contains the index of all the places of where that value was found.
+///
+/// # Example:
+/// ```text
+/// +---+
+/// | a | (index: 0)
+/// | b |
+/// | a |
+/// | c |
+/// | a | (index: 4)
+/// +---+
+/// ```
+///
+/// Calling `make_groups` on the above list would return `vec![vec![0, 2, 4], vec![1], vec![3]]` since `a` appeared 3 times at indices `0`, `2`, and `4`.
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,

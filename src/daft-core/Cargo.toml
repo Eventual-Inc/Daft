@@ -30,7 +30,6 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
-hyperloglogplus = "0.4.1"
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 jaq-core = {workspace = true}
@@ -64,7 +63,12 @@ features = ["xxh3", "const_xxh3"]
 version = "0.8.5"
 
 [features]
-python = ["dep:pyo3", "dep:numpy", "common-error/python", "common-py-serde/python"]
+python = [
+  "dep:pyo3",
+  "dep:numpy",
+  "common-error/python",
+  "common-py-serde/python"
+]
 
 [package]
 edition = {workspace = true}
