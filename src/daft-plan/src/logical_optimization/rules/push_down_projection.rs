@@ -244,14 +244,24 @@ impl PushDownProjection {
                     .iter()
                     .all(|e| !requires_computation(e))
                 {
+                    // Only perform this optimization if all required column names are distinct
                     let required_column_names = projection
                         .projection
                         .iter()
                         .flat_map(get_required_columns)
                         .collect_vec();
-                    let distinct_required_column_names =
-                        required_column_names.iter().collect::<IndexSet<_>>().len();
-                    if required_column_names.len() == distinct_required_column_names {
+                    let mut all_required_column_names_distinct = true;
+                    let mut distinct_required_column_names = IndexSet::new();
+                    for required_col_name in required_column_names {
+                        if distinct_required_column_names.contains(&required_col_name) {
+                            all_required_column_names_distinct = false;
+                            break;
+                        } else {
+                            distinct_required_column_names.insert(required_col_name);
+                        }
+                    }
+
+                    if all_required_column_names_distinct {
                         let actor_pool_projection_map = upstream_actor_pool_projection
                             .projection
                             .iter()
@@ -1000,7 +1010,10 @@ mod tests {
         .arced();
         let plan = LogicalPlan::Project(Project::try_new(
             plan,
-            vec![col("udf_results_0"), col("udf_results_1")],
+            vec![
+                col("udf_results_0").alias("udf_results_0_alias"),
+                col("udf_results_1"),
+            ],
         )?)
         .arced();
 
@@ -1010,13 +1023,15 @@ mod tests {
                 Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
             )
             .build(),
+            // col("b") is pruned
             vec![mock_stateful_udf.alias("udf_results_0"), col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected.clone(),
             vec![
-                col("udf_results_0"),
+                // Absorbed a non-computational expression (alias) from the Projection
+                col("udf_results_0").alias("udf_results_0_alias"),
                 mock_stateful_udf.alias("udf_results_1"),
             ],
         )?)
