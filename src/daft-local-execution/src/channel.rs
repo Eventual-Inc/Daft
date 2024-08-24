@@ -1,3 +1,10 @@
+use std::sync::Arc;
+
+use crate::{
+    pipeline::PipelineResultType,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
+};
+
 pub type OneShotSender<T> = tokio::sync::oneshot::Sender<T>;
 pub type OneShotReceiver<T> = tokio::sync::oneshot::Receiver<T>;
 
@@ -12,10 +19,7 @@ pub fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     tokio::sync::mpsc::channel(buffer_size)
 }
 
-pub fn create_multi_channel<T>(
-    buffer_size: usize,
-    in_order: bool,
-) -> (MultiSender<T>, MultiReceiver<T>) {
+pub fn create_multi_channel(buffer_size: usize, in_order: bool) -> (MultiSender, MultiReceiver) {
     if in_order {
         let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
         let sender = MultiSender::InOrder(RoundRobinSender::new(senders));
@@ -29,16 +33,16 @@ pub fn create_multi_channel<T>(
     }
 }
 
-pub enum MultiSender<T> {
-    InOrder(RoundRobinSender<T>),
-    OutOfOrder(Sender<T>),
+pub enum MultiSender {
+    InOrder(RoundRobinSender<PipelineResultType>),
+    OutOfOrder(Sender<PipelineResultType>),
 }
 
-impl<T> MultiSender<T> {
-    pub fn get_next_sender(&mut self) -> Sender<T> {
+impl MultiSender {
+    pub fn get_next_sender(&mut self, stats: &Arc<RuntimeStatsContext>) -> CountingSender {
         match self {
-            Self::InOrder(sender) => sender.get_next_sender(),
-            Self::OutOfOrder(sender) => sender.clone(),
+            Self::InOrder(sender) => CountingSender::new(sender.get_next_sender(), stats.clone()),
+            Self::OutOfOrder(sender) => CountingSender::new(sender.clone(), stats.clone()),
         }
     }
 }
@@ -62,13 +66,13 @@ impl<T> RoundRobinSender<T> {
     }
 }
 
-pub enum MultiReceiver<T> {
-    InOrder(RoundRobinReceiver<T>),
-    OutOfOrder(Receiver<T>),
+pub enum MultiReceiver {
+    InOrder(RoundRobinReceiver<PipelineResultType>),
+    OutOfOrder(Receiver<PipelineResultType>),
 }
 
-impl<T> MultiReceiver<T> {
-    pub async fn recv(&mut self) -> Option<T> {
+impl MultiReceiver {
+    pub async fn recv(&mut self) -> Option<PipelineResultType> {
         match self {
             Self::InOrder(receiver) => receiver.recv().await,
             Self::OutOfOrder(receiver) => receiver.recv().await,

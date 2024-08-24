@@ -19,6 +19,14 @@ enum HashJoinProbeState {
 }
 
 impl HashJoinProbeState {
+    fn set_table(&mut self, table: &Arc<ProbeTable>, tables: &Arc<Vec<Table>>) {
+        if let HashJoinProbeState::Building = self {
+            *self = HashJoinProbeState::ReadyToProbe(table.clone(), tables.clone());
+        } else {
+            panic!("HashJoinProbeState should only be in Building state when setting table")
+        }
+    }
+
     fn probe(
         &self,
         input: &Arc<MicroPartition>,
@@ -106,17 +114,13 @@ impl IntermediateOperator for HashJoinProbeOperator {
     ) -> DaftResult<IntermediateOperatorResult> {
         match idx {
             0 => {
-                let (probe_table, tables) = input.as_probe_table();
                 let state = state
                     .expect("HashJoinProbeOperator should have state")
                     .as_any_mut()
                     .downcast_mut::<HashJoinProbeState>()
                     .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                if let HashJoinProbeState::Building = state {
-                    *state = HashJoinProbeState::ReadyToProbe(probe_table.clone(), tables.clone());
-                } else {
-                    panic!("HashJoinProbeOperator should only be in Building state on first input");
-                }
+                let (probe_table, tables) = input.as_probe_table();
+                state.set_table(probe_table, tables);
                 Ok(IntermediateOperatorResult::NeedMoreInput(None))
             }
             _ => {
