@@ -74,12 +74,11 @@ impl IntermediateNode {
     pub async fn run_worker(
         op: Arc<dyn IntermediateOperator>,
         mut receiver: Receiver<(usize, PipelineResultType)>,
-        sender: Sender<PipelineResultType>,
+        sender: CountingSender,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let mut state = op.make_state();
-        let sender = CountingSender::new(sender, rt_context.clone());
         while let Some((idx, morsel)) = receiver.recv().await {
             let len = match morsel {
                 PipelineResultType::Data(ref data) => data.len(),
@@ -105,13 +104,13 @@ impl IntermediateNode {
     pub async fn spawn_workers(
         &self,
         num_workers: usize,
-        destination: &mut MultiSender<PipelineResultType>,
+        destination: &mut MultiSender,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> Vec<Sender<(usize, PipelineResultType)>> {
         let mut worker_senders = Vec::with_capacity(num_workers);
         for _ in 0..num_workers {
             let (worker_sender, worker_receiver) = create_channel(1);
-            let destination_sender = destination.get_next_sender();
+            let destination_sender = destination.get_next_sender(&self.runtime_stats);
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),

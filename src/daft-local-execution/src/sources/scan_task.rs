@@ -59,41 +59,33 @@ impl Source for ScanTaskSource {
         runtime_handle: &mut ExecutionRuntimeHandle,
         io_stats: IOStatsRef,
     ) -> crate::Result<SourceStream<'static>> {
-        match maintain_order {
-            true => {
-                let (senders, receivers): (Vec<_>, Vec<_>) = (0..self.scan_tasks.len())
-                    .map(|_| create_channel(1))
-                    .unzip();
-                for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
-                    runtime_handle.spawn(
-                        Self::process_scan_task_stream(
-                            scan_task.clone(),
-                            sender,
-                            maintain_order,
-                            io_stats.clone(),
-                        ),
-                        self.name(),
-                    );
-                }
-                let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
-                Ok(Box::pin(stream.flatten()))
-            }
+        let (senders, receivers): (Vec<_>, Vec<_>) = match maintain_order {
+            true => (0..self.scan_tasks.len())
+                .map(|_| create_channel(1))
+                .unzip(),
             false => {
                 let (sender, receiver) = create_channel(self.scan_tasks.len());
-                for scan_task in self.scan_tasks.iter() {
-                    runtime_handle.spawn(
-                        Self::process_scan_task_stream(
-                            scan_task.clone(),
-                            sender.clone(),
-                            maintain_order,
-                            io_stats.clone(),
-                        ),
-                        self.name(),
-                    );
-                }
-                Ok(Box::pin(ReceiverStream::new(receiver)))
+                (
+                    std::iter::repeat(sender)
+                        .take(self.scan_tasks.len())
+                        .collect(),
+                    vec![receiver],
+                )
             }
+        };
+        for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
+            runtime_handle.spawn(
+                Self::process_scan_task_stream(
+                    scan_task.clone(),
+                    sender,
+                    maintain_order,
+                    io_stats.clone(),
+                ),
+                self.name(),
+            );
         }
+        let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
+        Ok(Box::pin(stream.flatten()))
     }
 
     fn name(&self) -> &'static str {

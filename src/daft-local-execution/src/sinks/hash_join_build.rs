@@ -108,22 +108,3 @@ impl BlockingSink for HashJoinBuildSink {
         }
     }
 }
-
-// pub(crate) struct HashJoinOperator {
-//     join_state: ProbeTableState,
-// }
-
-// impl HashJoinOperator {
-//     pub(crate) fn new(
-//         left_on: Vec<ExprRef>,
-//         right_on: Vec<ExprRef>,
-//         join_type: JoinType,
-//         left_schema: &SchemaRef,
-//         right_schema: &SchemaRef,
-//     ) -> DaftResult<Self> {
-//
-//         Ok(Self {
-//             join_state: ProbeTableState::new(&key_schema, left_on)?,
-//         })
-//     }
-// }

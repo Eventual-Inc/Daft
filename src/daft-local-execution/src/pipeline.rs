@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    channel::{MultiReceiver, OneShotReceiver, Receiver},
+    channel::{MultiReceiver, OneShotReceiver},
     intermediate_ops::{
         aggregate::AggregateOperator, filter::FilterOperator,
         hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
@@ -73,19 +73,12 @@ impl PipelineResultType {
 }
 
 pub enum PipelineResultReceiver {
-    Single(Receiver<PipelineResultType>),
-    Multi(MultiReceiver<PipelineResultType>),
+    Multi(MultiReceiver),
     OneShot(OneShotReceiver<PipelineResultType>, bool),
 }
 
-impl From<Receiver<PipelineResultType>> for PipelineResultReceiver {
-    fn from(rx: Receiver<PipelineResultType>) -> Self {
-        PipelineResultReceiver::Multi(MultiReceiver::OutOfOrder(rx))
-    }
-}
-
-impl From<MultiReceiver<PipelineResultType>> for PipelineResultReceiver {
-    fn from(rx: MultiReceiver<PipelineResultType>) -> Self {
+impl From<MultiReceiver> for PipelineResultReceiver {
+    fn from(rx: MultiReceiver) -> Self {
         PipelineResultReceiver::Multi(rx)
     }
 }
@@ -99,7 +92,6 @@ impl From<OneShotReceiver<PipelineResultType>> for PipelineResultReceiver {
 impl PipelineResultReceiver {
     pub async fn recv(&mut self) -> Option<crate::Result<PipelineResultType>> {
         match self {
-            PipelineResultReceiver::Single(rx) => rx.recv().await.map(Ok),
             PipelineResultReceiver::Multi(rx) => rx.recv().await.map(Ok),
             PipelineResultReceiver::OneShot(rx, done) => {
                 if *done {

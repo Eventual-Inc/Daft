@@ -114,26 +114,20 @@ impl PipelineNode for StreamingSinkNode {
                         let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
                         match result {
                             StreamSinkOutput::HasMoreOutput(mp) => {
-                                let len = mp.len() as u64;
-                                let sender = destination_sender.get_next_sender();
+                                let sender = destination_sender.get_next_sender(&runtime_stats);
                                 sender.send(mp.into()).await.unwrap();
-                                runtime_stats.mark_rows_emitted(len);
                             }
                             StreamSinkOutput::NeedMoreInput(mp) => {
                                 if let Some(mp) = mp {
-                                    let len = mp.len() as u64;
-                                    let sender = destination_sender.get_next_sender();
+                                    let sender = destination_sender.get_next_sender(&runtime_stats);
                                     sender.send(mp.into()).await.unwrap();
-                                    runtime_stats.mark_rows_emitted(len);
                                 }
                                 break;
                             }
                             StreamSinkOutput::Finished(mp) => {
                                 if let Some(mp) = mp {
-                                    let len = mp.len() as u64;
-                                    let sender = destination_sender.get_next_sender();
+                                    let sender = destination_sender.get_next_sender(&runtime_stats);
                                     sender.send(mp.into()).await.unwrap();
-                                    runtime_stats.mark_rows_emitted(len);
                                 }
                                 is_active = false;
                                 break;

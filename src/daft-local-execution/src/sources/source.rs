@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use crate::{
     channel::create_multi_channel,
     pipeline::{PipelineNode, PipelineResultReceiver},
-    runtime_stats::{CountingSender, RuntimeStatsContext},
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
 };
 
@@ -82,7 +82,7 @@ impl PipelineNode for SourceNode {
                 .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
 
         let (mut tx, rx) = create_multi_channel(1, maintain_order);
-        let counting_sender = CountingSender::new(tx.get_next_sender(), self.runtime_stats.clone());
+        let counting_sender = tx.get_next_sender(&self.runtime_stats);
         runtime_handle.spawn(
             async move {
                 while let Some(part) = source_stream.next().await {
