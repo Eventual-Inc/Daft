@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use crate::{
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DateType, Decimal128Type,
-        DurationType, EmbeddingType, Field, FixedShapeImageType, FixedShapeTensorType, ImageType,
+        DurationType, EmbeddingType, Field, FixedShapeImageType, FixedShapeTensorType, COOSparseTensorType, FixedShapeCOOSparseTensorType, ImageType,
         MapType, TensorType, TimeType, TimestampType,
     },
     DataType, IntoSeries, Series,
@@ -81,6 +81,8 @@ impl_logical_growable!(LogicalTimeGrowable, TimeType);
 impl_logical_growable!(LogicalEmbeddingGrowable, EmbeddingType);
 impl_logical_growable!(LogicalFixedShapeImageGrowable, FixedShapeImageType);
 impl_logical_growable!(LogicalFixedShapeTensorGrowable, FixedShapeTensorType);
+impl_logical_growable!(LogicalCOOSparseTensorGrowable, COOSparseTensorType);
+impl_logical_growable!(LogicalFixedShapeCOOSparseTensorGrowable, FixedShapeCOOSparseTensorType);
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);

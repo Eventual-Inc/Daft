@@ -51,6 +51,7 @@ mod struct_;
 mod sum;
 mod take;
 pub(crate) mod tensor;
+pub(crate) mod coo_sparse_tensor;
 mod time;
 pub mod trigonometry;
 mod truncate;

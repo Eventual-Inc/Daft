@@ -40,6 +40,8 @@ macro_rules! with_match_daft_types {(
         FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
         Tensor(..) => __with_ty__! { TensorType },
         FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
+        COOSparseTensor(..) => __with_ty__! { COOSparseTensorType },
+        FixedShapeCOOSparseTensor(..) => __with_ty__! { FixedShapeCOOSparseTensorType },
         Decimal128(..) => __with_ty__! { Decimal128Type },
         // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
         Unknown => unimplemented!("Array for Unknown DataType not implemented"),

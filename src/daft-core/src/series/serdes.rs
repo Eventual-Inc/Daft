@@ -10,7 +10,7 @@ use crate::{
     },
     datatypes::logical::{
         DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+        FixedShapeTensorArray, COOSparseTensorArray, FixedShapeCOOSparseTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
     },
     with_match_daft_types, DataType, IntoSeries, Series,
 };
@@ -290,6 +290,24 @@ impl<'d> serde::Deserialize<'d> for Series {
                         type PType = <<FixedShapeTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(FixedShapeTensorArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    COOSparseTensor(..) => {
+                        type PType = <<COOSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(COOSparseTensorArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    FixedShapeCOOSparseTensor(..) => {
+                        type PType = <<FixedShapeCOOSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(FixedShapeCOOSparseTensorArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )

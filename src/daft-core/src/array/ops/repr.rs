@@ -4,8 +4,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
         ImageFormat, NullArray, UInt64Array, Utf8Array,
@@ -290,6 +289,26 @@ impl FixedShapeTensorArray {
     }
 }
 
+impl COOSparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<COOSparseTensor>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl FixedShapeCOOSparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<FixedShapeCOOSparseTensor>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 impl TensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let shape_element = self.physical.children[1]
@@ -472,6 +491,24 @@ impl FixedShapeTensorArray {
 }
 
 impl TensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl COOSparseTensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl FixedShapeCOOSparseTensorArray {
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)

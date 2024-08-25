@@ -9,7 +9,7 @@ use common_error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
+    FixedShapeImageType, FixedShapeTensorType, COOSparseTensorType, FixedShapeCOOSparseTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
     TimeType, TimestampType,
 };
 
@@ -172,6 +172,8 @@ pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
+pub type COOSparseTensorArray = LogicalArray<COOSparseTensorType>;
+pub type FixedShapeCOOSparseTensorArray = LogicalArray<FixedShapeCOOSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
 pub trait DaftImageryType: DaftLogicalType {}

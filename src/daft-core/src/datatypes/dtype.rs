@@ -94,6 +94,10 @@ pub enum DataType {
     Tensor(Box<DataType>),
     /// A logical type for tensors with the same shape.
     FixedShapeTensor(Box<DataType>, Vec<u64>),
+    /// A logical type for sparse tensors with variable shapes.
+    COOSparseTensor(Box<DataType>),
+    /// A logical type for sparse tensors with the same shape.
+    FixedShapeCOOSparseTensor(Box<DataType>, Vec<u64>),
     #[cfg(feature = "python")]
     Python,
     Unknown,
@@ -194,7 +198,9 @@ impl DataType {
             | DataType::Image(..)
             | DataType::FixedShapeImage(..)
             | DataType::Tensor(..)
-            | DataType::FixedShapeTensor(..) => {
+            | DataType::FixedShapeTensor(..)
+            | DataType::COOSparseTensor(..)
+            | DataType::FixedShapeCOOSparseTensor(..) => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = DataType::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -247,6 +253,15 @@ impl DataType {
                 Box::new(*dtype.clone()),
                 usize::try_from(shape.iter().product::<u64>()).unwrap(),
             ),
+            COOSparseTensor(dtype) => Struct(vec![
+                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("indices", List(Box::new(DataType::UInt64))),
+                Field::new("shape", List(Box::new(DataType::UInt64))),
+            ]),
+            FixedShapeCOOSparseTensor(dtype, _) => Struct(vec![
+                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("indices", List(Box::new(DataType::UInt64))),
+            ]),
             _ => {
                 assert!(self.is_physical());
                 self.clone()
@@ -261,6 +276,8 @@ impl DataType {
             | DataType::List(dtype)
             | DataType::FixedSizeList(dtype, _)
             | DataType::FixedShapeTensor(dtype, _)
+            | DataType::COOSparseTensor(dtype)
+            | DataType::FixedShapeCOOSparseTensor(dtype, _)
             | DataType::Tensor(dtype) => Some(dtype),
             _ => None,
         }
@@ -296,7 +313,8 @@ impl DataType {
         match self {
             DataType::FixedSizeList(dtype, ..)
             | DataType::Embedding(dtype, ..)
-            | DataType::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
+            | DataType::FixedShapeTensor(dtype, ..)
+            | DataType::FixedShapeCOOSparseTensor(dtype, ..) => dtype.is_numeric(),
             _ => false,
         }
     }
@@ -352,6 +370,11 @@ impl DataType {
     #[inline]
     pub fn is_fixed_shape_tensor(&self) -> bool {
         matches!(self, DataType::FixedShapeTensor(..))
+    }
+
+    #[inline]
+    pub fn is_fixed_shape_sparse_tensor(&self) -> bool {
+        matches!(self, DataType::FixedShapeCOOSparseTensor(..))
     }
 
     #[inline]
@@ -472,6 +495,8 @@ impl DataType {
                 | DataType::FixedShapeImage(..)
                 | DataType::Tensor(..)
                 | DataType::FixedShapeTensor(..)
+                | DataType::COOSparseTensor(..)
+                | DataType::FixedShapeCOOSparseTensor(..)
                 | DataType::Map(..)
         )
     }

@@ -304,6 +304,21 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn coo_sparse_tensor(dtype: Self, shape: Vec<u64>) -> PyResult<Self> {
+        if !dtype.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for a tensor column must be numeric, but got: {}",
+                dtype.dtype
+            )));
+        }
+        let dtype = Box::new(dtype.dtype);
+        match shape {
+            Some(shape) => Ok(DataType::FixedShapeCOOSparseTensor(dtype, shape).into()),
+            None => Ok(DataType::COOSparseTensor(dtype).into()),
+        }
+    }
+
+    #[staticmethod]
     pub fn python() -> PyResult<Self> {
         Ok(DataType::Python.into())
     }

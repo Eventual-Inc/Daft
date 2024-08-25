@@ -347,6 +347,30 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
+    def coo_sparse_tensor(
+        cls,
+        dtype: DataType,
+        shape: tuple[int, ...] | None = None,
+    ) -> DataType:
+        """Create a COO sparse tensor DataType: COO sparse tensor arrays contain COO representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        ``shape``.
+
+        If a ``shape`` is given, each ndarray in the column will have this shape.
+
+        If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
+        but will result in a less compact representation and may be make some operations less efficient.
+
+        Args:
+            dtype: The type of the data contained within the tensor elements.
+            shape: The shape of each coo sparse tensor in the column. This is ``None`` by default, which allows the shapes of
+                each tensor element to vary.
+        """
+        if shape is not None:
+            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
+                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+        return cls._from_pydatatype(PyDataType.coo_sparse_tensor(dtype._dtype, shape))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
         if pa.types.is_int8(arrow_type):
