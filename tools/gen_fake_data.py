@@ -10,9 +10,10 @@
 import faker
 import pyarrow as pa
 import typer
+from faker.config import AVAILABLE_LOCALES
 from pyarrow import parquet as pq
 
-fake = faker.Faker()
+fake = faker.Faker(locale=AVAILABLE_LOCALES)
 
 
 name_to_func = {
