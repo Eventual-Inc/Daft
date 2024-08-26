@@ -17,34 +17,34 @@ impl SQLModule for SQLModuleNumeric {
     fn register(parent: &mut SQLFunctions) {
         use FunctionExpr::Numeric as f;
         use NumericExpr::*;
-        parent.add("abs", f(Abs));
-        parent.add("ceil", f(Ceil));
-        parent.add("floor", f(Floor));
-        parent.add("sign", f(Sign));
-        parent.add("round", f(Round(0)));
-        parent.add("sqrt", f(Sqrt));
-        parent.add("sin", f(Sin));
-        parent.add("cos", f(Cos));
-        parent.add("tan", f(Tan));
-        parent.add("cot", f(Cot));
-        parent.add("asin", f(ArcSin));
-        parent.add("acos", f(ArcCos));
-        parent.add("atan", f(ArcTan));
-        parent.add("atan2", f(ArcTan2));
-        parent.add("radians", f(Radians));
-        parent.add("degrees", f(Degrees));
-        parent.add("log2", f(Log2));
-        parent.add("log10", f(Log10));
+        parent.add_fn("abs", f(Abs));
+        parent.add_fn("ceil", f(Ceil));
+        parent.add_fn("floor", f(Floor));
+        parent.add_fn("sign", f(Sign));
+        parent.add_fn("round", f(Round(0)));
+        parent.add_fn("sqrt", f(Sqrt));
+        parent.add_fn("sin", f(Sin));
+        parent.add_fn("cos", f(Cos));
+        parent.add_fn("tan", f(Tan));
+        parent.add_fn("cot", f(Cot));
+        parent.add_fn("asin", f(ArcSin));
+        parent.add_fn("acos", f(ArcCos));
+        parent.add_fn("atan", f(ArcTan));
+        parent.add_fn("atan2", f(ArcTan2));
+        parent.add_fn("radians", f(Radians));
+        parent.add_fn("degrees", f(Degrees));
+        parent.add_fn("log2", f(Log2));
+        parent.add_fn("log10", f(Log10));
         // parent.add("log", f(Log(FloatWrapper(0.0))));
-        parent.add("ln", f(Ln));
-        parent.add("exp", f(Exp));
-        parent.add("atanh", f(ArcTanh));
-        parent.add("acosh", f(ArcCosh));
-        parent.add("asinh", f(ArcSinh));
+        parent.add_fn("ln", f(Ln));
+        parent.add_fn("exp", f(Exp));
+        parent.add_fn("atanh", f(ArcTanh));
+        parent.add_fn("acosh", f(ArcCosh));
+        parent.add_fn("asinh", f(ArcSinh));
     }
 }
 
-pub(crate) fn validate(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+pub(crate) fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     use functions::numeric::*;
     use NumericExpr::*;
     match expr {
