@@ -462,6 +462,7 @@ impl Table {
                 .hash(None)?
                 .into_series()
                 .hll(groups),
+            AggExpr::HllMerge(..) => todo!(),
         }
     }
 

@@ -247,6 +247,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                         .collect(),
                 },
                 Hll(e) => Hll(Alias(e, name.clone()).into()),
+                HllMerge(e) => HllMerge(Alias(e, name.clone()).into()),
             }
         }),
         // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions

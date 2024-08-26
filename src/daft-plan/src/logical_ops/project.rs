@@ -452,6 +452,10 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Hll, |_| e.clone())
         }
+        AggExpr::HllMerge(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::HllMerge, |_| e.clone())
+        }
     }
 }
 

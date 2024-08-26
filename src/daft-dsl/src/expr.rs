@@ -3,7 +3,7 @@ use daft_core::{
     count_mode::CountMode,
     datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
     schema::Schema,
-    utils::supertype::try_get_supertype,
+    utils::{hyperloglog::NUM_REGISTERS, supertype::try_get_supertype},
 };
 use itertools::Itertools;
 
@@ -86,6 +86,7 @@ pub enum AggExpr {
         inputs: Vec<ExprRef>,
     },
     Hll(ExprRef),
+    HllMerge(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -111,7 +112,8 @@ impl AggExpr {
             | AnyValue(expr, _)
             | List(expr)
             | Concat(expr)
-            | Hll(expr) => expr.name(),
+            | Hll(expr)
+            | HllMerge(expr) => expr.name(),
             MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -177,6 +179,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.hll()"))
             }
+            HllMerge(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.hll_merge()"))
+            }
         }
     }
 
@@ -194,7 +200,8 @@ impl AggExpr {
             | AnyValue(expr, _)
             | List(expr)
             | Concat(expr)
-            | Hll(expr) => vec![expr.clone()],
+            | Hll(expr)
+            | HllMerge(expr) => vec![expr.clone()],
             MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -232,6 +239,7 @@ impl AggExpr {
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
             Hll(_) => Hll(children[0].clone()),
+            HllMerge(_) => HllMerge(children[0].clone()),
         }
     }
 
@@ -338,7 +346,17 @@ impl AggExpr {
             MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
             Hll(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name, DataType::UInt64))
+                Ok(Field::new(
+                    field.name,
+                    DataType::FixedSizeBinary(NUM_REGISTERS),
+                ))
+            }
+            HllMerge(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name,
+                    DataType::FixedSizeBinary(NUM_REGISTERS),
+                ))
             }
         }
     }
@@ -1045,6 +1063,7 @@ impl Display for AggExpr {
             Concat(expr) => write!(f, "list({expr})"),
             MapGroups { func, inputs } => function_display(f, func, inputs),
             Hll(expr) => write!(f, "hll({expr})"),
+            HllMerge(expr) => write!(f, "hll_merge({expr})"),
         }
     }
 }
