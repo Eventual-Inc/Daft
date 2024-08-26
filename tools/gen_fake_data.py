@@ -53,7 +53,7 @@ def main(target_file: str, rows: int, row_group_size: int = 128 * 1024):
     table = pa.table(data)
     schema = table.schema
 
-    file = pq.ParquetWriter(target_file, schema=schema, compression="zstd", store_schema=True)
+    file = pq.ParquetWriter(target_file, schema=schema, compression="zstd", store_schema=False)
 
     rows_written = 0
     while rows_written < rows:
