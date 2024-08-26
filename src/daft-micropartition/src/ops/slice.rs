@@ -27,17 +27,18 @@ impl MicroPartition {
             }
 
             let tab_rows = tab.len();
-            if offset_so_far > 0 && offset_so_far >= tab_rows {
-                offset_so_far -= tab_rows;
-                continue;
-            }
 
-            if offset_so_far == 0 && rows_needed >= tab_rows {
+            if offset_so_far >= tab_rows {
+                // we can skip the entire table
+                offset_so_far -= tab_rows;
+            } else if offset_so_far == 0 && rows_needed >= tab_rows {
+                // we can take the entire table
                 slices_tables.push(tab.clone());
                 rows_needed -= tab_rows;
             } else {
-                let new_end = (rows_needed + offset_so_far).min(tab_rows);
-                let sliced = tab.slice(offset_so_far, new_end)?;
+                // we need to slice the table
+                let tab_end = (offset_so_far + rows_needed).min(tab_rows);
+                let sliced = tab.slice(offset_so_far, tab_end)?;
                 offset_so_far = 0;
                 rows_needed -= sliced.len();
                 slices_tables.push(sliced);
