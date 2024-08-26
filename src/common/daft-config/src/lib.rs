@@ -10,7 +10,7 @@ pub const BOLD_TABLE_HEADERS_IN_DISPLAY: &str = "DAFT_BOLD_TABLE_HEADERS";
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
 ///     that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub enable_actor_pool_projections: bool,
@@ -110,6 +110,9 @@ mod python;
 
 #[cfg(feature = "python")]
 pub use python::PyDaftExecutionConfig;
+
+#[cfg(feature = "python")]
+pub use python::PyDaftPlanningConfig;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

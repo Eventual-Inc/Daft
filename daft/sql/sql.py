@@ -1,6 +1,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from daft.api_annotations import PublicAPI
+from daft.context import get_context
 from daft.daft import PyCatalog as _PyCatalog
 from daft.daft import sql as _sql
 from daft.daft import sql_expr as _sql_expr
@@ -45,6 +46,8 @@ def sql(sql: str, catalog: SQLCatalog) -> DataFrame:
     Returns:
         DataFrame: Dataframe containing the results of the query
     """
+    planning_config = get_context().daft_planning_config
+
     _py_catalog = catalog._catalog
-    _py_logical = _sql(sql, _py_catalog)
+    _py_logical = _sql(sql, _py_catalog, planning_config)
     return DataFrame(LogicalPlanBuilder(_py_logical))

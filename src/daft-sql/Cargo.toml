@@ -1,4 +1,5 @@
 [dependencies]
+common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
 daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}

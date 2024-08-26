@@ -407,7 +407,7 @@ impl SQLPlanner {
                     .catalog
                     .get_table(&table_name)
                     .ok_or_else(|| PlannerError::table_not_found(table_name.clone()))?;
-                let plan_builder = LogicalPlanBuilder::new(plan);
+                let plan_builder = LogicalPlanBuilder::new(plan, None);
                 Ok(Relation::new(plan_builder, table_name))
             }
             _ => todo!(),

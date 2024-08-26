@@ -2082,6 +2082,7 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-daft-config",
  "common-error",
  "daft-core",
  "daft-dsl",

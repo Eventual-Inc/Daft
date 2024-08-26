@@ -575,6 +575,7 @@ mod tests {
         )
     }
 
+    #[cfg(not(feature = "python"))]
     fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
@@ -598,6 +599,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
@@ -624,6 +626,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_parallel() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
@@ -712,6 +715,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_parallel_common_subtree_eliminated() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
@@ -779,6 +783,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
@@ -855,6 +860,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial_multiarg() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
@@ -958,6 +964,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial_multiarg_with_intermediate_stateless() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
@@ -1078,6 +1085,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
     #[test]
     fn test_nested_with_column_same_names() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
