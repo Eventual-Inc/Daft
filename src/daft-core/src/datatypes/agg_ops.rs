@@ -10,6 +10,7 @@ pub fn try_sum_supertype(dtype: &DataType) -> DaftResult<DataType> {
         UInt8 | UInt16 | UInt32 | UInt64 => Ok(UInt64),
         Float32 => Ok(Float32),
         Float64 => Ok(Float64),
+        Decimal128(a, b) => Ok(Decimal128(*a, *b)),
         other => Err(DaftError::TypeError(format!(
             "Invalid argument to sum supertype: {}",
             other

@@ -4,6 +4,7 @@ use crate::series::IntoSeries;
 use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
+use logical::Decimal128Array;
 
 use crate::datatypes::*;
 
@@ -60,6 +61,21 @@ impl Series {
                 )?
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
+            },
+            Decimal128(_, _) => match groups {
+                Some(groups) => Ok(Decimal128Array::new(
+                    self.field().clone(),
+                    DaftSumAggable::grouped_sum(
+                        &self.as_physical()?.downcast::<Int128Array>()?,
+                        groups,
+                    )?,
+                )
+                .into_series()),
+                None => Ok(Decimal128Array::new(
+                    self.field().clone(),
+                    DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
+                )
+                .into_series()),
             },
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",

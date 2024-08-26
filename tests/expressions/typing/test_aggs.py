@@ -44,6 +44,20 @@ def test_numeric_aggs(unary_data_fixture, op):
     )
 
 
+def test_decimal_sum(decimal_unary_data_fixture):
+    arg = decimal_unary_data_fixture
+
+    def op(x):
+        return x.sum()
+
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(decimal_unary_data_fixture,),
+        expr=op(col(arg.name())),
+        run_kernel=lambda: op(arg),
+        resolvable=True,
+    )
+
+
 def test_count(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
