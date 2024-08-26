@@ -286,16 +286,16 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.Table"]:
+    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.RecordBatch"]:
         """
-        Return an iterator of pyarrow tables for this dataframe.
+        Return an iterator of pyarrow recordbatches for this dataframe.
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield self.to_arrow()
+            yield from self.to_arrow().to_batches()
 
         else:
             # Execute the dataframe in a streaming fashion.
@@ -304,7 +304,7 @@ class DataFrame:
 
             # Iterate through partitions.
             for partition in partitions_iter:
-                yield partition.to_arrow()
+                yield from partition.to_arrow().to_batches()
 
     @DataframePublicAPI
     def iter_partitions(
