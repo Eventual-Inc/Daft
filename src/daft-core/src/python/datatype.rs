@@ -304,7 +304,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn coo_sparse_tensor(dtype: Self, shape: Vec<u64>) -> PyResult<Self> {
+    pub fn coo_sparse_tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         if !dtype.dtype.is_numeric() {
             return Err(PyValueError::new_err(format!(
                 "The data type for a tensor column must be numeric, but got: {}",

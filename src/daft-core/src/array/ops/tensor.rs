@@ -17,9 +17,7 @@ impl TensorArray {
 #[cfg(test)]
 mod tests {
     use crate::{
-        array::{
-            ops::DaftCompare, ListArray, StructArray
-        },
+        array::{ListArray, StructArray},
         datatypes::{
             logical::TensorArray,
             DataType, Field, Int64Array, UInt64Array,
@@ -30,17 +28,20 @@ mod tests {
 
     #[test]
     fn test_tesnor_array() -> DaftResult<()> {
+        let raw_validity = vec![true, true, false];
+        let validity = arrow2::bitmap::Bitmap::from(raw_validity.as_slice());
+
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(
-                    [Some(0), Some(1), Some(2), Some(0), Some(0), Some(3)].iter(),
+                    [Some(0), Some(1), Some(2), Some(0), Some(0), Some(3), Some(100)].iter(),
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6])?,
-            None,
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 6])?,
+            Some(validity.clone()),
         )
         .into_series();
         let shapes_array = ListArray::new(
@@ -48,19 +49,19 @@ mod tests {
             UInt64Array::from((
                 "item",
                 Box::new(arrow2::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(1)].iter(),
+                    [Some(3), Some(3), Some(1), Some(1)].iter(),
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3])?,
-            None,
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 3])?,
+            Some(validity.clone())
         )
         .into_series();
         let dtype = DataType::Tensor(Box::new(DataType::Int64));
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![list_array, shapes_array],
-            None,
+            Some(validity.clone()),
         );
         let tensor_array =
             TensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);

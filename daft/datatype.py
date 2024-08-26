@@ -367,7 +367,7 @@ class DataType:
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+                raise ValueError("COOSparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.coo_sparse_tensor(dtype._dtype, shape))
 
     @classmethod

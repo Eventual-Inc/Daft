@@ -1414,9 +1414,8 @@ impl TensorArray {
             DataType::COOSparseTensor(inner_dtype) => {
                 let shape_iterator = self.shape_array().into_iter();
                 let data_iterator = self.data_array().into_iter();
-                let enumerated_data = shape_iterator
-                    .zip(data_iterator)
-                    .map(|(shape, data)| (shape.unwrap(), data.unwrap()));
+                let validity = self.data_array().validity();
+                let shape_and_data_iter = shape_iterator.zip(data_iterator);
                 let zero_series = Int64Array::from((
                     "item",
                     Box::new(arrow2::array::Int64Array::from_iter([Some(0)].iter())),
@@ -1425,7 +1424,17 @@ impl TensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 let mut offsets = Vec::<usize>::new();
-                for (shape_series, data_series) in enumerated_data {
+                for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
+                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    if !is_valid {
+                        // Handle invalid row by populating dummy data.
+                        offsets.push(0);
+                        non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
+                        non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
+                        continue;
+                    }
+                    let shape_series = shape_series.unwrap();
+                    let data_series = data_series.unwrap();
                     let shape_array = shape_series.u64().unwrap();
                     assert!(
                         data_series.len()
@@ -1439,7 +1448,7 @@ impl TensorArray {
                     offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
-                }
+                };
 
                 let new_dtype = DataType::COOSparseTensor(Box::new(inner_dtype.as_ref().clone()));
                 let offsets: Offsets<i64> =
@@ -1456,7 +1465,7 @@ impl TensorArray {
                     ),
                     non_zero_values_series,
                     offsets.into(),
-                    None,
+                    validity.cloned(),
                 );
                 let indices_list_arr = ListArray::new(
                     Field::new(
@@ -1465,7 +1474,7 @@ impl TensorArray {
                     ),
                     non_zero_indices_series,
                     offsets_cloned.into(),
-                    None,
+                    validity.cloned(),
                 );
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), new_dtype.to_physical()),
@@ -1474,7 +1483,7 @@ impl TensorArray {
                         indices_list_arr.into_series(),
                         self.shape_array().clone().into_series(),
                     ],
-                    None,
+                    validity.cloned(),
                 );
                 Ok(COOSparseTensorArray::new(
                     Field::new(sparse_struct_array.name(), new_dtype.clone()),
@@ -1617,12 +1626,19 @@ impl COOSparseTensorArray {
                                 shape.values().clone().into_iter().product::<u64>() as usize;
                             sizes_vec[i] = num_elements;
                         }
-                        _ => {}
+                        None => {sizes_vec[i] = 0;}
                     }
                 }
                 let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
+                let vallidity = non_zero_indices_array.validity();
                 let mut values = vec![0 as i64; sizes_vec.iter().sum::<usize>() as usize];
                 for (i, indices) in non_zero_indices_array.into_iter().enumerate() {
+                    let is_valid = vallidity.map_or(true, |v| v.get_bit(i));
+                    if !is_valid {
+                        // Handle invalid row by populating dummy data.
+                        values.push(0);
+                        continue;
+                    }
                     for j in 0..indices.unwrap().len() {
                         let index = non_zero_indices_array
                             .get(i)
@@ -1652,20 +1668,20 @@ impl COOSparseTensorArray {
                             as Box<dyn arrow2::array::Array>,
                     ))?,
                     offsets.into(),
-                    None,
+                    vallidity.cloned(),
                 ).into_series();
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![list_arr, shape_array.clone().into_series()],
-                    None
+                    vallidity.cloned()
                 );
                 Ok(
                     TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
                         .into_series(),
                 )
             }
-            (_) => self.physical.cast(dtype),
+            _ => self.physical.cast(dtype),
         }
     }
 }
