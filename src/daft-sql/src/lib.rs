@@ -167,7 +167,7 @@ mod tests {
         let sql = "select test as a from tbl1";
         let plan = planner.plan_sql(sql).unwrap();
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("test").alias("a")])
             .unwrap()
             .build();
@@ -179,7 +179,7 @@ mod tests {
         let sql = "select test as a from tbl1 where test = 'a'";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .filter(col("test").eq(lit("a")))?
             .select(vec![col("test").alias("a")])?
             .build();
@@ -192,7 +192,7 @@ mod tests {
         let sql = "select test as a from tbl1 limit 10";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("test").alias("a")])?
             .limit(10, true)?
             .build();
@@ -206,7 +206,7 @@ mod tests {
         let sql = "select utf8 from tbl1 order by utf8 desc";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("utf8")])?
             .sort(vec![col("utf8")], vec![true])?
             .build();
@@ -217,7 +217,7 @@ mod tests {
 
     #[rstest]
     fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::new(tbl_1);
+        let builder = LogicalPlanBuilder::new(tbl_1, None);
         let cases = vec![
             (
                 "select bool::text from tbl1",
@@ -255,7 +255,7 @@ mod tests {
     ) -> SQLPlannerResult<()> {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id";
         let plan = planner.plan_sql(sql)?;
-        let expected = LogicalPlanBuilder::new(tbl_2)
+        let expected = LogicalPlanBuilder::new(tbl_2, None)
             .join(
                 tbl_3,
                 vec![col("id")],

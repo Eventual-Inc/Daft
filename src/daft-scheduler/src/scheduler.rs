@@ -13,8 +13,9 @@ use {
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
+    daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
-    daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
+    daft_scan::python::pylib::PyScanTask,
     pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
@@ -154,7 +155,7 @@ fn tabular_write(
         .getattr(pyo3::intern!(py, "write_file"))?
         .call1((
             upstream_iter,
-            file_format.clone(),
+            *file_format,
             PySchema::from(schema.clone()),
             root_dir,
             compression.clone(),

@@ -213,7 +213,7 @@ def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair,
         for name in files:
             fs.touch(f"bucket/{name}")
 
-        if type(expect) == type and issubclass(expect, BaseException):
+        if type(expect) is type and issubclass(expect, BaseException):
             with pytest.raises(expect):
                 io_glob(globpath, io_config=minio_io_config, fanout_limit=fanout_limit)
         else:

@@ -14,6 +14,7 @@ on:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
+  UV_SYSTEM_PYTHON: 1
 
 jobs:
 
@@ -68,27 +69,27 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
 
     - name: Install dependencies
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        activate
+        uv pip install -r requirements-dev.txt
 
     - name: Install dependencies (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
-        python -m pip install --upgrade pip
-        python -m pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
 
     - name: Override pyarrow
       if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
-      run: pip install pyarrow==${{ matrix.pyarrow-version }}
+      run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
       if: ${{ (matrix.pyarrow-version == '7.0.0') }}
-      run: pip install deltalake==0.10.0
+      run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
       if: ${{ (runner.os != 'Windows') }}
@@ -238,14 +239,16 @@ jobs:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+
     - name: Setup Virtual Env
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+
     - name: Install Daft and dev dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -316,10 +319,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -399,10 +402,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -488,10 +491,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v5
@@ -566,10 +569,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Spin up services
       run: |
@@ -642,10 +645,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
     - name: Build Rust Library
       run: |
         source activate
@@ -782,10 +785,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
     - name: Run doctests
       run: |
         source activate
@@ -940,8 +943,8 @@ jobs:
 
     - name: Install pre-commit
       run: |
-        pip install --upgrade pip
-        pip install pre-commit
+        pip install uv
+        uv pip install pre-commit
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import functools
 import pathlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
+from daft.context import get_context
 from daft.daft import (
     CountMode,
     FileFormat,
@@ -24,6 +26,25 @@ if TYPE_CHECKING:
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
     )
+
+
+def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
+    """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder
+
+    This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
+    """
+
+    @functools.wraps(classmethod_func)
+    def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
+        instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
+
+        # Parametrize the builder with the current DaftPlanningConfig
+        inner = instantiated_logical_plan_builder._builder
+        inner = inner.with_planning_config(get_context().daft_planning_config)
+
+        return cls(inner)
+
+    return wrapper
 
 
 class LogicalPlanBuilder:
@@ -91,6 +112,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_in_memory_scan(
         cls,
         partition: PartitionCacheEntry,
@@ -110,6 +132,7 @@ class LogicalPlanBuilder:
         return cls(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_tabular_scan(
         cls,
         *,

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use crate::{
     channel::{MultiSender, SingleSender},
     runtime_stats::{CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, DEFAULT_MORSEL_SIZE,
+    ExecutionRuntimeHandle,
 };
 
 use super::source::{Source, SourceStream};
@@ -69,7 +69,7 @@ impl Source for ScanTaskSource {
         runtime_stats: Arc<RuntimeStatsContext>,
         io_stats: IOStatsRef,
     ) -> crate::Result<()> {
-        let morsel_size = DEFAULT_MORSEL_SIZE;
+        let morsel_size = runtime_handle.default_morsel_size();
         let maintain_order = destination.in_order();
         for scan_task in self.scan_tasks.clone() {
             let sender = destination.get_next_sender();

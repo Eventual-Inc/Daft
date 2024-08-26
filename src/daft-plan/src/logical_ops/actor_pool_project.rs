@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_core::schema::{Schema, SchemaRef};
@@ -14,7 +15,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{CreationSnafu, Result},
+    logical_plan::{CreationSnafu, Error, Result},
     LogicalPlan,
 };
 
@@ -30,7 +31,33 @@ impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
             resolve_exprs(projection, input.schema().as_ref()).context(CreationSnafu)?;
+
+        let num_stateful_udf_exprs: usize = projection
+            .iter()
+            .map(|expr| {
+                let mut num_stateful_udfs = 0;
+                expr.apply(|e| {
+                    if matches!(
+                        e.as_ref(),
+                        Expr::Function {
+                            func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+                            ..
+                        }
+                    ) {
+                        num_stateful_udfs += 1;
+                    }
+                    Ok(common_treenode::TreeNodeRecursion::Continue)
+                })
+                .unwrap();
+                num_stateful_udfs
+            })
+            .sum();
+        if !num_stateful_udf_exprs == 1 {
+            return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 stateful UDF expression but found: {num_stateful_udf_exprs}")) });
+        }
+
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
+
         Ok(ActorPoolProject {
             input,
             projection,

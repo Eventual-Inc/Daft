@@ -610,7 +610,7 @@ impl Expr {
         }
     }
 
-    pub(super) fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
         use Expr::*;
         match self {
             // no children

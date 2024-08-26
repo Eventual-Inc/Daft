@@ -154,11 +154,11 @@ def test_udf_return_containers(container, batch_size):
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def identity(data):
-        if container == Series:
+        if container is Series:
             return data
-        elif container == list:
+        elif container is list:
             return data.to_pylist()
-        elif container == np.ndarray:
+        elif container is np.ndarray:
             return np.array(data.to_arrow())
         else:
             raise NotImplementedError(f"Test not implemented for container type: {container}")

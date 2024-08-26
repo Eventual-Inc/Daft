@@ -201,12 +201,6 @@ async fn read_parquet_single(
         ))
     }?;
 
-    let rows_per_row_groups = metadata
-        .row_groups
-        .values()
-        .map(|m| m.num_rows())
-        .collect::<Vec<_>>();
-
     let metadata_num_rows = metadata.num_rows;
     let metadata_num_columns = metadata.schema().fields().len();
 
@@ -265,7 +259,7 @@ async fn read_parquet_single(
     } else if let Some(row_groups) = row_groups {
         let expected_rows = row_groups
             .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+            .map(|i| metadata.row_groups.get(&(*i as usize)).unwrap().num_rows())
             .sum::<usize>()
             - num_deleted_rows;
         if expected_rows != table.len() {

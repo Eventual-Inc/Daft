@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
-from daft.context import get_context, set_execution_config
+from daft.context import execution_config_ctx, get_context
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -350,8 +350,10 @@ def single_partition_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, partial_metadatas, *inputs)
+    with execution_config_ctx(
+        config=daft_execution_config,
+    ):
+        return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray.remote
@@ -361,8 +363,8 @@ def fanout_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, partial_metadatas, *inputs)
+    with execution_config_ctx(config=daft_execution_config):
+        return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
@@ -374,8 +376,8 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
+    with execution_config_ctx(config=daft_execution_config):
+        return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray.remote(scheduling_strategy="SPREAD")
@@ -387,8 +389,8 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    set_execution_config(daft_execution_config)
-    return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
+    with execution_config_ctx(config=daft_execution_config):
+        return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray.remote

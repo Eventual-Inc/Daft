@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import os
@@ -17,7 +18,7 @@ import threading
 
 
 class _RunnerConfig:
-    name = ClassVar[str]
+    name: ClassVar[str]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -244,6 +245,17 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         return ctx
 
 
+@contextlib.contextmanager
+def planning_config_ctx(**kwargs):
+    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
+    original_config = get_context().daft_planning_config
+    try:
+        set_planning_config(**kwargs)
+        yield
+    finally:
+        set_planning_config(config=original_config)
+
+
 def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
@@ -269,6 +281,17 @@ def set_planning_config(
         return ctx
 
 
+@contextlib.contextmanager
+def execution_config_ctx(**kwargs):
+    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards"""
+    original_config = get_context().daft_execution_config
+    try:
+        set_execution_config(**kwargs)
+        yield
+    finally:
+        set_execution_config(config=original_config)
+
+
 def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
     scan_tasks_min_size_bytes: int | None = None,
@@ -288,6 +311,7 @@ def set_execution_config(
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
+    default_morsel_size: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -323,6 +347,7 @@ def set_execution_config(
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
+        default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -346,6 +371,7 @@ def set_execution_config(
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
+            default_morsel_size=default_morsel_size,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

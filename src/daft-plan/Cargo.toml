@@ -22,6 +22,7 @@ common-resource-request = {path = "../common/resource-request", default-features
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true}
@@ -35,6 +36,7 @@ snafu = {workspace = true}
 daft-functions = {path = "../daft-functions", default-features = false}
 pretty_assertions = {workspace = true}
 rstest = {workspace = true}
+test-log = {workspace = true}
 
 [features]
 python = [
@@ -46,6 +48,7 @@ python = [
   "common-resource-request/python",
   "daft-core/python",
   "daft-dsl/python",
+  "daft-io/python",
   "daft-functions/python",
   "daft-table/python",
   "daft-scan/python"

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::object_io::{self, FileMetadata, LSResult};
 use crate::stats::IOStatsRef;
+use crate::FileFormat;
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
@@ -196,6 +197,7 @@ impl ObjectSource for LocalSource {
         _page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

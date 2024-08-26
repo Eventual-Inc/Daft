@@ -116,6 +116,7 @@ def lit(value: object) -> Expression:
         lit_value = _time_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
+        assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
@@ -440,7 +441,9 @@ class Expression:
 
     def __rshift__(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``e1 >> e2``)
+
         .. NOTE::
+
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.
 
@@ -675,6 +678,7 @@ class Expression:
 
     def shift_right(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``expr >> other``)
+
         .. NOTE::
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.

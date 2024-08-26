@@ -16,19 +16,15 @@ lazy_static! {
 }
 
 pub struct ExecutionRuntimeHandle {
-    pub worker_set: tokio::task::JoinSet<crate::Result<()>>,
-}
-
-impl Default for ExecutionRuntimeHandle {
-    fn default() -> Self {
-        Self::new()
-    }
+    worker_set: tokio::task::JoinSet<crate::Result<()>>,
+    default_morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
-    pub fn new() -> Self {
+    pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
+            default_morsel_size,
         }
     }
     pub fn spawn(
@@ -48,9 +44,11 @@ impl ExecutionRuntimeHandle {
     pub async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
     }
-}
 
-const DEFAULT_MORSEL_SIZE: usize = 1000;
+    pub fn default_morsel_size(&self) -> usize {
+        self.default_morsel_size
+    }
+}
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

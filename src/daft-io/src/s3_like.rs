@@ -13,7 +13,7 @@ use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
-use crate::{get_io_pool_num_threads, InvalidArgumentSnafu, SourceType};
+use crate::{get_io_pool_num_threads, FileFormat, InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::{
     CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache,
@@ -1063,6 +1063,7 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

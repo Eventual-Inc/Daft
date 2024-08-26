@@ -42,6 +42,7 @@ mod py {
                         page_size,
                         limit,
                         Some(io_stats_handle),
+                        None,
                     )
                     .await?
                     .try_collect()

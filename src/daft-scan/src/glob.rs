@@ -3,7 +3,7 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
@@ -65,6 +65,7 @@ fn run_glob(
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
+    file_format: FileFormat,
 ) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
@@ -72,7 +73,7 @@ fn run_glob(
     let runtime_handle = runtime.handle();
     let boxstream = runtime_handle.block_on(async move {
         io_client
-            .glob(glob_input, None, None, limit, io_stats)
+            .glob(glob_input, None, None, limit, io_stats, Some(file_format))
             .await
     })?;
 
@@ -90,6 +91,7 @@ fn run_glob_parallel(
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
+    file_format: FileFormat,
 ) -> DaftResult<impl Iterator<Item = DaftResult<FileMetadata>>> {
     let num_parallel_tasks = 64;
 
@@ -102,7 +104,7 @@ fn run_glob_parallel(
 
         runtime.spawn(async move {
             let stream = io_client
-                .glob(glob_input, None, None, None, io_stats)
+                .glob(glob_input, None, None, None, io_stats, Some(file_format))
                 .await?;
             let results = stream.collect::<Vec<_>>().await;
             Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
@@ -137,6 +139,8 @@ impl GlobScanOperator {
             Some(path) => Ok(path),
         }?;
 
+        let file_format = file_format_config.file_format();
+
         let (io_runtime, io_client) = storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::try_new schema inference for {first_glob_path}"
@@ -147,6 +151,7 @@ impl GlobScanOperator {
             io_client.clone(),
             io_runtime.clone(),
             Some(io_stats.clone()),
+            file_format,
         )?;
         let FileMetadata {
             filepath: first_filepath,
@@ -285,12 +290,14 @@ impl ScanOperator for GlobScanOperator {
             "GlobScanOperator::to_scan_tasks for {:#?}",
             self.glob_paths
         ));
+        let file_format = self.file_format_config.file_format();
 
         let files = run_glob_parallel(
             self.glob_paths.clone(),
             io_client.clone(),
             io_runtime.clone(),
             Some(io_stats.clone()),
+            file_format,
         )?;
 
         let file_format_config = self.file_format_config.clone();
