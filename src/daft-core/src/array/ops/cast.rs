@@ -1631,16 +1631,7 @@ impl FixedSizeListArray {
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                let offsets: Offsets<i64> = match self.validity() {
-                    None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
-                    Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
-                        if v {
-                            element_size
-                        } else {
-                            0
-                        }
-                    }))?,
-                };
+                let offsets = Offsets::try_from_iter(repeat(element_size).take(self.len()))?;
                 Ok(ListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
