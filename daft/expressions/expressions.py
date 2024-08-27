@@ -703,13 +703,13 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def approx_distinct(self) -> Expression:
+    def approx_count_distinct(self) -> Expression:
         """
         Calculates the approximate number of unique values in the expression.
 
         Approximation is performed using the `HyperLogLog` algorithm.
         """
-        expr = self._expr.approx_distinct()
+        expr = self._expr.approx_count_distinct()
         return Expression._from_pyexpr(expr)
 
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:

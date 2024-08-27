@@ -29,7 +29,7 @@ fn construct_data(bytes: Vec<u8>) -> Box<Arrow2FixedSizeBinaryArray> {
 impl DaftApproxCountDistinctSketchAggable for UInt64Array {
     type Output = DaftResult<FixedSizeBinaryArray>;
 
-    fn hll(&self) -> Self::Output {
+    fn approx_count_distinct_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
         for &value in self.as_arrow().values_iter() {
             hll.add_already_hashed(value);
@@ -39,7 +39,7 @@ impl DaftApproxCountDistinctSketchAggable for UInt64Array {
         DataArray::new(field, data)
     }
 
-    fn grouped_hll(&self, group_indices: &GroupIndices) -> Self::Output {
+    fn grouped_approx_count_distinct_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let mut bytes = Vec::with_capacity(group_indices.len() * NUM_REGISTERS);
         for group in group_indices {

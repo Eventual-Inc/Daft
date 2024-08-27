@@ -452,13 +452,13 @@ fn replace_column_with_semantic_id_aggexpr(
                 })
             }
         }
-        AggExpr::Hll(ref child) => {
+        AggExpr::ApproxCountDistinctSketch(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Hll, |_| e.clone())
+                .map_yes_no(AggExpr::ApproxCountDistinctSketch, |_| e.clone())
         }
-        AggExpr::HllMerge(ref child) => {
+        AggExpr::ApproxCountDistinctMerge(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::HllMerge, |_| e.clone())
+                .map_yes_no(AggExpr::ApproxCountDistinctMerge, |_| e.clone())
         }
     }
 }

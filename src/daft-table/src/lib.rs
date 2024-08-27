@@ -462,12 +462,14 @@ impl Table {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
-            AggExpr::Hll(expr) => self
+            AggExpr::ApproxCountDistinctSketch(expr) => self
                 .eval_expression(expr)?
                 .hash(None)?
                 .into_series()
-                .hll(groups),
-            AggExpr::HllMerge(expr) => self.eval_expression(expr)?.hll_merge(groups),
+                .approx_count_distinct_sketch(groups),
+            AggExpr::ApproxCountDistinctMerge(expr) => self
+                .eval_expression(expr)?
+                .approx_count_distinct_merge(groups),
         }
     }
 
@@ -802,7 +804,9 @@ mod test {
         let k = Int64Array::from(("k", vec![1, 1, 2])).into_series();
         let table = Table::from_nonempty_columns(vec![k])?;
 
-        let result = table.eval_expression(&col("k"))?.hll(None)?;
+        let result = table
+            .eval_expression(&col("k"))?
+            .approx_count_distinct_sketch(None)?;
         println!("{}", result.to_comfy_table());
 
         Ok(())

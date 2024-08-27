@@ -247,8 +247,12 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                         .map(|input| input.alias(name.clone()))
                         .collect(),
                 },
-                Hll(e) => Hll(Alias(e, name.clone()).into()),
-                HllMerge(e) => HllMerge(Alias(e, name.clone()).into()),
+                ApproxCountDistinctSketch(e) => {
+                    ApproxCountDistinctSketch(Alias(e, name.clone()).into())
+                }
+                ApproxCountDistinctMerge(e) => {
+                    ApproxCountDistinctMerge(Alias(e, name.clone()).into())
+                }
             }
         }),
         // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions

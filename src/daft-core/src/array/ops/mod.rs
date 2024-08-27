@@ -213,12 +213,12 @@ pub trait DaftConcatAggable {
 
 pub trait DaftApproxCountDistinctSketchAggable {
     type Output;
-    fn hll(&self) -> Self::Output;
-    fn grouped_hll(&self, groups: &GroupIndices) -> Self::Output;
+    fn approx_count_distinct_sketch(&self) -> Self::Output;
+    fn grouped_approx_count_distinct_sketch(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftApproxCountDistinctMergeAggable {
     type Output;
-    fn hll_merge(&self) -> Self::Output;
-    fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
+    fn approx_count_distinct_merge(&self) -> Self::Output;
+    fn grouped_approx_count_distinct_merge(&self, groups: &GroupIndices) -> Self::Output;
 }

@@ -232,21 +232,24 @@ impl Series {
         }
     }
 
-    pub fn hll(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn approx_count_distinct_sketch(
+        &self,
+        groups: Option<&GroupIndices>,
+    ) -> DaftResult<Series> {
         let downcasted_self = self.downcast::<UInt64Array>()?;
         let series = match groups {
-            Some(groups) => downcasted_self.grouped_hll(groups),
-            None => downcasted_self.hll(),
+            Some(groups) => downcasted_self.grouped_approx_count_distinct_sketch(groups),
+            None => downcasted_self.approx_count_distinct_sketch(),
         }?
         .into_series();
         Ok(series)
     }
 
-    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn approx_count_distinct_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
         let series = match groups {
-            Some(groups) => downcasted_self.grouped_hll_merge(groups),
-            None => downcasted_self.hll_merge(),
+            Some(groups) => downcasted_self.grouped_approx_count_distinct_merge(groups),
+            None => downcasted_self.approx_count_distinct_merge(),
         }?
         .into_series();
         Ok(series)

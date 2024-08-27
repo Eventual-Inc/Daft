@@ -403,8 +403,8 @@ impl PyExpr {
         Ok(self.expr.clone().sum().into())
     }
 
-    pub fn approx_distinct(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().approx_distinct().into())
+    pub fn approx_count_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().approx_count_distinct().into())
     }
 
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {

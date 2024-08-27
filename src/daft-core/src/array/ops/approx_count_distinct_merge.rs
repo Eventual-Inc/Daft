@@ -13,7 +13,7 @@ use crate::array::ops::GroupIndices;
 impl DaftApproxCountDistinctMergeAggable for &FixedSizeBinaryArray {
     type Output = DaftResult<UInt64Array>;
 
-    fn hll_merge(&self) -> Self::Output {
+    fn approx_count_distinct_merge(&self) -> Self::Output {
         let mut final_hll = HyperLogLog::default();
         for byte_slice in self.as_arrow().values_iter() {
             let hll = HyperLogLog::new_with_byte_slice(byte_slice);
@@ -25,7 +25,7 @@ impl DaftApproxCountDistinctMergeAggable for &FixedSizeBinaryArray {
         UInt64Array::new(field, data)
     }
 
-    fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output {
+    fn grouped_approx_count_distinct_merge(&self, groups: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let mut counts = vec![];
         for group in groups {
