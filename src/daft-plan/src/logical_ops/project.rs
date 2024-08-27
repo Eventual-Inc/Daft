@@ -381,6 +381,10 @@ fn replace_column_with_semantic_id_aggexpr(
                 |_| e.clone(),
             )
         }
+        AggExpr::CountApproxDistinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::CountApproxDistinct, |_| e.clone())
+        }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())

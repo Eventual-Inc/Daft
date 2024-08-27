@@ -433,6 +433,7 @@ impl Table {
     ) -> DaftResult<Series> {
         match agg_expr {
             &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
+            AggExpr::CountApproxDistinct(..) => todo!(),
             AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
             AggExpr::ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {

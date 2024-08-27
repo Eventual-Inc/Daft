@@ -71,6 +71,7 @@ pub struct ApproxPercentileParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     Count(ExprRef, CountMode),
+    CountApproxDistinct(ExprRef),
     Sum(ExprRef),
     ApproxSketch(ExprRef),
     ApproxPercentile(ApproxPercentileParams),
@@ -102,6 +103,7 @@ impl AggExpr {
         use AggExpr::*;
         match self {
             Count(expr, ..)
+            | CountApproxDistinct(expr)
             | Sum(expr)
             | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
@@ -124,6 +126,10 @@ impl AggExpr {
             Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
+            }
+            CountApproxDistinct(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_count_approx_distinct()"))
             }
             Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -190,6 +196,7 @@ impl AggExpr {
         use AggExpr::*;
         match self {
             Count(expr, ..)
+            | CountApproxDistinct(expr)
             | Sum(expr)
             | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
@@ -216,6 +223,7 @@ impl AggExpr {
         }
         match self {
             Count(_, count_mode) => Count(children[0].clone(), *count_mode),
+            CountApproxDistinct(_) => CountApproxDistinct(children[0].clone()),
             Sum(_) => Sum(children[0].clone()),
             Mean(_) => Mean(children[0].clone()),
             Min(_) => Min(children[0].clone()),
@@ -247,6 +255,10 @@ impl AggExpr {
         use AggExpr::*;
         match self {
             Count(expr, ..) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
+            CountApproxDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
@@ -1050,6 +1062,7 @@ impl Display for AggExpr {
         use AggExpr::*;
         match self {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
+            CountApproxDistinct(expr) => write!(f, "count_approx_distinct({expr})"),
             Sum(expr) => write!(f, "sum({expr})"),
             ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
             ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(

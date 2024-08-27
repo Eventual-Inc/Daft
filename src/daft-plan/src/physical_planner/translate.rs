@@ -789,6 +789,7 @@ pub fn populate_aggregation_stages(
                     .or_insert(Sum(col(count_id.clone()).alias(sum_of_count_id.clone())));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
             }
+            CountApproxDistinct(..) => todo!(),
             Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;
                 let sum_of_sum_id = Sum(col(sum_id.clone())).semantic_id(schema).id;
