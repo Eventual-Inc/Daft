@@ -627,6 +627,7 @@ jobs:
     timeout-minutes: 30
     env:
       package-name: getdaft
+      RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     strategy:
       fail-fast: false
     steps:
@@ -636,6 +637,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
+        prefix-key: dev-bench
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
     - uses: actions/setup-python@v5
@@ -649,14 +651,10 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
-    - name: Debug with tmate on failure
-      uses: mxschmitt/action-tmate@v3
     - name: Build Rust Library
       run: |
         source activate
         maturin develop --profile dev-bench
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
