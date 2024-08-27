@@ -2101,7 +2101,7 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2], "baz": [3, 4, 5]})
-            >>> df.count().show()
+            >>> df.count().show()  # equivalent to df.count("*").show()
             ╭────────╮
             │ count  │
             │ ---    │
