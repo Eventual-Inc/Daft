@@ -640,7 +640,7 @@ jobs:
         prefix-key: dev-bench
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
-        provider: buildjet
+        cache-provider: buildjet
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
