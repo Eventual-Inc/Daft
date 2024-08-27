@@ -108,9 +108,9 @@ impl PipelineNode for StreamingSinkNode {
                 let mut sink = op.lock().await;
                 let mut is_active = true;
                 while is_active && let Some(val) = child_results_receiver.recv().await {
-                    let val = val.data();
+                    let val = val.as_data();
                     loop {
-                        let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
+                        let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
                         match result {
                             StreamSinkOutput::HasMoreOutput(mp) => {
                                 sender.send(mp.into()).await.unwrap();

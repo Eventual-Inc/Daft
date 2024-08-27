@@ -29,10 +29,10 @@ impl IntermediateOperator for AggregateOperator {
     fn execute(
         &self,
         _idx: usize,
-        input: PipelineResultType,
+        input: &PipelineResultType,
         _state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.data().agg(&self.agg_exprs, &self.group_by)?;
+        let out = input.as_data().agg(&self.agg_exprs, &self.group_by)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
             out,
         ))))

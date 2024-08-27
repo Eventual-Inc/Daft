@@ -30,7 +30,7 @@ pub trait IntermediateOperator: Send + Sync {
     fn execute(
         &self,
         idx: usize,
-        input: PipelineResultType,
+        input: &PipelineResultType,
         state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
@@ -80,14 +80,20 @@ impl IntermediateNode {
         let span = info_span!("IntermediateOp::execute");
         let mut state = op.make_state();
         while let Some((idx, morsel)) = receiver.recv().await {
-            let result = rt_context.in_span(&span, || op.execute(idx, morsel, state.as_mut()))?;
-            match result {
-                IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                    let _ = sender.send(mp.into()).await;
-                }
-                IntermediateOperatorResult::NeedMoreInput(None) => {}
-                IntermediateOperatorResult::HasMoreOutput(mp) => {
-                    let _ = sender.send(mp.into()).await;
+            loop {
+                let result =
+                    rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
+                match result {
+                    IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
+                        let _ = sender.send(mp.into()).await;
+                        break;
+                    }
+                    IntermediateOperatorResult::NeedMoreInput(None) => {
+                        break;
+                    }
+                    IntermediateOperatorResult::HasMoreOutput(mp) => {
+                        let _ = sender.send(mp.into()).await;
+                    }
                 }
             }
         }
@@ -140,7 +146,7 @@ impl IntermediateNode {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
                 } else {
-                    buffer.push(morsel.data().clone());
+                    buffer.push(morsel.as_data().clone());
                     if let Some(ready) = buffer.try_clear() {
                         let _ = send_to_next_worker(idx, ready?.into()).await;
                     }
