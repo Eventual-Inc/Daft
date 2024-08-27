@@ -72,11 +72,8 @@ class TableParseParquetOptions:
 class EstimatedPartitionMetadataInterface(Protocol):
     """PartitionMetadata"""
 
-    @property
-    def num_rows(self) -> int | None: ...
-
-    @property
-    def boundaries(self) -> Boundaries | None: ...
+    num_rows: int | None
+    boundaries: Boundaries | None
 
 
 @dataclass(frozen=True)
