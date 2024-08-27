@@ -2,15 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     pipeline::PipelineResultType,
-    runtime_stats::{CountingSender, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
 };
-
-pub type OneShotSender<T> = tokio::sync::oneshot::Sender<T>;
-pub type OneShotReceiver<T> = tokio::sync::oneshot::Receiver<T>;
-
-pub fn create_one_shot_channel<T>() -> (OneShotSender<T>, OneShotReceiver<T>) {
-    tokio::sync::oneshot::channel()
-}
 
 pub type Sender<T> = tokio::sync::mpsc::Sender<T>;
 pub type Receiver<T> = tokio::sync::mpsc::Receiver<T>;
@@ -19,33 +12,57 @@ pub fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     tokio::sync::mpsc::channel(buffer_size)
 }
 
-pub fn create_multi_channel(buffer_size: usize, in_order: bool) -> (MultiSender, MultiReceiver) {
-    if in_order {
-        let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
-        let sender = MultiSender::InOrder(RoundRobinSender::new(senders));
-        let receiver = MultiReceiver::InOrder(RoundRobinReceiver::new(receivers));
-        (sender, receiver)
-    } else {
-        let (sender, receiver) = create_channel(buffer_size);
-        let sender = MultiSender::OutOfOrder(sender);
-        let receiver = MultiReceiver::OutOfOrder(receiver);
-        (sender, receiver)
+pub struct PipelineChannel {
+    sender: PipelineSender,
+    receiver: PipelineReceiver,
+}
+
+impl PipelineChannel {
+    pub fn new(buffer_size: usize, in_order: bool) -> Self {
+        match in_order {
+            true => {
+                let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
+                let sender = PipelineSender::InOrder(RoundRobinSender::new(senders));
+                let receiver = PipelineReceiver::InOrder(RoundRobinReceiver::new(receivers));
+                Self { sender, receiver }
+            }
+            false => {
+                let (sender, receiver) = create_channel(buffer_size);
+                let sender = PipelineSender::OutOfOrder(sender);
+                let receiver = PipelineReceiver::OutOfOrder(receiver);
+                Self { sender, receiver }
+            }
+        }
+    }
+
+    fn get_next_sender(&mut self) -> Sender<PipelineResultType> {
+        match &mut self.sender {
+            PipelineSender::InOrder(rr) => rr.get_next_sender(),
+            PipelineSender::OutOfOrder(sender) => sender.clone(),
+        }
+    }
+
+    pub(crate) fn get_next_sender_with_stats(
+        &mut self,
+        rt: &Arc<RuntimeStatsContext>,
+    ) -> CountingSender {
+        CountingSender::new(self.get_next_sender(), rt.clone())
+    }
+
+    pub fn get_receiver(self) -> PipelineReceiver {
+        self.receiver
+    }
+
+    pub(crate) fn get_receiver_with_stats(self, rt: &Arc<RuntimeStatsContext>) -> CountingReceiver {
+        CountingReceiver::new(self.get_receiver(), rt.clone())
     }
 }
 
-pub enum MultiSender {
+pub enum PipelineSender {
     InOrder(RoundRobinSender<PipelineResultType>),
     OutOfOrder(Sender<PipelineResultType>),
 }
 
-impl MultiSender {
-    pub fn get_next_sender(&mut self, stats: &Arc<RuntimeStatsContext>) -> CountingSender {
-        match self {
-            Self::InOrder(sender) => CountingSender::new(sender.get_next_sender(), stats.clone()),
-            Self::OutOfOrder(sender) => CountingSender::new(sender.clone(), stats.clone()),
-        }
-    }
-}
 pub struct RoundRobinSender<T> {
     senders: Vec<Sender<T>>,
     curr_sender_idx: usize,
@@ -66,16 +83,16 @@ impl<T> RoundRobinSender<T> {
     }
 }
 
-pub enum MultiReceiver {
+pub enum PipelineReceiver {
     InOrder(RoundRobinReceiver<PipelineResultType>),
     OutOfOrder(Receiver<PipelineResultType>),
 }
 
-impl MultiReceiver {
+impl PipelineReceiver {
     pub async fn recv(&mut self) -> Option<PipelineResultType> {
         match self {
-            Self::InOrder(receiver) => receiver.recv().await,
-            Self::OutOfOrder(receiver) => receiver.recv().await,
+            PipelineReceiver::InOrder(rr) => rr.recv().await,
+            PipelineReceiver::OutOfOrder(r) => r.recv().await,
         }
     }
 }

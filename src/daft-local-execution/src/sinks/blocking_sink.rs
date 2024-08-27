@@ -6,8 +6,8 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::create_one_shot_channel,
-    pipeline::{PipelineNode, PipelineResultReceiver, PipelineResultType},
+    channel::PipelineChannel,
+    pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
 };
@@ -80,25 +80,27 @@ impl PipelineNode for BlockingSinkNode {
 
     async fn start(
         &mut self,
-        _maintain_order: bool,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineResultReceiver> {
+    ) -> crate::Result<PipelineChannel> {
         let child = self.child.as_mut();
-        let mut child_results_receiver = child.start(false, runtime_handle).await?;
-        let op = self.op.clone();
+        let mut child_results_receiver = child
+            .start(false, runtime_handle)
+            .await?
+            .get_receiver_with_stats(&self.runtime_stats);
 
-        let (destination_sender, destination_receiver) = create_one_shot_channel();
+        let mut destination_channel = PipelineChannel::new(1, maintain_order);
+        let destination_sender =
+            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+        let op = self.op.clone();
         let rt_context = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 let span = info_span!("BlockingSinkNode::execute");
                 let mut guard = op.lock().await;
                 while let Some(val) = child_results_receiver.recv().await {
-                    let val = val?;
-                    let val = val.as_data();
-                    rt_context.mark_rows_received(val.len() as u64);
                     if let BlockingSinkStatus::Finished =
-                        rt_context.in_span(&span, || guard.sink(val))?
+                        rt_context.in_span(&span, || guard.sink(&val.data()))?
                     {
                         break;
                     }
@@ -108,20 +110,13 @@ impl PipelineNode for BlockingSinkNode {
                         guard.finalize()
                     })?;
                 if let Some(part) = finalized_result {
-                    let len = match part {
-                        PipelineResultType::Data(ref part) => part.len(),
-                        PipelineResultType::ProbeTable(_, ref tables) => {
-                            tables.iter().map(|t| t.len()).sum()
-                        }
-                    };
-                    let _ = destination_sender.send(part);
-                    rt_context.mark_rows_emitted(len as u64);
+                    let _ = destination_sender.send(part).await;
                 }
                 Ok(())
             },
             self.name(),
         );
-        Ok(destination_receiver.into())
+        Ok(destination_channel)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

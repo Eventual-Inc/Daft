@@ -8,9 +8,7 @@ use futures::{stream::BoxStream, StreamExt};
 use async_trait::async_trait;
 
 use crate::{
-    channel::create_multi_channel,
-    pipeline::{PipelineNode, PipelineResultReceiver},
-    runtime_stats::RuntimeStatsContext,
+    channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
 };
 
@@ -76,13 +74,13 @@ impl PipelineNode for SourceNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineResultReceiver> {
+    ) -> crate::Result<PipelineChannel> {
         let mut source_stream =
             self.source
                 .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
 
-        let (mut tx, rx) = create_multi_channel(1, maintain_order);
-        let counting_sender = tx.get_next_sender(&self.runtime_stats);
+        let mut channel = PipelineChannel::new(1, maintain_order);
+        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
         runtime_handle.spawn(
             async move {
                 while let Some(part) = source_stream.next().await {
@@ -92,7 +90,7 @@ impl PipelineNode for SourceNode {
             },
             self.name(),
         );
-        Ok(rx.into())
+        Ok(channel)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
