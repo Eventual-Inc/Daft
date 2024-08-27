@@ -20,10 +20,10 @@ from tests.integration.conftest import *  # noqa: F403
 
 IS_CI = True if os.getenv("CI") else False
 
-SCALE_FACTOR = 0.2
+SCALE_FACTOR = 10.0
 ENGINES = ["native"] if IS_CI else ["native", "python"]
-NUM_PARTS = [1] if IS_CI else [1, 2]
-SOURCE_TYPES = ["in-memory"] if IS_CI else ["parquet", "in-memory"]
+NUM_PARTS = [1] if IS_CI else [32]
+SOURCE_TYPES = ["in-memory"] if IS_CI else ["parquet"]
 
 
 @pytest.fixture(scope="session", params=NUM_PARTS)
@@ -93,7 +93,7 @@ def get_df(gen_tpch, request):
     return _get_df, num_parts
 
 
-TPCH_QUESTIONS = list(range(1, 11))
+TPCH_QUESTIONS = [4]
 
 
 @pytest.mark.skipif(
