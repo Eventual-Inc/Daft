@@ -424,6 +424,10 @@ impl Expr {
         Expr::Agg(AggExpr::ApproxSketch(self)).into()
     }
 
+    pub fn approx_distinct(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::Hll(self)).into()
+    }
+
     pub fn approx_percentiles(
         self: ExprRef,
         percentiles: &[f64],
