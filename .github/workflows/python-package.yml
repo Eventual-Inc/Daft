@@ -623,7 +623,7 @@ jobs:
       run: exit 1
 
   benchmark-codspeed:
-    runs-on: ubuntu-benchmark-node
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     env:
       package-name: getdaft
@@ -640,6 +640,7 @@ jobs:
         prefix-key: dev-bench
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
+        provider: buildjet
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
