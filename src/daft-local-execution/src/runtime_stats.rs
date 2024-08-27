@@ -7,7 +7,10 @@ use std::{
 
 use tokio::sync::mpsc::error::SendError;
 
-use crate::{channel::Sender, pipeline::PipelineResultType};
+use crate::{
+    channel::{PipelineReceiver, Sender},
+    pipeline::PipelineResultType,
+};
 
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
@@ -127,5 +130,30 @@ impl CountingSender {
         self.sender.send(v).await?;
         self.rt.mark_rows_emitted(len as u64);
         Ok(())
+    }
+}
+
+pub(crate) struct CountingReceiver {
+    receiver: PipelineReceiver,
+    rt: Arc<RuntimeStatsContext>,
+}
+
+impl CountingReceiver {
+    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+        Self { receiver, rt }
+    }
+    #[inline]
+    pub(crate) async fn recv(&mut self) -> Option<PipelineResultType> {
+        let v = self.receiver.recv().await;
+        if let Some(ref v) = v {
+            let len = match v {
+                PipelineResultType::Data(ref mp) => mp.len(),
+                PipelineResultType::ProbeTable(_, ref tables) => {
+                    tables.iter().map(|t| t.len()).sum()
+                }
+            };
+            self.rt.mark_rows_received(len as u64);
+        }
+        v
     }
 }

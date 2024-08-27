@@ -19,9 +19,9 @@ enum HashJoinProbeState {
 }
 
 impl HashJoinProbeState {
-    fn set_table(&mut self, table: &Arc<ProbeTable>, tables: &Arc<Vec<Table>>) {
+    fn set_table(&mut self, table: Arc<ProbeTable>, tables: Arc<Vec<Table>>) {
         if let HashJoinProbeState::Building = self {
-            *self = HashJoinProbeState::ReadyToProbe(table.clone(), tables.clone());
+            *self = HashJoinProbeState::ReadyToProbe(table, tables);
         } else {
             panic!("HashJoinProbeState should only be in Building state when setting table")
         }
@@ -29,7 +29,7 @@ impl HashJoinProbeState {
 
     fn probe(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         right_on: &[ExprRef],
         pruned_right_side_columns: &[String],
     ) -> DaftResult<Arc<MicroPartition>> {
@@ -109,9 +109,10 @@ impl IntermediateOperator for HashJoinProbeOperator {
     fn execute(
         &self,
         idx: usize,
-        input: &PipelineResultType,
+        input: PipelineResultType,
         state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
+        println!("HashJoinProbeOperator::execute: idx: {}", idx);
         match idx {
             0 => {
                 let state = state
@@ -119,7 +120,7 @@ impl IntermediateOperator for HashJoinProbeOperator {
                     .as_any_mut()
                     .downcast_mut::<HashJoinProbeState>()
                     .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let (probe_table, tables) = input.as_probe_table();
+                let (probe_table, tables) = input.probe_table();
                 state.set_table(probe_table, tables);
                 Ok(IntermediateOperatorResult::NeedMoreInput(None))
             }
@@ -129,7 +130,7 @@ impl IntermediateOperator for HashJoinProbeOperator {
                     .as_any_mut()
                     .downcast_mut::<HashJoinProbeState>()
                     .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let input = input.as_data();
+                let input = input.data();
                 let out = state.probe(input, &self.right_on, &self.pruned_right_side_columns)?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }

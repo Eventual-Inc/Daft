@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    channel::{MultiReceiver, OneShotReceiver},
+    channel::PipelineChannel,
     intermediate_ops::{
         aggregate::AggregateOperator, filter::FilterOperator,
         hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
@@ -13,7 +13,7 @@ use crate::{
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
-    ExecutionRuntimeHandle, OneShotRecvSnafu, PipelineCreationSnafu,
+    ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
 use async_trait::async_trait;
@@ -53,14 +53,14 @@ impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineResultType {
 }
 
 impl PipelineResultType {
-    pub fn as_data(&self) -> &Arc<MicroPartition> {
+    pub fn data(self) -> Arc<MicroPartition> {
         match self {
             PipelineResultType::Data(data) => data,
             _ => panic!("Expected data"),
         }
     }
 
-    pub fn as_probe_table(&self) -> (&Arc<ProbeTable>, &Arc<Vec<Table>>) {
+    pub fn probe_table(self) -> (Arc<ProbeTable>, Arc<Vec<Table>>) {
         match self {
             PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
             _ => panic!("Expected probe table"),
@@ -72,40 +72,6 @@ impl PipelineResultType {
     }
 }
 
-pub enum PipelineResultReceiver {
-    Multi(MultiReceiver),
-    OneShot(OneShotReceiver<PipelineResultType>, bool),
-}
-
-impl From<MultiReceiver> for PipelineResultReceiver {
-    fn from(rx: MultiReceiver) -> Self {
-        PipelineResultReceiver::Multi(rx)
-    }
-}
-
-impl From<OneShotReceiver<PipelineResultType>> for PipelineResultReceiver {
-    fn from(rx: OneShotReceiver<PipelineResultType>) -> Self {
-        PipelineResultReceiver::OneShot(rx, false)
-    }
-}
-
-impl PipelineResultReceiver {
-    pub async fn recv(&mut self) -> Option<crate::Result<PipelineResultType>> {
-        match self {
-            PipelineResultReceiver::Multi(rx) => rx.recv().await.map(Ok),
-            PipelineResultReceiver::OneShot(rx, done) => {
-                if *done {
-                    None
-                } else {
-                    let result = rx.await.context(OneShotRecvSnafu);
-                    *done = true;
-                    Some(result)
-                }
-            }
-        }
-    }
-}
-
 #[async_trait]
 pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
@@ -114,7 +80,7 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineResultReceiver>;
+    ) -> crate::Result<PipelineChannel>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }

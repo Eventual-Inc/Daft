@@ -102,6 +102,7 @@ impl BlockingSink for HashJoinBuildSink {
             tables,
         } = &self.probe_table_state
         {
+            println!("HashJoinBuildSink::finalize: table_len: {}", tables.len());
             Ok(Some((probe_table.clone(), tables.clone()).into()))
         } else {
             panic!("finalize should only be called after the probe table is built")
