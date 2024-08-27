@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -17,7 +18,7 @@ import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
-from .conftest import IS_CI
+IS_CI = True if os.getenv("CI") else False
 
 SCALE_FACTOR = 0.2
 ENGINES = ["native"] if IS_CI else ["native", "python"]
