@@ -385,6 +385,14 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::ApproxCountDistinct, |_| e.clone())
         }
+        AggExpr::ApproxCountDistinctSketch(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::ApproxCountDistinctSketch, |_| e.clone())
+        }
+        AggExpr::ApproxCountDistinctMerge(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::ApproxCountDistinctMerge, |_| e.clone())
+        }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())
@@ -451,14 +459,6 @@ fn replace_column_with_semantic_id_aggexpr(
                     inputs: transforms.iter().map(|t| t.unwrap()).cloned().collect(),
                 })
             }
-        }
-        AggExpr::ApproxCountDistinctSketch(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::ApproxCountDistinctSketch, |_| e.clone())
-        }
-        AggExpr::ApproxCountDistinctMerge(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::ApproxCountDistinctMerge, |_| e.clone())
         }
     }
 }
