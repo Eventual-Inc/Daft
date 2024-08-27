@@ -59,6 +59,7 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
+pub use approx_count_distinct_sketch::APPROX_COUNT_DISTINCT_SKETCH_OUTPUT_TYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 pub use utf8::{PadPlacement, Utf8NormalizeOptions};

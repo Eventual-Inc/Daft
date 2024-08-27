@@ -5,7 +5,6 @@ use daft_core::{
     schema::Schema,
     utils::supertype::try_get_supertype,
 };
-use hyperloglog::NUM_REGISTERS;
 use itertools::Itertools;
 
 use crate::{
@@ -267,7 +266,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name,
-                    DataType::FixedSizeBinary(NUM_REGISTERS),
+                    daft_core::array::ops::APPROX_COUNT_DISTINCT_SKETCH_OUTPUT_TYPE,
                 ))
             }
             ApproxCountDistinctMerge(expr) => {
