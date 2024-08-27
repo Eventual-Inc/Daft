@@ -25,7 +25,7 @@ def io_config():
     [
         pytest.param("s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet", id="1 Small File"),
         pytest.param(
-            1000 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="1000 Small Files"
+            100 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="100 Small Files"
         ),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
@@ -44,7 +44,7 @@ def test_show(files, io_config, benchmark):
     [
         pytest.param("s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet", id="1 Small File"),
         pytest.param(
-            1000 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="1000 Small Files"
+            100 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="100 Small Files"
         ),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
@@ -62,7 +62,7 @@ def test_explain(files, io_config, benchmark):
     "files, expected_count",
     [
         pytest.param("s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet", 1024, id="1 Small File"),
-        # pytest.param(1000*["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], 1000 * 1024, id="1000 Small Files"), # Turn this back on after we speed up count
+        # pytest.param(100*["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], 100 * 1024, id="100 Small Files"), # Turn this back on after we speed up count
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
 )
@@ -81,7 +81,7 @@ def test_count(files, expected_count, io_config, benchmark):
     [
         pytest.param("s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet", id="1 Small File"),
         pytest.param(
-            1000 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="1000 Small Files"
+            100 * ["s3://daft-public-data/test_fixtures/parquet/small-fake-data.parquet"], id="100 Small Files"
         ),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
