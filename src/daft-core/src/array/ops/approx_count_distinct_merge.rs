@@ -27,7 +27,7 @@ impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
 
     fn grouped_approx_count_distinct_merge(&self, groups: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
-        let mut counts = vec![];
+        let mut counts = Vec::with_capacity(groups.len());
         for group in groups {
             let mut final_hll = HyperLogLog::default();
             for &index in group {
