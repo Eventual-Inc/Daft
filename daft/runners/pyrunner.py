@@ -16,11 +16,11 @@ from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    EstimatedPartitionMetadataInterface,
+    ExactPartitionMetadata,
     MaterializedResult,
-    PartialPartitionMetadata,
     PartID,
     PartitionCacheEntry,
-    PartitionMetadata,
     PartitionSet,
 )
 from daft.runners.profiler import profiler
@@ -68,7 +68,7 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         self._partitions[idx] = part
 
     def set_partition_from_table(self, idx: PartID, part: MicroPartition) -> None:
-        self._partitions[idx] = PyMaterializedResult(part, PartitionMetadata.from_table(part))
+        self._partitions[idx] = PyMaterializedResult(part, ExactPartitionMetadata.from_table(part))
 
     def delete_partition(self, idx: PartID) -> None:
         del self._partitions[idx]
@@ -373,7 +373,7 @@ class PyRunner(Runner[MicroPartition]):
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
-        final_metadata: list[PartialPartitionMetadata],
+        final_metadata: list[EstimatedPartitionMetadataInterface],
         resource_request: ResourceRequest,
     ) -> list[MaterializedResult[MicroPartition]]:
         try:
@@ -381,7 +381,7 @@ class PyRunner(Runner[MicroPartition]):
                 partitions = instruction.run(partitions)
 
             results: list[MaterializedResult[MicroPartition]] = [
-                PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
+                PyMaterializedResult(part, ExactPartitionMetadata.from_table(part).merge_with_estimated(partial))
                 for part, partial in zip(partitions, final_metadata)
             ]
             return results
@@ -396,7 +396,7 @@ class PyRunner(Runner[MicroPartition]):
 @dataclass
 class PyMaterializedResult(MaterializedResult[MicroPartition]):
     _partition: MicroPartition
-    _metadata: PartitionMetadata | None = None
+    _metadata: ExactPartitionMetadata | None = None
 
     def partition(self) -> MicroPartition:
         return self._partition
@@ -404,9 +404,9 @@ class PyMaterializedResult(MaterializedResult[MicroPartition]):
     def vpartition(self) -> MicroPartition:
         return self._partition
 
-    def metadata(self) -> PartitionMetadata:
+    def metadata(self) -> ExactPartitionMetadata:
         if self._metadata is None:
-            self._metadata = PartitionMetadata.from_table(self._partition)
+            self._metadata = ExactPartitionMetadata.from_table(self._partition)
         return self._metadata
 
     def cancel(self) -> None:

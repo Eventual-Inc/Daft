@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
 import pyarrow as pa
+from typing_extensions import Protocol
 
 from daft.datatype import TimeUnit
 from daft.expressions.expressions import Expression
@@ -68,37 +69,50 @@ class TableParseParquetOptions:
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns()
 
 
+class EstimatedPartitionMetadataInterface(Protocol):
+    """PartitionMetadata"""
+
+    @property
+    def num_rows(self) -> int | None: ...
+
+    @property
+    def boundaries(self) -> Boundaries | None: ...
+
+
 @dataclass(frozen=True)
-class PartialPartitionMetadata:
+class EstimatedPartitionMetadata(EstimatedPartitionMetadataInterface):
+    """Partition Metadata that is derived from operations being run in the plan, and is thus **estimated**"""
+
     num_rows: None | int
-    size_bytes: None | int
     boundaries: None | Boundaries = None
 
 
 @dataclass(frozen=True)
-class PartitionMetadata(PartialPartitionMetadata):
+class ExactPartitionMetadata(EstimatedPartitionMetadataInterface):
+    """Partition Metadata that is derived from actual runtime data, and is thus **exact**"""
+
     num_rows: int
     size_bytes: int | None
     boundaries: Boundaries | None = None
 
     @classmethod
-    def from_table(cls, table: MicroPartition) -> PartitionMetadata:
-        return PartitionMetadata(
+    def from_table(cls, table: MicroPartition) -> ExactPartitionMetadata:
+        return ExactPartitionMetadata(
             num_rows=len(table),
             size_bytes=table.size_bytes(),
             boundaries=None,
         )
 
-    def merge_with_partial(self, partial_metadata: PartialPartitionMetadata) -> PartitionMetadata:
+    def merge_with_estimated(self, partial_metadata: EstimatedPartitionMetadataInterface) -> ExactPartitionMetadata:
         num_rows = self.num_rows
         size_bytes = self.size_bytes
         boundaries = self.boundaries
         if boundaries is None:
             boundaries = partial_metadata.boundaries
-        return PartitionMetadata(num_rows, size_bytes, boundaries)
+        return ExactPartitionMetadata(num_rows, size_bytes, boundaries)
 
-    def downcast_to_partial(self) -> PartialPartitionMetadata:
-        return PartialPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
+    def downcast_to_estimated(self) -> EstimatedPartitionMetadata:
+        return EstimatedPartitionMetadata(self.num_rows, self.boundaries)
 
 
 def _is_bound_null(bound_row: list[Any | None]) -> bool:
@@ -184,7 +198,7 @@ class MaterializedResult(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def metadata(self) -> PartitionMetadata:
+    def metadata(self) -> ExactPartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
 

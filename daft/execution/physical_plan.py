@@ -43,6 +43,7 @@ from daft.execution.execution_step import (
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
+    EstimatedPartitionMetadataInterface,
     MaterializedResult,
     PartitionT,
 )
@@ -578,9 +579,9 @@ def _emit_merge_joins_on_window(
     for other_next_part in other_window:
         memory_bytes = _memory_bytes_for_merge(next_part, other_next_part)
         inputs = [next_part.partition(), other_next_part.partition()]
-        partial_metadatas = [
-            next_part.partition_metadata().downcast_to_partial(),
-            other_next_part.partition_metadata().downcast_to_partial(),
+        partial_metadatas: list[EstimatedPartitionMetadataInterface] = [
+            next_part.partition_metadata().downcast_to_estimated(),
+            other_next_part.partition_metadata().downcast_to_estimated(),
         ]
         # If next, other are flipped (right, left partitions), flip them back.
         if flipped:
