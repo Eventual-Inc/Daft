@@ -4,9 +4,9 @@ use common_error::DaftResult;
 use crate::{
     array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctMergeAggable},
     datatypes::{Field, FixedSizeBinaryArray, UInt64Array},
-    utils::hyperloglog::HyperLogLog,
     DataType,
 };
+use hyperloglog::HyperLogLog;
 
 use crate::array::ops::GroupIndices;
 

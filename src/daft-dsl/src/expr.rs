@@ -3,8 +3,9 @@ use daft_core::{
     count_mode::CountMode,
     datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
     schema::Schema,
-    utils::{hyperloglog::NUM_REGISTERS, supertype::try_get_supertype},
+    utils::supertype::try_get_supertype,
 };
+use hyperloglog::NUM_REGISTERS;
 use itertools::Itertools;
 
 use crate::{

@@ -34,7 +34,8 @@
 //!
 //! This module also borrows some code structure from [pdatastructs.rs](https://github.com/crepererum/pdatastructs.rs/blob/3997ed50f6b6871c9e53c4c5e0f48f431405fc63/src/hyperloglog.rs).
 //!
-//! Borrowed from [`datafusion`](https://github.com/apache/datafusion/blob/main/datafusion/functions-aggregate/src/hyperloglog.rs)
+//! Borrowed from [`datafusion`](https://github.com/apache/datafusion/blob/main/datafusion/functions-aggregate/src/hyperloglog.rs).
+//! Turned into a standalone crate for easier use.
 //! - Daft
 
 /// The greater is P, the smaller the error.

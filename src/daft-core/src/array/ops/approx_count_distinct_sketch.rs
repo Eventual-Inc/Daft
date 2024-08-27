@@ -3,9 +3,10 @@ use std::sync::Arc;
 use crate::{
     array::ops::as_arrow::AsArrow,
     datatypes::{Field, FixedSizeBinaryArray, UInt64Array},
-    utils::hyperloglog::{HyperLogLog, NUM_REGISTERS},
     DataType,
 };
+use hyperloglog::{HyperLogLog, NUM_REGISTERS};
+
 use arrow2::{array::FixedSizeBinaryArray as Arrow2FixedSizeBinaryArray, buffer::Buffer};
 use common_error::DaftResult;
 

@@ -1,7 +1,6 @@
 pub mod arrow;
 pub mod display_table;
 pub mod dyn_compare;
-pub mod hyperloglog;
 pub mod supertype;
 
 #[macro_export]

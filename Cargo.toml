@@ -124,7 +124,8 @@ members = [
   "src/daft-scheduler",
   "src/daft-sketch",
   "src/daft-functions",
-  "src/daft-sql"
+  "src/daft-sql",
+  "src/hyperloglog"
 ]
 
 [workspace.dependencies]
