@@ -1,4 +1,4 @@
-use crate::array::ops::{DaftHllAggable, DaftHllMergeAggable};
+use crate::array::ops::{DaftCountApproxDistinctAggable, DaftHllAggable, DaftHllMergeAggable};
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -18,6 +18,16 @@ impl Series {
                 None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
             }
         })
+    }
+
+    pub fn approx_count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<UInt64Array>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_approx_count_distinct(groups),
+            None => downcasted_self.approx_count_distinct(),
+        }?
+        .into_series();
+        Ok(series)
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

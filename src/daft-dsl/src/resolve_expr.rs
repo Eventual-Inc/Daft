@@ -221,7 +221,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
             // reorder expressions so that alias goes before agg
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
-                CountApproxDistinct(e) => CountApproxDistinct(Alias(e, name.clone()).into()),
+                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
                 ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
                 ApproxPercentile(ApproxPercentileParams {

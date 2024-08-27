@@ -1,5 +1,6 @@
 mod abs;
 mod apply;
+mod approx_count_distinct;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -158,6 +159,12 @@ pub trait DaftCountAggable {
     type Output;
     fn count(&self, mode: CountMode) -> Self::Output;
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output;
+}
+
+pub trait DaftCountApproxDistinctAggable {
+    type Output;
+    fn approx_count_distinct(&self) -> Self::Output;
+    fn grouped_approx_count_distinct(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftSumAggable {
