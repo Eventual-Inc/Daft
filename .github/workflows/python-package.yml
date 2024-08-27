@@ -622,7 +622,7 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
 
-  benchmark-local-tpch:
+  benchmark-codspeed:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -661,7 +661,7 @@ jobs:
       with:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
-    - name: Run TPCH benchmarks
+    - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
         run: pytest tests/benchmarks -m benchmark --codspeed
