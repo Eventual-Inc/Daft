@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn test_tesnor_array() -> DaftResult<()> {
-        let raw_validity = vec![true, true, false];
+        let raw_validity = vec![true, false, true];
         let validity = arrow2::bitmap::Bitmap::from(raw_validity.as_slice());
 
         let list_array = ListArray::new(
@@ -36,11 +36,11 @@ mod tests {
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(
-                    [Some(0), Some(1), Some(2), Some(0), Some(0), Some(3), Some(100)].iter(),
+                    [Some(0), Some(1), Some(2), Some(100), Some(101), Some(0), Some(0), Some(3)].iter(),
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 6])?,
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 5, 8])?,
             Some(validity.clone()),
         )
         .into_series();
@@ -49,11 +49,11 @@ mod tests {
             UInt64Array::from((
                 "item",
                 Box::new(arrow2::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(1), Some(1)].iter(),
+                    [Some(3), Some(2), Some(3), Some(1)].iter(),
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 3])?,
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 4])?,
             Some(validity.clone())
         )
         .into_series();
