@@ -1,6 +1,8 @@
 mod abs;
 mod apply;
 mod approx_count_distinct;
+mod approx_count_distinct_merge;
+mod approx_count_distinct_sketch;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -26,8 +28,6 @@ pub mod full;
 mod get;
 pub(crate) mod groups;
 mod hash;
-mod hll;
-mod hll_merge;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
@@ -211,13 +211,13 @@ pub trait DaftConcatAggable {
     fn grouped_concat(&self, groups: &GroupIndices) -> Self::Output;
 }
 
-pub trait DaftHllAggable {
+pub trait DaftApproxCountDistinctSketchAggable {
     type Output;
     fn hll(&self) -> Self::Output;
     fn grouped_hll(&self, groups: &GroupIndices) -> Self::Output;
 }
 
-pub trait DaftHllMergeAggable {
+pub trait DaftApproxCountDistinctMergeAggable {
     type Output;
     fn hll_merge(&self) -> Self::Output;
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;

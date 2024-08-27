@@ -10,7 +10,7 @@ use arrow2::{array::FixedSizeBinaryArray as Arrow2FixedSizeBinaryArray, buffer::
 use common_error::DaftResult;
 
 use crate::array::{
-    ops::{DaftHllAggable, GroupIndices},
+    ops::{DaftApproxCountDistinctSketchAggable, GroupIndices},
     DataArray,
 };
 
@@ -26,7 +26,7 @@ fn construct_data(bytes: Vec<u8>) -> Box<Arrow2FixedSizeBinaryArray> {
     ))
 }
 
-impl DaftHllAggable for UInt64Array {
+impl DaftApproxCountDistinctSketchAggable for UInt64Array {
     type Output = DaftResult<FixedSizeBinaryArray>;
 
     fn hll(&self) -> Self::Output {

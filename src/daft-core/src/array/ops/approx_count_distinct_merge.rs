@@ -2,7 +2,7 @@ use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::{as_arrow::AsArrow, DaftHllMergeAggable},
+    array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctMergeAggable},
     datatypes::{Field, FixedSizeBinaryArray, UInt64Array},
     utils::hyperloglog::HyperLogLog,
     DataType,
@@ -10,7 +10,7 @@ use crate::{
 
 use crate::array::ops::GroupIndices;
 
-impl DaftHllMergeAggable for &FixedSizeBinaryArray {
+impl DaftApproxCountDistinctMergeAggable for &FixedSizeBinaryArray {
     type Output = DaftResult<UInt64Array>;
 
     fn hll_merge(&self) -> Self::Output {
