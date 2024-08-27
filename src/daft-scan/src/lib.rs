@@ -531,11 +531,18 @@ impl ScanTask {
         })
     }
 
+    /// Obtain the absolute maximum number of rows this ScanTask can give, or None if not possible to derive
     pub fn upper_bound_rows(&self) -> Option<usize> {
-        self.metadata.as_ref().map(|m| m.length)
+        self.metadata.as_ref().map(|m| {
+            if let Some(limit) = self.pushdowns.limit {
+                limit.min(m.length)
+            } else {
+                m.length
+            }
+        })
     }
 
-    pub fn size_bytes(&self) -> Option<usize> {
+    pub fn size_bytes_on_disk(&self) -> Option<usize> {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 

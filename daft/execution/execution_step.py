@@ -307,7 +307,7 @@ class ScanWithTask(SingleOutputInstruction):
         return [
             PartialPartitionMetadata(
                 num_rows=self.scan_task.num_rows(),
-                size_bytes=self.scan_task.size_bytes(),
+                size_bytes=self.scan_task.size_bytes_on_disk(),
             )
         ]
 

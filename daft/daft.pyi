@@ -707,7 +707,7 @@ class ScanTask:
         """
         ...
 
-    def size_bytes(self) -> int:
+    def size_bytes_on_disk(self) -> int:
         """
         Get number of bytes that will be scanned by this ScanTask.
         """
