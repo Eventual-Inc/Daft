@@ -93,7 +93,7 @@ def get_df(gen_tpch, request):
     return _get_df, num_parts
 
 
-TPCH_QUESTIONS = [4]
+TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
