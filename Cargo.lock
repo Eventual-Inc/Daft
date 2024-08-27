@@ -1905,6 +1905,7 @@ dependencies = [
  "daft-scan",
  "daft-table",
  "futures",
+ "indexmap 2.3.0",
  "lazy_static",
  "log",
  "num-format",

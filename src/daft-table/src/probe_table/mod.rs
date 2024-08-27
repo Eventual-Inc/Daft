@@ -49,7 +49,8 @@ impl ProbeTable {
     pub fn probe<'a>(
         &'a self,
         right: &'a Table,
-    ) -> DaftResult<impl Iterator<Item = (u32, u64, u64)> + 'a> {
+    ) -> DaftResult<impl Iterator<Item = (u64, Option<impl Iterator<Item = (u32, u64)> + 'a>)>>
+    {
         assert_eq!(self.schema.len(), right.schema.len());
         assert!(self
             .schema
@@ -68,10 +69,8 @@ impl ProbeTable {
 
         let iter = r_hashes.as_arrow().clone().into_iter();
 
-        Ok(iter
-            .enumerate()
-            .filter_map(|(i, h)| h.map(|h| (i, h)))
-            .flat_map(move |(r_idx, h)| {
+        Ok(iter.enumerate().map(move |(r_idx, h)| match h {
+            Some(h) => {
                 let indices = if let Some((_, indices)) =
                     self.hash_table.raw_entry().from_hash(h, |other| {
                         h == other.hash && {
@@ -86,16 +85,21 @@ impl ProbeTable {
                             (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
                         }
                     }) {
-                    indices.as_slice()
+                    Some(indices.as_slice())
                 } else {
-                    [].as_slice()
+                    None
                 };
-                indices.iter().map(move |l_idx| {
-                    let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                    let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
-                    (l_table_idx as u32, l_row_idx as u64, r_idx as u64)
-                })
-            }))
+                let iter = indices.map(|indices| {
+                    indices.iter().map(move |l_idx| {
+                        let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
+                        let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
+                        (l_table_idx as u32, l_row_idx as u64)
+                    })
+                });
+                (r_idx as u64, iter)
+            }
+            None => (r_idx as u64, None),
+        }))
     }
 
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {

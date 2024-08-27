@@ -23,8 +23,9 @@ use daft_core::{
     datatypes::Field,
     schema::{Schema, SchemaRef},
     utils::supertype,
+    JoinType,
 };
-use daft_dsl::Expr;
+use daft_dsl::{join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
@@ -32,6 +33,7 @@ use daft_physical_plan::{
 };
 use daft_plan::populate_aggregation_stages;
 use daft_table::{ProbeTable, Table};
+use indexmap::IndexSet;
 use snafu::ResultExt;
 
 #[derive(Clone)]
@@ -231,22 +233,38 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
-            let left_node = physical_plan_to_pipeline(left, psets)?;
-            let right_node = physical_plan_to_pipeline(right, psets)?;
+            let (build_on, probe_on, build_child, probe_child, build_on_left) = match join_type {
+                JoinType::Inner => {
+                    // we want to build the hash table on the smaller side in the future
+                    (left_on, right_on, left, right, true)
+                }
+                JoinType::Right => (left_on, right_on, left, right, true),
+                JoinType::Left | JoinType::Anti | JoinType::Semi => {
+                    (right_on, left_on, right, left, false)
+                }
+                JoinType::Outer => {
+                    unimplemented!("Outer join not supported yet");
+                }
+            };
 
+            let build_schema = build_child.schema();
+            let probe_schema = probe_child.schema();
             let probe_node = || -> DaftResult<_> {
-                let left_key_fields = left_on
+                let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
+                    .map(|k| k.to_string())
+                    .collect();
+                let build_key_fields = build_on
                     .iter()
-                    .map(|e| e.to_field(left_schema))
+                    .map(|e| e.to_field(build_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
-                let right_key_fields = right_on
+                let probe_key_fields = probe_on
                     .iter()
-                    .map(|e| e.to_field(right_schema))
+                    .map(|e| e.to_field(probe_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
                 let key_schema: SchemaRef = Schema::new(
-                    left_key_fields
+                    build_key_fields
                         .into_iter()
-                        .zip(right_key_fields.into_iter())
+                        .zip(probe_key_fields.into_iter())
                         .map(|(l, r)| {
                             // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
                             let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
@@ -256,43 +274,35 @@ pub fn physical_plan_to_pipeline(
                 )?
                 .into();
 
-                let left_on = left_on
+                let casted_build_on = build_on
                     .iter()
                     .zip(key_schema.fields.values())
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
-                let right_on = right_on
+                let casted_probe_on = probe_on
                     .iter()
                     .zip(key_schema.fields.values())
                     .map(|(e, f)| e.clone().cast(&f.dtype))
-                    .collect::<Vec<_>>();
-                let common_join_keys = left_on
-                    .iter()
-                    .zip(right_on.iter())
-                    .filter_map(|(l, r)| {
-                        if l.name() == r.name() {
-                            Some(l.name())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<std::collections::HashSet<_>>();
-                let pruned_right_side_columns = right_schema
-                    .fields
-                    .keys()
-                    .filter(|k| !common_join_keys.contains(k.as_str()))
-                    .cloned()
                     .collect::<Vec<_>>();
 
                 // we should move to a builder pattern
-                let build_sink = HashJoinBuildSink::new(key_schema.clone(), left_on)?;
-                let build_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
+                let build_sink = HashJoinBuildSink::new(key_schema.clone(), casted_build_on)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
+                let build_node =
+                    BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();
 
-                let probe_op =
-                    HashJoinProbeOperator::new(right_on, pruned_right_side_columns, *join_type);
+                let probe_op = HashJoinProbeOperator::new(
+                    casted_probe_on,
+                    left_schema.clone(),
+                    right_schema.clone(),
+                    *join_type,
+                    build_on_left,
+                    common_join_keys,
+                );
+                let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
                 DaftResult::Ok(IntermediateNode::new(
                     Arc::new(probe_op),
-                    vec![build_node, right_node],
+                    vec![build_node, probe_child_node],
                 ))
             }()
             .with_context(|_| PipelineCreationSnafu {
