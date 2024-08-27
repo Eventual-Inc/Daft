@@ -95,6 +95,7 @@ impl BlockingSink for HashJoinBuildSink {
         self.probe_table_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
+
     fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
         self.probe_table_state.finalize()?;
         if let ProbeTableState::Done {
@@ -102,7 +103,6 @@ impl BlockingSink for HashJoinBuildSink {
             tables,
         } = &self.probe_table_state
         {
-            println!("HashJoinBuildSink::finalize: table_len: {}", tables.len());
             Ok(Some((probe_table.clone(), tables.clone()).into()))
         } else {
             panic!("finalize should only be called after the probe table is built")
