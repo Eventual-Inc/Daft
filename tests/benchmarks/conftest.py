@@ -17,7 +17,6 @@ def id(self):
     return "-".join(self._idlist)
 
 
-IS_CI = True if os.getenv("CI") else False
 setattr(_pytest.python.CallSpec2, "id", property(id))
 
 
