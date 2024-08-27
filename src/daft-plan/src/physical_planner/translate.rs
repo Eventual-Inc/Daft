@@ -920,12 +920,6 @@ pub fn populate_aggregation_stages(
                     });
                 final_exprs.push(col(output_name));
             }
-            ApproxSketch(_) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
-            }
-            MergeSketch(_) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
-            }
             ApproxPercentile(ApproxPercentileParams {
                 child: e,
                 percentiles,
@@ -945,6 +939,12 @@ pub fn populate_aggregation_stages(
                         .sketch_percentile(percentiles.as_slice(), *force_list_output)
                         .alias(output_name),
                 );
+            }
+            ApproxSketch(_) => {
+                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            }
+            MergeSketch(_) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
             }
         }
     }
