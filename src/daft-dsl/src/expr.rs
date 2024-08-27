@@ -72,6 +72,8 @@ pub struct ApproxPercentileParams {
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     ApproxCountDistinct(ExprRef),
+    ApproxCountDistinctSketch(ExprRef),
+    ApproxCountDistinctMerge(ExprRef),
     Sum(ExprRef),
     ApproxSketch(ExprRef),
     ApproxPercentile(ApproxPercentileParams),
@@ -86,8 +88,6 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
-    ApproxCountDistinctSketch(ExprRef),
-    ApproxCountDistinctMerge(ExprRef),
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -130,6 +130,14 @@ impl AggExpr {
             ApproxCountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
+            }
+            ApproxCountDistinctSketch(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_approx_count_distinct_sketch()"))
+            }
+            ApproxCountDistinctMerge(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_approx_count_distinct_merge()"))
             }
             Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -181,14 +189,6 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
             MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
-            ApproxCountDistinctSketch(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.approx_count_distinct_sketch()"))
-            }
-            ApproxCountDistinctMerge(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.approx_count_distinct_merge()"))
-            }
         }
     }
 
@@ -197,6 +197,8 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | ApproxCountDistinct(expr)
+            | ApproxCountDistinctSketch(expr)
+            | ApproxCountDistinctMerge(expr)
             | Sum(expr)
             | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
@@ -206,9 +208,7 @@ impl AggExpr {
             | Max(expr)
             | AnyValue(expr, _)
             | List(expr)
-            | Concat(expr)
-            | ApproxCountDistinctSketch(expr)
-            | ApproxCountDistinctMerge(expr) => vec![expr.clone()],
+            | Concat(expr) => vec![expr.clone()],
             MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -224,6 +224,8 @@ impl AggExpr {
         match self {
             Count(_, count_mode) => Count(children[0].clone(), *count_mode),
             ApproxCountDistinct(_) => ApproxCountDistinct(children[0].clone()),
+            ApproxCountDistinctSketch(_) => ApproxCountDistinctSketch(children[0].clone()),
+            ApproxCountDistinctMerge(_) => ApproxCountDistinctMerge(children[0].clone()),
             Sum(_) => Sum(children[0].clone()),
             Mean(_) => Mean(children[0].clone()),
             Min(_) => Min(children[0].clone()),
@@ -246,8 +248,6 @@ impl AggExpr {
             }),
             ApproxSketch(_) => ApproxSketch(children[0].clone()),
             MergeSketch(_) => MergeSketch(children[0].clone()),
-            ApproxCountDistinctSketch(_) => ApproxCountDistinctSketch(children[0].clone()),
-            ApproxCountDistinctMerge(_) => ApproxCountDistinctMerge(children[0].clone()),
         }
     }
 
@@ -261,6 +261,17 @@ impl AggExpr {
             ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
+            ApproxCountDistinctSketch(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name,
+                    DataType::FixedSizeBinary(NUM_REGISTERS),
+                ))
+            }
+            ApproxCountDistinctMerge(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name, DataType::UInt64))
             }
             Sum(expr) => {
                 let field = expr.to_field(schema)?;
@@ -356,20 +367,6 @@ impl AggExpr {
                 }
             }
             MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
-            ApproxCountDistinctSketch(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    field.name,
-                    DataType::FixedSizeBinary(NUM_REGISTERS),
-                ))
-            }
-            ApproxCountDistinctMerge(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    field.name,
-                    DataType::FixedSizeBinary(NUM_REGISTERS),
-                ))
-            }
         }
     }
 
@@ -1059,6 +1056,8 @@ impl Display for AggExpr {
         match self {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             ApproxCountDistinct(expr) => write!(f, "approx_count_distinct({expr})"),
+            ApproxCountDistinctSketch(expr) => write!(f, "approx_count_distinct_sketch({expr})"),
+            ApproxCountDistinctMerge(expr) => write!(f, "approx_count_distinct_merge({expr})"),
             Sum(expr) => write!(f, "sum({expr})"),
             ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
             ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(
@@ -1075,8 +1074,6 @@ impl Display for AggExpr {
             List(expr) => write!(f, "list({expr})"),
             Concat(expr) => write!(f, "list({expr})"),
             MapGroups { func, inputs } => function_display(f, func, inputs),
-            ApproxCountDistinctSketch(expr) => write!(f, "approx_count_distinct_sketch({expr})"),
-            ApproxCountDistinctMerge(expr) => write!(f, "approx_count_distinct_merge({expr})"),
         }
     }
 }

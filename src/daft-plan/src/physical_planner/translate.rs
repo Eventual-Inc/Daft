@@ -798,11 +798,9 @@ pub fn populate_aggregation_stages(
                     .entry(first_stage_id.clone())
                     .or_insert(ApproxCountDistinctSketch(e.alias(first_stage_id.clone())));
                 second_stage_aggs.entry(second_stage_id.clone()).or_insert(
-                    ApproxCountDistinctMerge(
-                        col(first_stage_id.clone()).alias(second_stage_id.clone()),
-                    ),
+                    ApproxCountDistinctMerge(col(first_stage_id).alias(second_stage_id.clone())),
                 );
-                final_exprs.push(col(second_stage_id.clone()).alias(output_name));
+                final_exprs.push(col(second_stage_id).alias(output_name));
             }
             ApproxCountDistinctSketch(..) => {
                 unimplemented!(

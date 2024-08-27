@@ -438,6 +438,14 @@ impl Table {
                 .hash(None)?
                 .into_series()
                 .approx_count_distinct(groups),
+            AggExpr::ApproxCountDistinctSketch(expr) => self
+                .eval_expression(expr)?
+                .hash(None)?
+                .into_series()
+                .approx_count_distinct_sketch(groups),
+            AggExpr::ApproxCountDistinctMerge(expr) => self
+                .eval_expression(expr)?
+                .approx_count_distinct_merge(groups),
             AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
             AggExpr::ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
@@ -462,14 +470,6 @@ impl Table {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
-            AggExpr::ApproxCountDistinctSketch(expr) => self
-                .eval_expression(expr)?
-                .hash(None)?
-                .into_series()
-                .approx_count_distinct_sketch(groups),
-            AggExpr::ApproxCountDistinctMerge(expr) => self
-                .eval_expression(expr)?
-                .approx_count_distinct_merge(groups),
         }
     }
 

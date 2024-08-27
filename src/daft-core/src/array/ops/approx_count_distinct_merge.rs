@@ -10,7 +10,7 @@ use crate::{
 
 use crate::array::ops::GroupIndices;
 
-impl DaftApproxCountDistinctMergeAggable for &FixedSizeBinaryArray {
+impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
     type Output = DaftResult<UInt64Array>;
 
     fn approx_count_distinct_merge(&self) -> Self::Output {
