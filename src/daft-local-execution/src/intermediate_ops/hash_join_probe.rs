@@ -112,7 +112,6 @@ impl IntermediateOperator for HashJoinProbeOperator {
         input: &PipelineResultType,
         state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        println!("HashJoinProbeOperator::execute: idx: {}", idx);
         match idx {
             0 => {
                 let state = state
