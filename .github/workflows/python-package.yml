@@ -665,7 +665,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks -m benchmark --codspeed
+        run: pytest tests/benchmarks -m benchmark --codspeed -n auto
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
