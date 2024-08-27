@@ -161,7 +161,7 @@ pub trait DaftCountAggable {
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output;
 }
 
-pub trait DaftCountApproxDistinctAggable {
+pub trait DaftApproxCountDistinctAggable {
     type Output;
     fn approx_count_distinct(&self) -> Self::Output;
     fn grouped_approx_count_distinct(&self, groups: &GroupIndices) -> Self::Output;

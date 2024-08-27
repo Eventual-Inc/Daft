@@ -1,4 +1,4 @@
-use crate::array::ops::{DaftCountApproxDistinctAggable, DaftHllAggable, DaftHllMergeAggable};
+use crate::array::ops::{DaftApproxCountDistinctAggable, DaftHllAggable, DaftHllMergeAggable};
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
