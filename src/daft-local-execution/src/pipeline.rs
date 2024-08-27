@@ -53,14 +53,14 @@ impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineResultType {
 }
 
 impl PipelineResultType {
-    pub fn data(self) -> Arc<MicroPartition> {
+    pub fn as_data(&self) -> &Arc<MicroPartition> {
         match self {
             PipelineResultType::Data(data) => data,
             _ => panic!("Expected data"),
         }
     }
 
-    pub fn probe_table(self) -> (Arc<ProbeTable>, Arc<Vec<Table>>) {
+    pub fn as_probe_table(&self) -> (&Arc<ProbeTable>, &Arc<Vec<Table>>) {
         match self {
             PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
             _ => panic!("Expected probe table"),

@@ -141,7 +141,7 @@ pub fn run_local(
                 .await?
                 .get_receiver();
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.data()).await;
+                let _ = tx.send(val.as_data().clone()).await;
             }
 
             while let Some(result) = runtime_handle.join_next().await {

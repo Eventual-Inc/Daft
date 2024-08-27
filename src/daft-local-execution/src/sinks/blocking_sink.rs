@@ -100,7 +100,7 @@ impl PipelineNode for BlockingSinkNode {
                 let mut guard = op.lock().await;
                 while let Some(val) = child_results_receiver.recv().await {
                     if let BlockingSinkStatus::Finished =
-                        rt_context.in_span(&span, || guard.sink(&val.data()))?
+                        rt_context.in_span(&span, || guard.sink(val.as_data()))?
                     {
                         break;
                     }
