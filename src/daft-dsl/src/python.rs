@@ -403,6 +403,10 @@ impl PyExpr {
         Ok(self.expr.clone().sum().into())
     }
 
+    pub fn approx_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().approx_distinct().into())
+    }
+
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {
         let (percentiles, list_output) = match percentiles {
             ApproxPercentileInput::Single(p) => (vec![p], false),

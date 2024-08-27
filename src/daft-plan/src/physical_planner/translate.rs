@@ -937,7 +937,7 @@ pub fn populate_aggregation_stages(
                 final_exprs.push(col(second_stage_id.clone()).alias(output_name));
             }
             HllMerge(..) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+                unimplemented!("User-facing hll_merge aggregation is not implemented")
             }
         }
     }
