@@ -22,7 +22,19 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
         DataArray::new(field.into(), data)
     }
 
-    fn grouped_approx_count_distinct(&self, _: &super::GroupIndices) -> Self::Output {
-        todo!()
+    fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
+        let data = self.as_arrow();
+        let hll_iter = groups.iter().map(|group| {
+            let mut hll = HyperLogLog::default();
+            for &index in group {
+                if let Some(value) = data.get(index as _) {
+                    hll.add_already_hashed(value);
+                }
+            }
+            hll.count() as u64
+        });
+        let field = Field::new(self.name(), DataType::UInt64);
+        let data = PrimitiveArray::from_trusted_len_values_iter(hll_iter).boxed();
+        DataArray::new(field.into(), data)
     }
 }
