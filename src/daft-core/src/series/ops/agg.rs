@@ -1,10 +1,8 @@
+use crate::array::ops::{DaftHllAggable, DaftHllMergeAggable};
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
-use crate::{
-    array::ops::GroupIndices, series::Series, with_match_hashable_daft_types,
-    with_match_physical_daft_types,
-};
+use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 
@@ -222,14 +220,22 @@ impl Series {
     }
 
     pub fn hll(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        let series = self.as_physical()?;
-        with_match_hashable_daft_types!(series.data_type(), |$T| {
-            match groups {
-                Some(..) => todo!(),
-                None => todo!(),
-                // Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, groups, mode)?.into_series()),
-                // None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
-            }
-        })
+        let downcasted_self = self.downcast::<UInt64Array>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll(groups),
+            None => downcasted_self.hll(),
+        }?
+        .into_series();
+        Ok(series)
+    }
+
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_merge(groups),
+            None => downcasted_self.hll_merge(),
+        }?
+        .into_series();
+        Ok(series)
     }
 }

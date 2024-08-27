@@ -70,6 +70,21 @@ impl HyperLogLog {
         Self { registers }
     }
 
+    pub fn new_with_byte_slice(slice: &[u8]) -> Self {
+        assert_eq!(
+            slice.len(),
+            NUM_REGISTERS,
+            "unexpected slice length, expect {}, got {}",
+            NUM_REGISTERS,
+            slice.len()
+        );
+        let mut default = Self::default();
+        for (index, &byte) in slice.iter().enumerate() {
+            default.registers[index] = byte;
+        }
+        default
+    }
+
     pub fn add_already_hashed(&mut self, already_hashed: u64) {
         let index = (already_hashed & HLL_P_MASK) as usize;
         let p = ((already_hashed >> HLL_P) | (1_u64 << HLL_Q)).trailing_zeros() + 1;

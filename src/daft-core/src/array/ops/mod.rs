@@ -26,6 +26,7 @@ mod get;
 pub(crate) mod groups;
 mod hash;
 mod hll;
+mod hll_merge;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
@@ -207,4 +208,10 @@ pub trait DaftHllAggable {
     type Output;
     fn hll(&self) -> Self::Output;
     fn grouped_hll(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftHllMergeAggable {
+    type Output;
+    fn hll_merge(&self) -> Self::Output;
+    fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
 }

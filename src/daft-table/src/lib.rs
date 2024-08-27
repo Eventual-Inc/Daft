@@ -462,7 +462,7 @@ impl Table {
                 .hash(None)?
                 .into_series()
                 .hll(groups),
-            AggExpr::HllMerge(..) => todo!(),
+            AggExpr::HllMerge(expr) => self.eval_expression(expr)?.hll_merge(groups),
         }
     }
 
