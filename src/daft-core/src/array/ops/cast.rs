@@ -1674,7 +1674,7 @@ impl COOSparseTensorArray {
                     DataType::UInt64 => implement_cast_for_dense_with_inner_dtype!(u64, UInt64Array, n_values, non_zero_indices_array, non_zero_values_array, offsets),
                     DataType::Float32 => implement_cast_for_dense_with_inner_dtype!(f32, Float32Array, n_values, non_zero_indices_array, non_zero_values_array, offsets),
                     DataType::Float64 => implement_cast_for_dense_with_inner_dtype!(f64, Float64Array, n_values, non_zero_indices_array, non_zero_values_array, offsets),
-                    _ => panic!("Hi")
+                    _ => panic!("Wrong dtype when casting from COOSparseTensor to Tensor: {}", dtype),
                 };
                 let list_arr = ListArray::new(
                     Field::new(
