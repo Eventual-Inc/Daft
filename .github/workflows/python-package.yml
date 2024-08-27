@@ -649,6 +649,8 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
+    - name: Debug with tmate on failure
+      uses: mxschmitt/action-tmate@v3
     - name: Build Rust Library
       run: |
         source activate
