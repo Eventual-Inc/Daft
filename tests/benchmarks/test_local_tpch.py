@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 
 import pytest
@@ -12,17 +11,18 @@ from benchmarking.tpch import answers, data_generation
 if sys.platform == "win32":
     pytest.skip(allow_module_level=True)
 
-
 import itertools
 
 import daft.context
 from tests.assets import TPCH_DBGEN_DIR
 from tests.integration.conftest import *  # noqa: F403
 
+from .conftest import IS_CI
+
 SCALE_FACTOR = 0.2
-ENGINES = ["native"] if os.getenv("CI") else ["native", "python"]
-NUM_PARTS = [1] if os.getenv("CI") else [1, 2]
-SOURCE_TYPES = ["in-memory"] if os.getenv("CI") else ["parquet", "in-memory"]
+ENGINES = ["native"] if IS_CI else ["native", "python"]
+NUM_PARTS = [1] if IS_CI else [1, 2]
+SOURCE_TYPES = ["in-memory"] if IS_CI else ["parquet", "in-memory"]
 
 
 @pytest.fixture(scope="session", params=NUM_PARTS)
