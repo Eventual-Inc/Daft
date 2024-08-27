@@ -923,8 +923,22 @@ pub fn populate_aggregation_stages(
                         .alias(output_name),
                 );
             }
-            Hll(..) => todo!(),
-            HllMerge(..) => todo!(),
+            Hll(e) => {
+                let first_stage_id = agg_expr.semantic_id(schema).id;
+                let second_stage_id = HllMerge(col(first_stage_id.clone())).semantic_id(schema).id;
+                first_stage_aggs
+                    .entry(first_stage_id.clone())
+                    .or_insert(Hll(e.alias(first_stage_id.clone())));
+                second_stage_aggs
+                    .entry(second_stage_id.clone())
+                    .or_insert(HllMerge(
+                        col(first_stage_id.clone()).alias(second_stage_id.clone()),
+                    ));
+                final_exprs.push(col(second_stage_id.clone()).alias(output_name));
+            }
+            HllMerge(..) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            }
         }
     }
     (first_stage_aggs, second_stage_aggs, final_exprs)
