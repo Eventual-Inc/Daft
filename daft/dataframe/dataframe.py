@@ -821,7 +821,7 @@ class DataFrame:
                 warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema)
 
         if table:
             table.update_incremental()
