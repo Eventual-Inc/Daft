@@ -1,7 +1,8 @@
 use std::iter::repeat;
 use std::sync::Arc;
 
-use crate::datatypes::{BooleanArray, Field, Int64Array, Utf8Array};
+use crate::array::DataArray;
+use crate::datatypes::{BooleanArray, DaftPhysicalType, Field, Int64Array, Utf8Array};
 use crate::{
     array::{
         growable::{make_growable, Growable},
@@ -17,6 +18,7 @@ use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+use super::DaftCompare;
 
 fn join_arrow_list_of_utf8s(
     list_element: Option<&dyn arrow2::array::Array>,
@@ -472,6 +474,26 @@ impl ListArray {
             self.offsets().clone(),
             self.validity().cloned(),
         ))
+    }
+
+    pub fn list_contains<T>(&self, _: DataArray<T>) -> DaftResult<Self>
+    where
+        T: DaftPhysicalType + DaftCompare<T>,
+    {
+        // let value = match value.len() {
+        //     0 => todo!(),
+        //     1 => todo!(),
+        //     length if length == self.len() => {
+        //         // let x = value.data.as_any().downcast_ref();
+        //         // value.data;
+        //         // let x = self.data_type();
+        //         // let y = value.data_type();
+        //         value.as_any();
+        //         // Series::from_arrow(value.field, value.data);
+        //     }
+        //     _ => todo!(),
+        // };
+        todo!()
     }
 }
 

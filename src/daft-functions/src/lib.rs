@@ -2,7 +2,7 @@
 pub mod count_matches;
 pub mod distance;
 pub mod hash;
-pub mod list_sort;
+pub mod list;
 pub mod minhash;
 pub mod numeric;
 pub mod to_struct;
@@ -20,7 +20,8 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(count_matches::python::utf8_count_matches))?;
     parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine_distance))?;
     parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
-    parent.add_wrapped(wrap_pyfunction!(list_sort::python::list_sort))?;
+    parent.add_wrapped(wrap_pyfunction!(list::sort::python::list_sort))?;
+    parent.add_wrapped(wrap_pyfunction!(list::contains::list_contains))?;
     parent.add_wrapped(wrap_pyfunction!(minhash::python::minhash))?;
     parent.add_wrapped(wrap_pyfunction!(numeric::cbrt::python::cbrt))?;
     parent.add_wrapped(wrap_pyfunction!(to_struct::python::to_struct))?;

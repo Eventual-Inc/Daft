@@ -2826,6 +2826,17 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
 
+    def contains(self, value: Expression) -> Expression:
+        """Returns all lists which contain the given value.
+
+        Args:
+            value (DataType): the value to search for in the list
+
+        Returns:
+            Expression: a List expression which are the lists which all contain at least one instance of the given value.
+        """
+        return Expression._from_pyexpr(native.list_contains(self._expr, value._expr))
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 

@@ -157,4 +157,8 @@ impl Series {
             ))),
         }
     }
+
+    pub fn list_contains(&self, _: &Series) -> DaftResult<Series> {
+        todo!()
+    }
 }
