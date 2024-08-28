@@ -347,7 +347,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
     test_parquet_helper(get_string_data_and_type(8192, 300, 1), True)
 
 
-def test_parquet_limits_across_row_groups(tmpdir):
+def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
     row_group_size = 1024
     int_array = np.full(shape=4096, fill_value=3, dtype=np.int32)
     before = pa.Table.from_arrays(
@@ -366,3 +366,16 @@ def test_parquet_limits_across_row_groups(tmpdir):
         before.take(list(range(min(before.num_rows, row_group_size * 2)))).to_pydict()
         == daft.read_parquet(file_path).limit(row_group_size * 2).to_pydict()
     )
+
+    bucket_name = "my-bucket"
+    s3_path = f"s3://{bucket_name}/my-folder"
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        before.write_parquet(s3_path, io_config=minio_io_config)
+        assert (
+            before.take(list(range(min(before.num_rows, row_group_size + 10)))).to_pydict()
+            == daft.read_parquet(s3_path, io_config=minio_io_config).limit(row_group_size + 10).to_pydict()
+        )
+        assert (
+            before.take(list(range(min(before.num_rows, row_group_size * 2)))).to_pydict()
+            == daft.read_parquet(s3_path, io_config=minio_io_config).limit(row_group_size * 2).to_pydict()
+        )

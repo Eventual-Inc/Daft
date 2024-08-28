@@ -175,10 +175,6 @@ DAFT_CAN_READ_FILES = [
         "s3a://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
     ),
     (
-        "parquet/test_parquet_limits_across_row_groups",
-        "s3://daft-public-data/test_fixtures/parquet-dev/tpch-issue#2730.parquet",
-    ),
-    (
         "azure/mvp/az",
         "az://public-anonymous/mvp.parquet",
     ),
