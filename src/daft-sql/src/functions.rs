@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use daft_dsl::{functions::FunctionExpr, AggExpr, ExprRef};
+use daft_dsl::ExprRef;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{Function, FunctionArg, FunctionArgExpr, FunctionArguments};
 
@@ -51,50 +51,16 @@ fn check_features(func: &Function) -> SQLPlannerResult<()> {
 }
 
 /// [SQLFunction] extends [FunctionExpr] with basic input validation (arity-check).
-///
-/// TODOs
-///  - Support for ScalarUDF as either another enum variant or make SQLFunction a trait.
-pub enum SQLFunction {
-    Function(FunctionExpr),
-    Agg(AggExpr),
+pub trait SQLFunction: Send + Sync {
+    /// Adds a `to_expr` method to [SQLFunction] to convert it to an [ExprRef].
+    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef>;
 }
 
 /// TODOs
 ///   - Use multimap for function variants.
 ///   - Add more functions..
 pub struct SQLFunctions {
-    map: HashMap<String, SQLFunction>,
-}
-
-/// Adds a `to_expr` method to [SQLFunction] to convert it to an [ExprRef].
-///
-/// TODOs
-///   - Consider splitting input validation from creating an [ExprRef].
-///   - Consider extending ScalarUDF
-impl SQLFunction {
-    /// Convert the [SQLFunction] to an [ExprRef].
-    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-        match self {
-            SQLFunction::Function(func) => {
-                use FunctionExpr::*;
-                match func {
-                    Numeric(expr) => numeric::to_expr(expr, inputs),
-                    Float(_) => unsupported_sql_err!("Float functions"),
-                    Utf8(expr) => utf8::to_expr(expr, inputs),
-                    Temporal(_) => unsupported_sql_err!("Temporal functions"),
-                    List(_) => unsupported_sql_err!("List functions"),
-                    Map(_) => unsupported_sql_err!("Map functions"),
-                    Sketch(_) => unsupported_sql_err!("Sketch functions"),
-                    Struct(_) => unsupported_sql_err!("Struct functions"),
-                    Json(_) => unsupported_sql_err!("Json functions"),
-                    Image(_) => unsupported_sql_err!("Image functions"),
-                    Python(_) => unsupported_sql_err!("Python functions"),
-                    Partitioning(_) => unsupported_sql_err!("Partitioning functions"),
-                }
-            }
-            SQLFunction::Agg(expr) => aggs::to_expr(expr, inputs),
-        }
-    }
+    map: HashMap<String, Arc<dyn SQLFunction>>,
 }
 
 impl SQLFunctions {
@@ -111,18 +77,12 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
-    pub fn add_fn(&mut self, name: &str, func: FunctionExpr) {
-        self.map
-            .insert(name.to_string(), SQLFunction::Function(func));
-    }
-
-    /// Add an [AggExpr] to the [SQLFunctions] instance.
-    pub fn add_agg(&mut self, name: &str, agg: AggExpr) {
-        self.map.insert(name.to_string(), SQLFunction::Agg(agg));
+    pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        self.map.insert(name.to_string(), Arc::new(func));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
-    pub fn get(&self, name: &str) -> Option<&SQLFunction> {
+    pub fn get(&self, name: &str) -> Option<&Arc<dyn SQLFunction>> {
         self.map.get(name)
     }
 }

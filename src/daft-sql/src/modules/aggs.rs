@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use daft_dsl::{AggExpr, Expr, ExprRef, LiteralValue};
 
-use crate::{ensure, error::SQLPlannerResult, functions::SQLFunctions, unsupported_sql_err};
+use crate::{
+    ensure,
+    error::SQLPlannerResult,
+    functions::{SQLFunction, SQLFunctions},
+    unsupported_sql_err,
+};
 
 use super::SQLModule;
 
@@ -13,12 +18,18 @@ impl SQLModule for SQLModuleAggs {
         use AggExpr::*;
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
-        parent.add_agg("count", Count(nil.clone(), daft_core::CountMode::Valid));
-        parent.add_agg("sum", Sum(nil.clone()));
-        parent.add_agg("avg", Mean(nil.clone()));
-        parent.add_agg("mean", Mean(nil.clone()));
-        parent.add_agg("min", Min(nil.clone()));
-        parent.add_agg("max", Max(nil.clone()));
+        parent.add_fn("count", Count(nil.clone(), daft_core::CountMode::Valid));
+        parent.add_fn("sum", Sum(nil.clone()));
+        parent.add_fn("avg", Mean(nil.clone()));
+        parent.add_fn("mean", Mean(nil.clone()));
+        parent.add_fn("min", Min(nil.clone()));
+        parent.add_fn("max", Max(nil.clone()));
+    }
+}
+
+impl SQLFunction for AggExpr {
+    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+        to_expr(self, inputs)
     }
 }
 

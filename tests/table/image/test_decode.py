@@ -12,3 +12,9 @@ def test_decode_all_empty():
         "foo": [b"not an image", None],
         "image": [None, None],
     }
+
+
+def test_decode_sql():
+    sql_expr = daft.sql_expr("image_decode(foo)")
+    expr = daft.col("foo").image.decode()
+    assert sql_expr == expr
