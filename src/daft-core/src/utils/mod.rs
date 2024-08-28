@@ -1,6 +1,7 @@
 pub mod arrow;
 pub mod display_table;
 pub mod dyn_compare;
+pub mod identity_hash_set;
 pub mod supertype;
 
 #[macro_export]
