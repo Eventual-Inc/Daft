@@ -52,7 +52,7 @@ impl DaftApproxCountDistinctSketchAggable for UInt64Array {
                     hll.add_already_hashed(value);
                 };
             }
-            bytes.extend(hll.registers);
+            bytes.extend(hll.registers.as_ref());
         }
         let field = construct_field(self.name());
         let data = construct_data(bytes);

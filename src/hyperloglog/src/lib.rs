@@ -38,6 +38,8 @@
 //! Turned into a standalone crate for easier use.
 //! - Daft
 
+use std::borrow::Cow;
+
 /// The greater is P, the smaller the error.
 const HLL_P: usize = 14_usize;
 /// The number of bits of the hash value used determining the number of leading zeros
@@ -47,17 +49,33 @@ pub const NUM_REGISTERS: usize = 1_usize << HLL_P;
 const HLL_P_MASK: u64 = (NUM_REGISTERS as u64) - 1;
 
 #[derive(Clone, Debug)]
-pub struct HyperLogLog {
-    pub registers: [u8; NUM_REGISTERS],
+pub struct HyperLogLog<'a> {
+    pub registers: Cow<'a, [u8; NUM_REGISTERS]>,
 }
 
-impl Default for HyperLogLog {
+impl Default for HyperLogLog<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HyperLogLog {
+impl<'a> HyperLogLog<'a> {
+    pub fn new_with_byte_slice(slice: &'a [u8]) -> Self {
+        assert_eq!(
+            slice.len(),
+            NUM_REGISTERS,
+            "unexpected slice length, expect {}, got {}",
+            NUM_REGISTERS,
+            slice.len()
+        );
+        let registers = slice.try_into().unwrap();
+        Self {
+            registers: Cow::Borrowed(registers),
+        }
+    }
+}
+
+impl HyperLogLog<'_> {
     /// Creates a new, empty HyperLogLog.
     pub fn new() -> Self {
         let registers = [0; NUM_REGISTERS];
@@ -68,28 +86,16 @@ impl HyperLogLog {
     /// note that this method should not be invoked in untrusted environment
     /// because the internal structure of registers are not examined.
     pub fn new_with_registers(registers: [u8; NUM_REGISTERS]) -> Self {
-        Self { registers }
-    }
-
-    pub fn new_with_byte_slice(slice: &[u8]) -> Self {
-        assert_eq!(
-            slice.len(),
-            NUM_REGISTERS,
-            "unexpected slice length, expect {}, got {}",
-            NUM_REGISTERS,
-            slice.len()
-        );
-        let mut default = Self::default();
-        for (index, &byte) in slice.iter().enumerate() {
-            default.registers[index] = byte;
+        Self {
+            registers: Cow::Owned(registers),
         }
-        default
     }
 
     pub fn add_already_hashed(&mut self, already_hashed: u64) {
+        let registers = self.registers.to_mut();
         let index = (already_hashed & HLL_P_MASK) as usize;
         let p = ((already_hashed >> HLL_P) | (1_u64 << HLL_Q)).trailing_zeros() + 1;
-        self.registers[index] = self.registers[index].max(p as u8);
+        registers[index] = registers[index].max(p as u8);
     }
 
     /// Get the register histogram (each value in register index into
@@ -98,7 +104,7 @@ impl HyperLogLog {
     fn get_histogram(&self) -> [u32; HLL_Q + 2] {
         let mut histogram = [0; HLL_Q + 2];
         // hopefully this can be unrolled
-        for r in self.registers {
+        for &r in self.registers.as_ref() {
             histogram[r as usize] += 1;
         }
         histogram
@@ -112,8 +118,11 @@ impl HyperLogLog {
             self.registers.len(),
             other.registers.len()
         );
-        for i in 0..self.registers.len() {
-            self.registers[i] = self.registers[i].max(other.registers[i]);
+        let length = self.registers.len();
+        let registers = self.registers.to_mut();
+        let other_registers = other.registers.as_ref();
+        for i in 0..length {
+            registers[i] = registers[i].max(other_registers[i]);
         }
     }
 
@@ -179,13 +188,13 @@ fn hll_tau(x: f64) -> f64 {
     }
 }
 
-impl AsRef<[u8]> for HyperLogLog {
+impl AsRef<[u8]> for HyperLogLog<'_> {
     fn as_ref(&self) -> &[u8] {
-        &self.registers
+        self.registers.as_ref()
     }
 }
 
-impl Extend<u64> for HyperLogLog {
+impl Extend<u64> for HyperLogLog<'_> {
     fn extend<T: IntoIterator<Item = u64>>(&mut self, iter: T) {
         for elem in iter {
             self.add_already_hashed(elem);
