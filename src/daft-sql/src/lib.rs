@@ -1,6 +1,7 @@
 pub mod catalog;
 pub mod error;
 pub mod functions;
+mod modules;
 mod planner;
 
 #[cfg(feature = "python")]
