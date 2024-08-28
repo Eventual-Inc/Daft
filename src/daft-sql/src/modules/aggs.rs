@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use daft_dsl::{AggExpr, Expr, ExprRef, LiteralValue};
+use sqlparser::ast::FunctionArg;
 
 use crate::{
     ensure,
     error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
+    planner::SQLPlanner,
     unsupported_sql_err,
 };
 
@@ -28,8 +30,9 @@ impl SQLModule for SQLModuleAggs {
 }
 
 impl SQLFunction for AggExpr {
-    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-        to_expr(self, inputs)
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
+        to_expr(self, inputs.as_slice())
     }
 }
 

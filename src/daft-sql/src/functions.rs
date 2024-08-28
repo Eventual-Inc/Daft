@@ -52,8 +52,35 @@ fn check_features(func: &Function) -> SQLPlannerResult<()> {
 
 /// [SQLFunction] extends [FunctionExpr] with basic input validation (arity-check).
 pub trait SQLFunction: Send + Sync {
-    /// Adds a `to_expr` method to [SQLFunction] to convert it to an [ExprRef].
-    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef>;
+    /// helper function to extract the function args into a list of [ExprRef]
+    /// This is used to convert unnamed arguments into [ExprRef]s.
+    /// ```sql
+    /// SELECT concat('hello', 'world');
+    /// ```
+    /// this  will be converted to: [lit("hello"), lit("world")]
+    ///
+    /// Using this on a function with named arguments will result in an error.
+    /// ```sql
+    /// SELECT concat(arg1 => 'hello', arg2 => 'world');
+    /// ```
+    fn args_to_expr_unnamed(
+        &self,
+        inputs: &[FunctionArg],
+        planner: &SQLPlanner,
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
+        inputs
+            .iter()
+            .map(|arg| planner.plan_function_arg(arg))
+            .collect::<SQLPlannerResult<Vec<_>>>()
+    }
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
+}
+
+/// Parse the arguments of a function into a struct.
+pub(crate) trait FromSQLArgs {
+    fn from_sql(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<Self>
+    where
+        Self: Sized;
 }
 
 /// TODOs
@@ -135,21 +162,31 @@ impl SQLPlanner {
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
                 }
-                args.args
-                    .iter()
-                    .map(|arg| self.plan_function_arg(arg))
-                    .collect::<SQLPlannerResult<Vec<_>>>()?
+                args.args.clone()
             }
         };
 
         // validate input argument arity and return the validated expression.
-        fn_match.to_expr(args.as_slice())
+        fn_match.to_expr(&args, self)
     }
 
-    fn plan_function_arg(&self, function_arg: &FunctionArg) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn plan_function_arg(
+        &self,
+        function_arg: &FunctionArg,
+    ) -> SQLPlannerResult<ExprRef> {
         match function_arg {
             FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
             _ => unsupported_sql_err!("named function args not yet supported"),
+        }
+    }
+
+    pub(crate) fn try_unwrap_function_arg_expr(
+        &self,
+        expr: &FunctionArgExpr,
+    ) -> SQLPlannerResult<ExprRef> {
+        match expr {
+            FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
+            _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
     }
 }

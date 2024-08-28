@@ -1,5 +1,4 @@
-mod decode;
-pub use decode::decode;
+pub mod decode;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

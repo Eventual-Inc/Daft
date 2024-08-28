@@ -11,14 +11,33 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Container for the keyword arguments for `image_decode`
+/// ex:
+/// ```text
+/// image_decode(input)
+/// image_decode(input, mode='RGB')
+/// image_decode(input, mode='RGB', on_error='raise')
+/// image_decode(input, on_error='null')
+/// image_decode(input, on_error='null', mode='RGB')
+/// image_decode(input, mode='RGB', on_error='null')
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageDecodeFunction {
-    mode: Option<ImageMode>,
-    raise_error_on_failure: bool,
+pub struct ImageDecodeArgs {
+    pub mode: Option<ImageMode>,
+    pub raise_on_error: bool,
+}
+
+impl Default for ImageDecodeArgs {
+    fn default() -> Self {
+        Self {
+            mode: None,
+            raise_on_error: true,
+        }
+    }
 }
 
 #[typetag::serde]
-impl ScalarUDF for ImageDecodeFunction {
+impl ScalarUDF for ImageDecodeArgs {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -47,7 +66,7 @@ impl ScalarUDF for ImageDecodeFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let raise_error_on_failure = self.raise_error_on_failure;
+        let raise_error_on_failure = self.raise_on_error;
         match inputs {
             [input] => input.image_decode(raise_error_on_failure, self.mode),
             _ => Err(DaftError::ValueError(format!(
@@ -58,30 +77,42 @@ impl ScalarUDF for ImageDecodeFunction {
     }
 }
 
-pub fn decode(input: ExprRef, raise_error_on_failure: bool, mode: Option<ImageMode>) -> ExprRef {
-    ScalarFunction::new(
-        ImageDecodeFunction {
-            mode,
-            raise_error_on_failure,
-        },
-        vec![input],
-    )
-    .into()
+pub fn decode(input: ExprRef, args: Option<ImageDecodeArgs>) -> ExprRef {
+    ScalarFunction::new(args.unwrap_or_default(), vec![input]).into()
 }
 
 #[cfg(feature = "python")]
 use {
     daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
+    pyo3::{pyfunction, types::PyDict, PyResult},
 };
 
 #[cfg(feature = "python")]
+impl TryFrom<Option<&PyDict>> for ImageDecodeArgs {
+    type Error = pyo3::PyErr;
+
+    fn try_from(py_kwargs: Option<&PyDict>) -> Result<Self, Self::Error> {
+        let mut mode = None;
+        let mut raise_on_error = false;
+        if let Some(kwargs) = py_kwargs {
+            if let Some(mode_str) = kwargs.get_item("mode") {
+                mode = Some(mode_str.extract()?);
+            }
+            if let Some(raise_on_error_str) = kwargs.get_item("raise_on_error") {
+                raise_on_error = raise_on_error_str.extract()?;
+            }
+        }
+        Ok(Self {
+            mode,
+            raise_on_error,
+        })
+    }
+}
+
+#[cfg(feature = "python")]
 #[pyfunction]
-#[pyo3(name = "image_decode")]
-pub fn py_decode(
-    input: PyExpr,
-    raise_error_on_failure: bool,
-    mode: Option<ImageMode>,
-) -> PyResult<PyExpr> {
-    Ok(decode(input.into(), raise_error_on_failure, mode).into())
+#[pyo3(name = "image_decode", signature = (input, **py_kwargs))]
+pub fn py_decode(input: PyExpr, py_kwargs: Option<&PyDict>) -> PyResult<PyExpr> {
+    let kwargs = ImageDecodeArgs::try_from(py_kwargs)?;
+    Ok(decode(input.into(), Some(kwargs)).into())
 }
