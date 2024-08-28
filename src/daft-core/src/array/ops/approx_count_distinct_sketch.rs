@@ -15,16 +15,15 @@ use crate::array::{
     DataArray,
 };
 
-pub const APPROX_COUNT_DISTINCT_SKETCH_OUTPUT_TYPE: DataType =
-    DataType::FixedSizeBinary(NUM_REGISTERS);
+pub const APPROX_COUNT_DISTINCT_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
 
 fn construct_field(name: &str) -> Arc<Field> {
-    Arc::new(Field::new(name, APPROX_COUNT_DISTINCT_SKETCH_OUTPUT_TYPE))
+    Arc::new(Field::new(name, APPROX_COUNT_DISTINCT_SKETCH_DTYPE))
 }
 
 fn construct_data(bytes: Vec<u8>) -> Box<Arrow2FixedSizeBinaryArray> {
     Box::new(Arrow2FixedSizeBinaryArray::new(
-        APPROX_COUNT_DISTINCT_SKETCH_OUTPUT_TYPE.to_arrow().unwrap(),
+        APPROX_COUNT_DISTINCT_SKETCH_DTYPE.to_arrow().unwrap(),
         Buffer::from(bytes),
         None,
     ))

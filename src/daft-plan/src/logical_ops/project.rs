@@ -397,10 +397,6 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())
         }
-        AggExpr::ApproxSketch(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::ApproxSketch, |_| e.clone())
-        }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,
@@ -416,9 +412,17 @@ fn replace_column_with_semantic_id_aggexpr(
                 },
                 |_| e.clone(),
             ),
-        AggExpr::MergeSketch(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::MergeSketch, |_| e.clone())
+        AggExpr::ApproxSketch(ref child, sketch_and_merge_type) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::ApproxSketch(transformed_child, sketch_and_merge_type),
+                |_| e.clone(),
+            )
+        }
+        AggExpr::MergeSketch(ref child, sketch_and_merge_type) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::MergeSketch(transformed_child, sketch_and_merge_type),
+                |_| e.clone(),
+            )
         }
         AggExpr::Mean(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

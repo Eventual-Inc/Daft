@@ -12,7 +12,7 @@ use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::{col, ApproxPercentileParams};
+use daft_dsl::{col, ApproxPercentileParams, SketchAndMergeType};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
@@ -920,30 +920,39 @@ pub fn populate_aggregation_stages(
                     });
                 final_exprs.push(col(output_name));
             }
-            ApproxPercentile(ApproxPercentileParams {
-                child: e,
-                percentiles,
+            &ApproxPercentile(ApproxPercentileParams {
+                child: ref e,
+                ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 let sketch_id = agg_expr.semantic_id(schema).id;
-                let approx_id = ApproxSketch(col(sketch_id.clone())).semantic_id(schema).id;
+                let approx_id =
+                    ApproxSketch(col(sketch_id.clone()), SketchAndMergeType::ApproxPercentile)
+                        .semantic_id(schema)
+                        .id;
                 first_stage_aggs
                     .entry(sketch_id.clone())
-                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
+                    .or_insert(ApproxSketch(
+                        e.alias(sketch_id.clone()),
+                        SketchAndMergeType::ApproxPercentile,
+                    ));
                 second_stage_aggs
                     .entry(approx_id.clone())
-                    .or_insert(MergeSketch(col(sketch_id.clone()).alias(approx_id.clone())));
+                    .or_insert(MergeSketch(
+                        col(sketch_id.clone()).alias(approx_id.clone()),
+                        SketchAndMergeType::ApproxPercentile,
+                    ));
                 final_exprs.push(
-                    col(approx_id.clone())
-                        .sketch_percentile(percentiles.as_slice(), *force_list_output)
+                    col(approx_id)
+                        .sketch_percentile(percentiles.as_slice(), force_list_output)
                         .alias(output_name),
                 );
             }
-            ApproxSketch(_) => {
+            ApproxSketch(..) => {
                 unimplemented!("User-facing approx_sketch aggregation is not implemented")
             }
-            MergeSketch(_) => {
+            MergeSketch(..) => {
                 unimplemented!("User-facing merge_sketch aggregation is not implemented")
             }
         }

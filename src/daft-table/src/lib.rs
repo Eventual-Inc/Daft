@@ -18,7 +18,9 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue};
+use daft_dsl::{
+    col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue, SketchAndMergeType,
+};
 #[cfg(feature = "python")]
 pub mod ffi;
 mod growable;
@@ -447,7 +449,6 @@ impl Table {
                 .eval_expression(expr)?
                 .approx_count_distinct_merge(groups),
             AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
-            AggExpr::ApproxSketch(expr) => self.eval_expression(expr)?.approx_sketch(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
@@ -458,7 +459,25 @@ impl Table {
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
-            AggExpr::MergeSketch(expr) => self.eval_expression(expr)?.merge_sketch(groups),
+            &AggExpr::ApproxSketch(ref expr, sketch_and_merge_type) => {
+                let evaled = self.eval_expression(expr)?;
+                match sketch_and_merge_type {
+                    SketchAndMergeType::ApproxPercentile => evaled.approx_sketch(groups),
+                    SketchAndMergeType::ApproxCountDistinct => evaled
+                        .hash(None)?
+                        .into_series()
+                        .approx_count_distinct_sketch(groups),
+                }
+            }
+            &AggExpr::MergeSketch(ref expr, sketch_and_merge_type) => {
+                let evaled = self.eval_expression(expr)?;
+                match sketch_and_merge_type {
+                    SketchAndMergeType::ApproxPercentile => evaled.merge_sketch(groups),
+                    SketchAndMergeType::ApproxCountDistinct => {
+                        evaled.approx_count_distinct_merge(groups)
+                    }
+                }
+            }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
