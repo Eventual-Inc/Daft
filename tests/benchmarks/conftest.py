@@ -7,7 +7,6 @@ from collections import defaultdict
 import memray
 import pytest
 
-
 memray_stats = defaultdict(dict)
 
 

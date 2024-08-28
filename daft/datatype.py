@@ -352,7 +352,7 @@ class DataType:
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a COO sparse tensor DataType: COO sparse tensor arrays contain COO representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        """Create a COOSparseTensor DataType: COOSparseYensor arrays contain 'COO' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
         ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
@@ -362,7 +362,7 @@ class DataType:
 
         Args:
             dtype: The type of the data contained within the tensor elements.
-            shape: The shape of each coo sparse tensor in the column. This is ``None`` by default, which allows the shapes of
+            shape: The shape of each COOSparseTensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
         """
         if shape is not None:

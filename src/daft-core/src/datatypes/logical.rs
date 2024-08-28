@@ -8,9 +8,10 @@ use crate::{
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, COOSparseTensorType, FixedShapeCOOSparseTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
-    TimeType, TimestampType,
+    COOSparseTensorType, DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type,
+    DurationType, EmbeddingType, FixedShapeCOOSparseTensorType, FixedShapeImageType,
+    FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType, TimeType,
+    TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its

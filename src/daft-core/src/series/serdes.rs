@@ -9,8 +9,9 @@ use crate::{
         ListArray, StructArray,
     },
     datatypes::logical::{
-        DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, COOSparseTensorArray, FixedShapeCOOSparseTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+        COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
+        FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray,
+        MapArray, TensorArray, TimeArray, TimestampArray,
     },
     with_match_daft_types, DataType, IntoSeries, Series,
 };

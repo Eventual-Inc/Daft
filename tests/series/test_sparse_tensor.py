@@ -10,14 +10,15 @@ from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
+
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
 def test_coo_sparse_tensor_roundtrip(dtype):
     np_dtype = dtype.to_pandas_dtype()
-    shape = (3, 2, 2)
     data = [
-        np.arange(12, dtype=np_dtype).reshape(shape),
-        np.arange(12, 24, dtype=np_dtype).reshape(shape),
-        None
+        np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np_dtype),
+        None,
+        np.array([[0, 0, 0, 0], [0, 0, 0, 0]], dtype=np_dtype),
+        np.array([[0, 0, 0, 0], [0, 0, 4, 0]], dtype=np_dtype),
     ]
     s = Series.from_pylist(data, pyobj="allow")
 
@@ -29,7 +30,6 @@ def test_coo_sparse_tensor_roundtrip(dtype):
     # Test sparse tensor roundtrip.
     sparse_tensor_dtype = DataType.coo_sparse_tensor(dtype=DataType.from_arrow_type(dtype))
     sparse_tensor_series = t.cast(sparse_tensor_dtype)
-
     assert sparse_tensor_series.datatype() == sparse_tensor_dtype
     back = sparse_tensor_series.cast(tensor_dtype)
     out = back.to_pylist()

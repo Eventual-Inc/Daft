@@ -7,7 +7,7 @@ impl COOSparseTensorArray {
         let array = self.physical.children.get(VALUES_IDX).unwrap();
         array.list().unwrap()
     }
-    
+
     pub fn indices_array(&self) -> &ListArray {
         const INDICES_IDX: usize = 1;
         let array = self.physical.children.get(INDICES_IDX).unwrap();
@@ -27,10 +27,86 @@ impl FixedShapeCOOSparseTensorArray {
         let array = self.physical.children.get(VALUES_IDX).unwrap();
         array.list().unwrap()
     }
-    
+
     pub fn indices_array(&self) -> &ListArray {
         const INDICES_IDX: usize = 1;
         let array = self.physical.children.get(INDICES_IDX).unwrap();
         array.list().unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::vec;
+
+    use crate::{
+        array::{ListArray, StructArray},
+        datatypes::{logical::COOSparseTensorArray, DataType, Field, Int64Array, UInt64Array},
+        IntoSeries,
+    };
+    use common_error::DaftResult;
+
+    #[test]
+    fn test_sparse_tensor_to_fixed_shape_sparse_tensor_roundtrip() -> DaftResult<()> {
+        let raw_validity = vec![true, false, true];
+        let validity = arrow2::bitmap::Bitmap::from(raw_validity.as_slice());
+
+        let values_array = ListArray::new(
+            Field::new("values", DataType::List(Box::new(DataType::Int64))),
+            Int64Array::from((
+                "item",
+                Box::new(arrow2::array::Int64Array::from_iter(
+                    [Some(1), Some(2), Some(0), Some(3)].iter(),
+                )),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            Some(validity.clone()),
+        )
+        .into_series();
+        let indices_array = ListArray::new(
+            Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
+            UInt64Array::from((
+                "item",
+                Box::new(arrow2::array::UInt64Array::from_iter(
+                    [Some(1), Some(2), Some(0), Some(2)].iter(),
+                )),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            Some(validity.clone()),
+        )
+        .into_series();
+
+        let shapes_array = ListArray::new(
+            Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
+            UInt64Array::from((
+                "item",
+                Box::new(arrow2::array::UInt64Array::from_iter(
+                    [Some(3), Some(3), Some(3)].iter(),
+                )),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            Some(validity.clone()),
+        )
+        .into_series();
+        let dtype = DataType::COOSparseTensor(Box::new(DataType::Int64));
+        let struct_array = StructArray::new(
+            Field::new("tensor", dtype.to_physical()),
+            vec![values_array, indices_array, shapes_array],
+            Some(validity.clone()),
+        );
+        let coo_sparse_tensor_array =
+            COOSparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
+        let fixed_shape_coo_sparse_tensor =
+            DataType::FixedShapeCOOSparseTensor(Box::new(DataType::Int64), vec![3]);
+        let fixed_shape_coo_sparse_tensor_array =
+            coo_sparse_tensor_array.cast(&fixed_shape_coo_sparse_tensor)?;
+        let roundtrip_tensor = fixed_shape_coo_sparse_tensor_array.cast(&dtype)?;
+        assert!(roundtrip_tensor
+            .to_arrow()
+            .eq(&coo_sparse_tensor_array.to_arrow()));
+        Ok(())
     }
 }

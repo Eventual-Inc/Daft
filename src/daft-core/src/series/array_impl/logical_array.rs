@@ -1,5 +1,7 @@
 use crate::datatypes::logical::{
-    COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray, TimestampArray
+    COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
+    FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray,
+    LogicalArray, MapArray, TensorArray, TimeArray, TimestampArray,
 };
 use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
 

@@ -4,7 +4,9 @@ use crate::{
     array::{FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray
+            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
+            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
+            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, ExtensionArray, FixedSizeBinaryArray, Float32Array,
         Float64Array, Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,

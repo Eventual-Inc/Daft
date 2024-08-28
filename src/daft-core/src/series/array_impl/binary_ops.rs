@@ -17,8 +17,8 @@ use crate::{
 };
 
 use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray, COOSparseTensorArray,
-    ImageArray, TensorArray, TimeArray, TimestampArray,
+    COOSparseTensorArray, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+    FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,

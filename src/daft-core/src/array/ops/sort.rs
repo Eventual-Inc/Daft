@@ -2,7 +2,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray
+            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
+            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
+            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
