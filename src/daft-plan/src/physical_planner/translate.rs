@@ -58,7 +58,8 @@ pub(super) fn translate_single_logical_node(
                 );
 
                 // Apply transformations on the ScanTasks to optimize
-                let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, cfg);
+                let scan_tasks =
+                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
