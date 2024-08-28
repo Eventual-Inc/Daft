@@ -347,6 +347,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
     test_parquet_helper(get_string_data_and_type(8192, 300, 1), True)
 
 
+@pytest.mark.integration()
 def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
     row_group_size = 1024
     int_array = np.full(shape=4096, fill_value=3, dtype=np.int32)
