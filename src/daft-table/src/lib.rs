@@ -809,17 +809,4 @@ mod test {
 
         Ok(())
     }
-
-    #[test]
-    fn test_hll() -> DaftResult<()> {
-        let k = Int64Array::from(("k", vec![1, 1, 2])).into_series();
-        let table = Table::from_nonempty_columns(vec![k])?;
-
-        let result = table
-            .eval_expression(&col("k"))?
-            .approx_count_distinct_sketch(None)?;
-        println!("{}", result.to_comfy_table());
-
-        Ok(())
-    }
 }
