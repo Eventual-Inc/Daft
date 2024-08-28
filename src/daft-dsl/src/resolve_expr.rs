@@ -221,13 +221,6 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
             // reorder expressions so that alias goes before agg
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
-                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
-                ApproxCountDistinctSketch(e) => {
-                    ApproxCountDistinctSketch(Alias(e, name.clone()).into())
-                }
-                ApproxCountDistinctMerge(e) => {
-                    ApproxCountDistinctMerge(Alias(e, name.clone()).into())
-                }
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
                 ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -238,6 +231,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     percentiles,
                     force_list_output,
                 }),
+                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
                 ApproxSketch(e, sketch_and_merge_type) => {
                     ApproxSketch(Alias(e, name.clone()).into(), sketch_and_merge_type)
                 }

@@ -435,19 +435,6 @@ impl Table {
     ) -> DaftResult<Series> {
         match agg_expr {
             &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
-            AggExpr::ApproxCountDistinct(expr) => self
-                .eval_expression(expr)?
-                .hash(None)?
-                .into_series()
-                .approx_count_distinct(groups),
-            AggExpr::ApproxCountDistinctSketch(expr) => self
-                .eval_expression(expr)?
-                .hash(None)?
-                .into_series()
-                .approx_count_distinct_sketch(groups),
-            AggExpr::ApproxCountDistinctMerge(expr) => self
-                .eval_expression(expr)?
-                .approx_count_distinct_merge(groups),
             AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
@@ -459,6 +446,11 @@ impl Table {
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
+            AggExpr::ApproxCountDistinct(expr) => self
+                .eval_expression(expr)?
+                .hash(None)?
+                .into_series()
+                .approx_count_distinct(groups),
             &AggExpr::ApproxSketch(ref expr, sketch_and_merge_type) => {
                 let evaled = self.eval_expression(expr)?;
                 match sketch_and_merge_type {

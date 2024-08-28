@@ -789,29 +789,6 @@ pub fn populate_aggregation_stages(
                     .or_insert(Sum(col(count_id.clone()).alias(sum_of_count_id.clone())));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
             }
-            ApproxCountDistinct(e) => {
-                let first_stage_id = agg_expr.semantic_id(schema).id;
-                let second_stage_id = ApproxCountDistinctMerge(col(first_stage_id.clone()))
-                    .semantic_id(schema)
-                    .id;
-                first_stage_aggs
-                    .entry(first_stage_id.clone())
-                    .or_insert(ApproxCountDistinctSketch(e.alias(first_stage_id.clone())));
-                second_stage_aggs.entry(second_stage_id.clone()).or_insert(
-                    ApproxCountDistinctMerge(col(first_stage_id).alias(second_stage_id.clone())),
-                );
-                final_exprs.push(col(second_stage_id).alias(output_name));
-            }
-            ApproxCountDistinctSketch(..) => {
-                unimplemented!(
-                    "User-facing approx_count_distinct_sketch aggregation is not implemented"
-                )
-            }
-            ApproxCountDistinctMerge(..) => {
-                unimplemented!(
-                    "User-facing approx_count_distinct_merge aggregation is not implemented"
-                )
-            }
             Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;
                 let sum_of_sum_id = Sum(col(sum_id.clone())).semantic_id(schema).id;
@@ -948,6 +925,28 @@ pub fn populate_aggregation_stages(
                         .sketch_percentile(percentiles.as_slice(), force_list_output)
                         .alias(output_name),
                 );
+            }
+            ApproxCountDistinct(e) => {
+                let first_stage_id = agg_expr.semantic_id(schema).id;
+                let second_stage_id = MergeSketch(
+                    col(first_stage_id.clone()),
+                    SketchAndMergeType::ApproxCountDistinct,
+                )
+                .semantic_id(schema)
+                .id;
+                first_stage_aggs
+                    .entry(first_stage_id.clone())
+                    .or_insert(ApproxSketch(
+                        e.alias(first_stage_id.clone()),
+                        SketchAndMergeType::ApproxCountDistinct,
+                    ));
+                second_stage_aggs
+                    .entry(second_stage_id.clone())
+                    .or_insert(MergeSketch(
+                        col(first_stage_id).alias(second_stage_id.clone()),
+                        SketchAndMergeType::ApproxCountDistinct,
+                    ));
+                final_exprs.push(col(second_stage_id).alias(output_name));
             }
             ApproxSketch(..) => {
                 unimplemented!("User-facing approx_sketch aggregation is not implemented")
