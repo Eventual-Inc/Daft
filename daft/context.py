@@ -360,6 +360,7 @@ def set_execution_config(
             broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
             sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,
+            hash_join_partition_size_leniency=hash_join_partition_size_leniency,
             sample_size_for_sort=sample_size_for_sort,
             num_preview_rows=num_preview_rows,
             parquet_target_filesize=parquet_target_filesize,
