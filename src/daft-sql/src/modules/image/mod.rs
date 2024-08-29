@@ -1,5 +1,3 @@
-use decode::SQLImageDecode;
-
 use crate::functions::SQLFunctions;
 
 use super::SQLModule;
@@ -11,6 +9,7 @@ pub struct SQLModuleImage;
 
 impl SQLModule for SQLModuleImage {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("image_decode", SQLImageDecode {});
+        parent.add_fn("image_decode", decode::SQLImageDecode {});
+        parent.add_fn("image_encode", encode::SQLImageEncode {});
     }
 }

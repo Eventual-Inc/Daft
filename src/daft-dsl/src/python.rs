@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
-    datatypes::{ImageFormat, ImageMode},
+    datatypes::ImageMode,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
@@ -792,11 +792,6 @@ impl PyExpr {
         };
 
         Ok(normalize(self.into(), opts).into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        use crate::functions::image::encode;
-        Ok(encode(self.into(), image_format).into())
     }
 
     pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
