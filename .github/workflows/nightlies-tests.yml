@@ -33,6 +33,8 @@ jobs:
       run: |
         python3 -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - name: Install Daft and dev dependencies
       run: |
         pip install uv
