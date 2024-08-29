@@ -34,7 +34,6 @@ pub enum LocalPhysicalPlan {
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
-    #[cfg(feature = "python")]
     PhysicalWrite(PhysicalWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
@@ -279,7 +278,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    #[cfg(feature = "python")]
     pub(crate) fn physical_write(
         input: LocalPhysicalPlanRef,
         schema: SchemaRef,
@@ -314,7 +312,6 @@ impl LocalPhysicalPlan {
             | LocalPhysicalPlan::Unpivot(Unpivot { schema, .. })
             | LocalPhysicalPlan::Pivot(Pivot { schema, .. }) => schema,
             LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
-            #[cfg(feature = "python")]
             LocalPhysicalPlan::PhysicalWrite(PhysicalWrite { schema, .. }) => schema,
         }
     }
@@ -455,7 +452,6 @@ pub struct Unpivot {
     pub value_name: String,
 }
 
-#[cfg(feature = "python")]
 #[derive(Debug)]
 
 pub struct PhysicalWrite {

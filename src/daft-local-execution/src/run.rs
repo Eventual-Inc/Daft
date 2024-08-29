@@ -16,6 +16,7 @@ use std::{
 
 #[cfg(feature = "python")]
 use {
+    crate::pipeline::physical_plan_to_pipeline,
     common_daft_config::PyDaftExecutionConfig,
     daft_micropartition::python::PyMicroPartition,
     daft_plan::PyLogicalPlanBuilder,
@@ -24,7 +25,7 @@ use {
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    pipeline::viz_pipeline,
     Error, ExecutionRuntimeHandle,
 };
 
@@ -114,6 +115,7 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
+#[cfg(feature = "python")]
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,

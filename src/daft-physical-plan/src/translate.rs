@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::JoinStrategy;
 use daft_dsl::ExprRef;
-use daft_plan::{LogicalPlan, LogicalPlanRef, SinkInfo, SourceInfo};
+use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -149,8 +149,8 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 unpivot.output_schema.clone(),
             ))
         }
-        #[cfg(feature = "python")]
         LogicalPlan::Sink(sink) => {
+            use daft_plan::SinkInfo;
             let input = translate(&sink.input)?;
             match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(

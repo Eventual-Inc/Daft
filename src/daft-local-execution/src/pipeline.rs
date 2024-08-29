@@ -31,17 +31,13 @@ use daft_dsl::{join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Concat, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
+    Unpivot,
 };
 use daft_plan::populate_aggregation_stages;
 use daft_table::{ProbeTable, Table};
 use indexmap::IndexSet;
 use snafu::ResultExt;
-
-#[cfg(feature = "python")]
-use crate::sinks::physical_write::PhysicalWriteSink;
-#[cfg(feature = "python")]
-use daft_physical_plan::PhysicalWrite;
 
 #[derive(Clone)]
 pub enum PipelineResultType {
@@ -106,6 +102,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
     output
 }
 
+#[cfg(feature = "python")]
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -411,7 +408,6 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             IntermediateNode::new(Arc::new(unpivot_op), vec![child_node]).boxed()
         }
-        #[cfg(feature = "python")]
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
@@ -419,7 +415,11 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sink = BlockingSinkNode::new(
-                PhysicalWriteSink::new(file_info.clone(), schema.clone()).boxed(),
+                crate::sinks::physical_write::PhysicalWriteSink::new(
+                    file_info.clone(),
+                    schema.clone(),
+                )
+                .boxed(),
                 physical_plan_to_pipeline(input, psets)?,
             );
             sink.boxed()
