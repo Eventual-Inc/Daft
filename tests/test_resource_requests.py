@@ -13,6 +13,9 @@ from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
 
+if get_context().daft_execution_config.enable_native_executor:
+    pytest.skip(allow_module_level=True)
+
 
 def no_gpu_available() -> bool:
     return cuda_device_count() == 0

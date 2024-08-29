@@ -27,6 +27,7 @@ pub enum LocalPhysicalPlan {
     // FanoutByHash(FanoutByHash),
     // FanoutByRange(FanoutByRange),
     // ReduceMerge(ReduceMerge),
+    Distinct(Distinct),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
     Pivot(Pivot),
@@ -107,6 +108,20 @@ impl LocalPhysicalPlan {
             projection,
             schema,
             plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn distinct(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        group_by: Vec<ExprRef>,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Distinct(Distinct {
+            input,
+            schema,
+            plan_stats: PlanStats {},
+            group_by,
         })
         .arced()
     }
@@ -307,6 +322,7 @@ impl LocalPhysicalPlan {
                 schema,
                 ..
             })
+            | LocalPhysicalPlan::Distinct(Distinct { schema, .. })
             | LocalPhysicalPlan::Explode(Explode { schema, .. })
             | LocalPhysicalPlan::Sample(Sample { schema, .. })
             | LocalPhysicalPlan::Unpivot(Unpivot { schema, .. })
@@ -362,6 +378,14 @@ pub struct Sort {
     pub descending: Vec<bool>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Distinct {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub group_by: Vec<ExprRef>,
 }
 #[derive(Debug)]
 

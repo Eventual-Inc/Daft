@@ -67,7 +67,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         }
         LogicalPlan::Join(join) => {
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
-                todo!("Only hash join is supported for now")
+                log::warn!("Only Hash Join is supported for Local Executor for now; Falling back to Hash Join");
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
@@ -89,12 +89,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 .iter()
                 .map(|name| daft_dsl::col(name.clone()))
                 .collect::<Vec<ExprRef>>();
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                vec![],
-                col_exprs,
-                schema,
-            ))
+            Ok(LocalPhysicalPlan::distinct(input, schema, col_exprs))
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
             let input = translate(&monotonically_increasing_id.input)?;

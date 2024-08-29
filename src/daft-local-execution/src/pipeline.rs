@@ -108,7 +108,7 @@ pub fn physical_plan_to_pipeline(
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use crate::sources::scan_task::ScanTaskSource;
-    use daft_physical_plan::PhysicalScan;
+    use daft_physical_plan::{Distinct, PhysicalScan};
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
@@ -147,6 +147,17 @@ pub fn physical_plan_to_pipeline(
             let concat_sink = ConcatSink::new();
             StreamingSinkNode::new(concat_sink.boxed(), vec![input_child, other_child]).boxed()
         }
+        LocalPhysicalPlan::Distinct(Distinct {
+            input, group_by, ..
+        }) => {
+            let local_distinct = AggregateOperator::new(vec![], group_by.clone());
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let local_distinct_node =
+                IntermediateNode::new(Arc::new(local_distinct), vec![child_node]).boxed();
+
+            let sink = AggregateSink::new(vec![], group_by.clone());
+            BlockingSinkNode::new(sink.boxed(), local_distinct_node).boxed()
+        }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
@@ -155,17 +166,20 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, &[]);
-            let first_stage_agg_op = AggregateOperator::new(
-                first_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
-                    .collect(),
-                vec![],
-            );
-            let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+            let post_first_agg_node = if first_stage_aggs.is_empty() {
+                physical_plan_to_pipeline(input, psets)?
+            } else {
+                let first_stage_agg_op = AggregateOperator::new(
+                    first_stage_aggs
+                        .values()
+                        .cloned()
+                        .map(|e| Arc::new(Expr::Agg(e.clone())))
+                        .collect(),
+                    vec![],
+                );
+                let child_node = physical_plan_to_pipeline(input, psets)?;
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed()
+            };
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
@@ -191,17 +205,20 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, group_by);
-            let first_stage_agg_op = AggregateOperator::new(
-                first_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
-                    .collect(),
-                group_by.clone(),
-            );
-            let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+            let post_first_agg_node = if first_stage_aggs.is_empty() {
+                physical_plan_to_pipeline(input, psets)?
+            } else {
+                let first_stage_agg_op = AggregateOperator::new(
+                    first_stage_aggs
+                        .values()
+                        .cloned()
+                        .map(|e| Arc::new(Expr::Agg(e.clone())))
+                        .collect(),
+                    group_by.clone(),
+                );
+                let child_node = physical_plan_to_pipeline(input, psets)?;
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed()
+            };
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs

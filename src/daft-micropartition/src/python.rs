@@ -910,11 +910,26 @@ pub fn write_tabular(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((PySchema::from(schema.clone()),))?;
-    let part_cols = partition_cols.as_ref().map(|cols| {
-        cols.iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<PyExpr>>()
-    });
+    let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
+    let part_cols_expression_projection = match partition_cols.as_ref() {
+        Some(part_cols) => {
+            let part_cols = part_cols
+                .iter()
+                .map(|e| {
+                    expressions_mod
+                        .getattr(pyo3::intern!(py, "Expression"))?
+                        .getattr(pyo3::intern!(py, "_from_pyexpr"))?
+                        .call1((PyExpr::from(e.clone()),))
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            Some(
+                expressions_mod
+                    .getattr(pyo3::intern!(py, "ExpressionsProjection"))?
+                    .call1((part_cols,))?,
+            )
+        }
+        None => None,
+    };
     let py_result = py
         .import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "write_tabular"))?
@@ -923,7 +938,7 @@ pub fn write_tabular(
             *file_format,
             root_dir,
             py_schema,
-            part_cols,
+            part_cols_expression_projection,
             compression.clone(),
             io_config.as_ref().map(|cfg| IOConfig {
                 config: cfg.clone(),
