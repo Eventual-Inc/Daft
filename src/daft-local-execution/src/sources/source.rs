@@ -5,8 +5,6 @@ use daft_io::{IOStatsContext, IOStatsRef};
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 
-use async_trait::async_trait;
-
 use crate::{
     channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
@@ -62,7 +60,6 @@ impl TreeDisplay for SourceNode {
     }
 }
 
-#[async_trait]
 impl PipelineNode for SourceNode {
     fn name(&self) -> &'static str {
         self.source.name()
@@ -70,7 +67,7 @@ impl PipelineNode for SourceNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
     }
-    async fn start(
+    fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,

@@ -11,7 +11,6 @@ use crate::{
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
 };
-use async_trait::async_trait;
 pub enum BlockingSinkStatus {
     NeedMoreInput,
     #[allow(dead_code)]
@@ -68,7 +67,6 @@ impl TreeDisplay for BlockingSinkNode {
     }
 }
 
-#[async_trait]
 impl PipelineNode for BlockingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.child.as_ref()]
@@ -78,15 +76,14 @@ impl PipelineNode for BlockingSinkNode {
         self.name
     }
 
-    async fn start(
+    fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
         let child = self.child.as_mut();
         let mut child_results_receiver = child
-            .start(false, runtime_handle)
-            .await?
+            .start(false, runtime_handle)?
             .get_receiver_with_stats(&self.runtime_stats);
 
         let mut destination_channel = PipelineChannel::new(1, maintain_order);
