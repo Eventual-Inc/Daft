@@ -1,31 +1,23 @@
+use daft_core::datatypes::ImageFormat;
 use daft_dsl::{Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgOperator};
 
-use super::SQLModule;
 use crate::{
     error::SQLPlannerResult,
-    functions::{FromSQLArgs, SQLFunction, SQLFunctions},
+    functions::{FromSQLArgs, SQLFunction},
     unsupported_sql_err,
 };
-use daft_functions::image::decode::{decode, ImageDecodeArgs};
+use daft_functions::image::encode::{encode, ImageEncode};
 
-pub struct SQLModuleImage;
+pub struct SQLImageEncode;
 
-impl SQLModule for SQLModuleImage {
-    fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("image_decode", SQLImageDecode {});
-    }
-}
-
-pub struct SQLImageDecode;
-
-impl FromSQLArgs for ImageDecodeArgs {
+impl FromSQLArgs for ImageEncode {
     fn from_sql(
         inputs: &[sqlparser::ast::FunctionArg],
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<Self> {
-        let mut mode = None;
-        let mut raise_on_error = true;
+        let mut image_format = None;
+
         for arg in inputs {
             match arg {
                 FunctionArg::Named {
@@ -33,26 +25,12 @@ impl FromSQLArgs for ImageDecodeArgs {
                     arg,
                     operator: FunctionArgOperator::Assignment,
                 } => match name.value.as_ref() {
-                    "mode" => {
+                    "image_format" => {
                         let arg = planner.try_unwrap_function_arg_expr(arg)?;
-                        mode = Some(match arg.as_ref() {
+                        image_format = Some(match arg.as_ref() {
                             Expr::Literal(LiteralValue::Utf8(s)) => s.parse()?,
                             _ => unsupported_sql_err!("Expected mode to be a string"),
                         });
-                    }
-                    "on_error" => {
-                        let arg = planner.try_unwrap_function_arg_expr(arg)?;
-
-                        raise_on_error = match arg.as_ref() {
-                            Expr::Literal(LiteralValue::Utf8(s)) => match s.as_ref() {
-                                "raise" => true,
-                                "null" => false,
-                                _ => unsupported_sql_err!(
-                                    "Expected on_error to be 'raise' or 'null'"
-                                ),
-                            },
-                            _ => unsupported_sql_err!("Expected raise_on_error to be a boolean"),
-                        };
                     }
                     name => unsupported_sql_err!("Unexpected argument: '{name}'"),
                 },
@@ -62,15 +40,17 @@ impl FromSQLArgs for ImageDecodeArgs {
                 }
             }
         }
+        if image_format.is_none() {
+            unsupported_sql_err!("Expected image_format to be a string");
+        }
 
         Ok(Self {
-            mode,
-            raise_on_error,
+            image_format: image_format.unwrap(),
         })
     }
 }
 
-impl SQLFunction for SQLImageDecode {
+impl SQLFunction for SQLImageEncode {
     fn to_expr(
         &self,
         inputs: &[sqlparser::ast::FunctionArg],
@@ -79,12 +59,12 @@ impl SQLFunction for SQLImageDecode {
         match inputs {
             [input] => {
                 let input = planner.plan_function_arg(input)?;
-                Ok(decode(input, None))
+                Ok(encode(input, None))
             }
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args = ImageDecodeArgs::from_sql(args, planner)?;
-                Ok(decode(input, Some(args)))
+                let args = ImageEncode::from_sql(args, planner)?;
+                Ok(encode(input, Some(args)))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_decode: '{inputs:?}'"),
         }

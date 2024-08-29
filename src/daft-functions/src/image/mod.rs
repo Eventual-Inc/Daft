@@ -1,5 +1,5 @@
 pub mod decode;
-
+pub mod encode;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 

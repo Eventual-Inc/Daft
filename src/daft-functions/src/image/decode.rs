@@ -22,12 +22,12 @@ use serde::{Deserialize, Serialize};
 /// image_decode(input, mode='RGB', on_error='null')
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageDecodeArgs {
+pub struct ImageDecode {
     pub mode: Option<ImageMode>,
     pub raise_on_error: bool,
 }
 
-impl Default for ImageDecodeArgs {
+impl Default for ImageDecode {
     fn default() -> Self {
         Self {
             mode: None,
@@ -37,7 +37,7 @@ impl Default for ImageDecodeArgs {
 }
 
 #[typetag::serde]
-impl ScalarUDF for ImageDecodeArgs {
+impl ScalarUDF for ImageDecode {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -77,7 +77,7 @@ impl ScalarUDF for ImageDecodeArgs {
     }
 }
 
-pub fn decode(input: ExprRef, args: Option<ImageDecodeArgs>) -> ExprRef {
+pub fn decode(input: ExprRef, args: Option<ImageDecode>) -> ExprRef {
     ScalarFunction::new(args.unwrap_or_default(), vec![input]).into()
 }
 
@@ -88,31 +88,17 @@ use {
 };
 
 #[cfg(feature = "python")]
-impl TryFrom<Option<&PyDict>> for ImageDecodeArgs {
-    type Error = pyo3::PyErr;
-
-    fn try_from(py_kwargs: Option<&PyDict>) -> Result<Self, Self::Error> {
-        let mut mode = None;
-        let mut raise_on_error = false;
-        if let Some(kwargs) = py_kwargs {
-            if let Some(mode_str) = kwargs.get_item("mode") {
-                mode = mode_str.extract()?;
-            }
-            if let Some(raise_on_error_str) = kwargs.get_item("raise_on_error") {
-                raise_on_error = raise_on_error_str.extract()?;
-            }
-        }
-        Ok(Self {
-            mode,
-            raise_on_error,
-        })
-    }
-}
-
-#[cfg(feature = "python")]
 #[pyfunction]
-#[pyo3(name = "image_decode", signature = (expr, **kwds))]
-pub fn py_decode(expr: PyExpr, kwds: Option<&PyDict>) -> PyResult<PyExpr> {
-    let kwargs = ImageDecodeArgs::try_from(kwds)?;
-    Ok(decode(expr.into(), Some(kwargs)).into())
+#[pyo3(name = "image_decode")]
+pub fn py_decode(
+    expr: PyExpr,
+    raise_on_error: Option<bool>,
+    mode: Option<ImageMode>,
+) -> PyResult<PyExpr> {
+    let image_decode = ImageDecode {
+        mode,
+        raise_on_error: raise_on_error.unwrap_or(true),
+    };
+
+    Ok(decode(expr.into(), Some(image_decode)).into())
 }

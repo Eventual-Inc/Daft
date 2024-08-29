@@ -1,0 +1,80 @@
+use daft_core::{
+    datatypes::{DataType, Field, ImageFormat},
+    schema::Schema,
+    series::Series,
+};
+
+use common_error::{DaftError, DaftResult};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Container for the keyword arguments for `image_encode`
+/// ex:
+/// ```text
+/// image_encode(input, image_format='png')
+/// ```
+pub struct ImageEncode {
+    pub image_format: ImageFormat,
+}
+
+#[typetag::serde]
+impl ScalarUDF for ImageEncode {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "image_encode"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => {
+                let field = input.to_field(schema)?;
+                match field.dtype {
+                    DataType::Image(..) | DataType::FixedShapeImage(..) => {
+                        Ok(Field::new(field.name, DataType::Binary))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {}",
+                        field
+                    ))),
+                }
+            }
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        match inputs {
+            [input] => input.image_encode(self.image_format),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+pub fn encode(input: ExprRef, image_format: ImageFormat) -> ExprRef {
+    ScalarFunction::new(ImageEncode { image_format }, vec![input]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "image_decode")]
+pub fn py_decode(expr: PyExpr, image_format: ImageFormat) -> PyResult<PyExpr> {
+    Ok(encode(expr.into(), Some(kwargs)).into())
+}
