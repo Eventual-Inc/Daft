@@ -117,11 +117,11 @@ impl StatelessPythonUDF {
             // Extract the required Python objects to call our run_udf helper
             let func = self
                 .partial_func
-                .unwrap()
+                .as_ref()
                 .getattr(py, pyo3::intern!(py, "func"))?;
             let bound_args = self
                 .partial_func
-                .unwrap()
+                .as_ref()
                 .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
             run_udf(
@@ -187,11 +187,11 @@ impl FunctionEvaluator for StatefulPythonUDF {
                 // Extract the required Python objects to call our run_udf helper
                 let func = self
                     .stateful_partial_func
-                    .unwrap()
+                    .as_ref()
                     .getattr(py, pyo3::intern!(py, "func_cls"))?;
                 let bound_args = self
                     .stateful_partial_func
-                    .unwrap()
+                    .as_ref()
                     .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
                 // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
@@ -201,7 +201,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
                     None => func.call0(py)?,
                     Some(init_args) => {
                         let init_args = init_args
-                            .unwrap()
+                            .as_ref()
                             .as_ref(py)
                             .downcast::<PyTuple>()
                             .expect("init_args should be a Python tuple");

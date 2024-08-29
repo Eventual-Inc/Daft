@@ -340,7 +340,7 @@ fn physical_plan_to_partition_tasks(
                     } = child.as_ref()
                     {
                         py_partial_udfs
-                            .insert(name.as_ref().to_string(), py_partial_udf.unwrap().clone());
+                            .insert(name.as_ref().to_string(), py_partial_udf.as_ref().clone());
                     }
                     Ok(daft_dsl::common_treenode::TreeNodeRecursion::Continue)
                 })
