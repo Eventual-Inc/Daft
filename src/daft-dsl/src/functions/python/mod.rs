@@ -29,11 +29,53 @@ impl PythonUDF {
     }
 }
 
+/// A wrapper around PyObject that is safe to use even when the Python feature flag isn't turned on
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct RuntimePyObject {
+    #[cfg(feature = "python")]
+    obj: crate::pyobj_serde::PyObjectWrapper,
+}
+
+impl RuntimePyObject {
+    #[cfg(feature = "test-utils")]
+    pub fn new_testing_none() -> Self {
+        #[cfg(feature = "python")]
+        {
+            let none_value = pyo3::Python::with_gil(|py| py.None());
+            Self {
+                obj: crate::pyobj_serde::PyObjectWrapper(none_value),
+            }
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Self {}
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn new(value: pyo3::PyObject) -> Self {
+        Self {
+            obj: crate::pyobj_serde::PyObjectWrapper(value),
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn unwrap(&self) -> &pyo3::PyObject {
+        &self.obj.0
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<pyo3::PyObject> for RuntimePyObject {
+    fn from(value: pyo3::PyObject) -> Self {
+        Self::new(value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StatelessPythonUDF {
     pub name: Arc<String>,
-    #[cfg(feature = "python")]
-    partial_func: crate::pyobj_serde::PyObjectWrapper,
+    partial_func: RuntimePyObject,
     num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
@@ -43,21 +85,18 @@ pub struct StatelessPythonUDF {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StatefulPythonUDF {
     pub name: Arc<String>,
-    #[cfg(feature = "python")]
-    pub stateful_partial_func: crate::pyobj_serde::PyObjectWrapper,
+    pub stateful_partial_func: RuntimePyObject,
     pub num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
-    #[cfg(feature = "python")]
-    pub init_args: Option<crate::pyobj_serde::PyObjectWrapper>,
+    pub init_args: Option<RuntimePyObject>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
 }
 
-#[cfg(feature = "python")]
 pub fn stateless_udf(
     name: &str,
-    py_partial_stateless_udf: pyo3::PyObject,
+    py_partial_stateless_udf: RuntimePyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
@@ -66,7 +105,7 @@ pub fn stateless_udf(
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
             name: name.to_string().into(),
-            partial_func: crate::pyobj_serde::PyObjectWrapper(py_partial_stateless_udf),
+            partial_func: py_partial_stateless_udf,
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
@@ -76,68 +115,25 @@ pub fn stateless_udf(
     })
 }
 
-#[cfg(not(feature = "python"))]
-pub fn stateless_udf(
-    name: &str,
-    expressions: &[ExprRef],
-    return_dtype: DataType,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-) -> DaftResult<Expr> {
-    Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
-            name: name.to_string().into(),
-            num_expressions: expressions.len(),
-            return_dtype,
-            resource_request,
-            batch_size,
-        })),
-        inputs: expressions.into(),
-    })
-}
-
-#[cfg(feature = "python")]
 #[allow(clippy::too_many_arguments)]
 pub fn stateful_udf(
     name: &str,
-    py_stateful_partial_func: pyo3::PyObject,
+    py_stateful_partial_func: RuntimePyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
     resource_request: Option<ResourceRequest>,
-    init_args: Option<pyo3::PyObject>,
+    init_args: Option<RuntimePyObject>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
             name: name.to_string().into(),
-            stateful_partial_func: crate::pyobj_serde::PyObjectWrapper(py_stateful_partial_func),
+            stateful_partial_func: py_stateful_partial_func,
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
-            init_args: init_args.map(crate::pyobj_serde::PyObjectWrapper),
-            batch_size,
-            concurrency,
-        })),
-        inputs: expressions.into(),
-    })
-}
-
-#[cfg(not(feature = "python"))]
-pub fn stateful_udf(
-    name: &str,
-    expressions: &[ExprRef],
-    return_dtype: DataType,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-    concurrency: Option<usize>,
-) -> DaftResult<Expr> {
-    Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-            name: name.to_string().into(),
-            num_expressions: expressions.len(),
-            return_dtype,
-            resource_request,
+            init_args,
             batch_size,
             concurrency,
         })),

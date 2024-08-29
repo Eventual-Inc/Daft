@@ -33,6 +33,7 @@ serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 
 [dev-dependencies]
+daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
 daft-functions = {path = "../daft-functions", default-features = false}
 pretty_assertions = {workspace = true}
 rstest = {workspace = true}

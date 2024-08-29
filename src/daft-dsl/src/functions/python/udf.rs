@@ -39,14 +39,15 @@ impl FunctionEvaluator for StatelessPythonUDF {
         }
     }
 
-    #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        self.call_udf(inputs)
-    }
-
-    #[cfg(not(feature = "python"))]
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
+        }
+        #[cfg(feature = "python")]
+        {
+            self.call_udf(inputs)
+        }
     }
 }
 
@@ -114,10 +115,13 @@ impl StatelessPythonUDF {
 
         Python::with_gil(|py| {
             // Extract the required Python objects to call our run_udf helper
-            let func = self.partial_func.0.getattr(py, pyo3::intern!(py, "func"))?;
+            let func = self
+                .partial_func
+                .unwrap()
+                .getattr(py, pyo3::intern!(py, "func"))?;
             let bound_args = self
                 .partial_func
-                .0
+                .unwrap()
                 .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
             run_udf(
@@ -158,70 +162,72 @@ impl FunctionEvaluator for StatefulPythonUDF {
         }
     }
 
-    #[cfg(feature = "python")]
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        use pyo3::{
-            types::{PyDict, PyTuple},
-            Python,
-        };
-
-        if inputs.len() != self.num_expressions {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Number of inputs required by UDF {} does not match number of inputs provided: {}",
-                self.num_expressions,
-                inputs.len()
-            )));
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
         }
 
-        Python::with_gil(|py| {
-            // Extract the required Python objects to call our run_udf helper
-            let func = self
-                .stateful_partial_func
-                .0
-                .getattr(py, pyo3::intern!(py, "func_cls"))?;
-            let bound_args = self
-                .stateful_partial_func
-                .0
-                .getattr(py, pyo3::intern!(py, "bound_args"))?;
-
-            // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
-            // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
-            // Either that, or the code-path to evaluate a StatefulUDF should bypass `evaluate` entirely and do its own thing.
-            let func = match &self.init_args {
-                None => func.call0(py)?,
-                Some(init_args) => {
-                    let init_args = init_args
-                        .0
-                        .as_ref(py)
-                        .downcast::<PyTuple>()
-                        .expect("init_args should be a Python tuple");
-                    let (args, kwargs) = (
-                        init_args
-                            .get_item(0)?
-                            .downcast::<PyTuple>()
-                            .expect("init_args[0] should be a tuple of *args"),
-                        init_args
-                            .get_item(1)?
-                            .downcast::<PyDict>()
-                            .expect("init_args[1] should be a dict of **kwargs"),
-                    );
-                    func.call(py, args, Some(kwargs))?
-                }
+        #[cfg(feature = "python")]
+        {
+            use pyo3::{
+                types::{PyDict, PyTuple},
+                Python,
             };
 
-            run_udf(
-                py,
-                inputs,
-                func,
-                bound_args,
-                &self.return_dtype,
-                self.batch_size,
-            )
-        })
-    }
+            if inputs.len() != self.num_expressions {
+                return Err(DaftError::SchemaMismatch(format!(
+                    "Number of inputs required by UDF {} does not match number of inputs provided: {}",
+                    self.num_expressions,
+                    inputs.len()
+                )));
+            }
 
-    #[cfg(not(feature = "python"))]
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
+            Python::with_gil(|py| {
+                // Extract the required Python objects to call our run_udf helper
+                let func = self
+                    .stateful_partial_func
+                    .unwrap()
+                    .getattr(py, pyo3::intern!(py, "func_cls"))?;
+                let bound_args = self
+                    .stateful_partial_func
+                    .unwrap()
+                    .getattr(py, pyo3::intern!(py, "bound_args"))?;
+
+                // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
+                // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
+                // Either that, or the code-path to evaluate a StatefulUDF should bypass `evaluate` entirely and do its own thing.
+                let func = match &self.init_args {
+                    None => func.call0(py)?,
+                    Some(init_args) => {
+                        let init_args = init_args
+                            .unwrap()
+                            .as_ref(py)
+                            .downcast::<PyTuple>()
+                            .expect("init_args should be a Python tuple");
+                        let (args, kwargs) = (
+                            init_args
+                                .get_item(0)?
+                                .downcast::<PyTuple>()
+                                .expect("init_args[0] should be a tuple of *args"),
+                            init_args
+                                .get_item(1)?
+                                .downcast::<PyDict>()
+                                .expect("init_args[1] should be a dict of **kwargs"),
+                        );
+                        func.call(py, args, Some(kwargs))?
+                    }
+                };
+
+                run_udf(
+                    py,
+                    inputs,
+                    func,
+                    bound_args,
+                    &self.return_dtype,
+                    self.batch_size,
+                )
+            })
+        }
     }
 }

@@ -173,7 +173,7 @@ pub fn stateless_udf(
     Ok(PyExpr {
         expr: stateless_udf(
             name,
-            partial_stateless_udf,
+            partial_stateless_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
@@ -218,11 +218,11 @@ pub fn stateful_udf(
     Ok(PyExpr {
         expr: stateful_udf(
             name,
-            partial_stateful_udf,
+            partial_stateful_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
-            init_args,
+            init_args.map(|a| a.into()),
             batch_size,
             concurrency,
         )?
