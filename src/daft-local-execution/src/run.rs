@@ -52,8 +52,8 @@ pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
 }
 
-#[cfg(feature = "python")]
 #[pymethods]
+#[cfg(feature = "python")]
 impl NativeExecutor {
     #[staticmethod]
     pub fn from_logical_plan_builder(
@@ -62,7 +62,7 @@ impl NativeExecutor {
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            let local_physical_plan = daft_physical_plan::translate(&logical_plan)?;
+            let local_physical_plan = daft_physical_plan::translate::translate(&logical_plan)?;
             Ok(Self {
                 local_physical_plan,
             })

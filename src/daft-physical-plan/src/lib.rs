@@ -1,6 +1,6 @@
 #[allow(unused)]
 mod local_plan;
-mod translate;
+pub mod translate;
 
 pub use local_plan::{
     Concat, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
