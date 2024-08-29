@@ -1474,7 +1474,7 @@ impl TensorArray {
                     offsets_cloned.into(),
                     validity.cloned(),
                 );
-                // Must have all valid shapes to reproduce dense tensor.
+                // Shapes must be all valid to reproduce dense tensor.
                 let all_valid_shape_array = self.shape_array().with_validity(None)?;
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
@@ -1641,6 +1641,102 @@ macro_rules! implement_cast_for_dense_with_inner_dtype {
     }};
 }
 
+fn cast_sparse_to_dense_for_inner_dtype(
+    inner_dtype: &DataType,
+    n_values: usize,
+    non_zero_indices_array: &ListArray,
+    non_zero_values_array: &ListArray,
+    offsets: &Offsets<i64>,
+) -> DaftResult<Box<dyn arrow2::array::Array>> {
+    let item: Box<dyn arrow2::array::Array> = match inner_dtype {
+        DataType::Int8 => implement_cast_for_dense_with_inner_dtype!(
+            i8,
+            Int8Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::UInt8 => implement_cast_for_dense_with_inner_dtype!(
+            u8,
+            UInt8Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::Int16 => implement_cast_for_dense_with_inner_dtype!(
+            i16,
+            Int16Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::UInt16 => implement_cast_for_dense_with_inner_dtype!(
+            u16,
+            UInt16Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::Int32 => implement_cast_for_dense_with_inner_dtype!(
+            i32,
+            Int32Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::UInt32 => implement_cast_for_dense_with_inner_dtype!(
+            u32,
+            UInt32Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::Int64 => implement_cast_for_dense_with_inner_dtype!(
+            i64,
+            Int64Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::UInt64 => implement_cast_for_dense_with_inner_dtype!(
+            u64,
+            UInt64Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::Float32 => implement_cast_for_dense_with_inner_dtype!(
+            f32,
+            Float32Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        DataType::Float64 => implement_cast_for_dense_with_inner_dtype!(
+            f64,
+            Float64Array,
+            n_values,
+            non_zero_indices_array,
+            non_zero_values_array,
+            offsets
+        ),
+        _ => panic!(
+            "Wrong dtype when casting from COOSparseTensor to Tensor: {}",
+            inner_dtype
+        ),
+    };
+    Ok(item)
+}
+
 impl COOSparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
@@ -1648,109 +1744,25 @@ impl COOSparseTensorArray {
                 let non_zero_values_array = self.values_array();
                 let non_zero_indices_array = self.indices_array();
                 let shape_array = self.shape_array();
-                let mut sizes_vec: Vec<usize> = vec![0; shape_array.len()];
-                for (i, shape) in shape_array.into_iter().enumerate() {
-                    match shape {
-                        Some(shape) => {
+                let sizes_vec: Vec<usize> = shape_array
+                    .into_iter()
+                    .map(|shape| {
+                        shape.map_or(0, |shape| {
                             let shape = shape.u64().unwrap().as_arrow();
-                            let num_elements =
-                                shape.values().clone().into_iter().product::<u64>() as usize;
-                            sizes_vec[i] = num_elements;
-                        }
-                        None => {
-                            sizes_vec[i] = 0;
-                        }
-                    }
-                }
+                            shape.values().clone().into_iter().product::<u64>() as usize
+                        })
+                    })
+                    .collect();
                 let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let validity = non_zero_indices_array.validity();
-                let item: Box<dyn arrow2::array::Array> = match inner_dtype.as_ref() {
-                    DataType::Int8 => implement_cast_for_dense_with_inner_dtype!(
-                        i8,
-                        Int8Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::UInt8 => implement_cast_for_dense_with_inner_dtype!(
-                        u8,
-                        UInt8Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::Int16 => implement_cast_for_dense_with_inner_dtype!(
-                        i16,
-                        Int16Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::UInt16 => implement_cast_for_dense_with_inner_dtype!(
-                        u16,
-                        UInt16Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::Int32 => implement_cast_for_dense_with_inner_dtype!(
-                        i32,
-                        Int32Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::UInt32 => implement_cast_for_dense_with_inner_dtype!(
-                        u32,
-                        UInt32Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::Int64 => implement_cast_for_dense_with_inner_dtype!(
-                        i64,
-                        Int64Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::UInt64 => implement_cast_for_dense_with_inner_dtype!(
-                        u64,
-                        UInt64Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::Float32 => implement_cast_for_dense_with_inner_dtype!(
-                        f32,
-                        Float32Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    DataType::Float64 => implement_cast_for_dense_with_inner_dtype!(
-                        f64,
-                        Float64Array,
-                        n_values,
-                        non_zero_indices_array,
-                        non_zero_values_array,
-                        offsets
-                    ),
-                    _ => panic!(
-                        "Wrong dtype when casting from COOSparseTensor to Tensor: {}",
-                        dtype
-                    ),
-                };
+                let item = cast_sparse_to_dense_for_inner_dtype(
+                    inner_dtype,
+                    n_values,
+                    non_zero_indices_array,
+                    non_zero_values_array,
+                    &offsets,
+                )?;
                 let list_arr = ListArray::new(
                     Field::new(
                         "data",
@@ -1864,15 +1876,36 @@ impl FixedShapeCOOSparseTensorArray {
                 )
             }
             (
-                DataType::FixedShapeTensor(_, _),
-                DataType::FixedShapeCOOSparseTensor(inner_dtype, _),
+                DataType::FixedShapeTensor(_, target_tensor_shape),
+                DataType::FixedShapeCOOSparseTensor(inner_dtype, tensor_shape),
             ) => {
-                let sparse_tensor_dtype =
-                    DataType::COOSparseTensor(Box::new(inner_dtype.as_ref().clone()));
-                let sparse_tensor_array = self.cast(&sparse_tensor_dtype)?;
-                let dense_tensor_dtype = DataType::Tensor(Box::new(inner_dtype.as_ref().clone()));
-                let dense_tensor_array = sparse_tensor_array.cast(&dense_tensor_dtype)?;
-                Ok(dense_tensor_array.cast(dtype)?)
+                let non_zero_values_array = self.values_array();
+                let non_zero_indices_array = self.indices_array();
+                let size = tensor_shape.iter().product::<u64>() as usize;
+                let target_size = target_tensor_shape.iter().product::<u64>() as usize;
+                if size != target_size {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast FixedShapeCOOSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeCOOSparseTensor array has shapes different than {:?};",
+                        dtype,
+                        tensor_shape,
+                    )));
+                }
+                let item = cast_sparse_to_dense_for_inner_dtype(
+                    inner_dtype,
+                    size,
+                    non_zero_indices_array,
+                    non_zero_values_array,
+                    &Offsets::try_from_iter(repeat(target_size).take(self.len()))?,
+                )?;
+                let validity = non_zero_values_array.validity();
+                let physical = FixedSizeListArray::new(
+                    Field::new(self.name(), inner_dtype.as_ref().clone()),
+                    Series::try_from(("item", item))?,
+                    validity.cloned(),
+                );
+                let fixed_shape_tensor_array =
+                    FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
+                Ok(fixed_shape_tensor_array.into_series())
             }
             (_, _) => self.physical.cast(dtype),
         }
@@ -2252,6 +2285,15 @@ impl StructArray {
                 let casted_struct_array =
                     self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
                 Ok(COOSparseTensorArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    casted_struct_array,
+                )
+                .into_series())
+            }
+            (DataType::Struct(..), DataType::FixedShapeCOOSparseTensor(..)) => {
+                let casted_struct_array =
+                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                Ok(FixedShapeCOOSparseTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_struct_array,
                 )

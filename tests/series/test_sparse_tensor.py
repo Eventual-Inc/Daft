@@ -7,6 +7,7 @@ import pytest
 from daft.datatype import DataType
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
+from tests.utils import ANSI_ESCAPE
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -34,3 +35,26 @@ def test_coo_sparse_tensor_roundtrip(dtype):
     back = sparse_tensor_series.cast(tensor_dtype)
     out = back.to_pylist()
     np.testing.assert_equal(out, data)
+
+
+def test_coo_sparse_tensor_repr():
+    arr = np.arange(np.prod((2, 2)), dtype=np.int64).reshape((2, 2))
+    arrs = [arr, arr, None]
+    s = Series.from_pylist(arrs, pyobj="allow")
+    s = s.cast(DataType.coo_sparse_tensor(dtype=DataType.from_arrow_type(pa.int64())))
+    out_repr = ANSI_ESCAPE.sub("", repr(s))
+    assert (
+        out_repr.replace("\r", "")
+        == """╭────────────────────────────────╮
+│ list_series                    │
+│ ---                            │
+│ COOSparseTensor(Int64)         │
+╞════════════════════════════════╡
+│ <COOSparseTensor shape=(2, 2)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ <COOSparseTensor shape=(2, 2)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ None                           │
+╰────────────────────────────────╯
+"""
+    )

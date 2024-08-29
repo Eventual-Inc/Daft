@@ -271,6 +271,47 @@ impl ImageArray {
     }
 }
 
+impl COOSparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        // Shapes are always valid, use values array validity
+        let is_valid = self
+            .values_array()
+            .validity()
+            .map_or(true, |v| v.get_bit(idx));
+        let shape_element = if is_valid {
+            self.shape_array().get(idx)
+        } else {
+            None
+        };
+        match shape_element {
+            Some(shape) => Ok(format!(
+                "<COOSparseTensor shape=({})>",
+                shape
+                    .downcast::<UInt64Array>()
+                    .unwrap()
+                    .into_iter()
+                    .map(|dim| match dim {
+                        None => "None".to_string(),
+                        Some(dim) => dim.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            None => Ok("None".to_string()),
+        }
+    }
+}
+
+impl FixedShapeCOOSparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<FixedShapeCOOSparseTensor>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 impl FixedShapeImageArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
@@ -285,26 +326,6 @@ impl FixedShapeTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
             Ok("<FixedShapeTensor>".to_string())
-        } else {
-            Ok("None".to_string())
-        }
-    }
-}
-
-impl COOSparseTensorArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        if self.physical.is_valid(idx) {
-            Ok("<COOSparseTensor>".to_string())
-        } else {
-            Ok("None".to_string())
-        }
-    }
-}
-
-impl FixedShapeCOOSparseTensorArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        if self.physical.is_valid(idx) {
-            Ok("<FixedShapeCOOSparseTensor>".to_string())
         } else {
             Ok("None".to_string())
         }
