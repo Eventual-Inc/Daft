@@ -3,13 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator,
+        aggregate::AggregateOperator, explode::ExplodeOperator, filter::FilterOperator,
         hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator,
+        pivot::PivotOperator, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
@@ -28,13 +30,18 @@ use daft_core::{
 use daft_dsl::{join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    Concat, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_plan::populate_aggregation_stages;
 use daft_table::{ProbeTable, Table};
 use indexmap::IndexSet;
 use snafu::ResultExt;
+
+#[cfg(feature = "python")]
+use crate::sinks::physical_write::PhysicalWriteSink;
+#[cfg(feature = "python")]
+use daft_physical_plan::PhysicalWrite;
 
 #[derive(Clone)]
 pub enum PipelineResultType {
@@ -112,7 +119,9 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone()).boxed().into()
+            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+                .boxed()
+                .into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
@@ -135,12 +144,11 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
         }
-        LocalPhysicalPlan::Concat(_) => {
-            todo!("concat")
-            // let sink = ConcatSink::new();
-            // let left_child = physical_plan_to_pipeline(input, psets)?;
-            // let right_child = physical_plan_to_pipeline(other, psets)?;
-            // PipelineNode::double_sink(sink, left_child, right_child)
+        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
+            let input_child = physical_plan_to_pipeline(input, psets)?;
+            let other_child = physical_plan_to_pipeline(other, psets)?;
+            let concat_sink = ConcatSink::new();
+            StreamingSinkNode::new(concat_sink.boxed(), vec![input_child, other_child]).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -310,9 +318,114 @@ pub fn physical_plan_to_pipeline(
             })?;
             probe_node.boxed()
         }
-        _ => {
-            unimplemented!("Physical plan not supported: {}", physical_plan.name());
+        LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+            input,
+            column_name,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let sink = MonotonicallyIncreasingIdSink::new(column_name.clone());
+            StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
         }
+        LocalPhysicalPlan::Explode(Explode {
+            input, to_explode, ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let explode_op = ExplodeOperator::new(to_explode.clone());
+            IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::Sample(Sample {
+            input,
+            fraction,
+            with_replacement,
+            seed,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
+            IntermediateNode::new(Arc::new(sample_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::Pivot(Pivot {
+            input,
+            group_by,
+            pivot_column,
+            value_column,
+            aggregation,
+            names,
+            schema,
+            ..
+        }) => {
+            let group_by_with_pivot = [group_by.clone(), vec![pivot_column.clone()]].concat();
+            let (first_stage_aggs, second_stage_aggs, final_exprs) =
+                populate_aggregation_stages(&[aggregation.clone()], schema, &group_by_with_pivot);
+            let first_stage_agg_op = AggregateOperator::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by_with_pivot.clone(),
+            );
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let post_first_agg_node =
+                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+
+            let second_stage_agg_sink = AggregateSink::new(
+                second_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .collect(),
+                group_by_with_pivot.clone(),
+            );
+            let second_stage_node =
+                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+
+            let final_stage_project = ProjectOperator::new(final_exprs);
+            let project_node =
+                IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node])
+                    .boxed();
+
+            let pivot_op = PivotOperator::new(
+                group_by.clone(),
+                pivot_column.clone(),
+                value_column.clone(),
+                names.clone(),
+            );
+            IntermediateNode::new(Arc::new(pivot_op), vec![project_node]).boxed()
+        }
+        LocalPhysicalPlan::Unpivot(Unpivot {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            ..
+        }) => {
+            let unpivot_op = UnpivotOperator::new(
+                ids.clone(),
+                values.clone(),
+                variable_name.clone(),
+                value_name.clone(),
+            );
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(unpivot_op), vec![child_node]).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+            input,
+            file_info,
+            schema,
+            ..
+        }) => {
+            let sink = BlockingSinkNode::new(
+                PhysicalWriteSink::new(file_info.clone(), schema.clone()).boxed(),
+                physical_plan_to_pipeline(input, psets)?,
+            );
+            sink.boxed()
+        }
+        #[allow(unreachable_patterns)]
+        _ => unimplemented!("Physical plan node not supported yet: {:?}", physical_plan),
     };
 
     Ok(out)

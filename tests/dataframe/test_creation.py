@@ -1087,7 +1087,7 @@ def test_create_dataframe_parquet_mismatched_schemas_no_pushdown():
         assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
 
 
-def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
+def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown():
     # When we read files, we infer schema from the first file
     # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
     # that don't exist
@@ -1111,7 +1111,7 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
         assert df.to_pydict() == {"x": [1, 2, 3, 4, 5, 6, 7, 8], "y": [1, 2, 3, 4, None, None, None, None]}
 
 
-def test_minio_parquet_read_mismatched_schemas_with_pushdown_no_rows_read(minio_io_config):
+def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown_no_rows_read():
     # When we read files, we infer schema from the first file
     # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
     # that don't exist

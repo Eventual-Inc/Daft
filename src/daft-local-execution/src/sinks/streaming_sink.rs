@@ -88,13 +88,13 @@ impl PipelineNode for StreamingSinkNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
-        let child = self
-            .children
-            .get_mut(0)
-            .expect("we should only have 1 child");
-        let child_results_channel = child.start(true, runtime_handle).await?;
-        let mut child_results_receiver =
-            child_results_channel.get_receiver_with_stats(&self.runtime_stats);
+        let mut child_receivers = Vec::with_capacity(self.children.len());
+        for child in self.children.iter_mut() {
+            let child_results_channel = child.start(true, runtime_handle).await?;
+            let child_results_receiver =
+                child_results_channel.get_receiver_with_stats(&self.runtime_stats);
+            child_receivers.push(child_results_receiver);
+        }
 
         let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
         let sender = destination_channel.get_next_sender_with_stats(&self.runtime_stats);
@@ -107,28 +107,33 @@ impl PipelineNode for StreamingSinkNode {
 
                 let mut sink = op.lock().await;
                 let mut is_active = true;
-                while is_active && let Some(val) = child_results_receiver.recv().await {
-                    let val = val.as_data();
-                    loop {
-                        let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
-                        match result {
-                            StreamSinkOutput::HasMoreOutput(mp) => {
-                                sender.send(mp.into()).await.unwrap();
-                            }
-                            StreamSinkOutput::NeedMoreInput(mp) => {
-                                if let Some(mp) = mp {
+                for child_results_receiver in child_receivers.iter_mut() {
+                    while let Some(val) = child_results_receiver.recv().await {
+                        let val = val.as_data();
+                        loop {
+                            let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
+                            match result {
+                                StreamSinkOutput::HasMoreOutput(mp) => {
                                     sender.send(mp.into()).await.unwrap();
                                 }
-                                break;
-                            }
-                            StreamSinkOutput::Finished(mp) => {
-                                if let Some(mp) = mp {
-                                    sender.send(mp.into()).await.unwrap();
+                                StreamSinkOutput::NeedMoreInput(mp) => {
+                                    if let Some(mp) = mp {
+                                        sender.send(mp.into()).await.unwrap();
+                                    }
+                                    break;
                                 }
-                                is_active = false;
-                                break;
+                                StreamSinkOutput::Finished(mp) => {
+                                    if let Some(mp) = mp {
+                                        sender.send(mp.into()).await.unwrap();
+                                    }
+                                    is_active = false;
+                                    break;
+                                }
                             }
                         }
+                    }
+                    if !is_active {
+                        break;
                     }
                 }
                 DaftResult::Ok(())

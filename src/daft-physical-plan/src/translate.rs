@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::JoinStrategy;
 use daft_dsl::ExprRef;
-use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_plan::{LogicalPlan, LogicalPlanRef, SinkInfo, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -96,15 +96,82 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 schema,
             ))
         }
+        LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+            let input = translate(&monotonically_increasing_id.input)?;
+            Ok(LocalPhysicalPlan::monotonically_increasing_id(
+                input,
+                monotonically_increasing_id.column_name.clone(),
+            ))
+        }
         LogicalPlan::Concat(concat) => {
             let input = translate(&concat.input)?;
             let other = translate(&concat.other)?;
             Ok(LocalPhysicalPlan::concat(input, other))
         }
+        LogicalPlan::Explode(explode) => {
+            let input = translate(&explode.input)?;
+            println!("Explode: {:?}", explode.to_explode);
+            Ok(LocalPhysicalPlan::explode(
+                input,
+                explode.to_explode.clone(),
+                explode.exploded_schema.clone(),
+            ))
+        }
+        LogicalPlan::Sample(sample) => {
+            let input = translate(&sample.input)?;
+            Ok(LocalPhysicalPlan::sample(
+                input,
+                sample.fraction,
+                sample.with_replacement,
+                sample.seed,
+            ))
+        }
+        LogicalPlan::Pivot(pivot) => {
+            let input = translate(&pivot.input)?;
+            Ok(LocalPhysicalPlan::pivot(
+                input,
+                pivot.group_by.clone(),
+                pivot.pivot_column.clone(),
+                pivot.value_column.clone(),
+                pivot.aggregation.clone(),
+                pivot.names.clone(),
+                pivot.output_schema.clone(),
+            ))
+        }
+        LogicalPlan::Unpivot(unpivot) => {
+            let input = translate(&unpivot.input)?;
+            Ok(LocalPhysicalPlan::unpivot(
+                input,
+                unpivot.ids.clone(),
+                unpivot.values.clone(),
+                unpivot.variable_name.clone(),
+                unpivot.value_name.clone(),
+                unpivot.output_schema.clone(),
+            ))
+        }
+        #[cfg(feature = "python")]
+        LogicalPlan::Sink(sink) => {
+            let input = translate(&sink.input)?;
+            match sink.sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
+                    input,
+                    sink.schema.clone(),
+                    info.clone(),
+                )),
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(_) => {
+                    todo!("CatalogInfo not yet implemented")
+                }
+            }
+        }
         LogicalPlan::Repartition(repartition) => {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
         }
-        _ => todo!("{} not yet implemented", plan.name()),
+        LogicalPlan::ActorPoolProject(_actor_pool_project) => {
+            todo!("ActorPoolProject not yet implemented")
+        }
+        #[allow(unreachable_patterns)]
+        _ => todo!("Logical Plan not yet implemented: {:?}", plan),
     }
 }

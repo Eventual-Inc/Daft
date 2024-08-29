@@ -50,7 +50,7 @@ impl Explode {
                 .collect::<Vec<_>>();
             Schema::new(fields).context(CreationSnafu)?.into()
         };
-
+        println!("Explode: {:?}", to_explode);
         Ok(Self {
             input,
             to_explode,

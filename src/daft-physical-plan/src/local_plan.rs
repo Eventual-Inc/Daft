@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use daft_core::{schema::SchemaRef, JoinType};
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::InMemoryInfo;
+use daft_plan::{InMemoryInfo, OutputFileInfo};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -15,12 +15,12 @@ pub enum LocalPhysicalPlan {
     Project(Project),
     Filter(Filter),
     Limit(Limit),
-    // Explode(Explode),
-    // Unpivot(Unpivot),
+    Explode(Explode),
+    Unpivot(Unpivot),
     Sort(Sort),
     // Split(Split),
-    // Sample(Sample),
-    // MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    Sample(Sample),
+    MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -29,11 +29,12 @@ pub enum LocalPhysicalPlan {
     // ReduceMerge(ReduceMerge),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
-    // Pivot(Pivot),
+    Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
+    #[cfg(feature = "python")]
     PhysicalWrite(PhysicalWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
@@ -190,6 +191,109 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn monotonically_increasing_id(
+        input: LocalPhysicalPlanRef,
+        column_name: String,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+            input,
+            schema,
+            plan_stats: PlanStats {},
+            column_name,
+        })
+        .arced()
+    }
+
+    pub(crate) fn explode(
+        input: LocalPhysicalPlanRef,
+        to_explode: Vec<ExprRef>,
+        explode_schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Explode(Explode {
+            input,
+            schema: explode_schema,
+            plan_stats: PlanStats {},
+            to_explode,
+        })
+        .arced()
+    }
+
+    pub(crate) fn sample(
+        input: LocalPhysicalPlanRef,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        LocalPhysicalPlan::Sample(Sample {
+            input,
+            schema,
+            plan_stats: PlanStats {},
+            fraction,
+            with_replacement,
+            seed,
+        })
+        .arced()
+    }
+
+    pub(crate) fn pivot(
+        input: LocalPhysicalPlanRef,
+        group_by: Vec<ExprRef>,
+        pivot_column: ExprRef,
+        value_column: ExprRef,
+        aggregation: AggExpr,
+        names: Vec<String>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Pivot(Pivot {
+            input,
+            schema,
+            plan_stats: PlanStats {},
+            group_by,
+            pivot_column,
+            value_column,
+            aggregation,
+            names,
+        })
+        .arced()
+    }
+
+    pub(crate) fn unpivot(
+        input: LocalPhysicalPlanRef,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: String,
+        value_name: String,
+        output_schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::Unpivot(Unpivot {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            schema: output_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn physical_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        file_info: OutputFileInfo,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+            input,
+            schema,
+            file_info,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
@@ -200,9 +304,18 @@ impl LocalPhysicalPlan {
             | LocalPhysicalPlan::HashAggregate(HashAggregate { schema, .. })
             | LocalPhysicalPlan::Sort(Sort { schema, .. })
             | LocalPhysicalPlan::HashJoin(HashJoin { schema, .. })
-            | LocalPhysicalPlan::Concat(Concat { schema, .. }) => schema,
+            | LocalPhysicalPlan::Concat(Concat { schema, .. })
+            | LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                schema,
+                ..
+            })
+            | LocalPhysicalPlan::Explode(Explode { schema, .. })
+            | LocalPhysicalPlan::Sample(Sample { schema, .. })
+            | LocalPhysicalPlan::Unpivot(Unpivot { schema, .. })
+            | LocalPhysicalPlan::Pivot(Pivot { schema, .. }) => schema,
             LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
-            _ => todo!("{:?}", self),
+            #[cfg(feature = "python")]
+            LocalPhysicalPlan::PhysicalWrite(PhysicalWrite { schema, .. }) => schema,
         }
     }
 }
@@ -293,7 +406,64 @@ pub struct Concat {
 
 #[derive(Debug)]
 
-pub struct PhysicalWrite {}
+pub struct MonotonicallyIncreasingId {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub column_name: String,
+}
+
+#[derive(Debug)]
+
+pub struct Explode {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub to_explode: Vec<ExprRef>,
+}
+
+#[derive(Debug)]
+pub struct Sample {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub fraction: f64,
+    pub with_replacement: bool,
+    pub seed: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct Pivot {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub group_by: Vec<ExprRef>,
+    pub pivot_column: ExprRef,
+    pub value_column: ExprRef,
+    pub aggregation: AggExpr,
+    pub names: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Unpivot {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+    pub ids: Vec<ExprRef>,
+    pub values: Vec<ExprRef>,
+    pub variable_name: String,
+    pub value_name: String,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+
+pub struct PhysicalWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub file_info: OutputFileInfo,
+    pub plan_stats: PlanStats,
+}
 #[derive(Debug)]
 
 pub struct PlanStats {}

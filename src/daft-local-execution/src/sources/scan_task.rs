@@ -5,11 +5,12 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{
-    file_format::{FileFormatConfig, ParquetSourceConfig},
+    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    ChunkSpec, ScanTask,
+    ChunkSpec, DataSource, ScanTask,
 };
 use futures::{Stream, StreamExt};
+use snafu::ResultExt;
 use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -41,9 +42,16 @@ impl ScanTaskSource {
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
+        let materialized_schema = scan_task.materialized_schema();
         let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
+        let mut sent = false;
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
+            sent = true;
+        }
+        if !sent {
+            let empty_partition = Arc::new(MicroPartition::empty(Some(materialized_schema)));
+            let _ = sender.send(empty_partition).await;
         }
         Ok(())
     }
@@ -287,9 +295,192 @@ async fn stream_scan_task(
         }
         #[cfg(feature = "python")]
         StorageConfig::Python(_) => {
-            return Err(common_error::DaftError::TypeError(
-                "Streaming reads not supported for Python storage config".to_string(),
-            ));
+            use pyo3::Python;
+            match scan_task.file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    ..
+                }) => Python::with_gil(|py| {
+                    let table = daft_micropartition::python::read_parquet_into_py_table(
+                        py,
+                        url,
+                        scan_task.schema.clone().into(),
+                        (*coerce_int96_timestamp_unit).into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(crate::PyIOSnafu)?;
+                    DaftResult::Ok(Box::pin(futures::stream::iter(vec![Ok(table)])))
+                })?,
+                FileFormatConfig::Csv(CsvSourceConfig {
+                    has_headers,
+                    delimiter,
+                    double_quote,
+                    ..
+                }) => Python::with_gil(|py| {
+                    let table = daft_micropartition::python::read_csv_into_py_table(
+                        py,
+                        url,
+                        *has_headers,
+                        *delimiter,
+                        *double_quote,
+                        scan_task.schema.clone().into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(crate::PyIOSnafu)?;
+                    DaftResult::Ok(Box::pin(futures::stream::iter(vec![Ok(table)])))
+                })?,
+                FileFormatConfig::Json(_) => Python::with_gil(|py| {
+                    let table = daft_micropartition::python::read_json_into_py_table(
+                        py,
+                        url,
+                        scan_task.schema.clone().into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(crate::PyIOSnafu)?;
+                    DaftResult::Ok(Box::pin(futures::stream::iter(vec![Ok(table)])))
+                })?,
+                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                    sql,
+                    conn,
+                }) => {
+                    let predicate = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .map(|p| (*p.as_ref()).clone().into());
+                    Python::with_gil(|py| {
+                        let table = daft_micropartition::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(crate::PyIOSnafu)?;
+                        DaftResult::Ok(Box::pin(futures::stream::iter(vec![Ok(table)])))
+                    })?
+                }
+                FileFormatConfig::PythonFunction => {
+                    use pyo3::ToPyObject;
+
+                    let table_iterators = scan_task.sources.iter().map(|source| {
+                        // Call Python function to create an Iterator (Grabs the GIL and then releases it)
+                        match source {
+                            DataSource::PythonFactoryFunction {
+                                module,
+                                func_name,
+                                func_args,
+                                ..
+                            } => {
+                                Python::with_gil(|py| {
+                                    let func = py.import(pyo3::types::PyString::new(py, module)).unwrap_or_else(|_| panic!("Cannot import factory function from module {module}")).getattr(pyo3::types::PyString::new(py, func_name)).unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                                    DaftResult::Ok(func.call(func_args.to_pytuple(py), None).with_context(|_| crate::PyIOSnafu)?.downcast::<pyo3::types::PyIterator>().expect("Function must return an iterator of tables")).map(|it| it.to_object(py))
+                                })
+                            },
+                            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+                        }
+                    });
+
+                    let mut tables = Vec::new();
+                    let mut rows_seen_so_far = 0;
+                    for iterator in table_iterators {
+                        let iterator = iterator?;
+
+                        // Iterate on this iterator to exhaustion, or until the limit is met
+                        while scan_task
+                            .pushdowns
+                            .limit
+                            .map(|limit| rows_seen_so_far < limit)
+                            .unwrap_or(true)
+                        {
+                            // Grab the GIL to call next() on the iterator, and then release it once we have the Table
+                            let table = match Python::with_gil(|py| {
+                                iterator
+                                    .downcast::<pyo3::types::PyIterator>(py)
+                                    .unwrap()
+                                    .next()
+                                    .map(|result| {
+                                        result
+                                            .map(|tbl| {
+                                                tbl.extract::<daft_table::python::PyTable>()
+                                                    .expect("Must be a PyTable")
+                                                    .table
+                                            })
+                                            .with_context(|_| crate::PyIOSnafu)
+                                    })
+                            }) {
+                                Some(table) => table,
+                                None => break,
+                            }?;
+
+                            // Apply filters
+                            let table = if let Some(filters) = scan_task.pushdowns.filters.as_ref()
+                            {
+                                table.filter(&[filters.clone()])?
+                            } else {
+                                table
+                            };
+
+                            // Apply limit if necessary, and update `&mut remaining`
+                            let table = if let Some(limit) = scan_task.pushdowns.limit {
+                                let limited_table = if rows_seen_so_far + table.len() > limit {
+                                    table.slice(0, limit - rows_seen_so_far)?
+                                } else {
+                                    table
+                                };
+
+                                // Update the rows_seen_so_far
+                                rows_seen_so_far += limited_table.len();
+
+                                limited_table
+                            } else {
+                                table
+                            };
+
+                            tables.push(DaftResult::Ok(table));
+                        }
+
+                        // If seen enough rows, early-terminate
+                        if scan_task
+                            .pushdowns
+                            .limit
+                            .map(|limit| rows_seen_so_far >= limit)
+                            .unwrap_or(false)
+                        {
+                            break;
+                        }
+                    }
+                    Box::pin(futures::stream::iter(tables.into_iter()))
+                }
+            }
         }
     };
 

@@ -7,12 +7,12 @@ use common_error::DaftResult;
 use daft_core::{
     join::JoinType,
     python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
-    schema::Schema,
+    schema::{Schema, SchemaRef},
     Series,
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::python::PyExpr;
-use daft_io::{python::IOConfig, IOStatsContext};
+use daft_dsl::{python::PyExpr, ExprRef};
+use daft_io::{python::IOConfig, FileFormat, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
@@ -756,7 +756,7 @@ impl PyMicroPartition {
     }
 }
 
-pub(crate) fn read_json_into_py_table(
+pub fn read_json_into_py_table(
     py: Python,
     uri: &str,
     schema: PySchema,
@@ -783,7 +783,7 @@ pub(crate) fn read_json_into_py_table(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_csv_into_py_table(
+pub fn read_csv_into_py_table(
     py: Python,
     uri: &str,
     has_header: bool,
@@ -817,7 +817,7 @@ pub(crate) fn read_csv_into_py_table(
         .extract()
 }
 
-pub(crate) fn read_parquet_into_py_table(
+pub fn read_parquet_into_py_table(
     py: Python,
     uri: &str,
     schema: PySchema,
@@ -853,7 +853,7 @@ pub(crate) fn read_parquet_into_py_table(
         .extract()
 }
 
-pub(crate) fn read_sql_into_py_table(
+pub fn read_sql_into_py_table(
     py: Python,
     sql: &str,
     conn: &PyObject,
@@ -886,6 +886,51 @@ pub(crate) fn read_sql_into_py_table(
         .getattr(pyo3::intern!(py, "to_table"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?
+        .extract()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn write_tabular(
+    py: Python,
+    input: &Arc<MicroPartition>,
+    file_format: &FileFormat,
+    schema: &SchemaRef,
+    root_dir: &String,
+    compression: &Option<String>,
+    partition_cols: &Option<Vec<ExprRef>>,
+    io_config: &Option<daft_io::IOConfig>,
+) -> PyResult<PyMicroPartition> {
+    let py_micropartition = py
+        .import(pyo3::intern!(py, "daft.table"))?
+        .getattr(pyo3::intern!(py, "MicroPartition"))?
+        .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
+        .call1((PyMicroPartition::from(input.clone()),))?;
+    let py_schema = py
+        .import(pyo3::intern!(py, "daft.logical.schema"))?
+        .getattr(pyo3::intern!(py, "Schema"))?
+        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .call1((PySchema::from(schema.clone()),))?;
+    let part_cols = partition_cols.as_ref().map(|cols| {
+        cols.iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<PyExpr>>()
+    });
+    let py_result = py
+        .import(pyo3::intern!(py, "daft.table.table_io"))?
+        .getattr(pyo3::intern!(py, "write_tabular"))?
+        .call1((
+            py_micropartition,
+            *file_format,
+            root_dir,
+            py_schema,
+            part_cols,
+            compression.clone(),
+            io_config.as_ref().map(|cfg| IOConfig {
+                config: cfg.clone(),
+            }),
+        ))?;
+    py_result
+        .getattr(pyo3::intern!(py, "_micropartition"))?
         .extract()
 }
 

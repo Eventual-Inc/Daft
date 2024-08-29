@@ -3,5 +3,7 @@ pub mod blocking_sink;
 pub mod concat;
 pub mod hash_join_build;
 pub mod limit;
+pub mod monotonically_increasing_id;
+pub mod physical_write;
 pub mod sort;
 pub mod streaming_sink;

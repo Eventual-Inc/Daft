@@ -8,6 +8,9 @@ daft-scan = {path = "../daft-scan", default-features = false}
 log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}
 
+[features]
+python = ["daft-plan/python"]
+
 [package]
 edition = {workspace = true}
 name = "daft-physical-plan"
