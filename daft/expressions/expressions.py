@@ -3147,7 +3147,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
             raise TypeError(f"expected int for w but got {type(w)}")
         if not isinstance(h, int):
             raise TypeError(f"expected int for h but got {type(h)}")
-        return Expression._from_pyexpr(self._expr.image_resize(w, h))
+        return Expression._from_pyexpr(native.image_resize(self._expr, w, h))
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """

@@ -794,21 +794,6 @@ impl PyExpr {
         Ok(normalize(self.into(), opts).into())
     }
 
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-        use crate::functions::image::resize;
-        Ok(resize(self.into(), w as u32, h as u32).into())
-    }
-
     pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
         use crate::functions::image::crop;
         Ok(crop(self.into(), bbox.into()).into())
