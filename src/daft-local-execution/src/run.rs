@@ -2,7 +2,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
+use daft_physical_plan::LocalPhysicalPlan;
 use std::{
     collections::HashMap,
     fs::File,
@@ -62,7 +62,7 @@ impl NativeExecutor {
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            let local_physical_plan = translate(&logical_plan)?;
+            let local_physical_plan = daft_physical_plan::translate(&logical_plan)?;
             Ok(Self {
                 local_physical_plan,
             })

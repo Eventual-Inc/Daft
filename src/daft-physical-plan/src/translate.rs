@@ -5,6 +5,7 @@ use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
+#[cfg(feature = "python")]
 pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
@@ -158,7 +159,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     sink.schema.clone(),
                     info.clone(),
                 )),
-                #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(_) => {
                     todo!("CatalogInfo not yet implemented")
                 }

@@ -7,4 +7,5 @@ pub use local_plan::{
     LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
     Sample, Sort, UnGroupedAggregate, Unpivot,
 };
+#[cfg(feature = "python")]
 pub use translate::translate;
