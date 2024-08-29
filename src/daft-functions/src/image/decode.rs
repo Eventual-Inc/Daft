@@ -84,7 +84,7 @@ pub fn decode(input: ExprRef, args: Option<ImageDecode>) -> ExprRef {
 #[cfg(feature = "python")]
 use {
     daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, types::PyDict, PyResult},
+    pyo3::{pyfunction, PyResult},
 };
 
 #[cfg(feature = "python")]
