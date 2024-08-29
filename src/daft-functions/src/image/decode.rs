@@ -96,7 +96,7 @@ impl TryFrom<Option<&PyDict>> for ImageDecodeArgs {
         let mut raise_on_error = false;
         if let Some(kwargs) = py_kwargs {
             if let Some(mode_str) = kwargs.get_item("mode") {
-                mode = Some(mode_str.extract()?);
+                mode = mode_str.extract()?;
             }
             if let Some(raise_on_error_str) = kwargs.get_item("raise_on_error") {
                 raise_on_error = raise_on_error_str.extract()?;
@@ -111,8 +111,8 @@ impl TryFrom<Option<&PyDict>> for ImageDecodeArgs {
 
 #[cfg(feature = "python")]
 #[pyfunction]
-#[pyo3(name = "image_decode", signature = (input, **py_kwargs))]
-pub fn py_decode(input: PyExpr, py_kwargs: Option<&PyDict>) -> PyResult<PyExpr> {
-    let kwargs = ImageDecodeArgs::try_from(py_kwargs)?;
-    Ok(decode(input.into(), Some(kwargs)).into())
+#[pyo3(name = "image_decode", signature = (expr, **kwds))]
+pub fn py_decode(expr: PyExpr, kwds: Option<&PyDict>) -> PyResult<PyExpr> {
+    let kwargs = ImageDecodeArgs::try_from(kwds)?;
+    Ok(decode(expr.into(), Some(kwargs)).into())
 }
