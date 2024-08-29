@@ -7,7 +7,7 @@ use crate::{
     functions::{FromSQLArgs, SQLFunction, SQLFunctions},
     unsupported_sql_err,
 };
-use daft_functions::image::decode::{decode, ImageDecodeArgs};
+use daft_functions::image::decode::{decode, ImageDecode};
 
 pub struct SQLModuleImage;
 
@@ -19,7 +19,7 @@ impl SQLModule for SQLModuleImage {
 
 pub struct SQLImageDecode;
 
-impl FromSQLArgs for ImageDecodeArgs {
+impl FromSQLArgs for ImageDecode {
     fn from_sql(
         inputs: &[sqlparser::ast::FunctionArg],
         planner: &crate::planner::SQLPlanner,
@@ -83,7 +83,7 @@ impl SQLFunction for SQLImageDecode {
             }
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args = ImageDecodeArgs::from_sql(args, planner)?;
+                let args = ImageDecode::from_sql(args, planner)?;
                 Ok(decode(input, Some(args)))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_decode: '{inputs:?}'"),
