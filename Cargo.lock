@@ -1888,7 +1888,6 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2087,11 +2086,11 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-plan",
+ "once_cell",
  "pyo3",
  "rstest",
  "snafu",
  "sqlparser",
- "strum 0.26.3",
 ]
 
 [[package]]

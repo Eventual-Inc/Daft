@@ -492,6 +492,15 @@ class DataType:
     def _is_numeric_type(self) -> builtins.bool:
         return self._dtype.is_numeric()
 
+    def _is_list(self) -> builtins.bool:
+        return self._dtype.is_list()
+
+    def _is_boolean(self) -> builtins.bool:
+        return self._dtype.is_boolean()
+
+    def _is_string(self) -> builtins.bool:
+        return self._dtype.is_string()
+
     def _is_map(self) -> builtins.bool:
         return self._dtype.is_map()
 

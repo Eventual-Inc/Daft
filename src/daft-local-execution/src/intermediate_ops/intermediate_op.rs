@@ -5,8 +5,6 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
-use async_trait::async_trait;
-
 use crate::{
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
@@ -100,7 +98,7 @@ impl IntermediateNode {
         Ok(())
     }
 
-    pub async fn spawn_workers(
+    pub fn spawn_workers(
         &self,
         num_workers: usize,
         destination_channel: &mut PipelineChannel,
@@ -185,7 +183,6 @@ impl TreeDisplay for IntermediateNode {
     }
 }
 
-#[async_trait]
 impl PipelineNode for IntermediateNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children.iter().map(|v| v.as_ref()).collect()
@@ -195,22 +192,21 @@ impl PipelineNode for IntermediateNode {
         self.intermediate_op.name()
     }
 
-    async fn start(
+    fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in self.children.iter_mut() {
-            let child_result_channel = child.start(maintain_order, runtime_handle).await?;
+            let child_result_channel = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));
         }
         let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
 
-        let worker_senders = self
-            .spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle)
-            .await;
+        let worker_senders =
+            self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
         runtime_handle.spawn(
             Self::send_to_workers(
                 child_result_receivers,

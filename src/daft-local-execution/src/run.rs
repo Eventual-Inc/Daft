@@ -136,10 +136,7 @@ pub fn run_local(
             .expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline
-                .start(true, &mut runtime_handle)
-                .await?
-                .get_receiver();
+            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
             while let Some(val) = receiver.recv().await {
                 let _ = tx.send(val.as_data().clone()).await;
             }

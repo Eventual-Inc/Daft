@@ -16,7 +16,6 @@ use crate::{
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
-use async_trait::async_trait;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_core::{
@@ -74,11 +73,10 @@ impl PipelineResultType {
     }
 }
 
-#[async_trait]
 pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
-    async fn start(
+    fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,

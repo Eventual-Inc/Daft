@@ -9,7 +9,7 @@ use crate::{
     channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
-use async_trait::async_trait;
+
 pub enum StreamSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -73,7 +73,6 @@ impl TreeDisplay for StreamingSinkNode {
     }
 }
 
-#[async_trait]
 impl PipelineNode for StreamingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children.iter().map(|v| v.as_ref()).collect()
@@ -83,7 +82,7 @@ impl PipelineNode for StreamingSinkNode {
         self.name
     }
 
-    async fn start(
+    fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
@@ -92,7 +91,7 @@ impl PipelineNode for StreamingSinkNode {
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        let child_results_channel = child.start(true, runtime_handle).await?;
+        let child_results_channel = child.start(true, runtime_handle)?;
         let mut child_results_receiver =
             child_results_channel.get_receiver_with_stats(&self.runtime_stats);
 
