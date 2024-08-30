@@ -6,6 +6,7 @@ use crate::datatypes::{
 };
 
 use crate::array::DataArray;
+use arrow2::types::NativeType;
 use common_error::{DaftError, DaftResult};
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
@@ -44,6 +45,20 @@ impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryA
         DataArray::new(
             Field::new(name, DataType::FixedSizeBinary(array.size())).into(),
             array,
+        )
+        .unwrap()
+    }
+}
+
+impl<T> From<(&str, &[T])> for FixedSizeBinaryArray
+where
+    T: NativeType,
+{
+    fn from((name, array): (&str, &[T])) -> Self {
+        let length = array.len();
+        DataArray::new(
+            Field::new(name, DataType::FixedSizeBinary(length)).into(),
+            Box::new(arrow2::array::PrimitiveArray::from_slice(array)),
         )
         .unwrap()
     }
