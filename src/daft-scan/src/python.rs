@@ -285,10 +285,6 @@ pub mod pylib {
             Ok(self.0.num_rows().map(i64::try_from).transpose()?)
         }
 
-        pub fn size_bytes_on_disk(&self) -> PyResult<Option<i64>> {
-            Ok(self.0.size_bytes_on_disk().map(i64::try_from).transpose()?)
-        }
-
         pub fn estimate_in_memory_size_bytes(
             &self,
             cfg: PyDaftExecutionConfig,
