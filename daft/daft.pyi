@@ -707,12 +707,6 @@ class ScanTask:
         """
         ...
 
-    def size_bytes(self) -> int:
-        """
-        Get number of bytes that will be scanned by this ScanTask.
-        """
-        ...
-
     def estimate_in_memory_size_bytes(self, cfg: PyDaftExecutionConfig) -> int:
         """
         Estimate the In Memory Size of this ScanTask.
