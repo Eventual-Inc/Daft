@@ -1,6 +1,4 @@
-use crate::array::ops::{
-    DaftApproxCountDistinctAggable, DaftHllMergeAggable, DaftHllSketchAggable,
-};
+use crate::array::ops::DaftHllMergeAggable;
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -97,16 +95,6 @@ impl Series {
         }
     }
 
-    pub fn approx_count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        let downcasted_self = self.downcast::<UInt64Array>()?;
-        let series = match groups {
-            Some(groups) => downcasted_self.grouped_approx_count_distinct(groups),
-            None => downcasted_self.approx_count_distinct(),
-        }?
-        .into_series();
-        Ok(series)
-    }
-
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftMergeSketchAggable;
         use crate::datatypes::DataType::*;
@@ -125,16 +113,6 @@ impl Series {
                 other
             ))),
         }
-    }
-
-    pub fn hll_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        let downcasted_self = self.downcast::<UInt64Array>()?;
-        let series = match groups {
-            Some(groups) => downcasted_self.grouped_hll_sketch(groups),
-            None => downcasted_self.hll_sketch(),
-        }?
-        .into_series();
-        Ok(series)
     }
 
     pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

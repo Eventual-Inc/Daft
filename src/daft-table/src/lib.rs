@@ -10,7 +10,7 @@ use daft_core::array::ops::full::FullNull;
 use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
 
-use daft_core::array::ops::GroupIndices;
+use daft_core::array::ops::{DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
@@ -446,19 +446,30 @@ impl Table {
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
-            AggExpr::ApproxCountDistinct(expr) => self
-                .eval_expression(expr)?
-                .hash_with_validity(None)?
-                .into_series()
-                .approx_count_distinct(groups),
+            AggExpr::ApproxCountDistinct(expr) => {
+                let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                let series = groups
+                    .map_or_else(
+                        || hashed.approx_count_distinct(),
+                        |groups| hashed.grouped_approx_count_distinct(groups),
+                    )?
+                    .into_series();
+                Ok(series)
+            }
             &AggExpr::ApproxSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.approx_sketch(groups),
-                    SketchType::HyperLogLog => evaled
-                        .hash_with_validity(None)?
-                        .into_series()
-                        .hll_sketch(groups),
+                    SketchType::HyperLogLog => {
+                        let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                        let series = groups
+                            .map_or_else(
+                                || hashed.hll_sketch(),
+                                |groups| hashed.grouped_hll_sketch(groups),
+                            )?
+                            .into_series();
+                        Ok(series)
+                    }
                 }
             }
             &AggExpr::MergeSketch(ref expr, sketch_type) => {
