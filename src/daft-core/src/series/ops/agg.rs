@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -62,9 +64,12 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
-            Decimal128(_, _) => match groups {
+            Decimal128(a, b) => match groups {
                 Some(groups) => Ok(Decimal128Array::new(
-                    self.field().clone(),
+                    Field {
+                        dtype: Decimal128(min(38, *a + 19), *b),
+                        ..self.field().clone()
+                    },
                     DaftSumAggable::grouped_sum(
                         &self.as_physical()?.downcast::<Int128Array>()?,
                         groups,
@@ -72,7 +77,10 @@ impl Series {
                 )
                 .into_series()),
                 None => Ok(Decimal128Array::new(
-                    self.field().clone(),
+                    Field {
+                        dtype: Decimal128(min(38, *a + 19), *b),
+                        ..self.field().clone()
+                    },
                     DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
                 )
                 .into_series()),
