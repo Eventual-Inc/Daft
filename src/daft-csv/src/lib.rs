@@ -2,9 +2,12 @@
 #![feature(let_chains)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(test)]
+extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod local;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]
@@ -22,6 +25,8 @@ pub use read::{read_csv, read_csv_bulk, stream_csv};
 pub enum Error {
     #[snafu(display("{source}"))]
     IOError { source: daft_io::Error },
+    #[snafu(display("{source}"))]
+    StdIOError { source: std::io::Error },
     #[snafu(display("{source}"))]
     CSVError { source: csv_async::Error },
     #[snafu(display("Invalid char: {}", val))]
