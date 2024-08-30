@@ -32,11 +32,11 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
         let (group_by, group_by_fields) =
-            resolve_exprs(group_by, &upstream_schema).context(CreationSnafu)?;
+            resolve_exprs(group_by, &upstream_schema, false).context(CreationSnafu)?;
         let (pivot_column, _) =
-            resolve_single_expr(pivot_column, &upstream_schema).context(CreationSnafu)?;
+            resolve_single_expr(pivot_column, &upstream_schema, false).context(CreationSnafu)?;
         let (value_column, value_col_field) =
-            resolve_single_expr(value_column, &upstream_schema).context(CreationSnafu)?;
+            resolve_single_expr(value_column, &upstream_schema, false).context(CreationSnafu)?;
         let (aggregation, _) =
             resolve_single_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
 

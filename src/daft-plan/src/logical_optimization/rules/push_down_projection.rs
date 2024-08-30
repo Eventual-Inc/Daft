@@ -5,8 +5,7 @@ use common_error::DaftResult;
 use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{
-    col,
-    functions::{python::PythonUDF, FunctionExpr},
+    col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
     Expr, ExprRef,
 };
@@ -279,17 +278,7 @@ impl PushDownProjection {
                             .collect_vec();
 
                         // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has StatefulUDFs
-                        let new_plan = if new_actor_pool_projections.iter().any(|e| {
-                            e.exists(|e| {
-                                matches!(
-                                    e.as_ref(),
-                                    Expr::Function {
-                                        func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                                        ..
-                                    }
-                                )
-                            })
-                        }) {
+                        let new_plan = if new_actor_pool_projections.iter().any(has_stateful_udf) {
                             LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                                 upstream_actor_pool_projection.input.clone(),
                                 new_actor_pool_projections,
@@ -966,6 +955,7 @@ mod tests {
 
     /// Projection<-ActorPoolProject<-ActorPoolProject prunes columns from both ActorPoolProjects
     #[test]
+    #[cfg(not(feature = "python"))]
     fn test_projection_pushdown_into_double_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;

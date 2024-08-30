@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, resolve_expr
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, is_valid_column_name
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -1088,12 +1088,10 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
-            if (item == "*" or item.endswith(".*")) and item not in schema.column_names():
-                # does not account for weird column names
-                # like if struct "a" has a field named "*", then a.* will wrongly fail
-                raise ValueError("Wildcard expressions are not supported in DataFrame.__getitem__")
-            expr, _ = resolve_expr(col(item)._expr, schema._schema)
-            return Expression._from_pyexpr(expr)
+            if is_valid_column_name(item, schema._schema):
+                return col(item)
+            else:
+                raise ValueError(f"Column {item} not found in schema {schema}")
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 

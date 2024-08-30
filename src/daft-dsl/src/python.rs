@@ -242,9 +242,8 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 }
 
 #[pyfunction]
-pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
-    Ok((resolved_expr.into(), field.into()))
+pub fn is_valid_column_name(name: &str, schema: &PySchema) -> bool {
+    crate::is_valid_column_name(name, &schema.schema)
 }
 
 #[derive(FromPyObject)]
