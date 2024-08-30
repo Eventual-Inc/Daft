@@ -1799,7 +1799,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "futures",
- "oneshot",
  "pyo3",
  "serde",
  "snafu",
@@ -1935,7 +1934,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
- "tokio",
 ]
 
 [[package]]
@@ -2044,7 +2042,6 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
- "tokio",
 ]
 
 [[package]]
