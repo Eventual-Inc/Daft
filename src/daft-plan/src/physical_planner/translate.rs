@@ -12,7 +12,7 @@ use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::{col, ApproxPercentileParams, SketchAndMergeType};
+use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
@@ -904,21 +904,20 @@ pub fn populate_aggregation_stages(
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 let sketch_id = agg_expr.semantic_id(schema).id;
-                let approx_id =
-                    ApproxSketch(col(sketch_id.clone()), SketchAndMergeType::ApproxPercentile)
-                        .semantic_id(schema)
-                        .id;
+                let approx_id = ApproxSketch(col(sketch_id.clone()), SketchType::DDSketch)
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(sketch_id.clone())
                     .or_insert(ApproxSketch(
                         e.alias(sketch_id.clone()),
-                        SketchAndMergeType::ApproxPercentile,
+                        SketchType::DDSketch,
                     ));
                 second_stage_aggs
                     .entry(approx_id.clone())
                     .or_insert(MergeSketch(
                         col(sketch_id.clone()).alias(approx_id.clone()),
-                        SketchAndMergeType::ApproxPercentile,
+                        SketchType::DDSketch,
                     ));
                 final_exprs.push(
                     col(approx_id)
@@ -928,23 +927,21 @@ pub fn populate_aggregation_stages(
             }
             ApproxCountDistinct(e) => {
                 let first_stage_id = agg_expr.semantic_id(schema).id;
-                let second_stage_id = MergeSketch(
-                    col(first_stage_id.clone()),
-                    SketchAndMergeType::ApproxCountDistinct,
-                )
-                .semantic_id(schema)
-                .id;
+                let second_stage_id =
+                    MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)
+                        .semantic_id(schema)
+                        .id;
                 first_stage_aggs
                     .entry(first_stage_id.clone())
                     .or_insert(ApproxSketch(
                         e.alias(first_stage_id.clone()),
-                        SketchAndMergeType::ApproxCountDistinct,
+                        SketchType::HyperLogLog,
                     ));
                 second_stage_aggs
                     .entry(second_stage_id.clone())
                     .or_insert(MergeSketch(
                         col(first_stage_id).alias(second_stage_id.clone()),
-                        SketchAndMergeType::ApproxCountDistinct,
+                        SketchType::HyperLogLog,
                     ));
                 final_exprs.push(col(second_stage_id).alias(output_name));
             }

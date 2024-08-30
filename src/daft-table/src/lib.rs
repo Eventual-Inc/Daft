@@ -19,7 +19,7 @@ use daft_core::series::{IntoSeries, Series};
 
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{
-    col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue, SketchAndMergeType,
+    col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue, SketchType,
 };
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -451,23 +451,21 @@ impl Table {
                 .hash_with_validity(None)?
                 .into_series()
                 .approx_count_distinct(groups),
-            &AggExpr::ApproxSketch(ref expr, sketch_and_merge_type) => {
+            &AggExpr::ApproxSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;
-                match sketch_and_merge_type {
-                    SketchAndMergeType::ApproxPercentile => evaled.approx_sketch(groups),
-                    SketchAndMergeType::ApproxCountDistinct => evaled
+                match sketch_type {
+                    SketchType::DDSketch => evaled.approx_sketch(groups),
+                    SketchType::HyperLogLog => evaled
                         .hash_with_validity(None)?
                         .into_series()
                         .approx_count_distinct_sketch(groups),
                 }
             }
-            &AggExpr::MergeSketch(ref expr, sketch_and_merge_type) => {
+            &AggExpr::MergeSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;
-                match sketch_and_merge_type {
-                    SketchAndMergeType::ApproxPercentile => evaled.merge_sketch(groups),
-                    SketchAndMergeType::ApproxCountDistinct => {
-                        evaled.approx_count_distinct_merge(groups)
-                    }
+                match sketch_type {
+                    SketchType::DDSketch => evaled.merge_sketch(groups),
+                    SketchType::HyperLogLog => evaled.approx_count_distinct_merge(groups),
                 }
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),

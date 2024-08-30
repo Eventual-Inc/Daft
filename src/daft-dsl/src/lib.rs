@@ -17,7 +17,7 @@ pub use common_treenode;
 pub use expr::binary_op;
 pub use expr::col;
 pub use expr::is_partition_compatible;
-pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator, SketchAndMergeType};
+pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator, SketchType};
 pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

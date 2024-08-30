@@ -232,11 +232,11 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     force_list_output,
                 }),
                 ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
-                ApproxSketch(e, sketch_and_merge_type) => {
-                    ApproxSketch(Alias(e, name.clone()).into(), sketch_and_merge_type)
+                ApproxSketch(e, sketch_type) => {
+                    ApproxSketch(Alias(e, name.clone()).into(), sketch_type)
                 }
-                MergeSketch(e, sketch_and_merge_type) => {
-                    MergeSketch(Alias(e, name.clone()).into(), sketch_and_merge_type)
+                MergeSketch(e, sketch_type) => {
+                    MergeSketch(Alias(e, name.clone()).into(), sketch_type)
                 }
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),

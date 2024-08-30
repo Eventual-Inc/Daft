@@ -74,8 +74,8 @@ pub enum AggExpr {
     Sum(ExprRef),
     ApproxPercentile(ApproxPercentileParams),
     ApproxCountDistinct(ExprRef),
-    ApproxSketch(ExprRef, SketchAndMergeType),
-    MergeSketch(ExprRef, SketchAndMergeType),
+    ApproxSketch(ExprRef, SketchType),
+    MergeSketch(ExprRef, SketchType),
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
@@ -89,9 +89,9 @@ pub enum AggExpr {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum SketchAndMergeType {
-    ApproxPercentile,
-    ApproxCountDistinct,
+pub enum SketchType {
+    DDSketch,
+    HyperLogLog,
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -148,13 +148,17 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
             }
-            ApproxSketch(expr, sketch_and_merge_type) => {
+            ApproxSketch(expr, sketch_type) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_approx_sketch(sketch_and_merge_type={sketch_and_merge_type:?})"))
+                FieldID::new(format!(
+                    "{child_id}.local_approx_sketch(sketch_type={sketch_type:?})"
+                ))
             }
-            MergeSketch(expr, sketch_and_merge_type) => {
+            MergeSketch(expr, sketch_type) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_merge_sketch(sketch_and_merge_type={sketch_and_merge_type:?})"))
+                FieldID::new(format!(
+                    "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
+                ))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -236,12 +240,8 @@ impl AggExpr {
                 force_list_output: *force_list_output,
             }),
             ApproxCountDistinct(_) => ApproxCountDistinct(children[0].clone()),
-            &ApproxSketch(_, sketch_and_merge_type) => {
-                ApproxSketch(children[0].clone(), sketch_and_merge_type)
-            }
-            &MergeSketch(_, sketch_and_merge_type) => {
-                MergeSketch(children[0].clone(), sketch_and_merge_type)
-            }
+            &ApproxSketch(_, sketch_type) => ApproxSketch(children[0].clone(), sketch_type),
+            &MergeSketch(_, sketch_type) => MergeSketch(children[0].clone(), sketch_type),
         }
     }
 
@@ -286,10 +286,10 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
-            ApproxSketch(expr, sketch_and_merge_type) => {
+            ApproxSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
-                let dtype = match sketch_and_merge_type {
-                    SketchAndMergeType::ApproxPercentile => {
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
                         if !field.dtype.is_numeric() {
                             return Err(DaftError::TypeError(format!(
                                 r#"Expected input to approx_sketch() to be numeric but received dtype {} for column "{}""#,
@@ -298,16 +298,16 @@ impl AggExpr {
                         };
                         DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
                     }
-                    SketchAndMergeType::ApproxCountDistinct => {
+                    SketchType::HyperLogLog => {
                         daft_core::array::ops::APPROX_COUNT_DISTINCT_SKETCH_DTYPE
                     }
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            MergeSketch(expr, sketch_and_merge_type) => {
+            MergeSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
-                let dtype = match sketch_and_merge_type {
-                    SketchAndMergeType::ApproxPercentile => {
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
                         if let DataType::Struct(..) = field.dtype {
                             field.dtype
                         } else {
@@ -317,7 +317,7 @@ impl AggExpr {
                             )));
                         }
                     }
-                    SketchAndMergeType::ApproxCountDistinct => DataType::UInt64,
+                    SketchType::HyperLogLog => DataType::UInt64,
                 };
                 Ok(Field::new(field.name, dtype))
             }
@@ -1032,8 +1032,8 @@ impl Display for AggExpr {
                 "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
             ),
             ApproxCountDistinct(expr) => write!(f, "approx_count_distinct({expr})"),
-            ApproxSketch(expr, sketch_and_merge_type) => write!(f, "approx_sketch({expr}, sketch_and_merge_type={sketch_and_merge_type:?})"),
-            MergeSketch(expr, sketch_and_merge_type) => write!(f, "merge_sketch({expr}, sketch_and_merge_type={sketch_and_merge_type:?})"),
+            ApproxSketch(expr, sketch_type) => write!(f, "approx_sketch({expr}, sketch_type={sketch_type:?})"),
+            MergeSketch(expr, sketch_type) => write!(f, "merge_sketch({expr}, sketch_type={sketch_type:?})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),
