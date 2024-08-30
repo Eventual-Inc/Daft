@@ -179,9 +179,7 @@ pub fn split_by_row_groups(
                         let io_stats =
                             IOStatsContext::new(format!("split_by_row_groups for {:#?}", path));
 
-                        let runtime_handle = io_runtime.handle();
-
-                        let mut file = runtime_handle.block_on(read_parquet_metadata(
+                        let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
                             path,
                             io_client,
                             Some(io_stats),

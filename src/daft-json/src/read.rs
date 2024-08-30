@@ -47,8 +47,7 @@ pub fn read_json(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
-    runtime_handle.block_on(async {
+    runtime_handle.block_on_current_thread(async {
         read_json_single_into_table(
             uri,
             convert_options,
@@ -75,8 +74,7 @@ pub fn read_json_bulk(
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
-    let tables = runtime_handle.block_on(async move {
+    let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
