@@ -8,87 +8,73 @@ use arrow2::{
     types::{NativeType, Offset},
 };
 
+use xxhash_rust::const_xxh3;
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
-
-mod const_hashed {
-    use xxhash_rust::const_xxh3;
-    use xxhash_rust::xxh3::xxh3_64_with_seed;
-
-    const NULL: &[u8; 0] = b"";
-    const TRUE: &[u8; 1] = b"1";
-    const FALSE: &[u8; 1] = b"0";
-
-    pub(super) const NULL_HASH: u64 = const_xxh3::xxh3_64(NULL);
-    pub(super) const TRUE_HASH: u64 = const_xxh3::xxh3_64(TRUE);
-    pub(super) const FALSE_HASH: u64 = const_xxh3::xxh3_64(FALSE);
-
-    pub(super) fn hash_null_with_seed(seed: u64) -> u64 {
-        xxh3_64_with_seed(b"", seed)
-    }
-}
-
-fn base_hasher<T, E: ExactSizeIterator<Item = T>>(
-    array: impl IntoIterator<IntoIter = E>,
-    seed: Option<&PrimitiveArray<u64>>,
-    with_seed: impl Fn(T, u64) -> u64,
-    without_seed: impl Fn(T) -> u64,
-) -> PrimitiveArray<u64> {
-    let array = array.into_iter();
-    let hashes = match seed {
-        Some(seed) => array
-            .zip(seed.values_iter().copied())
-            .map(|(value, seed)| with_seed(value, seed))
-            .collect::<Vec<_>>(),
-        None => array.map(without_seed).collect(),
-    };
-    PrimitiveArray::new(DataType::UInt64, hashes.into(), None)
-}
 
 fn hash_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    base_hasher(
-        array,
-        seed,
-        |v, s| match v {
-            Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), s),
-            None => const_hashed::hash_null_with_seed(s),
-        },
-        |v| match v {
-            Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
-            None => const_hashed::NULL_HASH,
-        },
-    )
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+    let hashes = if let Some(seed) = seed {
+        array
+            .iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| match v {
+                Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
+                None => NULL_HASH,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        array
+            .iter()
+            .map(|v| match v {
+                Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
+                None => NULL_HASH,
+            })
+            .collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
-    base_hasher(
-        array,
-        seed,
-        |v, s| match v {
-            Some(true) => xxh3_64_with_seed(b"1", s),
-            Some(false) => xxh3_64_with_seed(b"0", s),
-            None => const_hashed::hash_null_with_seed(s),
-        },
-        |v| match v {
-            Some(true) => const_hashed::TRUE_HASH,
-            Some(false) => const_hashed::FALSE_HASH,
-            None => const_hashed::NULL_HASH,
-        },
-    )
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+
+    const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
+    const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
+
+    let hashes = if let Some(seed) = seed {
+        array
+            .iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| match v {
+                Some(true) => xxh3_64_with_seed(b"1", *s),
+                Some(false) => xxh3_64_with_seed(b"0", *s),
+                None => NULL_HASH,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        array
+            .iter()
+            .map(|v| match v {
+                Some(true) => TRUE_HASH,
+                Some(false) => FALSE_HASH,
+                None => NULL_HASH,
+            })
+            .collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 fn hash_null(array: &NullArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
+    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+
     let hashes = if let Some(seed) = seed {
         seed.values_iter()
-            .copied()
-            .map(const_hashed::hash_null_with_seed)
+            .map(|s| xxh3_64_with_seed(b"", *s))
             .collect::<Vec<_>>()
     } else {
-        (0..array.len())
-            .map(|_| const_hashed::NULL_HASH)
-            .collect::<Vec<_>>()
+        (0..array.len()).map(|_| NULL_HASH).collect::<Vec<_>>()
     };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
@@ -97,32 +83,51 @@ fn hash_binary<O: Offset>(
     array: &BinaryArray<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    base_hasher(array.values_iter(), seed, xxh3_64_with_seed, xxh3_64)
+    let hashes = if let Some(seed) = seed {
+        array
+            .values_iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| xxh3_64_with_seed(v, *s))
+            .collect::<Vec<_>>()
+    } else {
+        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 fn hash_fixed_size_binary(
     array: &FixedSizeBinaryArray,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    base_hasher(array.values_iter(), seed, xxh3_64_with_seed, xxh3_64)
+    let hashes = if let Some(seed) = seed {
+        array
+            .values_iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| xxh3_64_with_seed(v, *s))
+            .collect::<Vec<_>>()
+    } else {
+        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 fn hash_utf8<O: Offset>(
     array: &Utf8Array<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    base_hasher(
-        array,
-        seed,
-        |v, s| match v {
-            Some(str) => xxh3_64_with_seed(str.as_bytes(), s),
-            None => const_hashed::hash_null_with_seed(s),
-        },
-        |v| match v {
-            Some(str) => xxh3_64(str.as_bytes()),
-            None => const_hashed::NULL_HASH,
-        },
-    )
+    let hashes = if let Some(seed) = seed {
+        array
+            .values_iter()
+            .zip(seed.values_iter())
+            .map(|(v, s)| xxh3_64_with_seed(v.as_bytes(), *s))
+            .collect::<Vec<_>>()
+    } else {
+        array
+            .values_iter()
+            .map(|v| xxh3_64(v.as_bytes()))
+            .collect::<Vec<_>>()
+    };
+    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 macro_rules! with_match_hashing_primitive_type {(
