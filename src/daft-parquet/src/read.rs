@@ -23,7 +23,6 @@ use futures::{
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
-use tokio::runtime::Runtime;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 use serde::{Deserialize, Serialize};
