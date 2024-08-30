@@ -12,10 +12,19 @@ use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 mod const_hashed {
     use xxhash_rust::const_xxh3;
+    use xxhash_rust::xxh3::xxh3_64_with_seed;
 
-    pub(super) const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-    pub(super) const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
-    pub(super) const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
+    const NULL: &[u8; 0] = b"";
+    const TRUE: &[u8; 1] = b"1";
+    const FALSE: &[u8; 1] = b"0";
+
+    pub(super) const NULL_HASH: u64 = const_xxh3::xxh3_64(NULL);
+    pub(super) const TRUE_HASH: u64 = const_xxh3::xxh3_64(TRUE);
+    pub(super) const FALSE_HASH: u64 = const_xxh3::xxh3_64(FALSE);
+
+    pub(super) fn hash_null_with_seed(seed: u64) -> u64 {
+        xxh3_64_with_seed(b"", seed)
+    }
 }
 
 fn base_hasher<T, E: ExactSizeIterator<Item = T>>(
@@ -44,7 +53,7 @@ fn hash_primitive<T: NativeType>(
         seed,
         |v, s| match v {
             Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), s),
-            None => const_hashed::NULL_HASH,
+            None => const_hashed::hash_null_with_seed(s),
         },
         |v| match v {
             Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
@@ -60,7 +69,7 @@ fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> Pri
         |v, s| match v {
             Some(true) => xxh3_64_with_seed(b"1", s),
             Some(false) => xxh3_64_with_seed(b"0", s),
-            None => const_hashed::NULL_HASH,
+            None => const_hashed::hash_null_with_seed(s),
         },
         |v| match v {
             Some(true) => const_hashed::TRUE_HASH,
@@ -73,7 +82,8 @@ fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> Pri
 fn hash_null(array: &NullArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
     let hashes = if let Some(seed) = seed {
         seed.values_iter()
-            .map(|&s| xxh3_64_with_seed(b"", s))
+            .copied()
+            .map(const_hashed::hash_null_with_seed)
             .collect::<Vec<_>>()
     } else {
         (0..array.len())
@@ -106,7 +116,7 @@ fn hash_utf8<O: Offset>(
         seed,
         |v, s| match v {
             Some(str) => xxh3_64_with_seed(str.as_bytes(), s),
-            None => const_hashed::NULL_HASH,
+            None => const_hashed::hash_null_with_seed(s),
         },
         |v| match v {
             Some(str) => xxh3_64(str.as_bytes()),
