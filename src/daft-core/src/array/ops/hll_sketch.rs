@@ -11,28 +11,28 @@ use arrow2::{array::FixedSizeBinaryArray as Arrow2FixedSizeBinaryArray, buffer::
 use common_error::DaftResult;
 
 use crate::array::{
-    ops::{DaftApproxCountDistinctSketchAggable, GroupIndices},
+    ops::{DaftHllSketchAggable, GroupIndices},
     DataArray,
 };
 
-pub const APPROX_COUNT_DISTINCT_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
+pub const HLL_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
 
 fn construct_field(name: &str) -> Arc<Field> {
-    Arc::new(Field::new(name, APPROX_COUNT_DISTINCT_SKETCH_DTYPE))
+    Arc::new(Field::new(name, HLL_SKETCH_DTYPE))
 }
 
 fn construct_data(bytes: Vec<u8>) -> Box<Arrow2FixedSizeBinaryArray> {
     Box::new(Arrow2FixedSizeBinaryArray::new(
-        APPROX_COUNT_DISTINCT_SKETCH_DTYPE.to_arrow().unwrap(),
+        HLL_SKETCH_DTYPE.to_arrow().unwrap(),
         Buffer::from(bytes),
         None,
     ))
 }
 
-impl DaftApproxCountDistinctSketchAggable for UInt64Array {
+impl DaftHllSketchAggable for UInt64Array {
     type Output = DaftResult<FixedSizeBinaryArray>;
 
-    fn approx_count_distinct_sketch(&self) -> Self::Output {
+    fn hll_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
         for &value in self.as_arrow().values_iter() {
             hll.add_already_hashed(value);
@@ -42,7 +42,7 @@ impl DaftApproxCountDistinctSketchAggable for UInt64Array {
         DataArray::new(field, data)
     }
 
-    fn grouped_approx_count_distinct_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
+    fn grouped_hll_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let mut bytes = Vec::with_capacity(group_indices.len() * NUM_REGISTERS);
         for group in group_indices {

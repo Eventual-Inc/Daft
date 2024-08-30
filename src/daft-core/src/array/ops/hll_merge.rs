@@ -1,17 +1,17 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctMergeAggable},
+    array::ops::{as_arrow::AsArrow, DaftHllMergeAggable},
     datatypes::{FixedSizeBinaryArray, UInt64Array},
 };
 use hyperloglog::HyperLogLog;
 
 use crate::array::ops::GroupIndices;
 
-impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
+impl DaftHllMergeAggable for FixedSizeBinaryArray {
     type Output = DaftResult<UInt64Array>;
 
-    fn approx_count_distinct_merge(&self) -> Self::Output {
+    fn hll_merge(&self) -> Self::Output {
         let mut final_hll = HyperLogLog::default();
         for byte_slice in self.as_arrow().values_iter() {
             let hll = HyperLogLog::new_with_byte_slice(byte_slice);
@@ -23,7 +23,7 @@ impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
         Ok(array)
     }
 
-    fn grouped_approx_count_distinct_merge(&self, groups: &GroupIndices) -> Self::Output {
+    fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let mut counts = Vec::with_capacity(groups.len());
         for group in groups {

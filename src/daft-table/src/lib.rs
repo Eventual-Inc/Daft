@@ -458,14 +458,14 @@ impl Table {
                     SketchType::HyperLogLog => evaled
                         .hash_with_validity(None)?
                         .into_series()
-                        .approx_count_distinct_sketch(groups),
+                        .hll_sketch(groups),
                 }
             }
             &AggExpr::MergeSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.merge_sketch(groups),
-                    SketchType::HyperLogLog => evaled.approx_count_distinct_merge(groups),
+                    SketchType::HyperLogLog => evaled.hll_merge(groups),
                 }
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),

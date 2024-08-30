@@ -1,6 +1,5 @@
 use crate::array::ops::{
-    DaftApproxCountDistinctAggable, DaftApproxCountDistinctMergeAggable,
-    DaftApproxCountDistinctSketchAggable,
+    DaftApproxCountDistinctAggable, DaftHllMergeAggable, DaftHllSketchAggable,
 };
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
@@ -21,16 +20,6 @@ impl Series {
                 None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
             }
         })
-    }
-
-    pub fn approx_count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        let downcasted_self = self.downcast::<UInt64Array>()?;
-        let series = match groups {
-            Some(groups) => downcasted_self.grouped_approx_count_distinct(groups),
-            None => downcasted_self.approx_count_distinct(),
-        }?
-        .into_series();
-        Ok(series)
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
@@ -108,6 +97,16 @@ impl Series {
         }
     }
 
+    pub fn approx_count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<UInt64Array>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_approx_count_distinct(groups),
+            None => downcasted_self.approx_count_distinct(),
+        }?
+        .into_series();
+        Ok(series)
+    }
+
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftMergeSketchAggable;
         use crate::datatypes::DataType::*;
@@ -126,6 +125,26 @@ impl Series {
                 other
             ))),
         }
+    }
+
+    pub fn hll_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<UInt64Array>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_sketch(groups),
+            None => downcasted_self.hll_sketch(),
+        }?
+        .into_series();
+        Ok(series)
+    }
+
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_merge(groups),
+            None => downcasted_self.hll_merge(),
+        }?
+        .into_series();
+        Ok(series)
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
@@ -230,28 +249,5 @@ impl Series {
                 self.data_type()
             ))),
         }
-    }
-
-    pub fn approx_count_distinct_sketch(
-        &self,
-        groups: Option<&GroupIndices>,
-    ) -> DaftResult<Series> {
-        let downcasted_self = self.downcast::<UInt64Array>()?;
-        let series = match groups {
-            Some(groups) => downcasted_self.grouped_approx_count_distinct_sketch(groups),
-            None => downcasted_self.approx_count_distinct_sketch(),
-        }?
-        .into_series();
-        Ok(series)
-    }
-
-    pub fn approx_count_distinct_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
-        let series = match groups {
-            Some(groups) => downcasted_self.grouped_approx_count_distinct_merge(groups),
-            None => downcasted_self.approx_count_distinct_merge(),
-        }?
-        .into_series();
-        Ok(series)
     }
 }
