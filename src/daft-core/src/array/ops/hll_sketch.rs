@@ -19,7 +19,7 @@ impl DaftHllSketchAggable for UInt64Array {
         for &value in self.as_arrow().iter().flatten() {
             hll.add_already_hashed(value);
         }
-        let array = (self.name(), hll.registers.to_vec(), NUM_REGISTERS).into();
+        let array = (self.name(), hll.registers.as_ref(), NUM_REGISTERS).into();
         Ok(array)
     }
 

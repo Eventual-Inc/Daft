@@ -49,8 +49,13 @@ impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryA
     }
 }
 
-impl From<(&str, Vec<u8>, usize)> for FixedSizeBinaryArray {
-    fn from((name, array, length): (&str, Vec<u8>, usize)) -> Self {
+impl<'a, I> From<(&str, I, usize)> for FixedSizeBinaryArray
+where
+    std::borrow::Cow<'a, [u8]>: From<I>,
+{
+    fn from((name, array, length): (&str, I, usize)) -> Self {
+        let array = std::borrow::Cow::from(array);
+        let array = array.into_owned();
         DataArray::new(
             Field::new(name, DataType::FixedSizeBinary(length)).into(),
             Box::new(arrow2::array::FixedSizeBinaryArray::new(
