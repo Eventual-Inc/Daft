@@ -12,7 +12,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
     type Output = DaftResult<UInt64Array>;
 
     fn approx_count_distinct(&self) -> Self::Output {
-        let mut set = HashSet::<_, IdentityBuildHasher>::default();
+        let mut set = HashSet::with_capacity_and_hasher(self.len(), IdentityBuildHasher::default());
         for &value in self.as_arrow().iter().flatten() {
             set.insert(value);
         }
@@ -25,7 +25,10 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
     fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let count_iter = groups.iter().map(|group| {
-            let mut set = HashSet::<_, IdentityBuildHasher>::default();
+            let mut set = HashSet::<_, IdentityBuildHasher>::with_capacity_and_hasher(
+                group.len(),
+                IdentityBuildHasher::default(),
+            );
             for &index in group {
                 if let Some(value) = data.get(index as _) {
                     set.insert(value);
