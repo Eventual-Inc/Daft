@@ -705,17 +705,9 @@ class Expression:
 
     def approx_count_distinct(self) -> Expression:
         """
-        Calculates the approximate number of unique values in the expression.
+        Calculates the approximate number of non-`NULL` unique values in the expression.
 
         Approximation is performed using the [`HyperLogLog`](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
-
-        There is an important thing to note here:
-
-        If you're calling `approx_count_distinct` on a column, the presence of a `NULL` value will *not* be counted towards the final result.
-        This is because we treat `NULL`s as the *absence* of a value.
-        For example, `approx_count_distinct([1, 2, 1, NULL])` will return `2` instead of `3`.
-        The `NULL` value is *not* counted here!
-        This is true even when the column is of type `NULL` as well.
 
         Example:
             A global calculation of approximate distinct values in a non-NULL column:
