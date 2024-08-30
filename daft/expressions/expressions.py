@@ -726,13 +726,13 @@ class Expression:
             ...     df["values"].approx_count_distinct().alias("distinct_values"),
             ... )
             >>> df.show()
-            ╭──────────╮
+            ╭─────────────────╮
             │ distinct_values │
             │ ---             │
             │ UInt64          │
-            ╞══════════╡
+            ╞═════════════════╡
             │ 3               │
-            ╰──────────╯
+            ╰─────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
