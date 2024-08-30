@@ -1,10 +1,8 @@
-use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
 use crate::{
     array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctMergeAggable},
-    datatypes::{Field, FixedSizeBinaryArray, UInt64Array},
-    DataType,
+    datatypes::{FixedSizeBinaryArray, UInt64Array},
 };
 use hyperloglog::HyperLogLog;
 
@@ -20,9 +18,9 @@ impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
             final_hll.merge(&hll);
         }
         let count = final_hll.count() as u64;
-        let field = Field::new(self.name(), DataType::UInt64).into();
-        let data = PrimitiveArray::from([Some(count)]).boxed();
-        UInt64Array::new(field, data)
+        let data = &[count] as &[_];
+        let array = (self.name(), data).into();
+        Ok(array)
     }
 
     fn grouped_approx_count_distinct_merge(&self, groups: &GroupIndices) -> Self::Output {
@@ -37,10 +35,9 @@ impl DaftApproxCountDistinctMergeAggable for FixedSizeBinaryArray {
                 }
             }
             let count = final_hll.count() as u64;
-            counts.push(Some(count));
+            counts.push(count);
         }
-        let field = Field::new(self.name(), DataType::UInt64).into();
-        let data = PrimitiveArray::from(counts).boxed();
-        UInt64Array::new(field, data)
+        let array = (self.name(), counts.as_slice()).into();
+        Ok(array)
     }
 }
