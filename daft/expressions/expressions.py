@@ -3175,7 +3175,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(self._expr.image_to_mode(mode))
+        return Expression._from_pyexpr(native.image_to_mode(self._expr, mode))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):

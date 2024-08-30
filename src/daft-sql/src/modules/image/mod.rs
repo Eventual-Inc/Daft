@@ -5,6 +5,7 @@ use super::SQLModule;
 pub mod decode;
 pub mod encode;
 pub mod resize;
+pub mod to_mode;
 
 pub struct SQLModuleImage;
 
@@ -13,5 +14,6 @@ impl SQLModule for SQLModuleImage {
         parent.add_fn("image_decode", decode::SQLImageDecode {});
         parent.add_fn("image_encode", encode::SQLImageEncode {});
         parent.add_fn("image_resize", resize::SQLImageResize {});
+        parent.add_fn("image_to_mode", to_mode::SQLImageToMode {});
     }
 }

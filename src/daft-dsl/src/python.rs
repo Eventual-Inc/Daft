@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
-    datatypes::ImageMode,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
@@ -797,11 +796,6 @@ impl PyExpr {
     pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
         use crate::functions::image::crop;
         Ok(crop(self.into(), bbox.into()).into())
-    }
-
-    pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
-        use crate::functions::image::to_mode;
-        Ok(to_mode(self.into(), mode).into())
     }
 
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
