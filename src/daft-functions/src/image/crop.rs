@@ -81,7 +81,7 @@ impl ScalarUDF for ImageCrop {
 }
 
 pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
-    ScalarFunction::new(ImageCrop {}, vec![input, dbg!(bbox)]).into()
+    ScalarFunction::new(ImageCrop {}, vec![input, bbox]).into()
 }
 
 #[cfg(feature = "python")]
