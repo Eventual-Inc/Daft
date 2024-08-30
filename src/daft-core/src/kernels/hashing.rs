@@ -25,21 +25,12 @@ fn base_hasher<T, E: ExactSizeIterator<Item = T>>(
     without_seed: impl Fn(T) -> u64,
 ) -> PrimitiveArray<u64> {
     let array = array.into_iter();
-    let array_len = array.len();
     let hashes = match seed {
-        Some(seed) => array.zip(seed.values_iter().copied()).fold(
-            Vec::with_capacity(array_len),
-            |mut hashes, (value, seed_value)| {
-                let hash = with_seed(value, seed_value);
-                hashes.push(hash);
-                hashes
-            },
-        ),
-        None => array.fold(Vec::with_capacity(array_len), |mut hashes, value| {
-            let hash = without_seed(value);
-            hashes.push(hash);
-            hashes
-        }),
+        Some(seed) => array
+            .zip(seed.values_iter().copied())
+            .map(|(value, seed)| with_seed(value, seed))
+            .collect::<Vec<_>>(),
+        None => array.map(without_seed).collect(),
     };
     PrimitiveArray::new(DataType::UInt64, hashes.into(), None)
 }
