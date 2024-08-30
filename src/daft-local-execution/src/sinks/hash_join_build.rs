@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::pipeline::PipelineResultType;
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use daft_core::{schema::SchemaRef, JoinType};
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
@@ -22,9 +22,14 @@ enum ProbeTableState {
 }
 
 impl ProbeTableState {
-    fn new(key_schema: &SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+    fn new(
+        key_schema: &SchemaRef,
+        projection: Vec<ExprRef>,
+        join_type: &JoinType,
+    ) -> DaftResult<Self> {
+        let store_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
-            probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone())?),
+            probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone(), store_indices)?),
             projection,
             tables: vec![],
         })
@@ -75,9 +80,13 @@ pub(crate) struct HashJoinBuildSink {
 }
 
 impl HashJoinBuildSink {
-    pub(crate) fn new(key_schema: SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+    pub(crate) fn new(
+        key_schema: SchemaRef,
+        projection: Vec<ExprRef>,
+        join_type: &JoinType,
+    ) -> DaftResult<Self> {
         Ok(Self {
-            probe_table_state: ProbeTableState::new(&key_schema, projection)?,
+            probe_table_state: ProbeTableState::new(&key_schema, projection, join_type)?,
         })
     }
 

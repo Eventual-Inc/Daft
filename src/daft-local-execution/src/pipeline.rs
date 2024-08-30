@@ -285,7 +285,8 @@ pub fn physical_plan_to_pipeline(
                     .collect::<Vec<_>>();
 
                 // we should move to a builder pattern
-                let build_sink = HashJoinBuildSink::new(key_schema.clone(), casted_build_on)?;
+                let build_sink =
+                    HashJoinBuildSink::new(key_schema.clone(), casted_build_on, join_type)?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
                 let build_node =
                     BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();

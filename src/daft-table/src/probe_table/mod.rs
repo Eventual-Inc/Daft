@@ -20,6 +20,7 @@ pub struct ProbeTable {
     compare_fn: MultiDynArrayComparator,
     num_groups: usize,
     num_rows: usize,
+    store_indices: bool,
 }
 
 impl ProbeTable {
@@ -29,7 +30,7 @@ impl ProbeTable {
 
     const DEFAULT_SIZE: usize = 20;
 
-    fn new(schema: SchemaRef) -> DaftResult<Self> {
+    fn new(schema: SchemaRef, store_indices: bool) -> DaftResult<Self> {
         let hash_table =
             HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
                 Self::DEFAULT_SIZE,
@@ -43,6 +44,7 @@ impl ProbeTable {
             compare_fn,
             num_groups: 0,
             num_rows: 0,
+            store_indices,
         })
     }
 
@@ -149,12 +151,18 @@ impl ProbeTable {
                             idx: idx as u64,
                             hash: *h,
                         },
-                        vec![idx as u64],
+                        if self.store_indices {
+                            vec![idx as u64]
+                        } else {
+                            vec![]
+                        },
                     );
                     self.num_groups += 1;
                 }
                 RawEntryMut::Occupied(mut entry) => {
-                    entry.get_mut().push(idx as u64);
+                    if self.store_indices {
+                        entry.get_mut().push(idx as u64);
+                    }
                 }
             }
         }
@@ -166,8 +174,8 @@ impl ProbeTable {
 pub struct ProbeTableBuilder(ProbeTable);
 
 impl ProbeTableBuilder {
-    pub fn new(schema: SchemaRef) -> DaftResult<Self> {
-        Ok(Self(ProbeTable::new(schema)?))
+    pub fn new(schema: SchemaRef, store_indices: bool) -> DaftResult<Self> {
+        Ok(Self(ProbeTable::new(schema, store_indices)?))
     }
 
     pub fn add_table(&mut self, table: &Table) -> DaftResult<()> {
