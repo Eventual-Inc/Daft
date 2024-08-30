@@ -14,6 +14,11 @@ impl Series {
         })
     }
 
+    pub fn hash_with_validity(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        let hash = self.hash(seed)?;
+        hash.with_validity(self.validity().cloned())
+    }
+
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
         use crate::DataType::*;
         match self.data_type() {

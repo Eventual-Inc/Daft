@@ -448,7 +448,7 @@ impl Table {
             }
             AggExpr::ApproxCountDistinct(expr) => self
                 .eval_expression(expr)?
-                .hash(None)?
+                .hash_with_validity(None)?
                 .into_series()
                 .approx_count_distinct(groups),
             &AggExpr::ApproxSketch(ref expr, sketch_and_merge_type) => {
@@ -456,7 +456,7 @@ impl Table {
                 match sketch_and_merge_type {
                     SketchAndMergeType::ApproxPercentile => evaled.approx_sketch(groups),
                     SketchAndMergeType::ApproxCountDistinct => evaled
-                        .hash(None)?
+                        .hash_with_validity(None)?
                         .into_series()
                         .approx_count_distinct_sketch(groups),
                 }
