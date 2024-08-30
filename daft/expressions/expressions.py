@@ -707,7 +707,56 @@ class Expression:
         """
         Calculates the approximate number of unique values in the expression.
 
-        Approximation is performed using the `HyperLogLog` algorithm.
+        Approximation is performed using the [`HyperLogLog`](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+
+        There are a couple of interesting edge cases to watch out for:
+
+        1. If you're calling `approx_count_distinct` on a column of type *non-NULL*, the presence of a `NULL` value will *not* be counted towards the final result.
+        This is because we treat `NULL`s in a column of type non-`NULL` as the *absence* of a value.
+        For example, `approx_count_distinct([1, 2, 1, NULL])` will return `2` instead of `3`.
+        The `NULL` value is *not* counted here!
+
+        2. However, if you're calling `approx_count_distinct` on a column of type *NULL*, the presence of a `NULL` value *will* be counted towards the final result!
+        This is because we treat `NULL`s in a column of type `NULL` as the *presence* of a value.
+        For example, `approx_count_distinct([NULL, NULL, NULL, NULL])` will return `1` instead of `0`.
+        The `NULL` value *is* counted here!
+
+        Example:
+            A global calculation of approximate distinct values in a non-NULL column:
+
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [1, 2, 3, None]})
+            >>> df = df.agg(
+            ...     df["values"].approx_count_distinct().alias("distinct_values"),
+            ... )
+            >>> df.show()
+            ╭──────────╮
+            │ distinct_values │
+            │ ---             │
+            │ Int64           │
+            ╞══════════╡
+            │ 3               │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+            A global calculation of approximate distinct values in a NULL column:
+
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [None, None, None, None]})
+            >>> df = df.agg(
+            ...     df["values"].approx_count_distinct().alias("distinct_values"),
+            ... )
+            >>> df.show()
+            ╭──────────╮
+            │ distinct_values │
+            │ ---             │
+            │ Int64           │
+            ╞══════════╡
+            │ 1               │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         expr = self._expr.approx_count_distinct()
         return Expression._from_pyexpr(expr)
