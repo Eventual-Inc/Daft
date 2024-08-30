@@ -231,11 +231,12 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
+
+            // Determine the build and probe sides based on the join type
+            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
+            // to determine the build and probe sides
             let (build_on, probe_on, build_child, probe_child, build_on_left) = match join_type {
-                JoinType::Inner => {
-                    // we want to build the hash table on the smaller side in the future
-                    (left_on, right_on, left, right, true)
-                }
+                JoinType::Inner => (left_on, right_on, left, right, true),
                 JoinType::Right => (left_on, right_on, left, right, true),
                 JoinType::Left | JoinType::Anti | JoinType::Semi => {
                     (right_on, left_on, right, left, false)

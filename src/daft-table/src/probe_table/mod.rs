@@ -46,6 +46,9 @@ impl ProbeTable {
         })
     }
 
+    /// Probe returns an iterator of optional iterators. The outer iterator iterates over the rows of the right table.
+    /// The inner iterator, if present, iterates over the rows of the left table that match the right row.
+    /// Otherwise, if the inner iterator is None, indicates that the right row has no matches.
     pub fn probe<'a>(
         &'a self,
         right: &'a Table,

@@ -101,6 +101,8 @@ impl HashJoinProbeState {
         }
     }
 
+    // For left join, build_side is the right side and probe_side is the left side
+    // For right join, build_side is the left side and probe_side is the right side
     fn probe_left_right(
         &self,
         input: &Arc<MicroPartition>,
