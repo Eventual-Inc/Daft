@@ -16,7 +16,11 @@ use super::{as_arrow::AsArrow, IntoGroups};
 
 use std::hash::Hash;
 
-/// Given a list of values, return a `Vec<Vec<u64>>` where each sub-vector contains the index of all the places of where that value was found.
+/// Given a list of values, return a `(Vec<u64>, Vec<Vec<u64>>)`.
+/// The sub-vector in the first part of the tuple contains the indices of the unique values.
+/// The sub-vector in the second part of the tuple contains the index of all the places of where that value was found.
+///
+/// The length of the first sub-vector will always be the same as the length of the second sub-vector.
 ///
 /// # Example:
 /// ```text
@@ -29,7 +33,7 @@ use std::hash::Hash;
 /// +---+
 /// ```
 ///
-/// Calling `make_groups` on the above list would return `vec![vec![0, 2, 4], vec![1], vec![3]]` since `a` appeared 3 times at indices `0`, `2`, and `4`.
+/// Calling `make_groups` on the above list would return `(vec![0, 1, 3], vec![vec![0, 2, 4], vec![1], vec![3]])` since `a` appeared 3 times at indices `0`, `2`, and `4`, etc.
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,
