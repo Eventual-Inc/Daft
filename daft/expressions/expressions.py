@@ -729,7 +729,7 @@ class Expression:
             ╭──────────╮
             │ distinct_values │
             │ ---             │
-            │ Int64           │
+            │ UInt64          │
             ╞══════════╡
             │ 3               │
             ╰──────────╯
