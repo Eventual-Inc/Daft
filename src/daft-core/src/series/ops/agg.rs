@@ -1,3 +1,4 @@
+use crate::array::ops::DaftHllMergeAggable;
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
@@ -134,6 +135,16 @@ impl Series {
                 other
             ))),
         }
+    }
+
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_merge(groups),
+            None => downcasted_self.hll_merge(),
+        }?
+        .into_series();
+        Ok(series)
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

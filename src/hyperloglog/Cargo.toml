@@ -1,0 +1,6 @@
+[dependencies]
+
+[package]
+name = "hyperloglog"
+edition.workspace = true
+version.workspace = true

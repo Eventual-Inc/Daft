@@ -1703,6 +1703,7 @@ dependencies = [
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
+ "hyperloglog",
  "image",
  "indexmap 2.3.0",
  "itertools 0.11.0",
@@ -2872,6 +2873,10 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
 ]
+
+[[package]]
+name = "hyperloglog"
+version = "0.3.0-dev0"
 
 [[package]]
 name = "iana-time-zone"
