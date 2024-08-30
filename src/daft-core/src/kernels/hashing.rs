@@ -3,78 +3,113 @@ use arrow2::{
         Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, NullArray, PrimitiveArray,
         Utf8Array,
     },
+    bitmap::MutableBitmap,
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
     types::{NativeType, Offset},
 };
 
-use xxhash_rust::const_xxh3;
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
+
+mod const_hashed {
+    use xxhash_rust::const_xxh3;
+
+    pub(super) const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+    pub(super) const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
+    pub(super) const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
+}
+
+fn base_hasher<T, E: ExactSizeIterator<Item = T>>(
+    array: impl IntoIterator<IntoIter = E>,
+    seed: Option<&PrimitiveArray<u64>>,
+    check_validity: fn(&T) -> bool,
+    with_seed: impl Fn(T, u64) -> u64,
+    without_seed: impl Fn(T) -> u64,
+) -> PrimitiveArray<u64> {
+    let array = array.into_iter();
+    let array_len = array.len();
+    let (hashes, bitmap) = match seed {
+        Some(seed) => {
+            let seed_len = seed.len();
+            assert_eq!(array_len, seed_len, "Oops! Array and seed must have the same length; instead array length was {} and seed length was {}", array_len, seed_len);
+            array.zip(seed.values_iter().copied()).fold(
+                (
+                    Vec::with_capacity(array_len),
+                    MutableBitmap::with_capacity(array_len),
+                ),
+                |(mut hashes, mut bitmap), (value, seed_value)| {
+                    let validity = check_validity(&value);
+                    let hash = with_seed(value, seed_value);
+                    hashes.push(hash);
+                    bitmap.push(validity);
+                    (hashes, bitmap)
+                },
+            )
+        }
+        None => array.fold(
+            (
+                Vec::with_capacity(array_len),
+                MutableBitmap::with_capacity(array_len),
+            ),
+            |(mut hashes, mut bitmap), value| {
+                let validity = check_validity(&value);
+                let hash = without_seed(value);
+                hashes.push(hash);
+                bitmap.push(validity);
+                (hashes, bitmap)
+            },
+        ),
+    };
+    let bitmap = bitmap.into();
+    PrimitiveArray::new(DataType::UInt64, hashes.into(), Some(bitmap))
+}
 
 fn hash_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-    let hashes = if let Some(seed) = seed {
-        array
-            .iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| match v {
-                Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    } else {
-        array
-            .iter()
-            .map(|v| match v {
-                Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    };
-    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    base_hasher(
+        array,
+        seed,
+        Option::is_some,
+        |v, s| match v {
+            Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), s),
+            None => const_hashed::NULL_HASH,
+        },
+        |v| match v {
+            Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
+            None => const_hashed::NULL_HASH,
+        },
+    )
 }
 
 fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
-    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-
-    const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
-    const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
-
-    let hashes = if let Some(seed) = seed {
-        array
-            .iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| match v {
-                Some(true) => xxh3_64_with_seed(b"1", *s),
-                Some(false) => xxh3_64_with_seed(b"0", *s),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    } else {
-        array
-            .iter()
-            .map(|v| match v {
-                Some(true) => TRUE_HASH,
-                Some(false) => FALSE_HASH,
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    };
-    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    base_hasher(
+        array,
+        seed,
+        Option::is_some,
+        |v, s| match v {
+            Some(true) => xxh3_64_with_seed(b"1", s),
+            Some(false) => xxh3_64_with_seed(b"0", s),
+            None => const_hashed::NULL_HASH,
+        },
+        |v| match v {
+            Some(true) => const_hashed::TRUE_HASH,
+            Some(false) => const_hashed::FALSE_HASH,
+            None => const_hashed::NULL_HASH,
+        },
+    )
 }
 
 fn hash_null(array: &NullArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
-    const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-
     let hashes = if let Some(seed) = seed {
         seed.values_iter()
-            .map(|s| xxh3_64_with_seed(b"", *s))
+            .map(|&s| xxh3_64_with_seed(b"", s))
             .collect::<Vec<_>>()
     } else {
-        (0..array.len()).map(|_| NULL_HASH).collect::<Vec<_>>()
+        (0..array.len())
+            .map(|_| const_hashed::NULL_HASH)
+            .collect::<Vec<_>>()
     };
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
@@ -83,51 +118,39 @@ fn hash_binary<O: Offset>(
     array: &BinaryArray<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let hashes = if let Some(seed) = seed {
-        array
-            .values_iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| xxh3_64_with_seed(v, *s))
-            .collect::<Vec<_>>()
-    } else {
-        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
-    };
-    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    base_hasher(
+        array.values_iter(),
+        seed,
+        |_| true,
+        xxh3_64_with_seed,
+        xxh3_64,
+    )
 }
 
 fn hash_fixed_size_binary(
     array: &FixedSizeBinaryArray,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let hashes = if let Some(seed) = seed {
-        array
-            .values_iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| xxh3_64_with_seed(v, *s))
-            .collect::<Vec<_>>()
-    } else {
-        array.values_iter().map(xxh3_64).collect::<Vec<_>>()
-    };
-    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    base_hasher(
+        array.values_iter(),
+        seed,
+        |_| true,
+        xxh3_64_with_seed,
+        xxh3_64,
+    )
 }
 
 fn hash_utf8<O: Offset>(
     array: &Utf8Array<O>,
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
-    let hashes = if let Some(seed) = seed {
-        array
-            .values_iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| xxh3_64_with_seed(v.as_bytes(), *s))
-            .collect::<Vec<_>>()
-    } else {
-        array
-            .values_iter()
-            .map(|v| xxh3_64(v.as_bytes()))
-            .collect::<Vec<_>>()
-    };
-    PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    base_hasher(
+        array.values_iter(),
+        seed,
+        |_| true,
+        |v, s| xxh3_64_with_seed(v.as_bytes(), s),
+        |v| xxh3_64(v.as_bytes()),
+    )
 }
 
 macro_rules! with_match_hashing_primitive_type {(
