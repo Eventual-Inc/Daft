@@ -6,6 +6,7 @@ from daft import col
 
 TESTS = [
     [[], 0],
+    [[None] * 10, 0],
     [[1], 1],
     [["hello"], 1],
     [[1, 2, 3, 4, 3, 2, 1], 4],
@@ -91,8 +92,6 @@ def test_approx_count_distinct_on_dfs_with_empty_partitions(data_and_expected):
 @pytest.mark.parametrize("data_and_expected", TESTS)
 def test_approx_count_distinct_on_null_values(data_and_expected):
     data, expected = data_and_expected
-    if not data:
-        expected = expected + 1
     data = data + [None] * 10
     df = make_df(data)
     df = df.agg(col("a").approx_count_distinct())
