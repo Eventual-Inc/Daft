@@ -53,7 +53,7 @@ pub fn merge_by_sizes<'a>(
                 return Box::new(MergeByFileSize {
                     iter: Box::new(scan_tasks),
                     cfg,
-                    target_upper_bound_size_bytes: (limit_bytes * 2.) as usize,
+                    target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
                     target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
                     accumulator: None,
                 }) as BoxScanTaskIter;
