@@ -1,8 +1,9 @@
 use crate::{
     datatypes::{Int32Array, UInt64Array},
     series::Series,
-    with_match_hashable_daft_types,
+    with_match_hashable_daft_types, DataType,
 };
+use arrow2::bitmap::Bitmap;
 use common_error::DaftResult;
 
 impl Series {
@@ -16,7 +17,12 @@ impl Series {
 
     pub fn hash_with_validity(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let hash = self.hash(seed)?;
-        hash.with_validity(self.validity().cloned())
+        let validity = if let DataType::Null = self.data_type() {
+            Some(Bitmap::new_zeroed(self.len()))
+        } else {
+            self.validity().cloned()
+        };
+        hash.with_validity(validity)
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
