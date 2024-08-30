@@ -16,7 +16,7 @@ impl DaftHllSketchAggable for UInt64Array {
 
     fn hll_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
-        for &value in self.as_arrow().into_iter().flatten() {
+        for &value in self.as_arrow().iter().flatten() {
             hll.add_already_hashed(value);
         }
         let array = (self.name(), hll.registers.to_vec(), NUM_REGISTERS).into();

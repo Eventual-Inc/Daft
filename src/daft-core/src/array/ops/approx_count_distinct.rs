@@ -13,7 +13,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
 
     fn approx_count_distinct(&self) -> Self::Output {
         let mut set = HashSet::<_, IdentityBuildHasher>::default();
-        for &value in self.as_arrow().into_iter().flatten() {
+        for &value in self.as_arrow().iter().flatten() {
             set.insert(value);
         }
         let count = set.len() as u64;
