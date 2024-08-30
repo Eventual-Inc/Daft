@@ -1,70 +1,52 @@
 use daft_dsl::{Expr, ExprRef, LiteralValue};
-use sqlparser::ast::{FunctionArg, FunctionArgOperator};
 
 use crate::{
-    error::SQLPlannerResult,
-    functions::{FromSQLArgs, SQLFunction},
+    ensure,
+    error::{PlannerError, SQLPlannerResult},
+    functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
 use daft_functions::image::resize::{resize, ImageResize};
 
 pub struct SQLImageResize;
 
-impl FromSQLArgs for ImageResize {
-    fn from_sql(
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<Self> {
-        let mut width = None;
-        let mut height = None;
+impl TryFrom<SQLFunctionArguments> for ImageResize {
+    type Error = crate::error::PlannerError;
 
-        for arg in inputs {
-            match arg {
-                FunctionArg::Named {
-                    name,
-                    arg,
-                    operator: FunctionArgOperator::Assignment,
-                } => match name.value.as_ref() {
-                    "w" | "width" => {
-                        let arg = planner.try_unwrap_function_arg_expr(arg)?;
-                        width = Some(match arg.as_ref() {
-                            Expr::Literal(LiteralValue::Int64(i)) => *i,
-                            _ => unsupported_sql_err!("Expected width to be a number"),
-                        });
-                    }
-                    "h" | "height" => {
-                        let arg = planner.try_unwrap_function_arg_expr(arg)?;
-                        height = Some(match arg.as_ref() {
-                            Expr::Literal(LiteralValue::Int64(i)) => *i,
-                            _ => unsupported_sql_err!("Expected height to be a number"),
-                        });
-                    }
-                    name => unsupported_sql_err!("Unexpected argument: '{name}'"),
-                },
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        let width = args
+            .get_named("width")
+            .or_else(|| args.get_named("w"))
+            .or_else(|| args.get_unnamed(0))
+            .map(|arg| match arg.as_ref() {
+                Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
+                _ => unsupported_sql_err!("Expected width to be a number"),
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                PlannerError::unsupported_sql("Expected width to be provided".to_string())
+            })?;
 
-                other => {
-                    unsupported_sql_err!("Invalid arguments for image_decode: '{}'", other)
-                }
-            }
-        }
-        match (width, height) {
-            (Some(w), Some(h)) => {
-                if w < 0 {
-                    unsupported_sql_err!("Width can not be negative: {w}")
-                }
-                if h < 0 {
-                    unsupported_sql_err!("Height can not be negative: {h}")
-                }
+        let height = args
+            .get_named("height")
+            .or_else(|| args.get_named("h"))
+            .or_else(|| args.get_unnamed(1))
+            .map(|arg| match arg.as_ref() {
+                Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
+                _ => unsupported_sql_err!("Expected height to be a number"),
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                PlannerError::unsupported_sql("Expected height to be provided".to_string())
+            })?;
 
-                Ok(Self {
-                    width: w as u32,
-                    height: h as u32,
-                })
-            }
-            _ => {
-                unsupported_sql_err!("Expected both width and height to be provided")
-            }
-        }
+        ensure!(width > 0, "Width can not be negative: {width}");
+        ensure!(height > 0, "Height can not be negative: {height}");
+
+        Ok(Self {
+            width: width as u32,
+            height: height as u32,
+        })
     }
 }
 
@@ -77,7 +59,7 @@ impl SQLFunction for SQLImageResize {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let ImageResize { width, height } = ImageResize::from_sql(args, planner)?;
+                let ImageResize { width, height } = planner.plan_function_args(args)?;
                 Ok(resize(input, width, height))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_resize: '{inputs:?}'"),

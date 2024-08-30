@@ -1,35 +1,33 @@
+use common_error::DaftError;
 use daft_dsl::{Expr, ExprRef, LiteralValue};
-use sqlparser::ast::{FunctionArg, FunctionArgOperator};
 
 use crate::{
-    error::SQLPlannerResult,
-    functions::{FromSQLArgs, SQLFunction},
+    error::{PlannerError, SQLPlannerResult},
+    functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
 use daft_functions::image::encode::{encode, ImageEncode};
 
 pub struct SQLImageEncode;
 
-impl FromSQLArgs for ImageEncode {
-    fn from_sql(
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<Self> {
-        match inputs {
-            [FunctionArg::Named {
-                name,
-                arg,
-                operator: FunctionArgOperator::Assignment,
-            }] if &name.value == "image_format" => {
-                let arg = planner.try_unwrap_function_arg_expr(arg)?;
-                let image_format = match arg.as_ref() {
-                    Expr::Literal(LiteralValue::Utf8(s)) => s.parse()?,
-                    _ => unsupported_sql_err!("Expected image_format to be a string"),
-                };
-                Ok(Self { image_format })
-            }
-            _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),
-        }
+impl TryFrom<SQLFunctionArguments> for ImageEncode {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        let image_format = args
+            .get_named("image_format")
+            .map(|arg| match arg.as_ref() {
+                Expr::Literal(LiteralValue::Utf8(s)) => {
+                    s.parse().map_err(|e: DaftError| PlannerError::from(e))
+                }
+                _ => unsupported_sql_err!("Expected image_format to be a string"),
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                PlannerError::unsupported_sql("Expected image_format argument".to_string())
+            })?;
+
+        Ok(Self { image_format })
     }
 }
 
@@ -42,7 +40,7 @@ impl SQLFunction for SQLImageEncode {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args = ImageEncode::from_sql(args, planner)?;
+                let args = planner.plan_function_args(args)?;
                 Ok(encode(input, args))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),
