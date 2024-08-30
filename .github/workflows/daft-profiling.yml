@@ -10,6 +10,7 @@ env:
   TPCH_SCALE_FACTOR: '4'
   TPCH_NUM_PARTS: '32'
   PYTHON_VERSION: '3.9'
+  UV_SYSTEM_PYTHON: 1
 
 
 jobs:
@@ -37,11 +38,11 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
 
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt
 
     - name: Build Rust Library
       run: |

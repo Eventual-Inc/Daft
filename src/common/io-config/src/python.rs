@@ -134,9 +134,10 @@ pub struct IOConfig {
 ///
 /// Args:
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
+///     bearer_token (str, optional): Bearer token to use for authentication. This will be used as the value for the `Authorization` header. such as "Authorization: Bearer xxx"
 ///
 /// Example:
-///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1"))
+///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
@@ -898,6 +899,20 @@ impl GCSConfig {
 impl From<config::IOConfig> for IOConfig {
     fn from(config: config::IOConfig) -> Self {
         Self { config }
+    }
+}
+
+#[pymethods]
+impl HTTPConfig {
+    #[new]
+    pub fn new(bearer_token: Option<String>) -> Self {
+        HTTPConfig {
+            config: crate::HTTPConfig::new(bearer_token),
+        }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
     }
 }
 

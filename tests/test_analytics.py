@@ -3,7 +3,9 @@ from __future__ import annotations
 import datetime
 import os
 import platform
+import socket
 import time
+import urllib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -44,6 +46,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
     time.sleep(PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS + 0.5)
 
     mock_publish.assert_called_once_with(
+        analytics_client,
         {
             "batch": [
                 {
@@ -66,8 +69,39 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     },
                 }
             ],
-        }
+        },
     )
+
+
+@patch("urllib.request.urlopen")
+def test_analytics_client_timeout(
+    mock_urlopen: MagicMock,
+):
+    mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
+    analytics_client = AnalyticsClient(
+        daft.get_version(),
+        daft.get_build_type(),
+        buffer_capacity=1,
+    )
+
+    # Call `track_import` 5 times and ensure that, after the first timeout, successive calls to `urllib.request.urlopen` are never made
+    for _ in range(5):
+        analytics_client.track_import()
+    mock_urlopen.assert_called_once()
+
+
+@patch("urllib.request.urlopen")
+def test_analytics_client_timeout_2(
+    mock_urlopen: MagicMock,
+):
+    mock_urlopen.return_value.status = 408
+    analytics_client = AnalyticsClient(
+        daft.get_version(),
+        daft.get_build_type(),
+        buffer_capacity=1,
+    )
+    analytics_client.track_import()
+    mock_urlopen.assert_called_once()
 
 
 @patch("daft.analytics.datetime")
@@ -88,6 +122,7 @@ def test_analytics_client_track_dataframe_method(
     time.sleep(PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS + 0.5)
 
     mock_publish.assert_called_once_with(
+        analytics_client,
         {
             "batch": [
                 {
@@ -109,5 +144,5 @@ def test_analytics_client_track_dataframe_method(
                     },
                 }
             ],
-        }
+        },
     )

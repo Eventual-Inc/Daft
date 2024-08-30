@@ -15,6 +15,7 @@ use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
+    FileFormat,
 };
 
 use super::object_io::{GetResult, ObjectSource};
@@ -140,7 +141,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
 }
 
 pub(crate) struct HttpSource {
-    client: reqwest::Client,
+    pub(crate) client: reqwest::Client,
 }
 
 impl From<Error> for super::Error {
@@ -276,6 +277,7 @@ impl ObjectSource for HttpSource {
         _page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

@@ -1,13 +1,14 @@
 use crate::{
     datatypes::{DataType, Field, ImageMode, TimeUnit},
-    ffi, impl_bincode_py_state_serialization,
+    ffi,
 };
+
+use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{
     class::basic::CompareOp,
     exceptions::PyValueError,
     prelude::*,
-    types::{PyBytes, PyDict, PyString},
-    PyTypeInfo,
+    types::{PyDict, PyString},
 };
 use serde::{Deserialize, Serialize};
 
@@ -376,6 +377,18 @@ impl PyDataType {
 
     pub fn is_map(&self) -> PyResult<bool> {
         Ok(self.dtype.is_map())
+    }
+
+    pub fn is_list(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_list())
+    }
+
+    pub fn is_boolean(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_boolean())
+    }
+
+    pub fn is_string(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_string())
     }
 
     pub fn is_logical(&self) -> PyResult<bool> {

@@ -41,6 +41,7 @@ mod py {
                         page_size,
                         limit,
                         Some(io_stats_handle),
+                        None,
                     )
                     .await?
                     .try_collect()
@@ -60,11 +61,6 @@ mod py {
         Ok(PyList::new(py, to_rtn))
     }
 
-    #[pyfunction]
-    fn set_io_pool_num_threads(num_threads: i64) -> PyResult<bool> {
-        Ok(crate::set_io_pool_num_threads(num_threads as usize))
-    }
-
     /// Creates an S3Config from the current environment, auto-discovering variables such as
     /// credentials, regions and more.
     #[pyfunction]
@@ -79,7 +75,6 @@ mod py {
     pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
         common_io_config::python::register_modules(py, parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
-        parent.add_function(wrap_pyfunction!(set_io_pool_num_threads, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         Ok(())
     }

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import functools
 import pathlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
+from daft.context import get_context
 from daft.daft import (
     CountMode,
     FileFormat,
@@ -13,7 +15,6 @@ from daft.daft import (
     ScanOperatorHandle,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.dataframe.display import make_display_options
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -25,6 +26,25 @@ if TYPE_CHECKING:
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
     )
+
+
+def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
+    """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder
+
+    This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
+    """
+
+    @functools.wraps(classmethod_func)
+    def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
+        instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
+
+        # Parametrize the builder with the current DaftPlanningConfig
+        inner = instantiated_logical_plan_builder._builder
+        inner = inner.with_planning_config(get_context().daft_planning_config)
+
+        return cls(inner)
+
+    return wrapper
 
 
 class LogicalPlanBuilder:
@@ -72,12 +92,17 @@ class LogicalPlanBuilder:
         """
         Pretty prints the current underlying logical plan.
         """
-        display_opts = make_display_options(simple, format)
-        return self._builder.display_as(display_opts)
+        from daft.dataframe.display import MermaidOptions
+
+        if format == "ascii":
+            return self._builder.repr_ascii(simple)
+        elif format == "mermaid":
+            return self._builder.repr_mermaid(MermaidOptions(simple))
+        else:
+            raise ValueError(f"Unknown format: {format}")
 
     def __repr__(self) -> str:
-        display_opts = make_display_options(simple=False, format="ascii")
-        return self._builder.display_as(display_opts)
+        return self._builder.repr_ascii(simple=False)
 
     def optimize(self) -> LogicalPlanBuilder:
         """
@@ -87,6 +112,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_in_memory_scan(
         cls,
         partition: PartitionCacheEntry,
@@ -106,6 +132,7 @@ class LogicalPlanBuilder:
         return cls(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_tabular_scan(
         cls,
         *,

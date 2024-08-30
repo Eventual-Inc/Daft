@@ -41,6 +41,7 @@ pub(crate) struct ParquetReaderBuilder {
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     predicate: Option<ExprRef>,
+    chunk_size: Option<usize>,
 }
 use parquet2::read::decompress;
 
@@ -119,7 +120,7 @@ pub(crate) fn build_row_ranges(
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
             let i = *i as usize;
-            if !(0..metadata.row_groups.len()).contains(&i) {
+            if !metadata.row_groups.keys().any(|x| *x == i) {
                 return Err(super::Error::ParquetRowGroupOutOfIndex {
                     path: uri.to_string(),
                     row_group: i as i64,
@@ -129,7 +130,7 @@ pub(crate) fn build_row_ranges(
             if rows_to_add <= 0 {
                 break;
             }
-            let rg = metadata.row_groups.get(i).unwrap();
+            let rg = metadata.row_groups.get(&i).unwrap();
             if let Some(ref pred) = predicate {
                 let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                     .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
@@ -157,7 +158,7 @@ pub(crate) fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in metadata.row_groups.iter().enumerate() {
+        for (i, rg) in metadata.row_groups.iter() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
@@ -178,7 +179,7 @@ pub(crate) fn build_row_ranges(
                     }
                 }
                 let range_to_add = RowGroupRange {
-                    row_group_index: i,
+                    row_group_index: *i,
                     start: row_start_offset.saturating_sub(curr_row_index),
                     num_rows: rg.num_rows().min(rows_to_add as usize),
                 };
@@ -215,6 +216,7 @@ impl ParquetReaderBuilder {
             row_groups: None,
             schema_inference_options: Default::default(),
             predicate: None,
+            chunk_size: None,
         })
     }
 
@@ -254,6 +256,11 @@ impl ParquetReaderBuilder {
         self
     }
 
+    pub fn set_chunk_size(mut self, chunk_size: Option<usize>) -> Self {
+        self.chunk_size = chunk_size;
+        self
+    }
+
     pub fn build(self) -> super::Result<ParquetFileReader> {
         let mut arrow_schema =
             infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
@@ -281,7 +288,13 @@ impl ParquetReaderBuilder {
             &self.uri,
         )?;
 
-        ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
+        ParquetFileReader::new(
+            self.uri,
+            self.metadata,
+            arrow_schema,
+            row_ranges,
+            self.chunk_size,
+        )
     }
 }
 
@@ -297,10 +310,11 @@ pub(crate) struct ParquetFileReader {
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
+    chunk_size: Option<usize>,
 }
 
 impl ParquetFileReader {
-    const CHUNK_SIZE: usize = 2048;
+    const DEFAULT_CHUNK_SIZE: usize = 2048;
     // Set to a very high number 256MB to guard against unbounded large
     // downloads from remote storage, which likely indicates corrupted Parquet data
     // See: https://github.com/Eventual-Inc/Daft/issues/1551
@@ -311,12 +325,14 @@ impl ParquetFileReader {
         metadata: parquet2::metadata::FileMetaData,
         arrow_schema: arrow2::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
+        chunk_size: Option<usize>,
     ) -> super::Result<Self> {
         Ok(ParquetFileReader {
             uri,
             metadata: Arc::new(metadata),
             arrow_schema: arrow_schema.into(),
             row_ranges: Arc::new(row_ranges),
+            chunk_size,
         })
     }
 
@@ -333,7 +349,7 @@ impl ParquetFileReader {
             let rg = self
                 .metadata
                 .row_groups
-                .get(row_group_range.row_group_index)
+                .get(&row_group_range.row_group_index)
                 .unwrap();
 
             let columns = rg.columns();
@@ -389,12 +405,13 @@ impl ParquetFileReader {
             self.arrow_schema.as_ref(),
         )?);
 
+        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
         let (senders, receivers): (Vec<_>, Vec<_>) = self
             .row_ranges
             .iter()
             .map(|rg_range| {
                 let expected_num_chunks =
-                    f32::ceil(rg_range.num_rows as f32 / Self::CHUNK_SIZE as f32) as usize;
+                    f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
                 crossbeam_channel::bounded(expected_num_chunks)
             })
             .unzip();
@@ -424,10 +441,12 @@ impl ParquetFileReader {
                             tokio::task::spawn(async move {
                                 let rg = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds");
                                 let num_rows =
                                     rg.num_rows().min(row_range.start + row_range.num_rows);
+                                let chunk_size =
+                                    self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
                                 let filtered_columns = rg
                                     .columns()
                                     .iter()
@@ -471,7 +490,7 @@ impl ParquetFileReader {
                                     decompressed_iters,
                                     ptypes.iter().collect(),
                                     field,
-                                    Some(Self::CHUNK_SIZE),
+                                    Some(chunk_size),
                                     num_rows,
                                     num_values,
                                 )?;
@@ -546,9 +565,10 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
+                        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
                         let columns = rg.columns();
                         let field_name = &field.name;
                         let filtered_cols_idx = columns
@@ -589,7 +609,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)
@@ -622,7 +642,7 @@ impl ParquetFileReader {
                                     decompressed_iters,
                                     ptypes.iter().collect(),
                                     field.clone(),
-                                    Some(Self::CHUNK_SIZE),
+                                    Some(chunk_size),
                                     num_rows,
                                     num_values,
                                 );
@@ -731,9 +751,10 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
+                        let chunk_size = self.chunk_size.unwrap_or(128 * 1024);
                         let columns = rg.columns();
                         let field_name = &field.name;
                         let filtered_cols_idx = columns
@@ -772,7 +793,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)
@@ -805,7 +826,7 @@ impl ParquetFileReader {
                                     decompressed_iters,
                                     ptypes.iter().collect(),
                                     field.clone(),
-                                    Some(128 * 1024),
+                                    Some(chunk_size),
                                     num_rows,
                                     num_values,
                                 );

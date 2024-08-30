@@ -6,12 +6,10 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    channel::{create_channel, MultiSender},
-    pipeline::PipelineNode,
-    runtime_stats::RuntimeStatsContext,
+    channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, NUM_CPUS,
 };
-use async_trait::async_trait;
+
 pub enum StreamSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -75,7 +73,6 @@ impl TreeDisplay for StreamingSinkNode {
     }
 }
 
-#[async_trait]
 impl PipelineNode for StreamingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children.iter().map(|v| v.as_ref()).collect()
@@ -85,18 +82,21 @@ impl PipelineNode for StreamingSinkNode {
         self.name
     }
 
-    async fn start(
+    fn start(
         &mut self,
-        mut destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<()> {
-        let (sender, mut streaming_receiver) = create_channel(*NUM_CPUS, destination.in_order());
-        // now we can start building the right side
+    ) -> crate::Result<PipelineChannel> {
         let child = self
             .children
             .get_mut(0)
             .expect("we should only have 1 child");
-        child.start(sender, runtime_handle).await?;
+        let child_results_channel = child.start(true, runtime_handle)?;
+        let mut child_results_receiver =
+            child_results_channel.get_receiver_with_stats(&self.runtime_stats);
+
+        let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
+        let sender = destination_channel.get_next_sender_with_stats(&self.runtime_stats);
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
@@ -106,32 +106,23 @@ impl PipelineNode for StreamingSinkNode {
 
                 let mut sink = op.lock().await;
                 let mut is_active = true;
-                while is_active && let Some(val) = streaming_receiver.recv().await {
-                    runtime_stats.mark_rows_received(val.len() as u64);
+                while is_active && let Some(val) = child_results_receiver.recv().await {
+                    let val = val.as_data();
                     loop {
-                        let result = runtime_stats.in_span(&span, || sink.execute(0, &val))?;
+                        let result = runtime_stats.in_span(&span, || sink.execute(0, val))?;
                         match result {
                             StreamSinkOutput::HasMoreOutput(mp) => {
-                                let len = mp.len() as u64;
-                                let sender = destination.get_next_sender();
-                                sender.send(mp).await.unwrap();
-                                runtime_stats.mark_rows_emitted(len);
+                                sender.send(mp.into()).await.unwrap();
                             }
                             StreamSinkOutput::NeedMoreInput(mp) => {
                                 if let Some(mp) = mp {
-                                    let len = mp.len() as u64;
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
-                                    runtime_stats.mark_rows_emitted(len);
+                                    sender.send(mp.into()).await.unwrap();
                                 }
                                 break;
                             }
                             StreamSinkOutput::Finished(mp) => {
                                 if let Some(mp) = mp {
-                                    let len = mp.len() as u64;
-                                    let sender = destination.get_next_sender();
-                                    sender.send(mp).await.unwrap();
-                                    runtime_stats.mark_rows_emitted(len);
+                                    sender.send(mp.into()).await.unwrap();
                                 }
                                 is_active = false;
                                 break;
@@ -143,7 +134,7 @@ impl PipelineNode for StreamingSinkNode {
             },
             self.name(),
         );
-        Ok(())
+        Ok(destination_channel)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

@@ -259,7 +259,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 
     // Read all the required row groups into memory sequentially
     let column_iters_per_rg = row_ranges.clone().into_iter().map(move |rg_range| {
-        let rg_metadata = all_row_groups.get(rg_range.row_group_index).unwrap();
+        let rg_metadata = all_row_groups.get(&rg_range.row_group_index).unwrap();
 
         // This operation is IO-bounded O(C) where C is the number of columns in the row group.
         // It reads all the columns to memory from the row group associated to the requested fields,
@@ -294,6 +294,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
@@ -339,7 +340,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
         })?;
-    let chunk_size = 128 * 1024;
+    let chunk_size = chunk_size.unwrap_or(128 * 1024);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
@@ -357,7 +358,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         .iter()
         .enumerate()
         .map(|(req_idx, rg_range)| {
-            let rg = metadata.row_groups.get(rg_range.row_group_index).unwrap();
+            let rg = metadata.row_groups.get(&rg_range.row_group_index).unwrap();
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
                 rg,
@@ -433,6 +434,7 @@ pub(crate) async fn local_parquet_read_async(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
@@ -447,6 +449,7 @@ pub(crate) async fn local_parquet_read_async(
                 predicate,
                 schema_infer_options,
                 metadata,
+                chunk_size,
             );
             let (metadata, schema, arrays, num_rows_read) = v?;
 
@@ -590,6 +593,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
+    chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     arrow2::datatypes::Schema,
@@ -608,6 +612,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
             predicate,
             schema_infer_options,
             metadata,
+            chunk_size,
         );
         let _ = send.send(v);
     });

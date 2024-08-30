@@ -445,6 +445,7 @@ def udf(
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
     batch_size: int | None = None,
+    _concurrency: int | None = None,
 ) -> Callable[[UserProvidedPythonFunction | type], StatelessUDF | StatefulUDF]:
     """Decorator to convert a Python function into a UDF
 
@@ -491,8 +492,8 @@ def udf(
     Resource Requests
     -----------------
 
-    You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 4 CPUs to run. On a
-    machine/cluster with 8 CPUs, Daft will be able to run up to 2 instances of this UDF at once, giving you a concurrency of 2!
+    You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
+    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once, giving you a concurrency of 4!
 
     >>> import daft
     >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
@@ -524,7 +525,7 @@ def udf(
     ...     return x
     >>>
     >>> # Override the num_cpus to 2 instead
-    >>> udf_needs_8_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
+    >>> udf_needs_2_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
     >>>
     >>> df = daft.from_pydict({"x": [1, 2, 3]})
     >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))

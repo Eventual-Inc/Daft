@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{
-    get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
+    parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
 };
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -21,7 +21,6 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
-    is_ray_runner: bool,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -68,13 +67,14 @@ fn run_glob(
     io_client: Arc<IOClient>,
     runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
+    file_format: FileFormat,
 ) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let boxstream = runtime.block_on_current_thread(async move {
         io_client
-            .glob(glob_input, None, None, limit, io_stats)
+            .glob(glob_input, None, None, limit, io_stats, Some(file_format))
             .await
     })?;
 
@@ -92,6 +92,7 @@ fn run_glob_parallel(
     io_client: Arc<IOClient>,
     runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
+    file_format: FileFormat,
 ) -> DaftResult<impl Iterator<Item = DaftResult<FileMetadata>>> {
     let num_parallel_tasks = 64;
 
@@ -104,7 +105,7 @@ fn run_glob_parallel(
 
         runtime.spawn(async move {
             let stream = io_client
-                .glob(glob_input, None, None, None, io_stats)
+                .glob(glob_input, None, None, None, io_stats, Some(file_format))
                 .await?;
             let results = stream.collect::<Vec<_>>().await;
             Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
@@ -131,7 +132,6 @@ impl GlobScanOperator {
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
-        is_ray_runner: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -139,6 +139,8 @@ impl GlobScanOperator {
             )),
             Some(path) => Ok(path),
         }?;
+
+        let file_format = file_format_config.file_format();
 
         let (io_runtime, io_client) = storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
@@ -150,6 +152,7 @@ impl GlobScanOperator {
             io_client.clone(),
             io_runtime.clone(),
             Some(io_stats.clone()),
+            file_format,
         )?;
         let FileMetadata {
             filepath: first_filepath,
@@ -245,7 +248,6 @@ impl GlobScanOperator {
             file_format_config,
             schema,
             storage_config,
-            is_ray_runner,
         })
     }
 }
@@ -289,18 +291,19 @@ impl ScanOperator for GlobScanOperator {
             "GlobScanOperator::to_scan_tasks for {:#?}",
             self.glob_paths
         ));
+        let file_format = self.file_format_config.file_format();
 
         let files = run_glob_parallel(
             self.glob_paths.clone(),
             io_client.clone(),
             io_runtime.clone(),
             Some(io_stats.clone()),
+            file_format,
         )?;
 
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
-        let is_ray_runner = self.is_ray_runner;
 
         let row_groups = if let FileFormatConfig::Parquet(ParquetSourceConfig {
             row_groups: Some(row_groups),
@@ -320,36 +323,6 @@ impl ScanOperator for GlobScanOperator {
                 ..
             } = f?;
 
-            let path_clone = path.clone();
-            let io_client_clone = io_client.clone();
-            let field_id_mapping = match file_format_config.as_ref() {
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    field_id_mapping, ..
-                }) => Some(field_id_mapping.clone()),
-                _ => None,
-            };
-
-            // We skip reading parquet metadata if we are running in Ray
-            // because the metadata can be quite large
-            let parquet_metadata = if !is_ray_runner {
-                if let Some(field_id_mapping) = field_id_mapping {
-                    get_runtime(true).unwrap().block_on_current_thread(async {
-                        daft_parquet::read::read_parquet_metadata(
-                            &path_clone,
-                            io_client_clone,
-                            Some(io_stats.clone()),
-                            field_id_mapping.clone(),
-                        )
-                        .await
-                        .ok()
-                        .map(Arc::new)
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
             let row_group = row_groups
                 .as_ref()
                 .and_then(|rgs| rgs.get(idx).cloned())
@@ -364,7 +337,7 @@ impl ScanOperator for GlobScanOperator {
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
-                    parquet_metadata,
+                    parquet_metadata: None,
                 }],
                 file_format_config.clone(),
                 schema.clone(),

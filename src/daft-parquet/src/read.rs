@@ -115,6 +115,7 @@ async fn read_parquet_single(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns;
@@ -153,6 +154,7 @@ async fn read_parquet_single(
             predicate.clone(),
             schema_infer_options,
             metadata,
+            chunk_size,
         )
         .await
     } else {
@@ -189,6 +191,8 @@ async fn read_parquet_single(
             builder
         };
 
+        let builder = builder.set_chunk_size(chunk_size);
+
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
@@ -196,12 +200,6 @@ async fn read_parquet_single(
             parquet_reader.read_from_ranges_into_table(ranges).await?,
         ))
     }?;
-
-    let rows_per_row_groups = metadata
-        .row_groups
-        .iter()
-        .map(|m| m.num_rows())
-        .collect::<Vec<_>>();
 
     let metadata_num_rows = metadata.num_rows;
     let metadata_num_columns = metadata.schema().fields().len();
@@ -261,7 +259,7 @@ async fn read_parquet_single(
     } else if let Some(row_groups) = row_groups {
         let expected_rows = row_groups
             .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+            .map(|i| metadata.row_groups.get(&(*i as usize)).unwrap().num_rows())
             .sum::<usize>()
             - num_deleted_rows;
         if expected_rows != table.len() {
@@ -492,6 +490,7 @@ async fn read_parquet_single_into_arrow(
                 None,
                 schema_infer_options,
                 metadata,
+                None,
             )
             .await?;
         (metadata, Arc::new(schema), all_arrays, num_rows_read)
@@ -535,7 +534,7 @@ async fn read_parquet_single_into_arrow(
 
     let rows_per_row_groups = metadata
         .row_groups
-        .iter()
+        .values()
         .map(|m| m.num_rows())
         .collect::<Vec<_>>();
 
@@ -643,6 +642,7 @@ pub fn read_parquet(
             None,
             metadata,
             None,
+            None,
         )
         .await
     })
@@ -710,6 +710,7 @@ pub fn read_parquet_bulk(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Vec<Arc<FileMetaData>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
 
@@ -741,36 +742,50 @@ pub fn read_parquet_bulk(
                     let columns = owned_columns
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
-                    Ok((
-                        i,
-                        read_parquet_single(
-                            &uri,
-                            columns.as_deref(),
-                            start_offset,
-                            num_rows,
-                            owned_row_group,
-                            owned_predicate,
-                            io_client,
-                            io_stats,
-                            schema_infer_options,
-                            owned_field_id_mapping,
-                            metadata,
-                            delete_rows,
-                        )
-                        .await?,
-                    ))
+                    read_parquet_single(
+                        &uri,
+                        columns.as_deref(),
+                        start_offset,
+                        num_rows,
+                        owned_row_group,
+                        owned_predicate,
+                        io_client,
+                        io_stats,
+                        schema_infer_options,
+                        owned_field_id_mapping,
+                        metadata,
+                        delete_rows,
+                        chunk_size,
+                    )
+                    .await
                 })
             }));
+            let mut remaining_rows = num_rows.map(|x| x as i64);
             task_stream
-                .buffer_unordered(num_parallel_tasks)
+                // Limit the number of file reads we have in flight at any given time.
+                .buffered(num_parallel_tasks)
+                // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
+                // num_parallel_tasks redundant files.
+                .try_take_while(|result| {
+                    match (result, remaining_rows) {
+                        // Limit has been met, early-terminate.
+                        (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                        // Limit has not yet been met, update remaining limit slack and continue.
+                        (Ok(table), Some(rows_left)) => {
+                            remaining_rows = Some(rows_left - table.len() as i64);
+                            futures::future::ready(Ok(true))
+                        }
+                        // (1) No limit, never early-terminate.
+                        // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                        (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+                    }
+                })
                 .try_collect::<Vec<_>>()
                 .await
         })
         .context(JoinSnafu { path: "UNKNOWN" })?;
 
-    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
-    collected.sort_by_key(|(idx, _)| *idx);
-    Ok(collected.into_iter().map(|(_, v)| v).collect())
+    tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1022,11 +1037,22 @@ mod tests {
 
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
+    use parquet2::metadata::FileMetaData;
 
     use super::read_parquet;
+    use super::read_parquet_metadata;
     use super::stream_parquet;
 
     const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
+    const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";
+
+    fn get_local_parquet_path() -> String {
+        let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("../../"); // CARGO_MANIFEST_DIR is at src/daft-parquet
+        d.push(PARQUET_FILE_LOCAL);
+        d.to_str().unwrap().to_string()
+    }
+
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let file = PARQUET_FILE;
@@ -1087,5 +1113,22 @@ mod tests {
             assert_eq!(total_tables_len, 100);
             Ok(())
         })
+    }
+
+    #[test]
+    fn test_file_metadata_serialize_roundtrip() -> DaftResult<()> {
+        let file = get_local_parquet_path();
+
+        let io_config = IOConfig::default();
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let runtime_handle = daft_io::get_runtime(true)?;
+
+        runtime_handle.block_on_io_pool(async move {
+            let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
+            let serialized = bincode::serialize(&metadata).unwrap();
+            let deserialized = bincode::deserialize::<FileMetaData>(&serialized).unwrap();
+            assert_eq!(metadata, deserialized);
+            Ok(())
+        })?
     }
 }

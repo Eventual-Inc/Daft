@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     logical_ops,
-    logical_optimization::Optimizer,
+    logical_optimization::{Optimizer, OptimizerConfig},
     logical_plan::LogicalPlan,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -14,7 +14,8 @@ use crate::{
     source_info::SourceInfo,
     LogicalPlanRef,
 };
-use common_display::DisplayFormat;
+use common_daft_config::DaftPlanningConfig;
+use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::{
@@ -22,12 +23,14 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 use daft_dsl::{col, ExprRef};
-use daft_scan::{file_format::FileFormat, PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_io::FileFormat;
+use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::source_info::InMemoryInfo,
+    common_daft_config::PyDaftPlanningConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::python::pylib::ScanOperatorHandle,
@@ -43,36 +46,47 @@ use {
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
+    config: Option<Arc<DaftPlanningConfig>>,
 }
 
 impl LogicalPlanBuilder {
-    pub fn new(plan: Arc<LogicalPlan>) -> Self {
-        Self { plan }
+    pub fn new(plan: Arc<LogicalPlan>, config: Option<Arc<DaftPlanningConfig>>) -> Self {
+        Self { plan, config }
     }
 }
 
-impl From<LogicalPlan> for LogicalPlanBuilder {
-    fn from(plan: LogicalPlan) -> Self {
-        Self {
-            plan: Arc::new(plan),
-        }
-    }
-}
-
-impl From<LogicalPlanRef> for LogicalPlanBuilder {
-    fn from(plan: LogicalPlanRef) -> Self {
-        Self { plan: plan.clone() }
-    }
-}
 impl From<&LogicalPlanBuilder> for LogicalPlanBuilder {
     fn from(builder: &LogicalPlanBuilder) -> Self {
         Self {
             plan: builder.plan.clone(),
+            config: builder.config.clone(),
         }
     }
 }
 
+impl From<LogicalPlanBuilder> for LogicalPlanRef {
+    fn from(value: LogicalPlanBuilder) -> Self {
+        value.plan
+    }
+}
+
+impl From<&LogicalPlanBuilder> for LogicalPlanRef {
+    fn from(value: &LogicalPlanBuilder) -> Self {
+        value.plan.clone()
+    }
+}
+
 impl LogicalPlanBuilder {
+    /// Replace the LogicalPlanBuilder's plan with the provided plan
+    pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
+        Self::new(plan.into(), self.config.clone())
+    }
+
+    /// Parametrize the LogicalPlanBuilder with a DaftPlanningConfig
+    pub fn with_config(&self, config: Arc<DaftPlanningConfig>) -> Self {
+        Self::new(self.plan.clone(), Some(config))
+    }
+
     #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
@@ -93,7 +107,7 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
-        Ok(logical_plan.into())
+        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
     }
 
     pub fn table_scan(
@@ -127,13 +141,13 @@ impl LogicalPlanBuilder {
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
-        Ok(logical_plan.into())
+        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), to_select)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
@@ -166,7 +180,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
@@ -187,25 +201,25 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), exprs)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Limit::new(self.plan.clone(), limit, eager).into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn unpivot(
@@ -243,13 +257,13 @@ impl LogicalPlanBuilder {
             value_name,
         )?
         .into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn hash_repartition(
@@ -262,7 +276,7 @@ impl LogicalPlanBuilder {
             RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
         )?
         .into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn random_shuffle(&self, num_partitions: Option<usize>) -> DaftResult<Self> {
@@ -271,7 +285,7 @@ impl LogicalPlanBuilder {
             RepartitionSpec::Random(RandomShuffleConfig::new(num_partitions)),
         )?
         .into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
@@ -280,12 +294,12 @@ impl LogicalPlanBuilder {
             RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )?
         .into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn distinct(&self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Distinct::new(self.plan.clone()).into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn sample(
@@ -296,7 +310,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn aggregate(
@@ -306,7 +320,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn pivot(
@@ -326,10 +340,10 @@ impl LogicalPlanBuilder {
             names,
         )?
         .into();
-        Ok(pivot_logical_plan.into())
+        Ok(self.with_new_plan(pivot_logical_plan))
     }
 
-    pub fn join<Right: Into<Self>>(
+    pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
         left_on: Vec<ExprRef>,
@@ -339,26 +353,26 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
-            right.into().plan.clone(),
+            right.into().clone(),
             left_on,
             right_on,
             join_type,
             join_strategy,
         )?
         .into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::MonotonicallyIncreasingId::new(self.plan.clone(), column_name).into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn table_write(
@@ -379,7 +393,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     #[cfg(feature = "python")]
@@ -408,7 +422,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     #[cfg(feature = "python")]
@@ -436,7 +450,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     #[cfg(feature = "python")]
@@ -463,7 +477,7 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan =
             logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
-        Ok(logical_plan.into())
+        Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn build(&self) -> Arc<LogicalPlan> {
@@ -478,13 +492,9 @@ impl LogicalPlanBuilder {
         self.plan.repr_ascii(simple)
     }
 
-    pub fn display_as(&self, format: DisplayFormat) -> String {
+    pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
-
-        match format {
-            DisplayFormat::Ascii { simple } => self.plan.repr_ascii(simple),
-            DisplayFormat::Mermaid(opts) => self.plan.repr_mermaid(opts),
-        }
+        self.plan.repr_mermaid(opts)
     }
 }
 
@@ -537,6 +547,13 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn table_scan(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
+    }
+
+    pub fn with_planning_config(
+        &self,
+        daft_planning_config: PyDaftPlanningConfig,
+    ) -> PyResult<Self> {
+        Ok(self.builder.with_config(daft_planning_config.config).into())
     }
 
     pub fn select(&self, to_select: Vec<PyExpr>) -> PyResult<Self> {
@@ -780,7 +797,12 @@ impl PyLogicalPlanBuilder {
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
     pub fn optimize(&self, py: Python) -> PyResult<Self> {
         py.allow_threads(|| {
-            let optimizer = Optimizer::new(Default::default());
+            // Create optimizer
+            let default_optimizer_config: OptimizerConfig = Default::default();
+            let optimizer_config = OptimizerConfig { enable_actor_pool_projections: self.builder.config.as_ref().map(|planning_cfg| planning_cfg.enable_actor_pool_projections).unwrap_or(default_optimizer_config.enable_actor_pool_projections), ..default_optimizer_config };
+            let optimizer = Optimizer::new(optimizer_config);
+
+            // Run LogicalPlan optimizations
             let unoptimized_plan = self.builder.build();
             let optimized_plan = optimizer.optimize(
                 unoptimized_plan,
@@ -803,7 +825,8 @@ impl PyLogicalPlanBuilder {
                     }
                 },
             )?;
-            let builder = LogicalPlanBuilder::new(optimized_plan);
+
+            let builder = LogicalPlanBuilder::new(optimized_plan, self.builder.config.clone());
             Ok(builder.into())
         })
     }
@@ -812,8 +835,8 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.repr_ascii(simple))
     }
 
-    pub fn display_as(&self, opts: common_display::DisplayFormat) -> PyResult<String> {
-        Ok(self.builder.display_as(opts))
+    pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
+        self.builder.repr_mermaid(opts)
     }
 }
 

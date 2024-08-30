@@ -5,6 +5,7 @@
 mod azure_blob;
 mod google_cloud;
 mod http;
+mod huggingface;
 mod local;
 mod object_io;
 mod object_store_glob;
@@ -14,9 +15,12 @@ mod stream_utils;
 use azure_blob::AzureBlobSource;
 use futures::FutureExt;
 use google_cloud::GCSSource;
+use huggingface::HFSource;
 use lazy_static::lazy_static;
+mod file_format;
 #[cfg(feature = "python")]
 pub mod python;
+pub use file_format::FileFormat;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;
@@ -216,6 +220,9 @@ impl IOClient {
             SourceType::GCS => {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
+            SourceType::HF => {
+                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+            }
         };
 
         if w_handle.get(source_type).is_none() {
@@ -231,11 +238,19 @@ impl IOClient {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
+        file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
         let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
         let files = source
-            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
+            .glob(
+                input.as_str(),
+                fanout_limit,
+                page_size,
+                limit,
+                io_stats,
+                file_format,
+            )
             .await?;
         Ok(files)
     }
@@ -344,6 +359,7 @@ pub enum SourceType {
     S3,
     AzureBlob,
     GCS,
+    HF,
 }
 
 impl std::fmt::Display for SourceType {
@@ -354,6 +370,7 @@ impl std::fmt::Display for SourceType {
             SourceType::S3 => write!(f, "s3"),
             SourceType::AzureBlob => write!(f, "AzureBlob"),
             SourceType::GCS => write!(f, "gcs"),
+            SourceType::HF => write!(f, "hf"),
         }
     }
 }
@@ -392,6 +409,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
+        "hf" => Ok((SourceType::HF, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
@@ -401,33 +419,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 type CacheKey = (bool, Arc<IOConfig>);
 
-static THREADED_RUNTIME_ONCE: OnceLock<RuntimeRef> = OnceLock::new();
+static THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+static SINGLE_THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
     static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
-    static ref THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
-        tokio::sync::RwLock::new((
-            Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
-                    .enable_all()
-                    .build()
-                    .unwrap()
-            ),
-            *THREADED_RUNTIME_NUM_WORKER_THREADS,
-        ));
-    static ref SINGLE_THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
-        tokio::sync::RwLock::new((
-            Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(1)
-                    .enable_all()
-                    .build()
-                    .unwrap()
-            ),
-            1,
-        ));
     static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         std::sync::RwLock::new(HashMap::new());
 }
@@ -506,64 +503,43 @@ impl Runtime {
     }
 }
 
+fn init_runtime(num_threads: usize) -> Arc<Runtime> {
+    std::thread::spawn(move || {
+        Runtime::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(num_threads)
+                .enable_all()
+                .build()
+                .unwrap(),
+        )
+    })
+    .join()
+    .unwrap()
+}
+
 pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
     match multi_thread {
         false => {
-            todo!();
-            // let guard = SINGLE_THREADED_RUNTIME.blocking_read();
-            // Ok(guard.clone().0)
+            let runtime = SINGLE_THREADED_RUNTIME
+                .get_or_init(|| init_runtime(1))
+                .clone();
+            Ok(runtime)
         }
         true => {
-            let runtime = THREADED_RUNTIME_ONCE
-                .get_or_init(|| {
-                    let val = std::thread::spawn(|| {
-                        Runtime::new(
-                            tokio::runtime::Builder::new_multi_thread()
-                                .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
-                                .enable_all()
-                                .build()
-                                .unwrap(),
-                        )
-                    })
-                    .join()
-                    .unwrap();
-                    val
-                })
+            let runtime = THREADED_RUNTIME
+                .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
                 .clone();
             Ok(runtime)
         }
     }
 }
 
-pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
-    {
-        let guard = THREADED_RUNTIME.blocking_read();
-        if guard.1 == num_threads {
-            return false;
-        }
-    }
-    let mut client_guard = CLIENT_CACHE.write().unwrap();
-    let mut guard = THREADED_RUNTIME.blocking_write();
-
-    client_guard.clear();
-
-    guard.1 = num_threads;
-    guard.0 = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(num_threads)
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
-    true
-}
-
-pub async fn get_io_pool_num_threads() -> Option<usize> {
+pub fn get_io_pool_num_threads() -> Option<usize> {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => {
             match handle.runtime_flavor() {
                 RuntimeFlavor::CurrentThread => Some(1),
-                RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.read().await.1),
+                RuntimeFlavor::MultiThread => Some(*THREADED_RUNTIME_NUM_WORKER_THREADS),
                 // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
                 _ => Some(1),
             }

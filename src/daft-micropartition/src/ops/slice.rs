@@ -34,7 +34,7 @@ impl MicroPartition {
 
             if offset_so_far == 0 && rows_needed >= tab_rows {
                 slices_tables.push(tab.clone());
-                rows_needed += tab_rows;
+                rows_needed -= tab_rows;
             } else {
                 let new_end = (rows_needed + offset_so_far).min(tab_rows);
                 let sliced = tab.slice(offset_so_far, new_end)?;
@@ -53,5 +53,9 @@ impl MicroPartition {
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         self.slice(0, num)
+    }
+
+    pub fn split_at(&self, idx: usize) -> DaftResult<(Self, Self)> {
+        Ok((self.head(idx)?, self.slice(idx, self.len())?))
     }
 }

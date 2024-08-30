@@ -605,6 +605,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -624,6 +625,7 @@ impl PyMicroPartition {
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        chunk_size: Option<usize>,
     ) -> PyResult<Self> {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uris:?}"));
@@ -650,6 +652,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                chunk_size,
             )
         })?;
         Ok(mp.into())

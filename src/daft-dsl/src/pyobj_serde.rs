@@ -1,4 +1,7 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    io::Write,
+};
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{PyObject, Python};
@@ -29,7 +32,25 @@ impl Hash for PyObjectWrapper {
             // If Python object is hashable, hash the Python-side hash.
             Ok(py_obj_hash) => py_obj_hash.hash(state),
             // Fall back to hashing the pickled Python object.
-            Err(_) => serde_json::to_vec(self).unwrap().hash(state),
+            Err(_) => {
+                let hasher = HashWriter { state };
+                bincode::serialize_into(hasher, self)
+                    .expect("Pickling error occurred when computing hash of Pyobject")
+            }
         }
+    }
+}
+
+struct HashWriter<'a, H: Hasher> {
+    state: &'a mut H,
+}
+
+impl<'a, H: Hasher> Write for HashWriter<'a, H> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        buf.hash(self.state);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }

@@ -19,6 +19,8 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
     return fs
 
 
+# TODO(desmond): Expected some of these non-working cases to work after recent fixes, but that
+#                doesn't seem to be the case.
 # Taken from our spreadsheet of files that Daft should be able to handle
 DAFT_CAN_READ_FILES = [
     (
@@ -215,16 +217,11 @@ def set_split_config(request):
     max_size = 0 if request.param[0] else 384 * 1024 * 1024
     min_size = 0 if request.param[1] else 96 * 1024 * 1024
 
-    old_execution_config = daft.context.get_context().daft_execution_config
-
-    try:
-        daft.set_execution_config(
-            scan_tasks_max_size_bytes=max_size,
-            scan_tasks_min_size_bytes=min_size,
-        )
+    with daft.execution_config_ctx(
+        scan_tasks_max_size_bytes=max_size,
+        scan_tasks_min_size_bytes=min_size,
+    ):
         yield
-    finally:
-        daft.set_execution_config(old_execution_config)
 
 
 def read_parquet_with_pyarrow(path) -> pa.Table:

@@ -504,13 +504,18 @@ pub(super) fn translate_single_logical_node(
                     })
                 }
 
+                let smaller_side_is_broadcastable = match join_type {
+                    JoinType::Inner => true,
+                    JoinType::Left | JoinType::Anti | JoinType::Semi => left_is_larger,
+                    JoinType::Right => !left_is_larger,
+                    JoinType::Outer => false,
+                };
+
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
                     && let Some(smaller_size_bytes) = smaller_size_bytes
                     && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
-                    && (*join_type == JoinType::Inner
-                        || (*join_type == JoinType::Left && left_is_larger)
-                        || (*join_type == JoinType::Right && !left_is_larger))
+                    && smaller_side_is_broadcastable
                 {
                     JoinStrategy::Broadcast
                 // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
@@ -1083,7 +1088,7 @@ mod tests {
         let logical_plan = force_repartition(logical_plan, left_partitions)?
             .select(vec![col("a"), col("b"), col("c").alias("dataL")])?
             .join(
-                &join_node,
+                join_node,
                 vec![col("a"), col("b")],
                 vec![col("a"), col("b")],
                 daft_core::JoinType::Inner,

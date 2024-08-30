@@ -1,4 +1,6 @@
+use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
 
 use serde::{Deserialize, Serialize};
@@ -6,22 +8,18 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
-    common_display::DisplayFormat,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
+    daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
-    daft_scan::{file_format::FileFormat, python::pylib::PyScanTask},
-    pyo3::{
-        pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
-        Python, ToPyObject,
-    },
+    daft_scan::python::pylib::PyScanTask,
+    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
 
-use daft_core::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_plan::InMemoryInfo;
 use std::sync::Arc;
@@ -72,9 +70,11 @@ impl PhysicalPlanScheduler {
         Ok(self.plan().repr_ascii(simple))
     }
 
-    pub fn display_as(&self, display_format: DisplayFormat) -> PyResult<String> {
-        Ok(self.plan().display_as(display_format))
+    pub fn repr_mermaid(&self, options: MermaidDisplayOptions) -> PyResult<String> {
+        use common_display::mermaid::MermaidDisplay;
+        Ok(self.plan().repr_mermaid(options))
     }
+
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,
@@ -155,7 +155,7 @@ fn tabular_write(
         .getattr(pyo3::intern!(py, "write_file"))?
         .call1((
             upstream_iter,
-            file_format.clone(),
+            *file_format,
             PySchema::from(schema.clone()),
             root_dir,
             compression.clone(),

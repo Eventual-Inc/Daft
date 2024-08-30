@@ -1,0 +1,16 @@
+# automatically load LLDB settings for Daft
+#
+# lldb automatically tries to load this file whenever it is executed from the
+# root of the Daft repo, but by default it is not allowed to do so due to
+# security reasons. If you want it to be loaded automatically, please add the
+# following line to your ~/.lldbinit (i.e., the .lldbinit file which is in your
+# home directory, NOT this file):
+#    settings set target.load-cwd-lldbinit true
+#
+# Alternatively, you can manually load this file into your
+# existing lldb session by doing the following:
+#    (lldb) command source .lldbinit
+
+settings set target.process.stop-on-exec false
+settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_INSTRUCTION
+process handle SIGILL -n false -p true -s false

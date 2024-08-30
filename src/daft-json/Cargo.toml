@@ -2,6 +2,7 @@
 arrow2 = {workspace = true, features = ["io_json"]}
 chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
@@ -30,6 +31,7 @@ rstest = {workspace = true}
 python = [
   "dep:pyo3",
   "common-error/python",
+  "common-py-serde/python",
   "daft-core/python",
   "daft-io/python",
   "daft-table/python",

@@ -664,3 +664,9 @@ def test_from_arrow_iterable() -> None:
     table = daft.from_arrow(my_iter)
     tbl = table.to_pydict()
     assert tbl == {"text": ["foo1", "bar2", "foo2", "bar2", "foo3", "bar3"]}
+
+
+def test_to_arrow_iterator() -> None:
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+    it = df.to_arrow_iter()
+    assert isinstance(next(it), pa.RecordBatch)

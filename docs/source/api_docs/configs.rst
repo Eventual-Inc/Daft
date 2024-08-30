@@ -23,7 +23,9 @@ Configure Daft in various ways during execution.
     :toctree: doc_gen/configuration_functions
 
     daft.set_planning_config
+    daft.planning_config_ctx
     daft.set_execution_config
+    daft.execution_config_ctx
 
 I/O Configurations
 ******************
