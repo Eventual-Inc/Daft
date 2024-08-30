@@ -6,7 +6,7 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-
+use crate::pipeline::PipelineResultType;
 pub struct SortSink {
     sort_by: Vec<ExprRef>,
     descending: Vec<bool>,
@@ -44,7 +44,7 @@ impl BlockingSink for SortSink {
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
         if let SortState::Building(parts) = &mut self.state {
             assert!(
                 !parts.is_empty(),
@@ -54,7 +54,7 @@ impl BlockingSink for SortSink {
                 MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
             let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
             self.state = SortState::Done(sorted.clone());
-            Ok(Some(sorted))
+            Ok(Some(sorted.into()))
         } else {
             panic!("SortSink should be in Building state");
         }
