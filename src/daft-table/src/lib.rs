@@ -27,7 +27,7 @@ mod probe_table;
 
 pub use growable::GrowableTable;
 
-pub use probe_table::{ProbeTable, ProbeTableBuilder};
+pub use probe_table::{ProbeTable, ProbeTableBuilder, ProbeTableWithIdx, ProbeTableWithoutIdx};
 
 #[cfg(feature = "python")]
 pub mod python;

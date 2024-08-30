@@ -38,6 +38,7 @@ impl HashJoinProbeState {
         build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         if let HashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
+            let probe_table = probe_table.as_with_idx()?;
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             let mut build_side_growable =
@@ -113,6 +114,7 @@ impl HashJoinProbeState {
         is_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         if let HashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
+            let probe_table = probe_table.as_with_idx()?;
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             // Need to set use_validity to true here because we add nulls to the build side
@@ -188,6 +190,7 @@ impl HashJoinProbeState {
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         if let HashJoinProbeState::ReadyToProbe(probe_table, ..) = self {
+            let probe_table = probe_table.as_without_idx()?;
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             let input_tables = input.get_tables()?;
@@ -202,25 +205,16 @@ impl HashJoinProbeState {
                     let join_keys = table.eval_expression_list(probe_on)?;
                     let iter = probe_table.probe(&join_keys)?;
 
-                    if is_semi {
-                        for (probe_row_idx, inner_iter) in iter {
-                            if inner_iter.is_some() {
+                    for (probe_row_idx, matched) in iter {
+                        match (is_semi, matched) {
+                            (true, true) | (false, false) => {
                                 probe_side_growable.extend(
                                     probe_side_table_idx,
                                     probe_row_idx as usize,
                                     1,
                                 );
                             }
-                        }
-                    } else {
-                        for (probe_row_idx, inner_iter) in iter {
-                            if inner_iter.is_none() {
-                                probe_side_growable.extend(
-                                    probe_side_table_idx,
-                                    probe_row_idx as usize,
-                                    1,
-                                );
-                            }
+                            _ => {}
                         }
                     }
                 }
