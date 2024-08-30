@@ -5,10 +5,8 @@ use common_error::DaftResult;
 
 use crate::array::ops::as_arrow::AsArrow;
 use crate::array::ops::DaftApproxCountDistinctAggable;
-use crate::array::DataArray;
-use crate::datatypes::{Field, UInt64Array};
+use crate::datatypes::UInt64Array;
 use crate::utils::identity_hash_set::IdentityBuildHasher;
-use crate::DataType;
 
 impl DaftApproxCountDistinctAggable for UInt64Array {
     type Output = DaftResult<UInt64Array>;
@@ -30,16 +28,16 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
             }
         };
         let count = set.len() as u64;
-        let field = Field::new(self.name(), DataType::UInt64);
-        let data = PrimitiveArray::from_vec(vec![count]).boxed();
-        DataArray::new(field.into(), data)
+        let data = &[count] as &[_];
+        let array = (self.name(), data).into();
+        Ok(array)
     }
 
     fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let data = match self.validity() {
             Some(validity) => {
-                let hll_iter = groups.iter().map(|group| {
+                let count_iter = groups.iter().map(|group| {
                     let mut set = HashSet::<_, IdentityBuildHasher>::default();
                     for &index in group {
                         if let (Some(value), true) =
@@ -50,10 +48,10 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
                     }
                     set.len() as u64
                 });
-                PrimitiveArray::from_trusted_len_values_iter(hll_iter).boxed()
+                Box::new(PrimitiveArray::from_trusted_len_values_iter(count_iter))
             }
             None => {
-                let hll_iter = groups.iter().map(|group| {
+                let count_iter = groups.iter().map(|group| {
                     let mut set = HashSet::<_, IdentityBuildHasher>::default();
                     for &index in group {
                         if let Some(value) = data.get(index as _) {
@@ -62,10 +60,10 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
                     }
                     set.len() as u64
                 });
-                PrimitiveArray::from_trusted_len_values_iter(hll_iter).boxed()
+                Box::new(PrimitiveArray::from_trusted_len_values_iter(count_iter))
             }
         };
-        let field = Field::new(self.name(), DataType::UInt64);
-        DataArray::new(field.into(), data)
+        let array = (self.name(), data).into();
+        Ok(array)
     }
 }
