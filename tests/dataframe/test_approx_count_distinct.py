@@ -72,23 +72,8 @@ def test_approx_count_distinct_on_dfs_with_empty_partitions(data_and_expected):
 # Test the adding `NULL`s values to the existing data.
 # We want to test how HLL handles null values.
 #
-# Edge case:
-# Assume that a given row's type is `INT64`.
-# The presence of a `NULL` value in that row should be thought of as the "absence of a value".
-# Therefore, a `NULL` value's existence should *not* affect the count of distinct result.
-#
-# For example, if we do `daft.from_pydict({ "a": [1, 2, 1] + [None] })`, the schema of column "a" is `INT64`.
-# Thus, the presence of `None` should not count towards the final count-distinct value (which will be 2 in this case).
-#
-# However, now assume that a given row's type is `NULL`.
-# The presence of a `NULL` value in that situation should now be thought of as the "presence of a value".
-#
-# For example, if we do `daft.from_pydict({ "a": [] + [None] })`, the schema of column "a" is `NULL`.
-# Here, the presence of `None` *should* count towards the final count-distinct value.
-#
-# That's why I check `if not data: ...` in the below test.
-# If `data` is empty prior to adding `None`s, the type of column "a" will be `NULL`.
-# If `data` is *not* empty, the type of column "a" will be whatever the corresponding type of that list is.
+# We should always test `NULL` values as the "absence" of values.
+# Therefore, the existence of a `NULL` should never affect the approx_count_distinct value that is returned (even if it's in a column of type `NULL`).
 @pytest.mark.parametrize("data_and_expected", TESTS)
 def test_approx_count_distinct_on_null_values(data_and_expected):
     data, expected = data_and_expected
