@@ -49,14 +49,13 @@ impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryA
     }
 }
 
-impl From<(&str, &[u8])> for FixedSizeBinaryArray {
-    fn from((name, array): (&str, &[u8])) -> Self {
-        let length = array.len();
+impl From<(&str, Vec<u8>, usize)> for FixedSizeBinaryArray {
+    fn from((name, array, length): (&str, Vec<u8>, usize)) -> Self {
         DataArray::new(
             Field::new(name, DataType::FixedSizeBinary(length)).into(),
             Box::new(arrow2::array::FixedSizeBinaryArray::new(
                 arrow2::datatypes::DataType::FixedSizeBinary(length),
-                arrow2::buffer::Buffer::from(array.to_vec()),
+                arrow2::buffer::Buffer::from(array),
                 None,
             )),
         )

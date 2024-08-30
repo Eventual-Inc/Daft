@@ -16,54 +16,26 @@ impl DaftHllSketchAggable for UInt64Array {
 
     fn hll_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
-        match self.validity() {
-            Some(validity) => {
-                for (index, &value) in self.as_arrow().values_iter().enumerate() {
-                    if validity.get_bit(index) {
-                        hll.add_already_hashed(value);
-                    };
-                }
-            }
-            None => {
-                for &value in self.as_arrow().values_iter() {
-                    hll.add_already_hashed(value);
-                }
-            }
+        for &value in self.as_arrow().into_iter().flatten() {
+            hll.add_already_hashed(value);
         }
-        let array = (self.name(), hll.registers.as_ref() as &[u8]).into();
+        let array = (self.name(), hll.registers.to_vec(), NUM_REGISTERS).into();
         Ok(array)
     }
 
     fn grouped_hll_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
         let data = self.as_arrow();
         let mut bytes = Vec::<u8>::with_capacity(group_indices.len() * NUM_REGISTERS);
-        match self.validity() {
-            Some(validity) => {
-                for group in group_indices {
-                    let mut hll = HyperLogLog::default();
-                    for &index in group {
-                        if let (Some(value), true) =
-                            (data.get(index as _), validity.get_bit(index as _))
-                        {
-                            hll.add_already_hashed(value);
-                        };
-                    }
-                    bytes.extend(hll.registers.as_ref());
-                }
+        for group in group_indices {
+            let mut hll = HyperLogLog::default();
+            for &index in group {
+                if let Some(value) = data.get(index as _) {
+                    hll.add_already_hashed(value);
+                };
             }
-            None => {
-                for group in group_indices {
-                    let mut hll = HyperLogLog::default();
-                    for &index in group {
-                        if let Some(value) = data.get(index as _) {
-                            hll.add_already_hashed(value);
-                        };
-                    }
-                    bytes.extend(hll.registers.as_ref());
-                }
-            }
-        };
-        let array = (self.name(), bytes.as_slice()).into();
+            bytes.extend(hll.registers.as_ref());
+        }
+        let array = (self.name(), bytes, NUM_REGISTERS).into();
         Ok(array)
     }
 }

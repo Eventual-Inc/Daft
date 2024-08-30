@@ -13,7 +13,7 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
 
     fn hll_merge(&self) -> Self::Output {
         let mut final_hll = HyperLogLog::default();
-        for byte_slice in self.as_arrow().values_iter() {
+        for byte_slice in self.as_arrow().into_iter().flatten() {
             let hll = HyperLogLog::new_with_byte_slice(byte_slice);
             final_hll.merge(&hll);
         }
