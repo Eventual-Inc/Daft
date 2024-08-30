@@ -1,6 +1,7 @@
 use crate::expr::Expr;
 use crate::ExprRef;
 
+use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
@@ -369,4 +370,130 @@ pub fn lit<L: Literal>(t: L) -> ExprRef {
 
 pub fn null_lit() -> ExprRef {
     Arc::new(Expr::Literal(LiteralValue::Null))
+}
+
+pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
+    //! Convert a slice of literals to a series.
+    //! This function will return an error if the literals are not all the same type.
+
+    use daft_core::datatypes::*;
+    use daft_core::series::IntoSeries;
+
+    use LiteralValue::*;
+
+    let dtype = values[0].get_type();
+    // make sure all dtypes are the same
+    if !values.iter().all(|lit| lit.get_type() == dtype) {
+        return Err(DaftError::ValueError(format!(
+            "All literals must have the same data type. Found: {:?}",
+            values.iter().map(|lit| lit.get_type()).collect::<Vec<_>>()
+        )));
+    }
+
+    Ok(match dbg!(dtype.clone()) {
+        DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
+        DataType::Boolean => {
+            let data = values.iter().map(|lit| match lit {
+                Boolean(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = BooleanArray::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::Utf8 => {
+            let data = values.iter().map(|lit| match lit {
+                Utf8(val) => val.clone(),
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = Utf8Array::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::Binary => {
+            let data = values.iter().map(|lit| match lit {
+                Binary(val) => val.clone(),
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = BinaryArray::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::Int32 => {
+            let data = values.iter().map(|lit| match lit {
+                Int32(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = Int32Array::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::UInt32 => {
+            let data = values.iter().map(|lit| match lit {
+                UInt32(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = UInt32Array::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::Int64 => {
+            let data = values.iter().map(|lit| match lit {
+                Int64(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = Int64Array::from_values("literal", data);
+            ca.into_series()
+        }
+        DataType::UInt64 => {
+            let data = values.iter().map(|lit| match lit {
+                UInt64(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = UInt64Array::from_values("literal", data);
+            ca.into_series()
+        }
+
+        dtype @ DataType::Timestamp(_, _) => {
+            let data = values.iter().map(|lit| match lit {
+                Timestamp(val, ..) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let physical = Int64Array::from_values("literal", data);
+            TimestampArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        dtype @ DataType::Date => {
+            let data = values.iter().map(|lit| match lit {
+                Date(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let physical = Int32Array::from_values("literal", data);
+            DateArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        dtype @ DataType::Time(_) => {
+            let data = values.iter().map(|lit| match lit {
+                Time(val, _) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let physical = Int64Array::from_values("literal", data);
+            TimeArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        DataType::Float64 => {
+            let data = values.iter().map(|lit| match lit {
+                Float64(val) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let ca = Float64Array::from_values("literal", data);
+            ca.into_series()
+        }
+        dtype @ DataType::Decimal128 { .. } => {
+            let data = values.iter().map(|lit| match lit {
+                Decimal(val, _, _) => *val,
+                _ => unreachable!("datatype is already checked"),
+            });
+            let physical = Int128Array::from_values("literal", data);
+            Decimal128Array::new(Field::new("literal", dtype), physical).into_series()
+        }
+        _ => {
+            return Err(DaftError::ValueError(format!(
+                "Unsupported data type: {:?}",
+                dtype
+            )))
+        }
+    })
 }

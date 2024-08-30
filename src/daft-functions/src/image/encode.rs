@@ -11,12 +11,12 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Container for the keyword arguments for `image_encode`
 /// ex:
 /// ```text
 /// image_encode(input, image_format='png')
 /// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ImageEncode {
     pub image_format: ImageFormat,
 }

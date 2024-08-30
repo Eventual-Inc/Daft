@@ -18,7 +18,7 @@ pub use expr::binary_op;
 pub use expr::col;
 pub use expr::is_partition_compatible;
 pub use expr::{AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator};
-pub use lit::{lit, null_lit, Literal, LiteralValue};
+pub use lit::{lit, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use resolve_expr::{

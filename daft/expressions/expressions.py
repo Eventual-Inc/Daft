@@ -3168,7 +3168,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 )
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
-        return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
+        return Expression._from_pyexpr(native.image_crop(self._expr, bbox._expr))
 
     def to_mode(self, mode: str | ImageMode) -> Expression:
         if isinstance(mode, str):
