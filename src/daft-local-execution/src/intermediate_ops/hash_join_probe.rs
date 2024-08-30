@@ -243,9 +243,9 @@ impl IntermediateOperatorState for HashJoinProbeState {
 
 pub struct HashJoinProbeOperator {
     probe_on: Vec<ExprRef>,
-    common_join_keys: Option<Vec<String>>,
-    left_non_join_columns: Option<Vec<String>>,
-    right_non_join_columns: Option<Vec<String>>,
+    common_join_keys: Vec<String>,
+    left_non_join_columns: Vec<String>,
+    right_non_join_columns: Vec<String>,
     join_type: JoinType,
     build_on_left: bool,
 }
@@ -253,8 +253,8 @@ pub struct HashJoinProbeOperator {
 impl HashJoinProbeOperator {
     pub fn new(
         probe_on: Vec<ExprRef>,
-        left_schema: SchemaRef,
-        right_schema: SchemaRef,
+        left_schema: &SchemaRef,
+        right_schema: &SchemaRef,
         join_type: JoinType,
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
@@ -264,32 +264,22 @@ impl HashJoinProbeOperator {
                 let left_non_join_columns = left_schema
                     .fields
                     .keys()
-                    .filter_map(|c| {
-                        if !common_join_keys.contains(c) {
-                            Some(c.to_string())
-                        } else {
-                            None
-                        }
-                    })
+                    .filter(|c| !common_join_keys.contains(*c))
+                    .cloned()
                     .collect();
                 let right_non_join_columns = right_schema
                     .fields
                     .keys()
-                    .filter_map(|c| {
-                        if !common_join_keys.contains(c) {
-                            Some(c.to_string())
-                        } else {
-                            None
-                        }
-                    })
+                    .filter(|c| !common_join_keys.contains(*c))
+                    .cloned()
                     .collect();
                 (
-                    Some(common_join_keys.into_iter().collect()),
-                    Some(left_non_join_columns),
-                    Some(right_non_join_columns),
+                    common_join_keys.into_iter().collect(),
+                    left_non_join_columns,
+                    right_non_join_columns,
                 )
             }
-            JoinType::Anti | JoinType::Semi => (None, None, None),
+            JoinType::Anti | JoinType::Semi => (vec![], vec![], vec![]),
             JoinType::Outer => unimplemented!("Outer join is not yet implemented"),
         };
         Self {
@@ -333,29 +323,17 @@ impl IntermediateOperator for HashJoinProbeOperator {
                     JoinType::Inner => state.probe_inner(
                         input,
                         &self.probe_on,
-                        self.common_join_keys
-                            .as_ref()
-                            .expect("Inner join should have common join keys"),
-                        self.left_non_join_columns
-                            .as_ref()
-                            .expect("Inner join should have left non join columns"),
-                        self.right_non_join_columns
-                            .as_ref()
-                            .expect("Inner join should have right non join columns"),
+                        &self.common_join_keys,
+                        &self.left_non_join_columns,
+                        &self.right_non_join_columns,
                         self.build_on_left,
                     ),
                     JoinType::Left | JoinType::Right => state.probe_left_right(
                         input,
                         &self.probe_on,
-                        self.common_join_keys
-                            .as_ref()
-                            .expect("Left/right join should have common join keys"),
-                        self.left_non_join_columns
-                            .as_ref()
-                            .expect("Left/right join should have left non join columns"),
-                        self.right_non_join_columns
-                            .as_ref()
-                            .expect("Left/right join should have right non join columns"),
+                        &self.common_join_keys,
+                        &self.left_non_join_columns,
+                        &self.right_non_join_columns,
                         self.join_type == JoinType::Left,
                     ),
                     JoinType::Semi | JoinType::Anti => state.probe_anti_semi(

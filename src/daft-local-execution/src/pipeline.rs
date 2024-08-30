@@ -291,8 +291,8 @@ pub fn physical_plan_to_pipeline(
 
                 let probe_op = HashJoinProbeOperator::new(
                     casted_probe_on,
-                    left_schema.clone(),
-                    right_schema.clone(),
+                    left_schema,
+                    right_schema,
                     *join_type,
                     build_on_left,
                     common_join_keys,
