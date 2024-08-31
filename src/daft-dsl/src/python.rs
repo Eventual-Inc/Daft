@@ -695,6 +695,11 @@ impl PyExpr {
         Ok(length(self.into()).into())
     }
 
+    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
+        use crate::functions::utf8::length_bytes;
+        Ok(length_bytes(self.into()).into())
+    }
+
     pub fn utf8_lower(&self) -> PyResult<Self> {
         use crate::functions::utf8::lower;
         Ok(lower(self.into()).into())

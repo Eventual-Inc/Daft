@@ -456,6 +456,10 @@ impl PySeries {
         Ok(self.series.utf8_length()?.into())
     }
 
+    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_length_bytes()?.into())
+    }
+
     pub fn utf8_lower(&self) -> PyResult<Self> {
         Ok(self.series.utf8_lower()?.into())
     }

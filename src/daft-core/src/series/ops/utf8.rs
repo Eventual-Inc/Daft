@@ -84,6 +84,10 @@ impl Series {
         self.with_utf8_array(|arr| Ok(arr.length()?.into_series()))
     }
 
+    pub fn utf8_length_bytes(&self) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.length_bytes()?.into_series()))
+    }
+
     pub fn utf8_lower(&self) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.lower()?.into_series()))
     }
