@@ -194,7 +194,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
                     run_udf(
                         py,
                         inputs,
-                        pyo3::Py::clone_ref(func, py),
+                        pyo3::Py::clone_ref(func.as_ref(), py),
                         bound_args,
                         &self.return_dtype,
                         self.batch_size,

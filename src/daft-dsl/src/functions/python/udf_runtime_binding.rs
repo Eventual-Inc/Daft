@@ -2,6 +2,8 @@ use std::hash::{Hash, Hasher};
 
 use serde::{de::Visitor, Deserialize, Serialize};
 
+use super::RuntimePyObject;
+
 /// A binding between the StatefulPythonUDF and an initialized Python callable
 ///
 /// This is `Unbound` during planning, and bound to an initialized Python callable
@@ -11,7 +13,7 @@ use serde::{de::Visitor, Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub enum UDFRuntimeBinding {
     Unbound,
-    Bound(pyo3::PyObject),
+    Bound(RuntimePyObject),
 }
 
 impl PartialEq for UDFRuntimeBinding {

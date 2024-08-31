@@ -1,6 +1,5 @@
 mod runtime_py_object;
 mod udf;
-#[cfg(feature = "python")]
 mod udf_runtime_binding;
 
 use std::{collections::HashMap, sync::Arc};
@@ -12,6 +11,7 @@ use daft_core::datatypes::DataType;
 use itertools::Itertools;
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
+pub use udf_runtime_binding::UDFRuntimeBinding;
 
 use crate::{Expr, ExprRef};
 
@@ -53,8 +53,7 @@ pub struct StatefulPythonUDF {
     pub init_args: Option<RuntimePyObject>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
-    #[cfg(feature = "python")]
-    pub runtime_binding: udf_runtime_binding::UDFRuntimeBinding,
+    pub runtime_binding: UDFRuntimeBinding,
 }
 
 pub fn stateless_udf(
@@ -99,7 +98,7 @@ pub fn stateful_udf(
             init_args,
             batch_size,
             concurrency,
-            runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Unbound,
+            runtime_binding: UDFRuntimeBinding::Unbound,
         })),
         inputs: expressions.into(),
     })
@@ -199,7 +198,9 @@ pub fn bind_stateful_udfs(
                 })?;
             let bound_expr = Expr::Function {
                 func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                    runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Bound(f.clone()),
+                    runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Bound(
+                        f.clone().into(),
+                    ),
                     ..stateful_py_udf.clone()
                 })),
                 inputs: inputs.clone(),
@@ -226,7 +227,7 @@ pub fn extract_partial_stateful_udf_py(expr: ExprRef) -> HashMap<String, pyo3::P
             ..
         } = child.as_ref()
         {
-            py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.0.clone());
+            py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.as_ref().clone());
         }
         Ok(TreeNodeRecursion::Continue)
     })
