@@ -340,10 +340,7 @@ class PyRunner(Runner[MicroPartition]):
         # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
         finally:
             logger.debug("Tearing down actor pool: %s", actor_pool_id)
-            with self._resource_accounting_lock:
-                self._available_bytes_memory += total_resource_request.memory_bytes or 0
-                self._available_cpus += total_resource_request.num_cpus or 0.0
-                self._available_gpus += total_resource_request.num_gpus or 0.0
+            self._release_resources(total_resource_request)
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
@@ -406,8 +403,10 @@ class PyRunner(Runner[MicroPartition]):
                                 next_step.instructions,
                                 next_step.inputs,
                                 next_step.partial_metadatas,
-                                next_step.resource_request,
                             )
+
+                            self._release_resources(next_step.resource_request)
+
                             next_step.set_result(materialized_results)
 
                         else:
@@ -423,7 +422,6 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.instructions,
                                     next_step.inputs,
                                     next_step.partial_metadatas,
-                                    next_step.resource_request,
                                 )
                             else:
                                 actor_pool = self._actor_pools.get(next_step.actor_pool_id)
@@ -435,6 +433,10 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.inputs,
                                     next_step.partial_metadatas,
                                 )
+
+                            resource_request = next_step.resource_request
+
+                            future.add_done_callback(lambda _: self._release_resources(resource_request))
 
                             # Register the inflight task
                             assert (
@@ -509,28 +511,26 @@ class PyRunner(Runner[MicroPartition]):
 
             return all_okay
 
+    def _release_resources(self, resource_request: ResourceRequest) -> None:
+        with self._resource_accounting_lock:
+            self._available_bytes_memory += resource_request.memory_bytes or 0
+            self._available_cpus += resource_request.num_cpus or 0.0
+            self._available_gpus += resource_request.num_gpus or 0.0
+
     def build_partitions(
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
         final_metadata: list[PartialPartitionMetadata],
-        resource_request: ResourceRequest,
     ) -> list[MaterializedResult[MicroPartition]]:
-        try:
-            for instruction in instruction_stack:
-                partitions = instruction.run(partitions)
+        for instruction in instruction_stack:
+            partitions = instruction.run(partitions)
 
-            results: list[MaterializedResult[MicroPartition]] = [
-                PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
-                for part, partial in zip(partitions, final_metadata)
-            ]
-            return results
-        finally:
-            # Release CPU, GPU and memory resources
-            with self._resource_accounting_lock:
-                self._available_bytes_memory += resource_request.memory_bytes or 0
-                self._available_cpus += resource_request.num_cpus or 0.0
-                self._available_gpus += resource_request.num_gpus or 0.0
+        results: list[MaterializedResult[MicroPartition]] = [
+            PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
+            for part, partial in zip(partitions, final_metadata)
+        ]
+        return results
 
 
 @dataclass
