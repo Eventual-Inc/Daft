@@ -773,10 +773,10 @@ class DataFrame:
 
         import deltalake
         import pyarrow as pa
-        from deltalake.schema import {
+        from deltalake.schema import (
             _convert_pa_schema_to_delta, 
             ArrowSchemaConversionMode,
-        }
+        )
         from deltalake.writer import (
             try_get_deltatable,
             write_deltalake_pyarrow,
