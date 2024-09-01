@@ -1,5 +1,6 @@
 mod abs;
 mod apply;
+mod approx_count_distinct;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -26,6 +27,8 @@ pub mod full;
 mod get;
 pub(crate) mod groups;
 mod hash;
+mod hll_merge;
+mod hll_sketch;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
@@ -57,6 +60,7 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
+pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 pub use utf8::{PadPlacement, Utf8NormalizeOptions};
@@ -159,6 +163,12 @@ pub trait DaftCountAggable {
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output;
 }
 
+pub trait DaftApproxCountDistinctAggable {
+    type Output;
+    fn approx_count_distinct(&self) -> Self::Output;
+    fn grouped_approx_count_distinct(&self, groups: &GroupIndices) -> Self::Output;
+}
+
 pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
@@ -201,4 +211,16 @@ pub trait DaftConcatAggable {
     type Output;
     fn concat(&self) -> Self::Output;
     fn grouped_concat(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftHllSketchAggable {
+    type Output;
+    fn hll_sketch(&self) -> Self::Output;
+    fn grouped_hll_sketch(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftHllMergeAggable {
+    type Output;
+    fn hll_merge(&self) -> Self::Output;
+    fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
 }

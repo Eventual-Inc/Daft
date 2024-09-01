@@ -1703,6 +1703,7 @@ dependencies = [
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
+ "hyperloglog",
  "image",
  "indexmap 2.3.0",
  "itertools 0.11.0",
@@ -1840,6 +1841,7 @@ dependencies = [
  "lazy_static",
  "log",
  "md5",
+ "oneshot",
  "openssl-sys",
  "pyo3",
  "rand 0.8.5",
@@ -1888,8 +1890,6 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
- "async-stream",
- "async-trait",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -1904,7 +1904,6 @@ dependencies = [
  "daft-physical-plan",
  "daft-plan",
  "daft-scan",
- "daft-stats",
  "daft-table",
  "futures",
  "lazy_static",
@@ -1913,6 +1912,7 @@ dependencies = [
  "pyo3",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -1935,7 +1935,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
- "tokio",
 ]
 
 [[package]]
@@ -2044,7 +2043,6 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
- "tokio",
 ]
 
 [[package]]
@@ -2082,15 +2080,16 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-daft-config",
  "common-error",
  "daft-core",
  "daft-dsl",
  "daft-plan",
+ "once_cell",
  "pyo3",
  "rstest",
  "snafu",
  "sqlparser",
- "strum 0.26.3",
 ]
 
 [[package]]
@@ -2876,6 +2875,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperloglog"
+version = "0.3.0-dev0"
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3633,6 +3636,12 @@ name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+
+[[package]]
+name = "oneshot"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e296cf87e61c9cfc1a61c3c63a0f7f286ed4554e0e22be84e8a38e1d264a2a29"
 
 [[package]]
 name = "oorandom"

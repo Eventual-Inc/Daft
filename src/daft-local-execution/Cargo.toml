@@ -1,6 +1,4 @@
 [dependencies]
-async-stream = {workspace = true}
-async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -15,7 +13,6 @@ daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
-daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
 lazy_static = {workspace = true}
@@ -24,6 +21,7 @@ num-format = "0.4.4"
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = {workspace = true}
 tracing = {workspace = true}
 
 [features]

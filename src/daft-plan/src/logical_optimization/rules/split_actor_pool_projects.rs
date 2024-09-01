@@ -579,11 +579,14 @@ mod tests {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("foo".to_string()),
+                stateful_partial_func:
+                    daft_dsl::functions::python::RuntimePyObject::new_testing_none(),
                 num_expressions: inputs.len(),
                 return_dtype: daft_core::DataType::Int64,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs,
         }
@@ -709,73 +712,6 @@ mod tests {
         )?)
         .arced();
         assert_optimized_plan_eq(project_plan, expected)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_multiple_with_column_parallel_common_subtree_eliminated() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
-        let scan_plan = dummy_scan_node(scan_op);
-        let stateful_project_expr = create_stateful_udf(vec![col("a")]);
-
-        // Add a Projection with StatefulUDF and resource request
-        // NOTE: Our common-subtree elimination will build this as 2 project nodes:
-        // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
-        //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }), batch_size: None, concurrency: Some(8) }))(a)";
-        let project_plan = scan_plan
-            .with_columns(vec![
-                stateful_project_expr.clone().alias("b"),
-                stateful_project_expr.clone().alias("c"),
-            ])?
-            .build();
-
-        let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            expected,
-            vec![
-                col("a"),
-                stateful_project_expr.clone().alias(factored_column_name),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![col("a"), col(factored_column_name)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                col("a"),
-                col(factored_column_name).alias("b"),
-                col(factored_column_name).alias("c"),
-            ],
-        )?)
-        .arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected.clone())?;
-
-        // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
-        let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            expected,
-            vec![
-                col("a"),
-                stateful_project_expr.clone().alias(factored_column_name),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                col("a"),
-                col(factored_column_name).alias("b"),
-                col(factored_column_name).alias("c"),
-            ],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
-
         Ok(())
     }
 

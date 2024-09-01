@@ -286,16 +286,16 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.Table"]:
+    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.RecordBatch"]:
         """
-        Return an iterator of pyarrow tables for this dataframe.
+        Return an iterator of pyarrow recordbatches for this dataframe.
         """
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield self.to_arrow()
+            yield from self.to_arrow().to_batches()
 
         else:
             # Execute the dataframe in a streaming fashion.
@@ -304,7 +304,7 @@ class DataFrame:
 
             # Iterate through partitions.
             for partition in partitions_iter:
-                yield partition.to_arrow()
+                yield from partition.to_arrow().to_batches()
 
     @DataframePublicAPI
     def iter_partitions(
@@ -2094,13 +2094,14 @@ class DataFrame:
     def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global count on the DataFrame
 
-        If no columns are specified (i.e. in the case you call `df.count()`) this functions very
-        similarly to a COUNT(*) operation in SQL and will return a new dataframe with a single column
-        with the name "count".
+        If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
+        this functions very similarly to a COUNT(*) operation in SQL and will return a new dataframe with a
+        single column with the name "count".
 
             >>> import daft
-            >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2]})
-            >>> df.count().show()
+            >>> from daft import col
+            >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2], "baz": [3, 4, 5]})
+            >>> df.count().show()  # equivalent to df.count("*").show()
             ╭────────╮
             │ count  │
             │ ---    │
@@ -2112,7 +2113,8 @@ class DataFrame:
             (Showing first 1 of 1 rows)
 
         However, specifying some column names would instead change the behavior to count all non-null values,
-        similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`
+        similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`. Also, using `df.count(col("*"))`
+        will expand out into count() for each column.
 
             >>> df.count("foo", "bar").show()
             ╭────────┬────────╮
@@ -2124,6 +2126,16 @@ class DataFrame:
             ╰────────┴────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+            >>> df.count(col("*")).show()
+            ╭────────┬────────┬────────╮
+            │ foo    ┆ bar    ┆ baz    │
+            │ ---    ┆ ---    ┆ ---    │
+            │ UInt64 ┆ UInt64 ┆ UInt64 │
+            ╞════════╪════════╪════════╡
+            │ 1      ┆ 2      ┆ 3      │
+            ╰────────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
 
         Args:
             *cols (Union[str, Expression]): columns to count
@@ -2131,9 +2143,14 @@ class DataFrame:
             DataFrame: Globally aggregated count. Should be a single row.
         """
         # Special case: treat this as a COUNT(*) operation which is likely what most people would expect
-        if len(cols) == 0:
+        # If user passes in "*", also do this behavior (by default it would count each column individually)
+        if len(cols) == 0 or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*"):
             builder = self._builder.count()
             return DataFrame(builder)
+
+        if any(isinstance(c, str) and c == "*" for c in cols):
+            # we do not support hybrid count-all and count-nonnull
+            raise ValueError("Cannot call count() with both * and column names")
 
         # Otherwise, perform a column-wise count on the specified columns
         return self._apply_agg_fn(Expression.count, cols)

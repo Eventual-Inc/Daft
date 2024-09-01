@@ -107,7 +107,7 @@ Note that many of these methods will change both the *number of partitions* as w
     * ReduceMerge
     |
     * FanoutByHash: 8
-    |   Partition by = col(url)
+    |   Partition by = col(x)
     |
     * TabularScan:
     |   Num Scan Tasks = 3

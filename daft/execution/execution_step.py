@@ -5,6 +5,7 @@ import pathlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
+from daft.context import get_context
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -304,10 +305,12 @@ class ScanWithTask(SingleOutputInstruction):
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 0
 
+        cfg = get_context().daft_execution_config
+
         return [
             PartialPartitionMetadata(
                 num_rows=self.scan_task.num_rows(),
-                size_bytes=self.scan_task.size_bytes(),
+                size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
             )
         ]
 

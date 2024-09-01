@@ -394,6 +394,18 @@ impl PyDataType {
         Ok(self.dtype.is_map())
     }
 
+    pub fn is_list(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_list())
+    }
+
+    pub fn is_boolean(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_boolean())
+    }
+
+    pub fn is_string(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_string())
+    }
+
     pub fn is_logical(&self) -> PyResult<bool> {
         Ok(self.dtype.is_logical())
     }

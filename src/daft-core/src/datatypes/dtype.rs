@@ -393,6 +393,21 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_list(&self) -> bool {
+        matches!(self, DataType::List(..))
+    }
+
+    #[inline]
+    pub fn is_string(&self) -> bool {
+        matches!(self, DataType::Utf8)
+    }
+
+    #[inline]
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, DataType::Boolean)
+    }
+
+    #[inline]
     pub fn is_null(&self) -> bool {
         match self {
             DataType::Null => true,
