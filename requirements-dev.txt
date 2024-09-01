@@ -41,7 +41,7 @@ ray[data, client]==2.10.0; python_version == '3.8'
 ray[data, client]==2.34.0; python_version >= '3.9'
 
 # Lance
-lancedb>=0.6.10; python_version >= '3.8'
+lancedb>=0.12.0; python_version >= '3.8'
 
 #Iceberg
 pyiceberg==0.7.0; python_version >= '3.8'
