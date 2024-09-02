@@ -137,7 +137,7 @@ jobs:
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -259,7 +259,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -335,7 +335,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -431,7 +431,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() }}
       with:
         payload: |
@@ -508,7 +508,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -578,7 +578,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -660,7 +660,7 @@ jobs:
       with:
         run: pytest tests/benchmarks -m benchmark --codspeed
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -706,7 +706,7 @@ jobs:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -809,7 +809,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         files: ./report-output/*
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -890,7 +890,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -957,7 +957,7 @@ jobs:
         pre-commit run --all-files
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
