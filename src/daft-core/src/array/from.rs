@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::datatypes::{
@@ -44,6 +45,25 @@ impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryA
         DataArray::new(
             Field::new(name, DataType::FixedSizeBinary(array.size())).into(),
             array,
+        )
+        .unwrap()
+    }
+}
+
+impl<'a, I> From<(&str, I, usize)> for FixedSizeBinaryArray
+where
+    Cow<'a, [u8]>: From<I>,
+{
+    fn from((name, array, length): (&str, I, usize)) -> Self {
+        let array = Cow::from(array);
+        let array = array.into_owned();
+        DataArray::new(
+            Field::new(name, DataType::FixedSizeBinary(length)).into(),
+            Box::new(arrow2::array::FixedSizeBinaryArray::new(
+                arrow2::datatypes::DataType::FixedSizeBinary(length),
+                arrow2::buffer::Buffer::from(array),
+                None,
+            )),
         )
         .unwrap()
     }

@@ -173,7 +173,7 @@ pub fn stateless_udf(
     Ok(PyExpr {
         expr: stateless_udf(
             name,
-            partial_stateless_udf,
+            partial_stateless_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
@@ -218,11 +218,11 @@ pub fn stateful_udf(
     Ok(PyExpr {
         expr: stateful_udf(
             name,
-            partial_stateful_udf,
+            partial_stateful_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
-            init_args,
+            init_args.map(|a| a.into()),
             batch_size,
             concurrency,
         )?
@@ -401,6 +401,10 @@ impl PyExpr {
 
     pub fn sum(&self) -> PyResult<Self> {
         Ok(self.expr.clone().sum().into())
+    }
+
+    pub fn approx_count_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().approx_count_distinct().into())
     }
 
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {

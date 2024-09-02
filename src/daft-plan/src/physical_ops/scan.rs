@@ -38,7 +38,7 @@ impl TreeDisplay for TabularScan {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes().unwrap_or(0))
+                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
                 .sum();
 
             let clustering_spec = scan.clustering_spec.multiline_display().join(", ");

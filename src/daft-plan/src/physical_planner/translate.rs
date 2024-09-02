@@ -12,7 +12,7 @@ use daft_core::count_mode::CountMode;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_core::schema::SchemaRef;
 use daft_core::DataType;
-use daft_dsl::{col, ApproxPercentileParams};
+use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
 use daft_scan::PhysicalScanInfo;
@@ -58,7 +58,8 @@ pub(super) fn translate_single_logical_node(
                 );
 
                 // Apply transformations on the ScanTasks to optimize
-                let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, cfg);
+                let scan_tasks =
+                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -897,31 +898,59 @@ pub fn populate_aggregation_stages(
                     });
                 final_exprs.push(col(output_name));
             }
-            ApproxSketch(_) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
-            }
-            MergeSketch(_) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
-            }
-            ApproxPercentile(ApproxPercentileParams {
-                child: e,
-                percentiles,
+            &ApproxPercentile(ApproxPercentileParams {
+                child: ref e,
+                ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 let sketch_id = agg_expr.semantic_id(schema).id;
-                let approx_id = ApproxSketch(col(sketch_id.clone())).semantic_id(schema).id;
+                let approx_id = ApproxSketch(col(sketch_id.clone()), SketchType::DDSketch)
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(sketch_id.clone())
-                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
+                    .or_insert(ApproxSketch(
+                        e.alias(sketch_id.clone()),
+                        SketchType::DDSketch,
+                    ));
                 second_stage_aggs
                     .entry(approx_id.clone())
-                    .or_insert(MergeSketch(col(sketch_id.clone()).alias(approx_id.clone())));
+                    .or_insert(MergeSketch(
+                        col(sketch_id.clone()).alias(approx_id.clone()),
+                        SketchType::DDSketch,
+                    ));
                 final_exprs.push(
-                    col(approx_id.clone())
-                        .sketch_percentile(percentiles.as_slice(), *force_list_output)
+                    col(approx_id)
+                        .sketch_percentile(percentiles.as_slice(), force_list_output)
                         .alias(output_name),
                 );
+            }
+            ApproxCountDistinct(e) => {
+                let first_stage_id = agg_expr.semantic_id(schema).id;
+                let second_stage_id =
+                    MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)
+                        .semantic_id(schema)
+                        .id;
+                first_stage_aggs
+                    .entry(first_stage_id.clone())
+                    .or_insert(ApproxSketch(
+                        e.alias(first_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                second_stage_aggs
+                    .entry(second_stage_id.clone())
+                    .or_insert(MergeSketch(
+                        col(first_stage_id).alias(second_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                final_exprs.push(col(second_stage_id).alias(output_name));
+            }
+            ApproxSketch(..) => {
+                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            }
+            MergeSketch(..) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
             }
         }
     }

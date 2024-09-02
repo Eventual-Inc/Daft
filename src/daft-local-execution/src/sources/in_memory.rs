@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use crate::{channel::MultiSender, runtime_stats::RuntimeStatsContext, ExecutionRuntimeHandle};
+use crate::ExecutionRuntimeHandle;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
+use crate::sources::source::SourceStream;
 
 pub struct InMemorySource {
     data: Vec<Arc<MicroPartition>>,
@@ -24,24 +25,12 @@ impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     fn get_data(
         &self,
-        mut destination: MultiSender,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        runtime_stats: Arc<RuntimeStatsContext>,
+        _maintain_order: bool,
+        _runtime_handle: &mut ExecutionRuntimeHandle,
         _io_stats: IOStatsRef,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<SourceStream<'static>> {
         let data = self.data.clone();
-        runtime_handle.spawn(
-            async move {
-                for part in data {
-                    let len = part.len();
-                    let _ = destination.get_next_sender().send(part).await;
-                    runtime_stats.mark_rows_emitted(len as u64);
-                }
-                Ok(())
-            },
-            self.name(),
-        );
-        Ok(())
+        Ok(Box::pin(futures::stream::iter(data)))
     }
     fn name(&self) -> &'static str {
         "InMemory"
