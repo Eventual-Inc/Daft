@@ -30,8 +30,7 @@ def test_pyactor_pool():
     ppm = PartialPartitionMetadata(num_rows=None, size_bytes=None)
     instr = StatefulUDFProject(projection=projection)
 
-    pool_id = pool.setup()
-    assert pool_id == "my-pool"
+    pool.setup()
 
     result = pool.submit(
         instruction_stack=[instr],

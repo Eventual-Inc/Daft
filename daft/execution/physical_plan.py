@@ -209,6 +209,9 @@ def actor_pool_project(
     actor_pool_name = f"ActorPool_stage{stage_id}"
 
     # Keep track of materializations of the children tasks
+    #
+    # Our goal here is to saturate the actors, and so we need a sufficient number of completed child tasks to do so. However
+    # we do not want too many child tasks to be running (potentially starving our actors) and hence place an upper bound of `num_actors * 2`
     child_materializations_buffer_len = num_actors * 2
     child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 

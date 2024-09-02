@@ -79,6 +79,6 @@ class Runner(Generic[PartitionT]):
             name: Name of the actor pool for debugging/observability
             resource_request: Requested amount of resources for each actor
             num_actors: Number of actors to spin up
-            partial_stateful_udf: A stateful UDF that has been "bound" to its arguments, so each actor can run it
+            projection: Projection to be run on the incoming data (contains Stateful UDFs as well as other stateless expressions such as aliases)
         """
         ...
