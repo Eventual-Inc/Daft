@@ -50,6 +50,54 @@ impl ProbeTable {
         })
     }
 
+    fn probe<'a>(
+        &'a self,
+        right: &'a Table,
+    ) -> DaftResult<impl Iterator<Item = Option<&[u64]>> + 'a> {
+        assert_eq!(self.schema.len(), right.schema.len());
+        assert!(self
+            .schema
+            .fields
+            .values()
+            .zip(right.schema.fields.values())
+            .all(|(l, r)| l.dtype == r.dtype));
+
+        let r_hashes = right.hash_rows()?;
+
+        let right_arrays = right
+            .columns
+            .iter()
+            .map(|s| Ok(s.as_physical()?.to_arrow()))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let iter = r_hashes.as_arrow().clone().into_iter();
+
+        Ok(Box::new(iter.enumerate().map(move |(r_idx, h)| match h {
+            Some(h) => {
+                let indices = if let Some((_, indices)) =
+                    self.hash_table.raw_entry().from_hash(h, |other| {
+                        h == other.hash && {
+                            let l_idx = other.idx;
+                            let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
+                            let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
+
+                            let l_table = self.tables.get(l_table_idx).unwrap();
+
+                            let left_refs = l_table.0.as_slice();
+
+                            (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
+                        }
+                    }) {
+                    Some(indices.as_slice())
+                } else {
+                    None
+                };
+                indices
+            }
+            None => None,
+        })))
+    }
+
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {
         // we have to cast to the join key schema
         assert_eq!(table.schema, self.schema);
@@ -105,54 +153,6 @@ impl ProbeTable {
         }
         self.num_rows += table.len();
         Ok(())
-    }
-
-    fn probe<'a>(
-        &'a self,
-        right: &'a Table,
-    ) -> DaftResult<impl Iterator<Item = Option<&[u64]>> + 'a> {
-        assert_eq!(self.schema.len(), right.schema.len());
-        assert!(self
-            .schema
-            .fields
-            .values()
-            .zip(right.schema.fields.values())
-            .all(|(l, r)| l.dtype == r.dtype));
-
-        let r_hashes = right.hash_rows()?;
-
-        let right_arrays = right
-            .columns
-            .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow()))
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let iter = r_hashes.as_arrow().clone().into_iter();
-
-        Ok(Box::new(iter.enumerate().map(move |(r_idx, h)| match h {
-            Some(h) => {
-                let indices = if let Some((_, indices)) =
-                    self.hash_table.raw_entry().from_hash(h, |other| {
-                        h == other.hash && {
-                            let l_idx = other.idx;
-                            let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                            let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
-
-                            let l_table = self.tables.get(l_table_idx).unwrap();
-
-                            let left_refs = l_table.0.as_slice();
-
-                            (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
-                        }
-                    }) {
-                    Some(indices.as_slice())
-                } else {
-                    None
-                };
-                indices
-            }
-            None => None,
-        })))
     }
 }
 

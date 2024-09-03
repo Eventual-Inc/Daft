@@ -61,7 +61,7 @@ impl ProbeTableState {
             ..
         } = self
         {
-            let ptb = probe_table_builder.take().unwrap();
+            let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
             let pt = ptb.build();
 
             *self = Self::Done {
