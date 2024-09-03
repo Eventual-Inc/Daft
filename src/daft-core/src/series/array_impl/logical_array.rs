@@ -7,11 +7,11 @@ use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
+use crate::datatypes::DataType;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;
-use crate::DataType;
 use std::sync::Arc;
 
 impl<L> IntoSeries for LogicalArray<L>

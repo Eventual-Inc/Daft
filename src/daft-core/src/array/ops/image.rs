@@ -6,12 +6,9 @@ use std::vec;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
 use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::{
-    logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
-    BinaryArray, DataType, Field, ImageFormat, ImageMode,
-};
-use crate::datatypes::{DaftArrayType, UInt16Array, UInt32Array, UInt8Array};
-use crate::{IntoSeries, Series};
+use crate::datatypes::logical::{DaftImageryType, LogicalArray};
+use crate::datatypes::prelude::*;
+use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -412,7 +409,7 @@ where
 impl ImageArray {
     pub fn image_mode(&self) -> &Option<ImageMode> {
         match self.data_type() {
-            DataType::Image(mode) => mode,
+            DataType::Image(mode) => &mode,
             _ => panic!("Expected dtype to be Image"),
         }
     }
@@ -758,7 +755,7 @@ impl FixedShapeImageArray {
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
-        match self.data_type() {
+        match &self.data_type() {
             DataType::FixedShapeImage(mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }

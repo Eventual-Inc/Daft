@@ -8,11 +8,15 @@ use crate::{
         ops::{as_arrow::AsArrow, full::FullNull},
         ListArray, StructArray,
     },
-    datatypes::logical::{
-        DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+    datatypes::{
+        logical::{
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+        },
+        DataType,
     },
-    with_match_daft_types, DataType, IntoSeries, Series,
+    series::{IntoSeries, Series},
+    with_match_daft_types,
 };
 
 impl serde::Serialize for Series {

@@ -5,13 +5,8 @@ use std::{
 
 use crate::{
     array::{DataArray, ListArray},
-    datatypes::{
-        infer_timeunit_from_format_string,
-        logical::{DateArray, TimestampArray},
-        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int32Array,
-        Int64Array, TimeUnit, UInt64Array, Utf8Array,
-    },
-    DataType, Series,
+    datatypes::prelude::*,
+    series::Series,
 };
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
@@ -933,7 +928,7 @@ impl Utf8Array {
     pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {
         let len = self.len();
         let self_iter = self.as_arrow().iter();
-        let timeunit = infer_timeunit_from_format_string(format);
+        let timeunit = crate::datatypes::utils::infer_timeunit_from_format_string(format);
 
         let arrow_result = self_iter
             .map(|val| match val {

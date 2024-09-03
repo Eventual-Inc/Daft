@@ -1,10 +1,4 @@
-use crate::{
-    datatypes::{
-        logical::{DateArray, TimeArray, TimestampArray},
-        DaftArrayType, Field, Int32Array, Int64Array, TimeUnit, UInt32Array,
-    },
-    DataType,
-};
+use crate::datatypes::prelude::*;
 use arrow2::{array::PrimitiveArray, compute::arithmetics::ArraySub};
 use chrono::{Duration, NaiveDate, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};
@@ -106,7 +100,7 @@ impl TimestampArray {
         let epoch_date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
         let date_arrow = match tz {
             Some(tz) => {
-                if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
+                if let Ok(tz) = arrow2::temporal_conversions::parse_offset(&tz) {
                     Ok(arrow2::array::PrimitiveArray::<i32>::from_iter(
                         physical.iter().map(|ts| {
                             ts.map(|ts| {
@@ -117,7 +111,7 @@ impl TimestampArray {
                             })
                         }),
                     ))
-                } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz) {
+                } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(&tz) {
                     Ok(arrow2::array::PrimitiveArray::<i32>::from_iter(
                         physical.iter().map(|ts| {
                             ts.map(|ts| {
@@ -165,7 +159,7 @@ impl TimestampArray {
         }
         let time_arrow = match tz {
             Some(tz) => {
-                if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
+                if let Ok(tz) = arrow2::temporal_conversions::parse_offset(&tz) {
                 Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
                     physical.iter().map(|ts| {
                         ts.map(|ts| {
@@ -180,7 +174,7 @@ impl TimestampArray {
                             })
                         }),
                     ))
-                } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz) {
+                } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(&tz) {
                 Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
                     physical.iter().map(|ts| {
                         ts.map(|ts| {
@@ -330,9 +324,10 @@ impl TimestampArray {
                 ts.map_or(Ok(None), |ts| {
                     let truncated_ts = match tz {
                         Some(tz) => {
-                            if let Ok(tz) = arrow2::temporal_conversions::parse_offset(tz) {
+                            if let Ok(tz) = arrow2::temporal_conversions::parse_offset(&tz) {
                                 truncate_single_ts(*ts, *timeunit, Some(tz), duration, relative_to)
-                            } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(tz)
+                            } else if let Ok(tz) =
+                                arrow2::temporal_conversions::parse_offset_tz(&tz)
                             {
                                 truncate_single_ts(*ts, *timeunit, Some(tz), duration, relative_to)
                             } else {

@@ -4,10 +4,11 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::DataType,
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field, FieldRef,
     },
-    DataType, Series,
+    series::Series,
 };
 
 /// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn arrow2::array::Array>

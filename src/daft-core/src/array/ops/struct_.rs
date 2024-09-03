@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{array::StructArray, Series};
+use crate::{array::StructArray, series::Series};
 
 impl StructArray {
     pub fn get(&self, name: &str) -> DaftResult<Series> {
@@ -36,11 +36,7 @@ mod tests {
     use arrow2::bitmap::Bitmap;
     use common_error::DaftResult;
 
-    use crate::{
-        array::StructArray,
-        datatypes::{Field, Int64Array},
-        DataType, IntoSeries,
-    };
+    use crate::{array::StructArray, datatypes::prelude::*, series::IntoSeries};
 
     #[test]
     fn test_struct_get_invalid() -> DaftResult<()> {

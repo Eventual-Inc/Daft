@@ -4,7 +4,7 @@ use crate::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::DaftArrowBackedType,
-    IntoSeries,
+    series::IntoSeries,
 };
 use common_error::DaftResult;
 

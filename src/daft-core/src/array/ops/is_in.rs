@@ -1,11 +1,4 @@
-use crate::{
-    array::DataArray,
-    datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
-        Float32Array, Float64Array, NullArray, Utf8Array,
-    },
-    DataType,
-};
+use crate::{array::DataArray, datatypes::prelude::*};
 
 use super::as_arrow::AsArrow;
 use super::{full::FullNull, DaftIsIn};

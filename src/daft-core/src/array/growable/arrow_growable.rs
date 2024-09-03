@@ -7,12 +7,9 @@ use crate::{
         ops::{as_arrow::AsArrow, from_arrow::FromArrow},
         DataArray,
     },
-    datatypes::{
-        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        FixedSizeBinaryType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type,
-        Int8Type, NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
-    },
-    DataType, IntoSeries, Series,
+    datatypes::prelude::*,
+    series::IntoSeries,
+    series::Series,
 };
 
 use super::Growable;

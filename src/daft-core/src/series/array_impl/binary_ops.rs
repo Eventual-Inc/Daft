@@ -7,13 +7,13 @@ use crate::{
         ops::{DaftCompare, DaftLogical},
         FixedSizeListArray, ListArray, StructArray,
     },
+    datatypes::DataType,
     datatypes::{
         logical::{Decimal128Array, MapArray},
         Field, FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
-    DataType,
 };
 
 use crate::datatypes::logical::{
