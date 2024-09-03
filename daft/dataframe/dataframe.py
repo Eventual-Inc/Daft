@@ -2515,7 +2515,7 @@ class DataFrame:
         import pyarrow as pa
 
         arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
-        return pa.Table.from_batches(arrow_rb_iter)
+        return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:
