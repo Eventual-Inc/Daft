@@ -804,7 +804,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match nchars.len() {
+        let result: Utf8Array = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -868,7 +868,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match nchars.len() {
+        let result: Utf8Array = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -1009,7 +1009,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match n.len() {
+        let result: Utf8Array = match n.len() {
             1 => {
                 let n = n.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -1256,7 +1256,7 @@ impl Utf8Array {
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let padchar_iter = create_broadcasted_str_iter(padchar, expected_size);
-        let result = match length.len() {
+        let result: Utf8Array = match length.len() {
             1 => {
                 let len = length.get(0).unwrap();
                 let len: usize = NumCast::from(len).ok_or_else(|| {

@@ -1317,6 +1317,7 @@ dependencies = [
  "pyo3",
  "regex",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
