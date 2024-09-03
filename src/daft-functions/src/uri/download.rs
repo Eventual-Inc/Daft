@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::array::ops::as_arrow::AsArrow;
-use daft_core::datatypes::{BinaryArray, Field, Utf8Array};
-use daft_core::{DataType, IntoSeries};
+use daft_core::prelude::*;
 use daft_dsl::functions::ScalarUDF;
 use daft_dsl::ExprRef;
 use daft_io::{get_io_client, get_runtime, Error, IOConfig, IOStatsContext, IOStatsRef};

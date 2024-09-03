@@ -2,17 +2,24 @@
 //!
 //! This module re-exports commonly used items from the Daft core library.
 
-// Re-export core data structures
-pub use crate::series::Series;
+// Re-export core series structures
+pub use crate::series::{IntoSeries, Series};
 
 // Re-export common data types and arrays
 pub use crate::datatypes::prelude::*;
 
-// Re-export other array types
-pub use crate::array::{ListArray, StructArray};
-
 // Re-export count mode enum
 pub use crate::count_mode::CountMode;
+
+pub use crate::schema::{Schema, SchemaRef};
+
+pub use crate::array::ops::as_arrow::AsArrow;
+
+pub use crate::array::ops::full::FullNull;
+
+pub use crate::array::ops::DaftCompare;
+
+pub use crate::array::ops::DaftLogical;
 
 // Re-export join-related types
 pub use crate::join::{JoinStrategy, JoinType};

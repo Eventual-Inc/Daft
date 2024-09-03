@@ -13,7 +13,10 @@ impl SQLModule for SQLModuleAggs {
         use AggExpr::*;
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
-        parent.add_agg("count", Count(nil.clone(), daft_core::CountMode::Valid));
+        parent.add_agg(
+            "count",
+            Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
+        );
         parent.add_agg("sum", Sum(nil.clone()));
         parent.add_agg("avg", Mean(nil.clone()));
         parent.add_agg("mean", Mean(nil.clone()));
@@ -27,7 +30,9 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
         AggExpr::Count(_, _) => {
             // SQL default COUNT ignores nulls.
             ensure!(args.len() == 1, "count takes exactly one argument");
-            Ok(args[0].clone().count(daft_core::CountMode::Valid))
+            Ok(args[0]
+                .clone()
+                .count(daft_core::count_mode::CountMode::Valid))
         }
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");

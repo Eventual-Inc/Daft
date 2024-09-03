@@ -409,7 +409,7 @@ where
 impl ImageArray {
     pub fn image_mode(&self) -> &Option<ImageMode> {
         match self.data_type() {
-            DataType::Image(mode) => &mode,
+            DataType::Image(mode) => mode,
             _ => panic!("Expected dtype to be Image"),
         }
     }

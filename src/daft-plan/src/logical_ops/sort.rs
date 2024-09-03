@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use daft_core::schema::Schema;
-use daft_core::DataType;
+use daft_core::prelude::*;
+
 use daft_dsl::{resolve_exprs, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
