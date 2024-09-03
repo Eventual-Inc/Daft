@@ -242,8 +242,8 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 }
 
 #[pyfunction]
-pub fn is_valid_column_name(name: &str, schema: &PySchema) -> bool {
-    crate::is_valid_column_name(name, &schema.schema)
+pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
+    Ok(crate::check_column_name_validity(name, &schema.schema)?)
 }
 
 #[derive(FromPyObject)]

@@ -262,7 +262,11 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
 }
 
 /// Resolves and validates the expression with a schema, returning the new expression and its field.
+/// Specifically, makes sure the expression does not contain aggregations or stateful UDFs when they are not allowed,
+/// and resolves struct accessors and wildcards.
 /// May return multiple expressions if the expr contains a wildcard.
+///
+/// TODO: Use a builder pattern for this functionality
 fn resolve_expr(
     expr: ExprRef,
     schema: &Schema,
@@ -322,6 +326,11 @@ pub fn resolve_exprs(
 }
 
 /// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
+/// Specifically, makes sure the expression does not contain aggregationsnested  or stateful UDFs,
+/// and resolves struct accessors and wildcards.
+/// May return multiple expressions if the expr contains a wildcard.
+///
+/// TODO: Use a builder pattern for this functionality
 fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<AggExpr>> {
     let has_nested_agg = extract_agg_expr(&expr)?.children().iter().any(has_agg);
 
@@ -380,20 +389,30 @@ pub fn resolve_aggexprs(
     Ok((resolved_exprs, resolved_fields?))
 }
 
-pub fn is_valid_column_name(name: &str, schema: &Schema) -> bool {
+pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
     let struct_expr_map = calculate_struct_expr_map(schema);
 
     let names = if name.contains('*') {
         if let Ok(names) = get_wildcard_matches(name, schema, &struct_expr_map) {
             names
         } else {
-            return false;
+            return Err(DaftError::ValueError(format!(
+                "Error matching wildcard `{name}` in schema: {schema}"
+            )));
         }
     } else {
         vec![name.into()]
     };
 
-    names.iter().all(|n| struct_expr_map.contains_key(n))
+    for n in names {
+        if !struct_expr_map.contains_key(&n) {
+            return Err(DaftError::ValueError(format!(
+                "Column `{n}` not found in schema: {schema}"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

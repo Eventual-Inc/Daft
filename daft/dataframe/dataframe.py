@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, is_valid_column_name
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column_name_validity
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -1088,10 +1088,9 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
-            if is_valid_column_name(item, schema._schema):
-                return col(item)
-            else:
-                raise ValueError(f"Column {item} not found in schema {schema}")
+            check_column_name_validity(item, schema._schema)
+
+            return col(item)
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 

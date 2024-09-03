@@ -22,7 +22,7 @@ pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use resolve_expr::{
-    is_valid_column_name, resolve_aggexprs, resolve_exprs, resolve_single_aggexpr,
+    check_column_name_validity, resolve_aggexprs, resolve_exprs, resolve_single_aggexpr,
     resolve_single_expr,
 };
 
@@ -40,7 +40,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(python::stateless_udf))?;
     parent.add_wrapped(wrap_pyfunction!(python::stateful_udf))?;
     parent.add_wrapped(wrap_pyfunction!(python::eq))?;
-    parent.add_wrapped(wrap_pyfunction!(python::is_valid_column_name))?;
+    parent.add_wrapped(wrap_pyfunction!(python::check_column_name_validity))?;
 
     Ok(())
 }
