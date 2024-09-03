@@ -30,8 +30,10 @@ log/
 # pytest benchmarks
 .benchmarks
 
-# docs autogen
-/docs/source/api_docs/doc_gen/
+# docs autogen and builds
+/docs/sphinx-source/api_docs/doc_gen/
+/docs/sphinx-build
+/docs/build
 
 # Added by pyenv
 .python-version

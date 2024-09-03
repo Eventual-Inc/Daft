@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>getdaft.io</title>
+    <link rel="favicon" href="_static/daft-favicon.png">
+    <link rel="stylesheet" href="_static/styles.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oxygen:wght@300;400;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Oxygen:wght@300;400;700&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.3.1/styles/default.min.css"/>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-YN4QSRPV0K"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-YN4QSRPV0K');
+    </script>
+    <script>
+      (function() {
+        if (typeof window === 'undefined') return;
+        if (typeof window.signals !== 'undefined') return;
+        var script = document.createElement('script');
+        script.src = 'https://cdn.cr-relay.com/v1/site/9bf5cfb7-d3ce-4f5c-9de2-0802bea74edb/signals.js';
+        script.async = true;
+        window.signals = Object.assign(
+          [],
+          ['page', 'identify', 'form'].reduce(function (acc, method){
+            acc[method] = function () {
+              signals.push([method, arguments]);
+              return signals;
+            };
+          return acc;
+          }, {})
+        );
+        document.head.appendChild(script);
+      })();
+    </script>
+  </head>
+
+  <body class="body">
+    <header class="header-section">
+      <div class="wrapper">
+        <nav class="nav-bar">
+          <div class="logo">
+            <a href=""><img src="_static/daftLogo.png" id="nav-logo" /></a>
+          </div>
+          <ul class="nav-menu">
+            <li class="nav-menu-item">
+              <a
+                href="https://www.github.com/Eventual-Inc/Daft"
+                id="stargazers-count"
+                >Stars&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</a
+              >
+            </li>
+            <li class="nav-menu-item">
+              <a href="#get-started" class="nav-link">Get Started</a>
+            </li>
+            <li class="nav-menu-item">
+              <a href="docs/" class="nav-link">Documentation</a>
+            </li>
+            <li class="nav-menu-item">
+              <a href="https://www.github.com/Eventual-Inc/Daft" class="nav-link"
+                >Github</a
+              >
+            </li>
+            <li class="nav-menu-item">
+              <a href="https://blog.getdaft.io/" class="nav-link">Blog</a>
+            </li>
+            <li class="nav-menu-item">
+              <a href="#community" class="nav-link">Community</a>
+            </li>
+          </ul>
+          <div class="hamburger">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </div>
+        </nav>
+      </div>
+    </header>
+    <section class="hero-section">
+      <h1 class="h1">
+        Fast and Distributed<br />
+        Python Query Engine
+      </h1>
+
+      <p class="hero-content">
+        Daft is a framework for ETL, analytics and ML/AI at scale. Its familiar
+        Python Dataframe API is built to outperform Spark in performance and ease
+        of use.
+      </p>
+
+      <div class="button-section">
+        <a href="docs/en/stable/install.html" class="btn dark"
+          >pip install getdaft</a
+        >
+        <a
+          href="docs/en/stable/index.html"
+          class="btn light dark-border"
+          >see documentation</a
+        >
+      </div>
+    </section>
+
+    <section class="capabilites-section" id="get-started">
+      <div class="wrapper">
+        <p class="eyebrow-text">CAPABILITIES</p>
+        <h2 class="h2 capabilities-header-responsive">
+          Blazing efficiency, designed for multimodal data.
+        </h2>
+        <div class="card-scroll">
+          <div class="capability-cards">
+            <div class="capability-card-header">
+              <h2 class="h2">
+                Blazing efficiency, designed for multimodal data.
+              </h2>
+            </div>
+
+            <div class="capability-card middle">
+              <p class="capabiltity-title bold">
+                Integrate with ML/AI libraries.
+              </p>
+              <p>
+                Daft plugs directly into your ML/AI stack through efficient
+                zero-copy integrations with essential Python libraries such as
+                Pytorch and Ray. It also allows requesting GPUs as a resource for
+                running models.
+              </p>
+              <p class="card-read-more thin">
+                <a
+                  href="docs/en/stable/api_docs/dataframe.html#integrations"
+                  class="read-more"
+                  >read more</a
+                >
+              </p>
+              <img src="_static/capabilities-1.png" class="capability-image" />
+            </div>
+
+            <div class="capability-card right">
+              <p class="capabiltity-title bold">
+                Go Distributed and Out-of-Core.
+              </p>
+              <p>
+                Daft runs locally with a lightweight multithreaded backend. When
+                your local machine is no longer sufficient, it scales seamlessly
+                to run out-of-core on a distributed cluster.
+              </p>
+              <p class="card-read-more thin">
+                <a
+                  href="docs/en/stable/user_guide/poweruser/distributed-computing.html"
+                  class="read-more"
+                  >read more</a
+                >
+              </p>
+              <img src="_static/capabilities-2.png" class="capability-image" />
+            </div>
+
+            <div class="capability-card bottom">
+              <p class="capabiltity-title bold">Execute Complex Operations.</p>
+              <p>
+                Daft can handle User-Defined Functions (UDFs) on DataFrame
+                columns, allowing you to apply complex expressions and operations
+                on Python objects with full flexibility required for ML/AI.
+              </p>
+              <p class="card-read-more thin">
+                <a
+                  href="docs/en/stable/user_guide/daft_in_depth/udf.html"
+                  class="read-more"
+                  >read more</a
+                >
+              </p>
+              <img src="_static/capabilities-3.png" class="capability-image" />
+            </div>
+
+            <div class="capability-card middle bottom">
+              <p class="capabiltity-title bold">
+                Native Support for Cloud Storage.
+              </p>
+              <p>
+                Daft runs locally with a lightweight multithreaded backend. When
+                your local machine is no longer sufficient, it scales seamlessly
+                to run out-of-core on a distributed cluster.
+              </p>
+              <p class="card-read-more thin">
+                <a
+                  href="docs/en/stable/user_guide/integrations.html"
+                  class="read-more"
+                  >read more</a
+                >
+              </p>
+              <img src="_static/capabilities-4.png" class="capability-image" />
+            </div>
+
+            <div class="capability-card right bottom">
+              <p class="capabiltity-title bold">Deliver Unmatched Speed.</p>
+              <p>
+                Underneath its Python API, Daft is built in blazing fast Rust
+                code. Rust powers Daft’s vectorized execution and async I/O,
+                allowing Daft to outperform frameworks such as Spark.
+              </p>
+              <p class="card-read-more thin">
+                <a
+                  href="docs/en/stable/faq/benchmarks.html"
+                  class="read-more"
+                  >read more</a
+                >
+              </p>
+              <img src="_static/capabilities-5.png" class="capability-image" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="use-cases-section">
+      <div class="wrapper">
+        <p class="eyebrow-text">USE CASES</p>
+        <h2 class="h2">
+          Daft provides a familar and easy to use <br />
+          Python dataframe API for:
+        </h2>
+      </div>
+      <div class="tabs">
+        <div class="tab">
+          <a
+            href=""
+            class="title"
+            id="MultimodalID"
+            data-target="Multimodal"
+            data-target-mobile="Multimodal-mobile"
+            >Multimodal Data Processing</a
+          >
+        </div>
+        <div class="wrapper-use-cases mobile" id="Multimodal-mobile">
+          <!--Mobile content-->
+          <div class="wrapper">
+            <div class="use-cases-box">
+              <div class="left-use-cases">
+                <p>
+                  Daft exposes a powerful type system that can represent complex
+                  datatypes such as JSON, URLs, Images and Tensors. Operations can
+                  be expressed using Daft's Expressions API, allowing for easy
+                  manipulation of these complex datatypes that is then lazily
+                  executed on Daft's blazing fast Rust core engine.
+                </p>
+                <img src="_static/use-cases-1.png" class="use-cases-image" />
+              </div>
+              <div class="right-use-cases">
+                <pre class="pre-code">
+                            <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.from_pydict(
+    4       {
+    5           "image_urls": ["a", "b", "c"],
+    6       }
+    7   )
+    8
+    9   df = df.with_column(
+    10      "data",
+    11      df["image_urls"].url.download()
+    12  )
+    13  df = df.with_column(
+    14      "images",
+    15      df["data"].image.decode()
+    16  )
+    17  df.show()
+                            </code>
+                            </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr class="use-cases-line" width="1" size="60" />
+        <div class="tab">
+          <a
+            href=""
+            class="title"
+            data-target="Batch-Data"
+            data-target-mobile="Batch-Data-mobile"
+            >Batch Data Processing</a
+          >
+        </div>
+        <div class="wrapper-use-cases mobile" id="Batch-Data-mobile">
+          <!--Mobile content-->
+          <div class="wrapper">
+            <div class="use-cases-box">
+              <div class="left-use-cases">
+                <p>
+                  Daft supports large-scale tabular batch data processing with its
+                  familiar DataFrame interface. Its Rust I/O engine is heavily
+                  tuned for cloud based workloads, and boasts record-setting
+                  efficiency when reading and writing data in formats such as
+                  Apache Parquet. Daft also applies powerful optimizations with
+                  its built in query optimizer, ensuring that your query is
+                  executed efficiently when run on data at terabyte-scales.
+                </p>
+                <img src="_static/use-cases-2.png" class="use-cases-image" />
+              </div>
+              <div class="right-use-cases">
+                <pre class="pre-code">
+                            <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.read_parquet(
+    4       "s3://source-bucket/**/*.parquet"
+    5   )
+    6   df = df.sort("foo")
+    7
+    8   df.write_parquet("s3://destination-bucket/")
+                            </code>
+                            </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr class="use-cases-line" width="1" size="60" />
+        <div class="tab">
+          <a
+            href=""
+            class="title"
+            data-target="ML-Training"
+            data-target-mobile="ML-Training-mobile"
+            >Data Ingestion for ML Training</a
+          >
+        </div>
+        <div class="wrapper-use-cases mobile" id="ML-Training-mobile">
+          <!--Mobile content-->
+          <div class="wrapper">
+            <div class="use-cases-box">
+              <div class="left-use-cases">
+                <p>
+                  Daft provides tight integration with frameworks such as Pytorch
+                  and Ray to efficiently ingest data into your data-hungry ML
+                  model training workloads. Its blazing fast I/O and kernels
+                  allows for maximizing GPU utilization by pipelining your data
+                  through downloading, pre-processing and random per-epoch
+                  shuffling. Daft also leverages Apache Arrow memory formats,
+                  allowing for zero-copy data transfer between dataloading and
+                  model training.
+                </p>
+                <img src="_static/use-cases-3.png" class="use-cases-image" />
+              </div>
+              <div class="right-use-cases">
+                <pre class="pre-code">
+                            <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.read_json("s3://my-json-files/**/*.json")
+    4   df = df.with_column(
+    5       "features",
+    6       run_featurization(df["data"])
+    7   )
+    8
+    9   pytorch_dataset = df.to_torch_iter_dataset()
+                            </code>
+                            </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr class="use-cases-line" width="1" size="60" />
+        <div class="tab">
+          <a
+            href=""
+            class="title"
+            data-target="EDA"
+            data-target-mobile="EDA-mobile"
+            >EDA (Data Science at Scale)</a
+          >
+        </div>
+        <div class="wrapper-use-cases mobile" id="EDA-mobile">
+          <!--Mobile content-->
+          <div class="wrapper">
+            <div class="use-cases-box">
+              <div class="left-use-cases">
+                <p>
+                  Daft is built for usage from interactive environments such as
+                  Jupyter notebooks. This lets you perform interactive
+                  explorations of your data with just your local development
+                  environment. Daft's expressions API also lets you perform
+                  operations such as groupby, aggregations and joins.
+                </p>
+                <img src="_static/use-cases-4.png" class="use-cases-image" />
+              </div>
+              <div class="right-use-cases">
+                <pre class="pre-code">
+                            <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.from_pydict(
+    4       {
+    5           "A": ["foo", "bar", "foo", "bar"],
+    6           "B": [i for i in range(4)],
+    7       }
+    8   )
+    9   grouped_df = df.groupby(df["A"])
+    10  aggregated_df = grouped_df.agg(
+    11      [
+    12          (grouped_df["B"].alias("B_sum"), "sum"),
+    13      ]
+    14  )
+    16  aggregated_df.collect()
+                            </code>
+                            </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrapper-use-cases" id="Multimodal">
+        <div class="wrapper">
+          <div class="use-cases-box">
+            <div class="left-use-cases">
+              <p>
+                Daft exposes a powerful type system that can represent complex
+                datatypes such as JSON, URLs, Images and Tensors. Operations can
+                be expressed using Daft's Expressions API, allowing for easy
+                manipulation of these complex datatypes that is then lazily
+                executed on Daft's blazing fast Rust core engine.
+              </p>
+              <img src="_static/use-cases-1.png" class="use-cases-image" />
+            </div>
+            <div class="right-use-cases">
+              <pre class="pre-code">
+                        <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.from_pydict({
+    4       "image_urls": ["a", "b", "c"],
+    5   })
+    6
+    7   df = df.with_column("data", df["image_urls"].url.download())
+    8   df = df.with_column("images", df["data"].image.decode())
+    9
+    10  df.show()
+                        </code>
+                        </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrapper-use-cases" id="Batch-Data">
+        <div class="wrapper">
+          <div class="use-cases-box">
+            <div class="left-use-cases">
+              <p>
+                Daft supports large-scale tabular batch data processing with its
+                familiar DataFrame interface. Its Rust I/O engine is heavily tuned
+                for cloud based workloads, and boasts record-setting efficiency
+                when reading and writing data in formats such as Apache Parquet.
+                Daft also applies powerful optimizations with its built in query
+                optimizer, ensuring that your query is executed efficiently when
+                run on data at terabyte-scales.
+              </p>
+              <img src="_static/use-cases-2.png" class="use-cases-image" />
+            </div>
+            <div class="right-use-cases">
+              <pre class="pre-code">
+                        <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.read_parquet("s3://source-bucket/**/*.parquet")
+    4   df = df.sort("foo")
+    5
+    6   df.write_parquet("s3://destination-bucket/")
+                        </code>
+                        </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrapper-use-cases" id="ML-Training">
+        <div class="wrapper">
+          <div class="use-cases-box">
+            <div class="left-use-cases">
+              <p>
+                Daft provides tight integration with frameworks such as Pytorch
+                and Ray to efficiently ingest data into your data-hungry ML model
+                training workloads. Its blazing fast I/O and kernels allows for
+                maximizing GPU utilization by pipelining your data through
+                downloading, pre-processing and random per-epoch shuffling. Daft
+                also leverages Apache Arrow memory formats, allowing for zero-copy
+                data transfer between dataloading and model training.
+              </p>
+              <img src="_static/use-cases-3.png" class="use-cases-image" />
+            </div>
+            <div class="right-use-cases">
+              <pre class="pre-code">
+                        <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.read_json("s3://my-json-files/**/*.json")
+    4   df = df.with_column(
+    5       "features",
+    6       run_featurization(df["data"])
+    7   )
+    8
+    9   pytorch_dataset = df.to_torch_iter_dataset()
+                        </code>
+                        </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrapper-use-cases" id="EDA">
+        <div class="wrapper">
+          <div class="use-cases-box">
+            <div class="left-use-cases">
+              <p>
+                Daft is built for usage from interactive environments such as
+                Jupyter notebooks. This lets you perform interactive explorations
+                of your data with just your local development environment. Daft's
+                expressions API also lets you perform operations such as groupby,
+                aggregations and joins.
+              </p>
+              <img src="_static/use-cases-4.png" class="use-cases-image" />
+            </div>
+            <div class="right-use-cases">
+              <pre class="pre-code">
+                        <code class="language-python" style="background: var(--light-background)">
+    1   import daft
+    2
+    3   df = daft.from_pydict(
+    4       {
+    5           "A": ["foo", "bar", "foo", "bar"],
+    6           "B": [i for i in range(4)],
+    7       }
+    8   )
+    9   grouped_df = df.groupby(df["A"])
+    10  aggregated_df = grouped_df.agg(
+    11      [
+    12          (grouped_df["B"].alias("B_sum"), "sum"),
+    13      ]
+    14  )
+    16  aggregated_df.collect()
+                        </code>
+                        </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- <section class="testimonial-section">
+      <div class="wrapper">
+        <h2 class="h2">
+          “Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+          tempor incididunt ut labore et dolore magna aliqua.”
+        </h2>
+        <p>First Last Position Company</p>
+      </div>
+    </section> -->
+
+    <section class="ecosystem-section">
+      <div class="wrapper">
+        <div class="left-ecosystem">
+          <p class="eyebrow-text">ECOSYSTEM</p>
+          <div class="ecosystem-headline-responsive">
+            <h2 class="h2">Integrations? We'll build it.</h2>
+          </div>
+          <div class="logos">
+            <p class="bold" style="font-size: 20px">
+              Data Science and Machine Learning
+            </p>
+            <ul class="ecosystem-list">
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.to_torch_iter_dataset.html"
+                  class="ecosystem-link"
+                  ><img src="_static/pytorch.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.to_pandas.html"
+                  class="ecosystem-link"
+                  ><img src="_static/pandas.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <!-- <li class="ecosystem-item">
+                  <a href="" class="ecosystem-link"
+                    ><img src="_static/polars.png" class="ecosystem-image"
+                  /></a>
+                </li> -->
+            </ul>
+            <p class="bold" style="font-size: 20px">Storage and Infrastructure</p>
+            <ul class="ecosystem-list">
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/user_guide/integrations/iceberg.html"
+                  class="ecosystem-link"
+                  ><img src="_static/apacheIceberg.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/user_guide/integrations/delta_lake.html"
+                  class="ecosystem-link"
+                  ><img src="_static/deltaLake.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/user_guide/integrations/ray.html"
+                  class="ecosystem-link"
+                  ><img src="_static/ray.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/api_docs/doc_gen/io_configs/daft.io.GCSConfig.html"
+                  class="ecosystem-link"
+                  ><img
+                    src="_static/googleCloudPlatform.png"
+                    class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/user_guide/integrations/microsoft-azure.html"
+                  class="ecosystem-link"
+                  ><img src="_static/azure.png" class="ecosystem-image"
+                /></a>
+              </li>
+              <li class="ecosystem-item">
+                <a
+                  href="docs/en/stable/user_guide/integrations/aws.html"
+                  class="ecosystem-link"
+                  ><img src="_static/aws.png" class="ecosystem-image"
+                /></a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="right-ecosystem">
+          <h2 class="h2">Integrations? <br />We'll build it.</h2>
+        </div>
+      </div>
+    </section>
+
+    <section class="community-section" id="community">
+      <div class="wrapper">
+        <div class="left-two-thirds">
+          <div class="left-community">
+            <div>
+              <div>
+                <p class="eyebrow-text">COMMUNITY</p>
+                <h2 class="h2">
+                  Get updates,<br />
+                  contribute code, or say hi!
+                </h2>
+              </div>
+              <img src="_static/hand.png" id="left-community-image" />
+            </div>
+            <p class="community-content">
+              We hold contributor syncs on the last Thursday of every month to
+              discuss new features and technical deep dives. Add it to your
+              calendar
+              <a
+                href="https://calendar.google.com/calendar/u/0?cid=Y183N2IwNzgyMTlmZmM3MDcxODQxOWMwNzI1NzQ3MjAzOTBhNTBlNzRmNzg1ZjIzZjFkNTczMjU3ZWQyZmM2M2I0QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20"
+                >here</a
+              >
+            </p>
+          </div>
+          <div class="left-blog">
+            <div class="top-blog">
+              <p class="header">Daft Engineering Blog</p>
+              <img src="_static/blog.png" id="left-blog-image" />
+            </div>
+            <p>
+              Join us as we explore innovative ways to handle vast datasets,
+              optimize performance, and revolutionize your data workflows!
+            </p>
+            <div class="iframe-div">
+              <iframe
+                id="left-blog-iframe"
+                src="https://blog.getdaft.io/embed"
+                width="350"
+                height="150"
+                frameborder="0"
+                scrolling="no"
+              ></iframe>
+            </div>
+          </div>
+        </div>
+        <div class="right-one-third">
+          <div class="right-github">
+            <div class="top-github">
+              <p class="header">Github Discussions Forums</p>
+              <img src="_static/github-black.png" id="right-github-img" />
+            </div>
+            <div class="bottom-github">
+              <a
+                class="btn dark"
+                href="https://github.com/Eventual-Inc/Daft/discussions"
+                >Join</a
+              >
+            </div>
+          </div>
+          <div class="right-slack">
+            <div class="top-slack">
+              <p class="header">The Distributed Data Community Slack</p>
+              <img src="_static/slack.png" id="right-slack-image" />
+            </div>
+            <div class="bottom-slack">
+              <a
+                class="btn dark"
+                href="https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw"
+                >Join</a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tutorial-section">
+      <div class="wrapper">
+        <img src="_static/stairs.png" id="tutorial-image" />
+        <h2 class="h2">Take the next step with an easy tutorial.</h2>
+
+        <div class="tutorial-cards">
+          <div class="tutorial-card left-edge">
+            <div>
+              <div class="tutorial-title">
+                <p class="bold">MNIST Digit Classification</p>
+              </div>
+              <p>
+                Use a simple deep learning model to run classification on the
+                MNIST image dataset.
+              </p>
+            </div>
+            <a
+              href="docs/en/stable/user_guide/tutorials.html#mnist-digit-classification"
+              class="btn light"
+              >see tutorial</a
+            >
+          </div>
+
+          <div class="tutorial-card">
+            <div>
+              <div class="tutorial-title">
+                <p class="bold">Running LLMs on the Red Pajamas Dataset</p>
+              </div>
+              <p>
+                Perform similarity a search on Stack Exchange questions using
+                language models and embeddings.
+              </p>
+            </div>
+            <a
+              href="docs/en/stable/user_guide/tutorials.html#running-llms-on-the-red-pajamas-dataset"
+              class="btn light"
+              >see tutorial</a
+            >
+          </div>
+
+          <div class="tutorial-card">
+            <div>
+              <div class="tutorial-title">
+                <p class="bold">Querying Images with UDFs</p>
+              </div>
+              <p>
+                Query the Open Images dataset to retrieve the top N “reddest”
+                images using Numpy and Pillow inside Daft UDFs.
+              </p>
+            </div>
+            <a
+              href="docs/en/stable/user_guide/tutorials.html#querying-images-with-udfs"
+              class="btn light"
+              >see tutorial</a
+            >
+          </div>
+
+          <div class="tutorial-card right-edge">
+            <div>
+              <div class="tutorial-title">
+                <p class="bold">Image Generation on GPUs</p>
+              </div>
+              <p>
+                Generate images from text prompts using a deep learning model
+                (Mini DALL-E) and Daft UDFs
+              </p>
+            </div>
+            <a
+              href="docs/en/stable/user_guide/tutorials.html#image-generation-on-gpus"
+              class="btn light"
+              >see tutorial</a
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="wrapper">
+        <div class="footer-left">
+          <div class="footer-logo">
+            <a href="/" class="logo-link">
+              <img
+                src="_static/daft-logo-light.png"
+                alt="Logo"
+                class="footer-image"
+              />
+            </a>
+          </div>
+          <div class="footer-social">
+            <a href="https://twitter.com/daft_dataframe" class="social-link"
+              ><img src="_static/x-twitter.png" class="social-image"
+            /></a>
+            <a
+              href="https://www.linkedin.com/company/eventualcomputing/"
+              class="social-link"
+              ><img src="_static/linkedin.png" class="social-image"
+            /></a>
+            <!-- <a href="" class="social-link"
+                ><img src="_static/youtube.png" class="social-image"
+              /></a> -->
+            <a
+              href="https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw"
+              class="social-link"
+              ><img src="_static/slack-footer.png" class="social-image"
+            /></a>
+            <a href="https://www.github.com/Eventual-Inc/Daft" class="social-link"
+              ><img src="_static/github-footer.png" class="social-image"
+            /></a>
+          </div>
+        </div>
+
+        <div class="footer-links">
+          <ul class="footer-list">
+            <li class="footer-item">
+              <a href="docs/" class="footer-link">Documentation</a>
+            </li>
+            <li class="footer-item">
+              <a
+                href="https://www.github.com/Eventual-Inc/Daft"
+                class="footer-link"
+                >Github Repository</a
+              >
+            </li>
+            <li class="footer-item">
+              <a
+                href="https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw"
+                class="footer-link"
+                >Contact Us</a
+              >
+            </li>
+            <!-- <li class="footer-item">
+                <a href="" class="footer-link">Privacy Policy</a>
+              </li> -->
+          </ul>
+        </div>
+      </div>
+    </footer>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.3.1/highlight.min.js"></script>
+    <script>
+      hljs.highlightAll();
+    </script>
+    <script src="_static/script.js"></script>
+  </body>
+</html>
