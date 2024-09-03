@@ -72,9 +72,10 @@ pub struct ApproxPercentileParams {
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
-    ApproxSketch(ExprRef),
     ApproxPercentile(ApproxPercentileParams),
-    MergeSketch(ExprRef),
+    ApproxCountDistinct(ExprRef),
+    ApproxSketch(ExprRef, SketchType),
+    MergeSketch(ExprRef, SketchType),
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
@@ -85,6 +86,12 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SketchType {
+    DDSketch,
+    HyperLogLog,
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -101,9 +108,10 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | MergeSketch(expr)
+            | ApproxCountDistinct(expr)
+            | ApproxSketch(expr, _)
+            | MergeSketch(expr, _)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -125,10 +133,6 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
             }
-            ApproxSketch(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_approx_sketch()"))
-            }
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
@@ -140,9 +144,21 @@ impl AggExpr {
                     percentiles,
                 ))
             }
-            MergeSketch(expr) => {
+            ApproxCountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_merge_sketch()"))
+                FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
+            }
+            ApproxSketch(expr, sketch_type) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_approx_sketch(sketch_type={sketch_type:?})"
+                ))
+            }
+            MergeSketch(expr, sketch_type) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
+                ))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -179,9 +195,10 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | MergeSketch(expr)
+            | ApproxCountDistinct(expr)
+            | ApproxSketch(expr, _)
+            | MergeSketch(expr, _)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -222,8 +239,9 @@ impl AggExpr {
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
             }),
-            ApproxSketch(_) => ApproxSketch(children[0].clone()),
-            MergeSketch(_) => MergeSketch(children[0].clone()),
+            ApproxCountDistinct(_) => ApproxCountDistinct(children[0].clone()),
+            &ApproxSketch(_, sketch_type) => ApproxSketch(children[0].clone(), sketch_type),
+            &MergeSketch(_, sketch_type) => MergeSketch(children[0].clone(), sketch_type),
         }
     }
 
@@ -239,30 +257,6 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_sum_supertype(&field.dtype)?,
-                ))
-            }
-            ApproxSketch(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    field.name.as_str(),
-                    match &field.dtype {
-                        DataType::Int8
-                        | DataType::Int16
-                        | DataType::Int32
-                        | DataType::Int64
-                        | DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64
-                        | DataType::Float32
-                        | DataType::Float64 => DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Expected input to approx_sketch() to be numeric but received dtype {} for column \"{}\"",
-                                other, field.name,
-                            )))
-                        }
-                    },
                 ))
             }
             ApproxPercentile(ApproxPercentileParams {
@@ -288,20 +282,42 @@ impl AggExpr {
                     },
                 ))
             }
-            MergeSketch(expr) => {
+            ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                  field.name.as_str(),
-                  match &field.dtype {
-                      DataType::Struct(fields) => DataType::Struct(fields.clone()),
-                      other => {
-                          return Err(DaftError::TypeError(format!(
-                              "Expected input to merge_sketch() to be struct but received dtype {} for column \"{}\"",
-                              other, field.name,
-                          )))
+                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
+            ApproxSketch(expr, sketch_type) => {
+                let field = expr.to_field(schema)?;
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
+                        if !field.dtype.is_numeric() {
+                            return Err(DaftError::TypeError(format!(
+                                r#"Expected input to approx_sketch() to be numeric but received dtype {} for column "{}""#,
+                                field.dtype, field.name,
+                            )));
+                        };
+                        DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
+                    }
+                    SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
+                };
+                Ok(Field::new(field.name, dtype))
+            }
+            MergeSketch(expr, sketch_type) => {
+                let field = expr.to_field(schema)?;
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
+                        if let DataType::Struct(..) = field.dtype {
+                            field.dtype
+                        } else {
+                            return Err(DaftError::TypeError(format!(
+                                "Expected input to merge_sketch() to be struct but received dtype {} for column \"{}\"",
+                                field.dtype, field.name,
+                            )));
                         }
-                    },
-                ))
+                    }
+                    SketchType::HyperLogLog => DataType::UInt64,
+                };
+                Ok(Field::new(field.name, dtype))
             }
             Mean(expr) => {
                 let field = expr.to_field(schema)?;
@@ -390,8 +406,8 @@ impl Expr {
         Expr::Agg(AggExpr::Sum(self)).into()
     }
 
-    pub fn approx_sketch(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::ApproxSketch(self)).into()
+    pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::ApproxCountDistinct(self)).into()
     }
 
     pub fn approx_percentiles(
@@ -420,10 +436,6 @@ impl Expr {
             inputs: vec![self],
         }
         .into()
-    }
-
-    pub fn merge_sketch(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::MergeSketch(self)).into()
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {
@@ -1013,12 +1025,13 @@ impl Display for AggExpr {
         match self {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
-            ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
             ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(
                 f,
                 "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
             ),
-            MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
+            ApproxCountDistinct(expr) => write!(f, "approx_count_distinct({expr})"),
+            ApproxSketch(expr, sketch_type) => write!(f, "approx_sketch({expr}, sketch_type={sketch_type:?})"),
+            MergeSketch(expr, sketch_type) => write!(f, "merge_sketch({expr}, sketch_type={sketch_type:?})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),

@@ -58,8 +58,7 @@ pub fn read_csv_schema(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(Schema, CsvReadStats)> {
     let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
-    runtime_handle.block_on(async {
+    runtime_handle.block_on_current_thread(async {
         read_csv_schema_single(
             uri,
             parse_options.unwrap_or_default(),
@@ -81,9 +80,8 @@ pub async fn read_csv_schema_bulk(
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<(Schema, CsvReadStats)>> {
     let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
     let result = runtime_handle
-        .block_on(async {
+        .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
                 let owned_string = uri.to_string();
                 let owned_client = io_client.clone();

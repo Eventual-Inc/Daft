@@ -97,6 +97,12 @@ ALL_TEMPORAL_DATATYPES_BINARY_PAIRS = [
 ALL_DATATYPES_BINARY_PAIRS += ALL_TEMPORAL_DATATYPES_BINARY_PAIRS
 
 
+DECIMAL_DTYPES = [
+    (DataType.decimal128(7, 2), pa.array([1, 2, None], type=pa.decimal128(7, 2))),
+    (DataType.decimal128(4, 3), pa.array([1, 2, None], type=pa.decimal128(4, 3))),
+]
+
+
 @pytest.fixture(
     scope="module",
     params=ALL_DATATYPES_BINARY_PAIRS,
@@ -119,6 +125,19 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
 )
 def unary_data_fixture(request) -> Series:
     """Returns unary permutation of Series' of all DataType pairs"""
+    (dt, data) = request.param
+    s = Series.from_arrow(data, name="arg")
+    assert s.datatype() == dt
+    return s
+
+
+@pytest.fixture(
+    scope="module",
+    params=DECIMAL_DTYPES,
+    ids=[f"{dt}" for (dt, _) in DECIMAL_DTYPES],
+)
+def decimal_unary_data_fixture(request) -> Series:
+    """Returns unary permutation of Series' of select decimal DataType pairs"""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt

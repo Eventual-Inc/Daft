@@ -1,9 +1,11 @@
+use crate::array::ops::DaftHllMergeAggable;
 use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
 use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
+use logical::Decimal128Array;
 
 use crate::datatypes::*;
 
@@ -61,6 +63,27 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
+            Decimal128(_, _) => match groups {
+                Some(groups) => Ok(Decimal128Array::new(
+                    Field {
+                        dtype: try_sum_supertype(self.data_type())?,
+                        ..self.field().clone()
+                    },
+                    DaftSumAggable::grouped_sum(
+                        &self.as_physical()?.downcast::<Int128Array>()?,
+                        groups,
+                    )?,
+                )
+                .into_series()),
+                None => Ok(Decimal128Array::new(
+                    Field {
+                        dtype: try_sum_supertype(self.data_type())?,
+                        ..self.field().clone()
+                    },
+                    DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
+                )
+                .into_series()),
+            },
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
                 other
@@ -112,6 +135,16 @@ impl Series {
                 other
             ))),
         }
+    }
+
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_merge(groups),
+            None => downcasted_self.hll_merge(),
+        }?
+        .into_series();
+        Ok(series)
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

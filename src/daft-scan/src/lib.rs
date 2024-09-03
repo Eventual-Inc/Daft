@@ -469,19 +469,80 @@ impl ScanTask {
         }
     }
 
+    /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
     pub fn num_rows(&self) -> Option<usize> {
         if self.pushdowns.filters.is_some() {
+            // Cannot obtain an accurate num_rows if there are filters
             None
         } else {
-            self.metadata.as_ref().map(|m| m.length)
+            // Only can obtain an accurate num_rows if metadata is provided
+            self.metadata.as_ref().map(|m| {
+                // Account for any limit pushdowns
+                if let Some(limit) = self.pushdowns.limit {
+                    m.length.min(limit)
+                } else {
+                    m.length
+                }
+            })
         }
     }
 
-    pub fn upper_bound_rows(&self) -> Option<usize> {
-        self.metadata.as_ref().map(|m| m.length)
+    /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
+    pub fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
+        let approx_total_num_rows_before_pushdowns = self
+            .metadata
+            .as_ref()
+            .map(|metadata| {
+                // Use accurate metadata if available
+                metadata.length as f64
+            })
+            .or_else(|| {
+                // Otherwise, we fall back on estimations based on the file size
+                // use inflation factor from config and estimate number of rows from the schema
+                self.size_bytes_on_disk.map(|file_size| {
+                    let config = config
+                        .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
+                    let inflation_factor = match self.file_format_config.as_ref() {
+                        FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
+                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
+                            config.csv_inflation_factor
+                        }
+                        #[cfg(feature = "python")]
+                        FileFormatConfig::Database(_) => 1.0,
+                        #[cfg(feature = "python")]
+                        FileFormatConfig::PythonFunction => 1.0,
+                    };
+                    let in_mem_size: f64 = (file_size as f64) * inflation_factor;
+                    let read_row_size = self.schema.estimate_row_size_bytes();
+                    in_mem_size / read_row_size
+                })
+            });
+
+        approx_total_num_rows_before_pushdowns.map(|approx_total_num_rows_before_pushdowns| {
+            if self.pushdowns.filters.is_some() {
+                // HACK: This might not be a good idea? We could also just return None here
+                // Assume that filters filter out about 80% of the data
+                approx_total_num_rows_before_pushdowns / 5.
+            } else if let Some(limit) = self.pushdowns.limit {
+                (limit as f64).min(approx_total_num_rows_before_pushdowns)
+            } else {
+                approx_total_num_rows_before_pushdowns
+            }
+        })
     }
 
-    pub fn size_bytes(&self) -> Option<usize> {
+    /// Obtain the absolute maximum number of rows this ScanTask can give, or None if not possible to derive
+    pub fn upper_bound_rows(&self) -> Option<usize> {
+        self.metadata.as_ref().map(|m| {
+            if let Some(limit) = self.pushdowns.limit {
+                limit.min(m.length)
+            } else {
+                m.length
+            }
+        })
+    }
+
+    pub fn size_bytes_on_disk(&self) -> Option<usize> {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
@@ -501,38 +562,11 @@ impl ScanTask {
                 })
             })
             .or_else(|| {
-                // if num rows is provided, use that to estimate row size bytes
-                self.num_rows().map(|num_rows| {
+                // use approximate number of rows multiplied by an approximate bytes-per-row
+                self.approx_num_rows(config).map(|approx_num_rows| {
                     let row_size = mat_schema.estimate_row_size_bytes();
-                    let estimate = (num_rows as f64) * row_size;
+                    let estimate = approx_num_rows * row_size;
                     estimate as usize
-                })
-            })
-            // Fall back on on-disk size.
-            .or_else(|| {
-                self.size_bytes_on_disk.map(|file_size| {
-                    // use inflation factor from config
-                    let config = config
-                        .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
-                    let inflation_factor = match self.file_format_config.as_ref() {
-                        FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            config.csv_inflation_factor
-                        }
-                        #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) => 1.0,
-                        #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction => 1.0,
-                    };
-
-                    // estimate number of rows from read schema
-                    let in_mem_size: f64 = (file_size as f64) * inflation_factor;
-                    let read_row_size = self.schema.estimate_row_size_bytes();
-                    let approx_rows = in_mem_size / read_row_size;
-
-                    // estimate in memory size using mat schema estimate
-                    let proj_schema_size = mat_schema.estimate_row_size_bytes();
-                    (approx_rows * proj_schema_size) as usize
                 })
             })
     }

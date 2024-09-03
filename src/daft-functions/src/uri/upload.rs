@@ -92,7 +92,7 @@ pub fn url_upload(
         //
         // Alternatively, we can find a way of creating a `bytes::Bytes` that just references the underlying
         // arrow2 buffer, without making a copy. This would be the ideal case.
-        bytes_iter: impl Iterator<Item = Option<bytes::Bytes>>,
+        to_upload: Vec<Option<bytes::Bytes>>,
         max_connections: usize,
         multi_thread: bool,
         config: Arc<IOConfig>,
@@ -116,39 +116,40 @@ pub fn url_upload(
         }
 
         let runtime_handle = get_runtime(multi_thread)?;
-        let _rt_guard = runtime_handle.enter();
         let max_connections = match multi_thread {
             false => max_connections,
             true => max_connections * usize::from(std::thread::available_parallelism()?),
         };
         let io_client = get_io_client(multi_thread, config)?;
-        let folder_path = folder_path.as_ref().trim_end_matches('/');
+        let folder_path = folder_path.as_ref().trim_end_matches('/').to_string();
 
-        let uploads = futures::stream::iter(bytes_iter.enumerate().map(|(i, data)| {
-            let owned_client = io_client.clone();
-            let owned_io_stats = io_stats.clone();
+        let uploads = async move {
+            futures::stream::iter(to_upload.into_iter().enumerate().map(|(i, data)| {
+                let owned_client = io_client.clone();
+                let owned_io_stats = io_stats.clone();
 
-            // TODO: Allow configuration of this path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
-            let path = format!("{}/{}", folder_path, uuid::Uuid::new_v4());
-
-            tokio::spawn(async move {
-                (
-                    i,
-                    owned_client
-                        .single_url_upload(i, path, data, owned_io_stats)
-                        .await,
-                )
+                // TODO: Allow configuration of this path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
+                let path = format!("{}/{}", folder_path, uuid::Uuid::new_v4());
+                tokio::spawn(async move {
+                    (
+                        i,
+                        owned_client
+                            .single_url_upload(i, path, data, owned_io_stats)
+                            .await,
+                    )
+                })
+            }))
+            .buffer_unordered(max_connections)
+            .then(async move |r| match r {
+                Ok((i, Ok(v))) => Ok((i, v)),
+                Ok((_i, Err(error))) => Err(error),
+                Err(error) => Err(daft_io::Error::JoinError { source: error }),
             })
-        }))
-        .buffer_unordered(max_connections)
-        .then(async move |r| match r {
-            Ok((i, Ok(v))) => Ok((i, v)),
-            Ok((_i, Err(error))) => Err(error),
-            Err(error) => Err(daft_io::Error::JoinError { source: error }),
-        });
+            .try_collect::<Vec<_>>()
+            .await
+        };
 
-        let collect_future = uploads.try_collect::<Vec<_>>();
-        let mut results = runtime_handle.block_on(collect_future)?;
+        let mut results = runtime_handle.block_on_io_pool(uploads)??;
         results.sort_by_key(|k| k.0);
 
         Ok(results.into_iter().map(|(_, path)| path).collect())
@@ -156,15 +157,16 @@ pub fn url_upload(
 
     let results = match series.data_type() {
         DataType::Binary => {
-            let bytes_iter = series
+            let bytes_array = series
                 .binary()
                 .unwrap()
                 .as_arrow()
-                .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
+                .into_iter()
+                .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
+                .collect();
             _upload_bytes_to_folder(
                 folder_path,
-                bytes_iter,
+                bytes_array,
                 max_connections,
                 multi_thread,
                 config,
@@ -172,15 +174,16 @@ pub fn url_upload(
             )
         }
         DataType::FixedSizeBinary(..) => {
-            let bytes_iter = series
+            let bytes_array = series
                 .fixed_size_binary()
                 .unwrap()
                 .as_arrow()
-                .iter()
-                .map(|bytes_slice| bytes_slice.map(|b| bytes::Bytes::from(b.to_vec())));
+                .into_iter()
+                .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
+                .collect();
             _upload_bytes_to_folder(
                 folder_path,
-                bytes_iter,
+                bytes_array,
                 max_connections,
                 multi_thread,
                 config,
@@ -188,13 +191,16 @@ pub fn url_upload(
             )
         }
         DataType::Utf8 => {
-            let bytes_iter =
-                series.utf8().unwrap().as_arrow().iter().map(|utf8_slice| {
-                    utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec()))
-                });
+            let bytes_array = series
+                .utf8()
+                .unwrap()
+                .as_arrow()
+                .into_iter()
+                .map(|utf8_slice| utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec())))
+                .collect();
             _upload_bytes_to_folder(
                 folder_path,
-                bytes_iter,
+                bytes_array,
                 max_connections,
                 multi_thread,
                 config,

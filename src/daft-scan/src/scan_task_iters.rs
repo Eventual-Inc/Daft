@@ -9,12 +9,12 @@ use parquet2::metadata::RowGroupList;
 use crate::{
     file_format::{FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    ChunkSpec, DataSource, ScanTask, ScanTaskRef,
+    ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
-/// Coalesces ScanTasks by their [`ScanTask::size_bytes()`]
+/// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
 ///
 /// NOTE: `min_size_bytes` and `max_size_bytes` are only parameters for the algorithm used for merging ScanTasks,
 /// and do not provide any guarantees about the sizes of ScanTasks yielded by the resultant iterator.
@@ -28,28 +28,72 @@ type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
 pub fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
+    pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {
-    Box::new(MergeByFileSize {
-        iter: scan_tasks,
-        cfg,
-        accumulator: None,
-    })
+    if let Some(limit) = pushdowns.limit {
+        // If LIMIT pushdown is present, perform a more conservative merge using the estimated size of the LIMIT
+        let mut scan_tasks = scan_tasks.peekable();
+        let first_scantask = scan_tasks
+            .peek()
+            .and_then(|x| x.as_ref().map(|x| x.clone()).ok());
+        if let Some(first_scantask) = first_scantask {
+            let estimated_bytes_for_reading_limit_rows = first_scantask
+                .as_ref()
+                .estimate_in_memory_size_bytes(Some(cfg))
+                .and_then(|est_materialized_bytes| {
+                    first_scantask
+                        .as_ref()
+                        .approx_num_rows(Some(cfg))
+                        .map(|approx_num_rows| {
+                            (est_materialized_bytes as f64) / approx_num_rows * (limit as f64)
+                        })
+                });
+            if let Some(limit_bytes) = estimated_bytes_for_reading_limit_rows {
+                return Box::new(MergeByFileSize {
+                    iter: Box::new(scan_tasks),
+                    cfg,
+                    target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
+                    target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
+                    accumulator: None,
+                }) as BoxScanTaskIter;
+            }
+        }
+        // If we are unable to determine an estimation on the LIMIT size, so we don't perform a merge
+        Box::new(scan_tasks)
+    } else {
+        Box::new(MergeByFileSize {
+            iter: scan_tasks,
+            cfg,
+            target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
+            target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
+            accumulator: None,
+        }) as BoxScanTaskIter
+    }
 }
 
 struct MergeByFileSize<'a> {
     iter: BoxScanTaskIter<'a>,
     cfg: &'a DaftExecutionConfig,
 
+    // The target upper/lower bound for in-memory size_bytes of a merged ScanTask
+    target_upper_bound_size_bytes: usize,
+    target_lower_bound_size_bytes: usize,
+
     // Current element being accumulated on
     accumulator: Option<ScanTaskRef>,
 }
 
 impl<'a> MergeByFileSize<'a> {
+    /// Returns whether or not the current accumulator is "ready" to be emitted as a finalized merged ScanTask
+    ///
+    /// "Readiness" is determined by a combination of factors based on how large the accumulated ScanTask is
+    /// in estimated bytes, as well as other factors including any limit pushdowns.
     fn accumulator_ready(&self) -> bool {
+        // Emit the accumulator as soon as it is bigger than the specified `target_lower_bound_size_bytes`
         if let Some(acc) = &self.accumulator
             && let Some(acc_bytes) = acc.estimate_in_memory_size_bytes(Some(self.cfg))
-            && acc_bytes >= self.cfg.scan_tasks_min_size_bytes
+            && acc_bytes >= self.target_lower_bound_size_bytes
         {
             true
         } else {
@@ -57,6 +101,7 @@ impl<'a> MergeByFileSize<'a> {
         }
     }
 
+    /// Checks if the current accumulator can be merged with the provided ScanTask
     fn can_merge(&self, other: &ScanTask) -> bool {
         let accumulator = self
             .accumulator
@@ -68,12 +113,13 @@ impl<'a> MergeByFileSize<'a> {
             && other.storage_config == accumulator.storage_config
             && other.pushdowns == accumulator.pushdowns;
 
+        // Merge only if the resultant accumulator is smaller than the targeted upper bound
         let sum_smaller_than_max_size_bytes = if let Some(child_bytes) =
             other.estimate_in_memory_size_bytes(Some(self.cfg))
             && let Some(accumulator_bytes) =
                 accumulator.estimate_in_memory_size_bytes(Some(self.cfg))
         {
-            child_bytes + accumulator_bytes <= self.cfg.scan_tasks_max_size_bytes
+            child_bytes + accumulator_bytes <= self.target_upper_bound_size_bytes
         } else {
             false
         };
@@ -87,6 +133,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            // Create accumulator if not already present
             if self.accumulator.is_none() {
                 self.accumulator = match self.iter.next() {
                     Some(Ok(item)) => Some(item),
@@ -95,6 +142,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
                 };
             }
 
+            // Emit accumulator if ready
             if self.accumulator_ready() {
                 return self.accumulator.take().map(Ok);
             }
@@ -105,6 +153,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
                 None => return self.accumulator.take().map(Ok),
             };
 
+            // Emit accumulator if `next_item` cannot be merged
             if next_item
                 .estimate_in_memory_size_bytes(Some(self.cfg))
                 .is_none()
@@ -113,6 +162,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
                 return self.accumulator.replace(next_item).map(Ok);
             }
 
+            // Merge into a new accumulator
             self.accumulator = Some(Arc::new(
                 ScanTask::merge(
                     self.accumulator
@@ -179,9 +229,7 @@ pub fn split_by_row_groups(
                         let io_stats =
                             IOStatsContext::new(format!("split_by_row_groups for {:#?}", path));
 
-                        let runtime_handle = io_runtime.handle();
-
-                        let mut file = runtime_handle.block_on(read_parquet_metadata(
+                        let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
                             path,
                             io_client,
                             Some(io_stats),

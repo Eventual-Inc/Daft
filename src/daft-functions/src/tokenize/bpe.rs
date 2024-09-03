@@ -157,9 +157,11 @@ fn get_file_bpe(
     // Fetch the token file as a string
     let client = get_io_client(false, io_config)?;
     let runtime = get_runtime(false)?;
-    let get_future = client.single_url_get(path.to_string(), None, None);
-    let get_res = runtime.block_on(get_future)?;
-    let file_bytes = runtime.block_on(get_res.bytes())?;
+
+    let path = path.to_string();
+    let file_bytes = runtime.block_on_io_pool(async move {
+        client.single_url_get(path, None, None).await?.bytes().await
+    })??;
     let file_str = std::str::from_utf8(&file_bytes).with_context(|_| InvalidUtf8SequenceSnafu)?;
 
     let tokens_res = parse_tokens(file_str)?;
