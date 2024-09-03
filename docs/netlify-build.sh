@@ -15,7 +15,7 @@ uv python pin 3.10
 
 # Build and install Daft
 uv pip install -r requirements-dev.txt
-uv run maturin develop --extras=all
+uv run --with pip maturin develop --extras=all
 
 # Go back to /docs/ folder and build docs
 cd docs/
