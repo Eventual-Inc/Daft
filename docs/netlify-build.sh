@@ -1,10 +1,12 @@
 #!/bin/sh
 
+set -e
+
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Build Daft by going to top-level directory
-pushd ../
+cd ../
 
 # Install necessary Python
 uv python install 3.10
@@ -17,5 +19,5 @@ uv pip install -r requirements-dev.txt
 maturin develop --extras=all
 
 # Go back to /docs/ folder and build docs
-popd
+cd docs/
 make html
