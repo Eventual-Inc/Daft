@@ -19,6 +19,9 @@ if [ ! -d ".venv" ]; then
     uv python pin 3.10
 fi
 
+# Activate the uv virtual environment
+. .venv/bin/activate
+
 # Build and install Daft
 uv pip install -r requirements-dev.txt
 uv run --with pip maturin develop --extras=all
