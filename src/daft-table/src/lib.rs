@@ -23,11 +23,11 @@ use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, Li
 pub mod ffi;
 mod growable;
 mod ops;
-mod probe_table;
+mod probeable;
 
 pub use growable::GrowableTable;
 
-pub use probe_table::{ProbeTable, ProbeTableBuilder, ProbeTableWithIdx, ProbeTableWithoutIdx};
+pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;

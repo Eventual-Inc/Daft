@@ -31,14 +31,14 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
-use daft_table::{ProbeTable, Table};
+use daft_table::{Probeable, Table};
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
 #[derive(Clone)]
 pub enum PipelineResultType {
     Data(Arc<MicroPartition>),
-    ProbeTable(Arc<ProbeTable>, Arc<Vec<Table>>),
+    ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
 }
 
 impl From<Arc<MicroPartition>> for PipelineResultType {
@@ -47,8 +47,8 @@ impl From<Arc<MicroPartition>> for PipelineResultType {
     }
 }
 
-impl From<(Arc<ProbeTable>, Arc<Vec<Table>>)> for PipelineResultType {
-    fn from((probe_table, tables): (Arc<ProbeTable>, Arc<Vec<Table>>)) -> Self {
+impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
+    fn from((probe_table, tables): (Arc<dyn Probeable>, Arc<Vec<Table>>)) -> Self {
         PipelineResultType::ProbeTable(probe_table, tables)
     }
 }
@@ -61,7 +61,7 @@ impl PipelineResultType {
         }
     }
 
-    pub fn as_probe_table(&self) -> (&Arc<ProbeTable>, &Arc<Vec<Table>>) {
+    pub fn as_probe_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
         match self {
             PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
             _ => panic!("Expected probe table"),

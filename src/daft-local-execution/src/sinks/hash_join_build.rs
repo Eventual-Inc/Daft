@@ -7,16 +7,16 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use daft_table::{ProbeTable, ProbeTableBuilder, Table};
+use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};
 
 enum ProbeTableState {
     Building {
-        probe_table_builder: Option<ProbeTableBuilder>,
+        probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
         projection: Vec<ExprRef>,
         tables: Vec<Table>,
     },
     Done {
-        probe_table: Arc<ProbeTable>,
+        probe_table: Arc<dyn Probeable>,
         tables: Arc<Vec<Table>>,
     },
 }
@@ -27,11 +27,11 @@ impl ProbeTableState {
         projection: Vec<ExprRef>,
         join_type: &JoinType,
     ) -> DaftResult<Self> {
-        let store_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
+        let track_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
-            probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone(), store_indices)?),
+            probe_table_builder: Some(make_probeable_builder(key_schema.clone(), track_indices)?),
             projection,
-            tables: vec![],
+            tables: Vec::new(),
         })
     }
 
@@ -61,11 +61,11 @@ impl ProbeTableState {
             ..
         } = self
         {
-            let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
+            let ptb = probe_table_builder.take().unwrap();
             let pt = ptb.build();
 
             *self = Self::Done {
-                probe_table: Arc::new(pt),
+                probe_table: pt,
                 tables: Arc::new(tables.clone()),
             };
             Ok(())

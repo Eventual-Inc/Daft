@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::{schema::SchemaRef, JoinType};
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, ProbeTable, Table};
+use daft_table::{GrowableTable, Probeable, Table};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
@@ -16,11 +16,11 @@ use super::intermediate_op::{
 
 enum HashJoinProbeState {
     Building,
-    ReadyToProbe(Arc<ProbeTable>, Arc<Vec<Table>>),
+    ReadyToProbe(Arc<dyn Probeable>, Arc<Vec<Table>>),
 }
 
 impl HashJoinProbeState {
-    fn set_table(&mut self, table: &Arc<ProbeTable>, tables: &Arc<Vec<Table>>) {
+    fn set_table(&mut self, table: &Arc<dyn Probeable>, tables: &Arc<Vec<Table>>) {
         if let HashJoinProbeState::Building = self {
             *self = HashJoinProbeState::ReadyToProbe(table.clone(), tables.clone());
         } else {
@@ -38,7 +38,6 @@ impl HashJoinProbeState {
         build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         if let HashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
-            let probe_table = probe_table.as_with_idx()?;
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             let mut build_side_growable =
@@ -55,9 +54,9 @@ impl HashJoinProbeState {
                 for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                     // we should emit one table at a time when this is streaming
                     let join_keys = table.eval_expression_list(probe_on)?;
-                    let iter = probe_table.probe(&join_keys)?;
+                    let iter = probe_table.probe_indices(&join_keys)?;
 
-                    for (probe_row_idx, inner_iter) in iter {
+                    for (probe_row_idx, inner_iter) in iter.enumerate() {
                         if let Some(inner_iter) = inner_iter {
                             for (build_side_table_idx, build_row_idx) in inner_iter {
                                 build_side_growable.extend(
@@ -66,11 +65,7 @@ impl HashJoinProbeState {
                                     1,
                                 );
                                 // we can perform run length compression for this to make this more efficient
-                                probe_side_growable.extend(
-                                    probe_side_table_idx,
-                                    probe_row_idx as usize,
-                                    1,
-                                );
+                                probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                             }
                         }
                     }
@@ -114,7 +109,6 @@ impl HashJoinProbeState {
         is_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         if let HashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
-            let probe_table = probe_table.as_with_idx()?;
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             // Need to set use_validity to true here because we add nulls to the build side
@@ -131,9 +125,9 @@ impl HashJoinProbeState {
                 let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
                 for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                     let join_keys = table.eval_expression_list(probe_on)?;
-                    let iter = probe_table.probe(&join_keys)?;
+                    let iter = probe_table.probe_indices(&join_keys)?;
 
-                    for (probe_row_idx, inner_iter) in iter {
+                    for (probe_row_idx, inner_iter) in iter.enumerate() {
                         if let Some(inner_iter) = inner_iter {
                             for (build_side_table_idx, build_row_idx) in inner_iter {
                                 build_side_growable.extend(
@@ -141,20 +135,12 @@ impl HashJoinProbeState {
                                     build_row_idx as usize,
                                     1,
                                 );
-                                probe_side_growable.extend(
-                                    probe_side_table_idx,
-                                    probe_row_idx as usize,
-                                    1,
-                                );
+                                probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                             }
                         } else {
                             // if there's no match, we should still emit the probe side and fill the build side with nulls
                             build_side_growable.add_nulls(1);
-                            probe_side_growable.extend(
-                                probe_side_table_idx,
-                                probe_row_idx as usize,
-                                1,
-                            );
+                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                         }
                     }
                 }
@@ -189,8 +175,7 @@ impl HashJoinProbeState {
         probe_on: &[ExprRef],
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        if let HashJoinProbeState::ReadyToProbe(probe_table, ..) = self {
-            let probe_table = probe_table.as_without_idx()?;
+        if let HashJoinProbeState::ReadyToProbe(probe_set, ..) = self {
             let _growables = info_span!("HashJoinOperator::build_growables").entered();
 
             let input_tables = input.get_tables()?;
@@ -203,16 +188,12 @@ impl HashJoinProbeState {
                 let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
                 for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                     let join_keys = table.eval_expression_list(probe_on)?;
-                    let iter = probe_table.probe(&join_keys)?;
+                    let iter = probe_set.probe_exists(&join_keys)?;
 
-                    for (probe_row_idx, matched) in iter {
+                    for (probe_row_idx, matched) in iter.enumerate() {
                         match (is_semi, matched) {
                             (true, true) | (false, false) => {
-                                probe_side_growable.extend(
-                                    probe_side_table_idx,
-                                    probe_row_idx as usize,
-                                    1,
-                                );
+                                probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                             }
                             _ => {}
                         }
