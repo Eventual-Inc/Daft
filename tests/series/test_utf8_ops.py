@@ -272,9 +272,9 @@ def test_series_utf8_length_unicode() -> None:
 
 
 def test_series_utf8_length_bytes() -> None:
-    s = Series.from_arrow(pa.array(["😉test", "hey̆", "baz"]))
+    s = Series.from_arrow(pa.array(["😉test", "hey̆", "baz", None, ""]))
     result = s.str.length_bytes()
-    assert result.to_pylist() == [8, 5, 3]
+    assert result.to_pylist() == [8, 5, 3, None, 0]
 
 
 @pytest.mark.parametrize(
