@@ -4,21 +4,26 @@ use daft_core::{
     series::Series,
 };
 
-use crate::ExprRef;
-
-use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub(super) struct IsInfFunction {}
 
-pub(super) struct IsInfEvaluator {}
-
-impl FunctionEvaluator for IsInfEvaluator {
-    fn fn_name(&self) -> &'static str {
+#[typetag::serde]
+impl ScalarUDF for IsInfFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
         "is_inf"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -39,7 +44,7 @@ impl FunctionEvaluator for IsInfEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.is_inf(),
             _ => Err(DaftError::ValueError(format!(
@@ -48,4 +53,18 @@ impl FunctionEvaluator for IsInfEvaluator {
             ))),
         }
     }
+}
+
+pub fn is_inf(data: ExprRef) -> ExprRef {
+    ScalarFunction::new(IsInfFunction {}, vec![data]).into()
+}
+
+#[cfg(feature = "python")]
+use {daft_dsl::python::PyExpr, pyo3::prelude::*};
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "is_inf")]
+pub fn py_is_inf(data: PyExpr) -> daft_dsl::python::PyExpr {
+    is_inf(data.into()).into()
 }

@@ -1,4 +1,3 @@
-pub mod float;
 pub mod image;
 pub mod json;
 pub mod list;
@@ -16,7 +15,6 @@ use std::hash::Hash;
 
 use crate::ExprRef;
 
-use self::float::FloatExpr;
 use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
@@ -41,7 +39,6 @@ use python::PythonUDF;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
-    Float(FloatExpr),
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
     List(ListExpr),
@@ -71,7 +68,6 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
-            Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),

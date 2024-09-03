@@ -79,7 +79,6 @@ impl SQLFunction {
                 use FunctionExpr::*;
                 match func {
                     Numeric(expr) => numeric::to_expr(expr, inputs),
-                    Float(_) => unsupported_sql_err!("Float functions"),
                     Utf8(expr) => utf8::to_expr(expr, inputs),
                     Temporal(_) => unsupported_sql_err!("Temporal functions"),
                     List(_) => unsupported_sql_err!("List functions"),

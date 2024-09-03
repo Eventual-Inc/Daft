@@ -1,6 +1,8 @@
 #![feature(async_closure)]
 pub mod count_matches;
 pub mod distance;
+pub mod float;
+
 pub mod hash;
 pub mod list_sort;
 pub mod minhash;
@@ -15,7 +17,7 @@ use pyo3::prelude::*;
 use snafu::Snafu;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
     // keep in sorted order
     parent.add_wrapped(wrap_pyfunction!(count_matches::python::utf8_count_matches))?;
     parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine_distance))?;
@@ -28,6 +30,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
+    float::register_modules(py, parent)?;
     Ok(())
 }
 
