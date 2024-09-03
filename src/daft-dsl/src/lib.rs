@@ -16,7 +16,7 @@ mod treenode;
 pub use common_treenode;
 pub use expr::{
     binary_op, col, has_agg, has_stateful_udf, is_partition_compatible, AggExpr,
-    ApproxPercentileParams, Expr, ExprRef, Operator,
+    ApproxPercentileParams, Expr, ExprRef, Operator, SketchType,
 };
 pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]

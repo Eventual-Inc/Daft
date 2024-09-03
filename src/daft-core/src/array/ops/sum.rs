@@ -54,6 +54,7 @@ macro_rules! impl_daft_numeric_agg {
 }
 
 impl_daft_numeric_agg!(Int64Type, i64);
+impl_daft_numeric_agg!(Int128Type, i128);
 impl_daft_numeric_agg!(UInt64Type, u64);
 impl_daft_numeric_agg!(Float32Type, f32);
 impl_daft_numeric_agg!(Float64Type, f64);

@@ -364,7 +364,7 @@ pub(crate) fn local_parquet_read_into_arrow(
                 rg,
                 schema.fields.clone(),
                 Some(chunk_size),
-                num_rows,
+                Some(rg_range.num_rows),
                 None,
             );
             let single_rg_column_iter = single_rg_column_iter?;

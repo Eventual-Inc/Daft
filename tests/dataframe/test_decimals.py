@@ -4,6 +4,7 @@ import decimal
 import tempfile
 
 import pyarrow as pa
+import pytest
 
 import daft
 
@@ -45,3 +46,17 @@ def test_python_decimal() -> None:
 
     res = df.to_pydict()["decimal128"]
     assert str(res) == str(python_decimals)
+
+
+@pytest.mark.parametrize("prec", [5, 30])
+def test_decimal_sum(prec) -> None:
+    python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010")]
+    df = daft.from_pydict({"decimal128": python_decimals})
+    df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
+    print(df.collect())
+    res = df.sum().collect()
+    assert res.to_pydict()["decimal128"] == [decimal.Decimal("108.001")]
+
+    schema = res.schema()
+    expected_prec = min(38, prec + 19)  # see agg_ops.rs
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
