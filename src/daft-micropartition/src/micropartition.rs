@@ -5,10 +5,7 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::datatypes::{Field, Int64Array, Utf8Array};
-use daft_core::schema::{Schema, SchemaRef};
-
-use daft_core::datatypes::DataType;
+use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};

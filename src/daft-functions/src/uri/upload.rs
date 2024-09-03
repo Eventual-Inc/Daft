@@ -9,8 +9,6 @@ use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct UploadFunction {

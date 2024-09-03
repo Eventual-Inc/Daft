@@ -2,12 +2,12 @@ use crate::expr::Expr;
 use crate::ExprRef;
 
 use common_hashable_float_wrapper::FloatWrapper;
-use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
-use daft_core::utils::display_table::{display_decimal128, display_time64};
-use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
     prelude::*,
-    utils::display_table::{display_date32, display_series_literal, display_timestamp},
+    utils::display_table::{
+        display_date32, display_decimal128, display_series_literal, display_time64,
+        display_timestamp,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
@@ -173,8 +173,6 @@ impl LiteralValue {
     }
 
     pub fn to_series(&self) -> Series {
-        use daft_core::datatypes::*;
-        use daft_core::series::IntoSeries;
         use LiteralValue::*;
         let result = match self {
             Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),

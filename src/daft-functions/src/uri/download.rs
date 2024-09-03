@@ -9,8 +9,6 @@ use serde::Serialize;
 use snafu::prelude::*;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 
 use crate::InvalidArgumentSnafu;
 
