@@ -390,11 +390,11 @@ class DataFrame:
             self._preview.preview_partition is None or len(self._preview.preview_partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
-            preview_parts = self._result._get_preview_vpartition(self._num_preview_rows)
+            preview_parts = self._result._get_preview_micropartitions(self._num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_vpartition()
+            preview_partition = preview_results._get_merged_micropartition()
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
                 dataframe_num_rows=len(self),
@@ -436,8 +436,8 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = MicroPartition.from_pydict(data)
-        return cls._from_tables(data_vpartition)
+        data_micropartition = MicroPartition.from_pydict(data)
+        return cls._from_tables(data_micropartition)
 
     @classmethod
     def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
@@ -446,16 +446,16 @@ class DataFrame:
             data = list(data)
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
-        return cls._from_tables(*data_vpartitions)
+        data_micropartitions = [MicroPartition.from_arrow(table) for table in data]
+        return cls._from_tables(*data_micropartitions)
 
     @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
-        return cls._from_tables(*data_vpartitions)
+        data_micropartitions = [MicroPartition.from_pandas(df) for df in data]
+        return cls._from_tables(*data_micropartitions)
 
     @classmethod
     def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
@@ -2639,7 +2639,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_vpartition()
+        preview_partition = preview_results._get_merged_micropartition()
         df._preview = DataFramePreview(
             preview_partition=preview_partition,
             dataframe_num_rows=dataframe_num_rows,
@@ -2731,7 +2731,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_vpartition()
+        preview_partition = preview_results._get_merged_micropartition()
         df._preview = DataFramePreview(
             preview_partition=preview_partition,
             dataframe_num_rows=dataframe_num_rows,
