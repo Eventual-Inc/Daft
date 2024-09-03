@@ -18,8 +18,29 @@ env:
 
 jobs:
 
+  setup-job:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set trace-start
+      id: set-trace-start
+      run: |
+        echo "trace-start=$(date +%s)" >> $GITHUB_OUTPUT
+    - uses: honeycombio/gha-buildevents@v2
+      with:
+        # Required: a Honeycomb API key - needed to send traces.
+        apikey: ${{ secrets.BUILDEVENT_APIKEY }}
+        # Required: the Honeycomb dataset to send traces to.
+        dataset: gha-buildevents_integration
+
+        # Optional: this should only be used in combination with matrix builds. Set
+        # this to a value uniquely describing each matrix configuration.
+        matrix-key: ${{ matrix.python-version }}
+
   unit-tests-with-coverage:
     runs-on: ${{ matrix.os }}
+    needs: setup-job
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -27,7 +48,7 @@ jobs:
         python-version: ['3.8', '3.10']
         daft-runner: [py, ray]
         pyarrow-version: [7.0.0, 15.0.0]
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-20.04]
         exclude:
         - daft-runner: ray
           pyarrow-version: 7.0.0
@@ -41,7 +62,7 @@ jobs:
         - os: windows-latest
           pyarrow-version: 7.0.0
     steps:
-    - uses: actions/checkout@v4
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -155,10 +176,14 @@ jobs:
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    outputs:
+      trace-start: ${{ steps.set-trace-start.outputs.trace-start }}
 
   unit-tests:
     runs-on: ubuntu-latest
-    needs: unit-tests-with-coverage
+    needs:
+    - setup-job
+    - unit-tests-with-coverage
     if: always()
     steps:
     - name: All tests ok
@@ -170,6 +195,7 @@ jobs:
 
   integration-test-build:
     runs-on: ubuntu-latest
+    needs: setup-job
     timeout-minutes: 30
     env:
       package-name: getdaft
@@ -617,6 +643,7 @@ jobs:
 
   benchmark-codspeed:
     runs-on: buildjet-8vcpu-ubuntu-2204
+    needs: setup-job
     timeout-minutes: 30
     env:
       package-name: getdaft
@@ -681,6 +708,7 @@ jobs:
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
+    needs: setup-job
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -728,6 +756,7 @@ jobs:
   rust-tests:
     runs-on: ubuntu-latest
     needs:
+    - setup-job
     - rust-tests-platform
     if: always()
     steps:
@@ -794,6 +823,7 @@ jobs:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
     needs:
+    - setup-job
     - unit-tests-with-coverage
     - rust-tests-platform
     steps:
@@ -830,6 +860,7 @@ jobs:
 
   test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
+    needs: setup-job
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -912,6 +943,7 @@ jobs:
   test-imports:
     runs-on: ubuntu-latest
     needs:
+    - setup-job
     - test-imports-platform
     if: always()
     steps:
@@ -975,3 +1007,32 @@ jobs:
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  end-trace:
+    runs-on: ubuntu-latest
+    needs: [setup-job, unit-tests-with-coverage, unit-tests, integration-test-build, integration-test-tpch, integration-test-io, integration-test-io-credentialed, integration-test-iceberg, integration-test-sql, integration-tests, benchmark-codspeed, rust-tests-platform, rust-tests, check-unused-cargo-deps, doctests, publish-coverage-reports, test-imports-platform, test-imports, style]
+    if: ${{ always() }}
+    steps:
+    - uses: technote-space/workflow-conclusion-action@v3
+    - uses: honeycombio/gha-buildevents@v2
+      with:
+        # Required: a Honeycomb API key - needed to send traces.
+        apikey: ${{ secrets.BUILDEVENT_APIKEY }}
+
+        # Required: the Honeycomb dataset to send traces to.
+        dataset: gha-buildevents_integration
+
+          # Required on the final job: status, this will be used in the post section and sent
+          # as status of the trace.
+          # Note: in V1 this was called job-status which has been deprecated
+        status: ${{ env.WORKFLOW_CONCLUSION }}
+
+        # Optional: trace-start, this will be used in the post section and sent
+        # to calculate duration of the trace. In multi job workflows, set on the final job of a workflow. Not necessary for single job workflows
+        trace-start: ${{ needs.build.outputs.trace-start}}
+
+        # Optional: this should only be used in combination with matrix builds. Set
+        # this to a value uniquely describing each matrix configuration.
+        matrix-key: ${{ matrix.python-version }}
+
+  # gha-buildevents will automatically run as a post action and execute 'buildevents build'
