@@ -222,7 +222,6 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
-                ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
                 ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
@@ -232,7 +231,13 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     percentiles,
                     force_list_output,
                 }),
-                MergeSketch(e) => MergeSketch(Alias(e, name.clone()).into()),
+                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
+                ApproxSketch(e, sketch_type) => {
+                    ApproxSketch(Alias(e, name.clone()).into(), sketch_type)
+                }
+                MergeSketch(e, sketch_type) => {
+                    MergeSketch(Alias(e, name.clone()).into(), sketch_type)
+                }
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),
                 Max(e) => Max(Alias(e, name.clone()).into()),

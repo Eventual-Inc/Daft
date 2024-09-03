@@ -7,13 +7,13 @@ use common_error::DaftResult;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     schema::SchemaRef,
-    utils::dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
+    utils::{
+        dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
+        identity_hash_set::IdentityBuildHasher,
+    },
 };
 
-use crate::{
-    ops::hash::{IdentityBuildHasher, IndexHash},
-    Table,
-};
+use crate::{ops::hash::IndexHash, Table};
 
 use super::{ArrowTableEntry, IndicesIter, Probeable, ProbeableBuilder};
 pub(crate) struct ProbeSet {

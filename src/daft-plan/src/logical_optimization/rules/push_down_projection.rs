@@ -675,7 +675,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit};
+    use daft_dsl::{col, functions::python::RuntimePyObject, lit};
     use daft_scan::Pushdowns;
 
     use crate::{
@@ -909,7 +909,6 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
@@ -928,11 +927,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("c")],
         }
@@ -983,11 +984,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("a")],
         }
@@ -1043,7 +1046,6 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
@@ -1062,11 +1064,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("c")],
         }

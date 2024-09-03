@@ -33,9 +33,10 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
         }
-        AggExpr::ApproxSketch(_) => unsupported_sql_err!("approx_sketch"),
+        AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
-        AggExpr::MergeSketch(_) => unsupported_sql_err!("merge_sketch"),
+        AggExpr::ApproxSketch(_, _) => unsupported_sql_err!("approx_sketch"),
+        AggExpr::MergeSketch(_, _) => unsupported_sql_err!("merge_sketch"),
         AggExpr::Mean(_) => {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
