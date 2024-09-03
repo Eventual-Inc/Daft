@@ -1086,7 +1086,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "python"))]
     fn test_stateless_expr_with_only_some_stateful_children() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);

@@ -956,7 +956,6 @@ mod tests {
 
     /// Projection<-ActorPoolProject<-ActorPoolProject prunes columns from both ActorPoolProjects
     #[test]
-    #[cfg(not(feature = "python"))]
     fn test_projection_pushdown_into_double_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
         use crate::logical_ops::Project;
