@@ -7,6 +7,7 @@ pub mod hash;
 pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
+pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 pub mod uri;
@@ -31,6 +32,7 @@ pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
     float::register_modules(py, parent)?;
+    temporal::register_modules(py, parent)?;
     Ok(())
 }
 

@@ -1,29 +1,10 @@
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::Series,
-};
+use common_error::DaftError;
+use daft_core::{datatypes::Field, DataType};
+use daft_dsl::make_unary_udf_function;
 
-use common_error::{DaftError, DaftResult};
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct IsInfFunction {}
-
-#[typetag::serde]
-impl ScalarUDF for IsInfFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn name(&self) -> &'static str {
-        "is_inf"
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+make_unary_udf_function! {
+    name: "is_inf",
+    to_field: (inputs, schema) {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -42,9 +23,8 @@ impl ScalarUDF for IsInfFunction {
                 inputs.len()
             ))),
         }
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    },
+    evaluate: (inputs) {
         match inputs {
             [data] => data.is_inf(),
             _ => Err(DaftError::ValueError(format!(
@@ -53,18 +33,4 @@ impl ScalarUDF for IsInfFunction {
             ))),
         }
     }
-}
-
-pub fn is_inf(data: ExprRef) -> ExprRef {
-    ScalarFunction::new(IsInfFunction {}, vec![data]).into()
-}
-
-#[cfg(feature = "python")]
-use {daft_dsl::python::PyExpr, pyo3::prelude::*};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "is_inf")]
-pub fn py_is_inf(data: PyExpr) -> daft_dsl::python::PyExpr {
-    is_inf(data.into()).into()
 }

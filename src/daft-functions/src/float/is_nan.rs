@@ -1,29 +1,10 @@
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::Series,
-};
+use daft_core::datatypes::{DataType, Field};
+use common_error::DaftError;
+use daft_dsl::make_unary_udf_function;
 
-use common_error::{DaftError, DaftResult};
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct IsNanFunction {}
-
-#[typetag::serde]
-impl ScalarUDF for IsNanFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn name(&self) -> &'static str {
-        "is_nan"
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+make_unary_udf_function! {
+    name: "is_nan",
+    to_field: (inputs, schema) {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -42,29 +23,13 @@ impl ScalarUDF for IsNanFunction {
                 inputs.len()
             ))),
         }
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    },
+    evaluate: (inputs) {
         match inputs {
             [data] => data.is_nan(),
             _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
                 inputs.len()
             ))),
         }
     }
-}
-
-pub fn is_nan(data: ExprRef) -> ExprRef {
-    ScalarFunction::new(IsNanFunction {}, vec![data]).into()
-}
-
-#[cfg(feature = "python")]
-use {daft_dsl::python::PyExpr, pyo3::prelude::*};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "is_nan")]
-pub fn py_is_nan(expr: PyExpr) -> PyExpr {
-    is_nan(expr.into()).into()
 }

@@ -15,6 +15,7 @@ uuid = "1.10.0"
 bytes.workspace = true
 serde.workspace = true
 snafu.workspace = true
+paste = "1.0.15"
 
 [features]
 python = [

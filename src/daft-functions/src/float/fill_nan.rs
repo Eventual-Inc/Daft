@@ -1,28 +1,10 @@
-use daft_core::{
-    datatypes::Field, schema::Schema, series::Series, utils::supertype::try_get_supertype,
-};
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
-use serde::{Deserialize, Serialize};
+use common_error::DaftError;
+use daft_core::{datatypes::Field, utils::supertype::try_get_supertype};
+use daft_dsl::make_binary_udf_function;
 
-use common_error::{DaftError, DaftResult};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct FillNanFunction;
-
-#[typetag::serde]
-impl ScalarUDF for FillNanFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &'static str {
-        "fill_nan"
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+make_binary_udf_function! {
+    name: "fill_nan",
+    to_field: (inputs, schema) {
         match inputs {
             [data, fill_value] => match (data.to_field(schema), fill_value.to_field(schema)) {
                 (Ok(data_field), Ok(fill_value_field)) => {
@@ -40,9 +22,8 @@ impl ScalarUDF for FillNanFunction {
                 inputs.len()
             ))),
         }
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    },
+    evaluate: (inputs) {
         match inputs {
             [data, fill_value] => data.fill_nan(fill_value),
             _ => Err(DaftError::ValueError(format!(
@@ -51,21 +32,4 @@ impl ScalarUDF for FillNanFunction {
             ))),
         }
     }
-}
-
-pub fn fill_nan(data: ExprRef, fill_value: ExprRef) -> ExprRef {
-    ScalarFunction::new(FillNanFunction, vec![data, fill_value]).into()
-}
-
-#[cfg(feature = "python")]
-use {daft_dsl::python::PyExpr, pyo3::prelude::*};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "fill_nan")]
-pub fn py_fill_nan(data: PyExpr, fill_value: PyExpr) -> PyExpr {
-    let expr: ExprRef =
-        ScalarFunction::new(FillNanFunction, vec![data.into(), fill_value.into()]).into();
-
-    expr.into()
 }
