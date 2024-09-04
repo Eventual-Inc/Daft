@@ -829,7 +829,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def _explode(self) -> Expression:
-        expr = self._expr.explode()
+        expr = native.explode(self._expr)
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
@@ -2824,7 +2824,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a String expression which is every element of the list joined on the delimiter
         """
         delimiter_expr = Expression._to_expression(delimiter)
-        return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
+        return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
@@ -2835,7 +2835,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_count(mode))
+        return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
         """Gets the length of each list
@@ -2843,7 +2843,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_count(CountMode.All))
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list
@@ -2857,7 +2857,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
-        return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
+        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list
@@ -2871,7 +2871,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         end_expr = Expression._to_expression(end)
-        return Expression._from_pyexpr(self._expr.list_slice(start_expr._expr, end_expr._expr))
+        return Expression._from_pyexpr(native.list_slice(self._expr, start_expr._expr, end_expr._expr))
 
     def chunk(self, size: int) -> Expression:
         """Splits each list into chunks of the given size
@@ -2883,7 +2883,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         if not (isinstance(size, int) and size > 0):
             raise ValueError(f"Invalid value for `size`: {size}")
-        return Expression._from_pyexpr(self._expr.list_chunk(size))
+        return Expression._from_pyexpr(native.list_chunk(self._expr, size))
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -2891,7 +2891,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_sum())
+        return Expression._from_pyexpr(native.list_sum(self._expr))
 
     def mean(self) -> Expression:
         """Calculates the mean of each list. If no non-null values in a list, the result is null.
@@ -2899,7 +2899,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_mean())
+        return Expression._from_pyexpr(native.list_mean(self._expr))
 
     def min(self) -> Expression:
         """Calculates the minimum of each list. If no non-null values in a list, the result is null.
@@ -2907,7 +2907,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_min())
+        return Expression._from_pyexpr(native.list_min(self._expr))
 
     def max(self) -> Expression:
         """Calculates the maximum of each list. If no non-null values in a list, the result is null.
@@ -2915,7 +2915,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_max())
+        return Expression._from_pyexpr(native.list_max(self._expr))
 
     def sort(self, desc: bool | Expression = False) -> Expression:
         """Sorts the inner lists of a list column.

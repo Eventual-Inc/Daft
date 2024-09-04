@@ -452,11 +452,6 @@ impl PyExpr {
         Ok(self.expr.clone().agg_concat().into())
     }
 
-    pub fn explode(&self) -> PyResult<Self> {
-        use functions::list::explode;
-        Ok(explode(self.into()).into())
-    }
-
     pub fn __abs__(&self) -> PyResult<Self> {
         use functions::numeric::abs;
         Ok(abs(self.into()).into())
@@ -805,51 +800,6 @@ impl PyExpr {
     pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
         use crate::functions::image::to_mode;
         Ok(to_mode(self.into(), mode).into())
-    }
-
-    pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
-        use crate::functions::list::join;
-        Ok(join(self.into(), delimiter.into()).into())
-    }
-
-    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
-        use crate::functions::list::count;
-        Ok(count(self.into(), mode).into())
-    }
-
-    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
-        use crate::functions::list::get;
-        Ok(get(self.into(), idx.into(), default.into()).into())
-    }
-
-    pub fn list_sum(&self) -> PyResult<Self> {
-        use crate::functions::list::sum;
-        Ok(sum(self.into()).into())
-    }
-
-    pub fn list_mean(&self) -> PyResult<Self> {
-        use crate::functions::list::mean;
-        Ok(mean(self.into()).into())
-    }
-
-    pub fn list_min(&self) -> PyResult<Self> {
-        use crate::functions::list::min;
-        Ok(min(self.into()).into())
-    }
-
-    pub fn list_max(&self) -> PyResult<Self> {
-        use crate::functions::list::max;
-        Ok(max(self.into()).into())
-    }
-
-    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
-        use crate::functions::list::slice;
-        Ok(slice(self.into(), start.into(), end.into()).into())
-    }
-
-    pub fn list_chunk(&self, size: usize) -> PyResult<Self> {
-        use crate::functions::list::chunk;
-        Ok(chunk(self.into(), size).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {

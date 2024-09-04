@@ -32,7 +32,7 @@ impl Explode {
         let explode_exprs = to_explode
             .iter()
             .cloned()
-            .map(daft_dsl::functions::list::explode)
+            .map(daft_functions::list::explode)
             .collect::<Vec<_>>();
         let exploded_schema = {
             let explode_schema = {

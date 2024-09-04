@@ -1,8 +1,8 @@
 use common_error::DaftError;
 use daft_core::datatypes::{DataType, Field};
-use daft_dsl::make_unary_udf_function;
+use daft_dsl::make_udf_function;
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "is_nan",
     to_field: (expr, schema) {
         match expr.to_field(schema) {

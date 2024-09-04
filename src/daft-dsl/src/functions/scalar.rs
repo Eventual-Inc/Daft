@@ -32,6 +32,7 @@ impl ScalarFunction {
         self.udf.to_field(&self.inputs, schema)
     }
 }
+
 impl From<ScalarFunction> for ExprRef {
     fn from(func: ScalarFunction) -> Self {
         Expr::ScalarFunction(func).into()
@@ -136,7 +137,8 @@ impl Display for ScalarFunction {
 /// ```
 /// These are not meant to cover all cases, but to provide a starting point for implementing most of the basic functions
 #[macro_export]
-macro_rules! make_unary_udf_function {
+macro_rules! make_udf_function {
+    // unary
     (
         name: $func_name:expr,
         to_field: ($to_field_input0:ident, $schema:ident) $to_field:block,
@@ -163,7 +165,6 @@ macro_rules! make_unary_udf_function {
                     }
                 }
             }
-
             pub fn [<$func_name:lower>](input: $crate::ExprRef) -> $crate::ExprRef {
                 $crate::functions::ScalarFunction::new([<$func_name:camel Function>] {}, vec![input]).into()
             }
@@ -176,59 +177,7 @@ macro_rules! make_unary_udf_function {
             }
         }
     };
-}
-
-/// generates a scalar UDF implementation
-/// Similar to `impl_scalar_udf0`, but with one additional argument
-/// # Example
-/// ```rust,ignore
-///
-/// make_binary_udf_function!{
-///     name: "my_udf",
-///     to_field: (inputs, schema) {
-///       // implementation
-///     },
-///     evaluate: (inputs) {
-///       // implementation
-///     }
-/// }
-/// ```
-/// generates the following code
-/// ```rust,ignore
-/// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-/// pub struct MyUDF {}
-///
-/// impl ScalarUDF for MyUDF {
-///    fn as_any(&self) -> &dyn std::any::Any { self }
-///    fn name(&self) -> &'static str { "my_udf" }
-///
-///    fn to_field(&self, inputs: &[ExprRef], schema: &daft_core::schema::Schema) -> common_error::DaftResult<daft_core::datatypes::Field> {
-///      match inputs {
-///        [input0, input1] => { // implementation }
-///        _ => Err(common_error::DaftError::InvalidInput("my_udf".to_string()))
-///      }
-///    }
-///
-///    fn evaluate(&self, inputs: &[daft_core::series::Series]) -> common_error::DaftResult<daft_core::series::Series> {
-///      match inputs {
-///        [input0, input1] => { // implementation }
-///        _ => Err(common_error::DaftError::InvalidInput("my_udf".to_string()))
-///      }
-///    }
-/// }
-/// fn my_udf(input: ExprRef, arg: ExprRef) -> ExprRef {
-///    ScalarFunction::new(MyUDF {}, vec![input, arg]).into()
-/// }
-///
-/// #[cfg(feature = "python")]
-/// #[pyo3::pyfunction]
-/// #[pyo3(name = "my_udf")]
-/// pub fn py_my_udf(expr: PyExpr, arg: PyExpr) -> PyResult<PyExpr> {
-///   my_udf(expr.into(), arg.into()).into()
-/// }
-/// ```
-#[macro_export]
-macro_rules! make_binary_udf_function {
+    // binary
     (
         name: $func_name:expr,
         to_field: ($to_field_input0:ident, $to_field_input1:ident, $schema:ident) $to_field:block,
@@ -255,25 +204,65 @@ macro_rules! make_binary_udf_function {
                     }
                 }
             }
-        }
-        paste::paste! {
-            pub fn [<$func_name:lower>](input: $crate::ExprRef) -> $crate::ExprRef {
-                $crate::functions::ScalarFunction::new([<$func_name:camel Function>] {}, vec![input]).into()
+
+
+            pub fn [<$func_name:lower>](input: $crate::ExprRef, input2: $crate::ExprRef) -> $crate::ExprRef {
+                $crate::functions::ScalarFunction::new([<$func_name:camel Function>] {}, vec![input, input2]).into()
             }
 
             #[cfg(feature = "python")]
             #[pyo3::pyfunction]
             #[pyo3(name = $func_name)]
-            pub fn [<py_ $func_name:lower>](expr: daft_dsl::python::PyExpr) -> pyo3::prelude::PyResult<daft_dsl::python::PyExpr> {
-                Ok([<$func_name:lower>](expr.into()).into())
+            pub fn [<py_ $func_name:lower>](expr: daft_dsl::python::PyExpr, expr2: daft_dsl::python::PyExpr) -> pyo3::prelude::PyResult<daft_dsl::python::PyExpr> {
+                Ok([<$func_name:lower>](expr.into(), expr2.into()).into())
             }
         }
-
     };
+    // ternary
+    (
+        name: $func_name:expr,
+        to_field: ($to_field_input0:ident, $to_field_input1:ident, $to_field_input2:ident,  $schema:ident) $to_field:block,
+        evaluate: ($input0:ident, $input1:ident, $input2:ident) $evaluate:block
+    ) => {
+        paste::paste! {
+            #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+            pub struct [<$func_name:camel Function>] {}
+
+            #[typetag::serde]
+            impl $crate::functions::ScalarUDF for [<$func_name:camel Function>] {
+                fn as_any(&self) -> &dyn std::any::Any { self }
+                fn name(&self) -> &'static str { $func_name }
+                fn to_field(&self, inputs: &[$crate::ExprRef], $schema: &daft_core::schema::Schema) -> common_error::DaftResult<daft_core::datatypes::Field> {
+                    match inputs {
+                        [$to_field_input0, $to_field_input1, $to_field_input2] => $to_field,
+                        _ => Err(common_error::DaftError::ValueError(format!("function '{}' expects 2 argument, instead received {}", $func_name , inputs.len())))
+                    }
+                }
+                fn evaluate(&self, inputs: &[daft_core::series::Series]) -> common_error::DaftResult<daft_core::series::Series> {
+                    match inputs {
+                        [$input0, $input1, $input2] => $evaluate,
+                        _ => Err(common_error::DaftError::ValueError(format!("function '{}' expects 2 argument, instead received {}", $func_name , inputs.len())))
+                    }
+                }
+            }
+
+            pub fn [<$func_name:lower>](input: $crate::ExprRef, arg0: $crate::ExprRef, arg1: $crate::ExprRef) -> $crate::ExprRef {
+                $crate::functions::ScalarFunction::new([<$func_name:camel Function>] {}, vec![input,arg0, arg1]).into()
+            }
+
+            #[cfg(feature = "python")]
+            #[pyo3::pyfunction]
+            #[pyo3(name = $func_name)]
+            pub fn [<py_ $func_name:lower>](expr: daft_dsl::python::PyExpr, arg0: daft_dsl::python::PyExpr, arg1: daft_dsl::python::PyExpr) -> pyo3::prelude::PyResult<daft_dsl::python::PyExpr> {
+                Ok([<$func_name:lower>](expr.into(), arg0.into(), arg1.into()).into())
+            }
+        }
+    };
+
 }
 
 /// generates a scalar UDF implementation
-/// Similar to `impl_scalar_udf0`, but with parameterized inputs
+/// Similar to `make_udf_function`, but with parameterized inputs
 /// # Example
 /// ```rust,ignore
 ///
@@ -329,6 +318,56 @@ macro_rules! make_binary_udf_function {
 /// ```
 #[macro_export]
 macro_rules! make_parameterized_udf_function {
+    (
+        name: $func_name:expr,
+        params: ($($param:ident: $param_type:ident)*),
+        to_field: ($self0:ident, $to_field_input0:ident, $schema:ident) $to_field:block,
+        evaluate: ($self1:ident, $input0:ident) $evaluate:block
+    ) => {
+        paste::paste! {
+            #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+            pub struct [<$func_name:camel Function>] {
+                $(
+                    pub $param: $param_type,
+                )*
+            }
+
+            #[typetag::serde]
+            impl $crate::functions::ScalarUDF for [<$func_name:camel Function>] {
+                fn as_any(&self) -> &dyn std::any::Any { self }
+                fn name(&self) -> &'static str { $func_name }
+                fn to_field(&$self0, inputs: &[$crate::ExprRef], $schema: &daft_core::schema::Schema) -> common_error::DaftResult<daft_core::datatypes::Field> {
+                    match inputs {
+                        [$to_field_input0] => $to_field,
+                        _ => Err(common_error::DaftError::ValueError(format!("function '{}' expects no arguments, instead received {}", $func_name , inputs.len())))
+                    }
+                }
+                fn evaluate(&$self1, inputs: &[daft_core::series::Series]) -> common_error::DaftResult<daft_core::series::Series> {
+
+                    match inputs {
+                        [$input0] => $evaluate,
+                        _ => Err(common_error::DaftError::ValueError(format!("function '{}' expects no arguments, instead received {}", $func_name , inputs.len())))
+                    }
+                }
+            }
+
+            pub fn [<$func_name:lower>](input: $crate::ExprRef, $($param: $param_type),*) -> $crate::ExprRef {
+                $crate::functions::ScalarFunction::new([<$func_name:camel Function>] {
+                    $(
+                        $param,
+                    )*
+                }, vec![input]).into()
+
+            }
+
+            #[cfg(feature = "python")]
+            #[pyo3::pyfunction]
+            #[pyo3(name = $func_name)]
+            pub fn [<py_ $func_name:lower>](expr: daft_dsl::python::PyExpr, $($param: $param_type),*) -> pyo3::prelude::PyResult<daft_dsl::python::PyExpr> {
+                Ok([<$func_name:lower>](expr.into(), $($param),*).into())
+            }
+        }
+    };
     (
         name: $func_name:expr,
         params: ($($param:ident: $param_type:ident)*),

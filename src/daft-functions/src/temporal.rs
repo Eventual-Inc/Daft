@@ -6,9 +6,9 @@ use daft_core::{
     datatypes::{Field, TimeUnit},
     DataType,
 };
-use daft_dsl::make_unary_udf_function;
+use daft_dsl::make_udf_function;
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "date",
     to_field: (input, schema) {
         match input.to_field(schema) {
@@ -27,7 +27,7 @@ make_unary_udf_function! {
     }
 }
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "day",
     to_field: (input, schema) {
         match input.to_field(schema) {
@@ -47,7 +47,7 @@ make_unary_udf_function! {
     }
 }
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "day_of_week",
     to_field: (input, schema) {
         match input.to_field(schema) {
@@ -66,7 +66,7 @@ make_unary_udf_function! {
     }
 }
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "hour",
     to_field: (input, schema) {
         match input.to_field(schema) {
@@ -85,7 +85,7 @@ make_unary_udf_function! {
     }
 }
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "minute",
     to_field: (input,schema) {
         match input.to_field(schema) {
@@ -104,7 +104,7 @@ make_unary_udf_function! {
     }
 }
 
-make_unary_udf_function! {
+make_udf_function! {
     name: "month",
     to_field: (input,schema) {
         match input.to_field(schema) {
@@ -122,7 +122,7 @@ make_unary_udf_function! {
         input.dt_month()
     }
 }
-make_unary_udf_function! {
+make_udf_function! {
     name: "second",
     to_field: (input,schema) {
         match input.to_field(schema) {
@@ -140,7 +140,7 @@ make_unary_udf_function! {
         input.dt_second()
     }
 }
-make_unary_udf_function! {
+make_udf_function! {
     name: "time",
     to_field: (input,schema) {
         match input.to_field(schema) {
@@ -166,7 +166,7 @@ make_unary_udf_function! {
         input.dt_time()
     }
 }
-make_unary_udf_function! {
+make_udf_function! {
     name: "year",
     to_field: (input,schema) {
         match input.to_field(schema) {

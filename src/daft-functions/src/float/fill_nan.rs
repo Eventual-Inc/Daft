@@ -1,8 +1,8 @@
 use common_error::DaftError;
 use daft_core::{datatypes::Field, utils::supertype::try_get_supertype};
-use daft_dsl::make_binary_udf_function;
+use daft_dsl::make_udf_function;
 
-make_binary_udf_function! {
+make_udf_function! {
     name: "fill_nan",
     to_field: (data, fill_value, schema) {
         match (data.to_field(schema), fill_value.to_field(schema)) {

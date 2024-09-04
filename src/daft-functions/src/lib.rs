@@ -7,6 +7,7 @@ pub mod json;
 
 pub mod hash;
 pub mod image;
+pub mod list;
 pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
@@ -38,6 +39,7 @@ pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
     float::register_modules(py, parent)?;
     temporal::register_modules(py, parent)?;
     image::register_modules(py, parent)?;
+    list::register_modules(py, parent)?;
 
     Ok(())
 }
