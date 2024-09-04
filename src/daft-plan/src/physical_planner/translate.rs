@@ -292,6 +292,9 @@ pub(super) fn translate_single_logical_node(
 
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
                         populate_aggregation_stages(aggregations, &schema, groupby);
+                    let first_stage_group_by = groupby;
+                    let second_stage_group_by =
+                        groupby.iter().map(|e| col(e.name())).collect::<Vec<_>>();
 
                     let first_stage_agg = if first_stage_aggs.is_empty() {
                         input_physical
@@ -299,7 +302,7 @@ pub(super) fn translate_single_logical_node(
                         PhysicalPlan::Aggregate(Aggregate::new(
                             input_physical,
                             first_stage_aggs.values().cloned().collect(),
-                            groupby.clone(),
+                            first_stage_group_by.clone(),
                         ))
                         .arced()
                     };
@@ -317,7 +320,11 @@ pub(super) fn translate_single_logical_node(
                                 num_input_partitions,
                                 cfg.shuffle_aggregation_default_partitions,
                             ),
-                            groupby.clone(),
+                            if first_stage_aggs.is_empty() {
+                                first_stage_group_by.clone()
+                            } else {
+                                second_stage_group_by.clone()
+                            },
                         ))
                         .arced();
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
@@ -326,7 +333,7 @@ pub(super) fn translate_single_logical_node(
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan,
                         second_stage_aggs.values().cloned().collect(),
-                        groupby.clone(),
+                        second_stage_group_by,
                     ));
 
                     PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
@@ -774,7 +781,7 @@ pub fn populate_aggregation_stages(
     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     // Project the aggregation results to their final output names
-    let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
+    let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
 
     for agg_expr in aggregations {
         let output_name = agg_expr.name();
