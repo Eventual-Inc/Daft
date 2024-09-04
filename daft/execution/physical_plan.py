@@ -1024,7 +1024,7 @@ def sort_merge_join_aligned_boundaries(
         ]
 
         # Execute a sorting reduce on it.
-        per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
+        per_partition_bounds = _to_per_partition_bounds(boundaries.micropartition(), num_partitions)
         sorted_plans.append(
             reduce(
                 fanout_plan=iter(range_fanout_plan),
@@ -1498,7 +1498,7 @@ def sort(
         )
         for source in consume_deque(source_materializations)
     )
-    per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
+    per_partition_bounds = _to_per_partition_bounds(boundaries.micropartition(), num_partitions)
 
     # Execute a sorting reduce on it.
     yield from reduce(

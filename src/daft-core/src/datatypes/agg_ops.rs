@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 use common_error::{DaftError, DaftResult};
 
 use super::DataType;
@@ -10,6 +12,8 @@ pub fn try_sum_supertype(dtype: &DataType) -> DaftResult<DataType> {
         UInt8 | UInt16 | UInt32 | UInt64 => Ok(UInt64),
         Float32 => Ok(Float32),
         Float64 => Ok(Float64),
+        // 38 is the maximum precision for Decimal128, while 19 is the max increase based on 2^64 rows
+        Decimal128(a, b) => Ok(Decimal128(min(38, *a + 19), *b)),
         other => Err(DaftError::TypeError(format!(
             "Invalid argument to sum supertype: {}",
             other

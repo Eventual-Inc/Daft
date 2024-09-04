@@ -30,7 +30,7 @@ pub struct ActorPoolProject {
 impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
-            resolve_exprs(projection, input.schema().as_ref()).context(CreationSnafu)?;
+            resolve_exprs(projection, input.schema().as_ref(), true).context(CreationSnafu)?;
 
         let num_stateful_udf_exprs: usize = projection
             .iter()

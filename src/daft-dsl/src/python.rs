@@ -172,7 +172,7 @@ pub fn stateless_udf(
     Ok(PyExpr {
         expr: stateless_udf(
             name,
-            partial_stateless_udf,
+            partial_stateless_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
@@ -217,11 +217,11 @@ pub fn stateful_udf(
     Ok(PyExpr {
         expr: stateful_udf(
             name,
-            partial_stateful_udf,
+            partial_stateful_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
-            init_args,
+            init_args.map(|a| a.into()),
             batch_size,
             concurrency,
         )?
@@ -241,9 +241,8 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 }
 
 #[pyfunction]
-pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
-    Ok((resolved_expr.into(), field.into()))
+pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
+    Ok(crate::check_column_name_validity(name, &schema.schema)?)
 }
 
 #[derive(FromPyObject)]
@@ -400,6 +399,10 @@ impl PyExpr {
 
     pub fn sum(&self) -> PyResult<Self> {
         Ok(self.expr.clone().sum().into())
+    }
+
+    pub fn approx_count_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().approx_count_distinct().into())
     }
 
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {

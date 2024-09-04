@@ -5,8 +5,7 @@ use common_error::DaftResult;
 use common_treenode::TreeNode;
 use daft_core::{schema::Schema, JoinType};
 use daft_dsl::{
-    col,
-    functions::{python::PythonUDF, FunctionExpr},
+    col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
     Expr, ExprRef,
 };
@@ -279,17 +278,7 @@ impl PushDownProjection {
                             .collect_vec();
 
                         // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has StatefulUDFs
-                        let new_plan = if new_actor_pool_projections.iter().any(|e| {
-                            e.exists(|e| {
-                                matches!(
-                                    e.as_ref(),
-                                    Expr::Function {
-                                        func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                                        ..
-                                    }
-                                )
-                            })
-                        }) {
+                        let new_plan = if new_actor_pool_projections.iter().any(has_stateful_udf) {
                             LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                                 upstream_actor_pool_projection.input.clone(),
                                 new_actor_pool_projections,
@@ -675,7 +664,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit};
+    use daft_dsl::{col, functions::python::RuntimePyObject, lit};
     use daft_scan::Pushdowns;
 
     use crate::{
@@ -909,7 +898,6 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
@@ -928,11 +916,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("c")],
         }
@@ -983,11 +973,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("a")],
         }
@@ -1043,7 +1035,6 @@ mod tests {
     }
 
     /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
         use crate::logical_ops::ActorPoolProject;
@@ -1062,11 +1053,13 @@ mod tests {
         let mock_stateful_udf = Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("my-udf".to_string()),
+                stateful_partial_func: RuntimePyObject::new_testing_none(),
                 num_expressions: 1,
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
             })),
             inputs: vec![col("c")],
         }
