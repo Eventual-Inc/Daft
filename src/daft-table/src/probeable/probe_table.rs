@@ -15,7 +15,7 @@ use daft_core::{
 
 use crate::{ops::hash::IndexHash, Table};
 
-use super::{ArrowTableEntry, IndicesIter, Probeable, ProbeableBuilder};
+use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 
 pub(crate) struct ProbeTable {
     schema: SchemaRef,
@@ -157,23 +157,13 @@ impl ProbeTable {
 }
 
 impl Probeable for ProbeTable {
-    fn probe_indices<'a>(
-        &'a self,
-        right: &'a Table,
-    ) -> DaftResult<Box<dyn Iterator<Item = Option<IndicesIter>> + 'a>> {
+    fn probe_indices<'a>(&'a self, right: &'a Table) -> DaftResult<IndicesMapper<'a>> {
         let iter = self.probe(right)?;
-        let mapped = iter.map(move |indices| match indices {
-            Some(indices) => {
-                let inner_iter = indices.iter().map(|idx| {
-                    let table_idx = (idx >> ProbeTable::TABLE_IDX_SHIFT) as u32;
-                    let row_idx = idx & ProbeTable::LOWER_MASK;
-                    (table_idx, row_idx)
-                });
-                Some(Box::new(inner_iter) as Box<dyn Iterator<Item = (u32, u64)> + 'a>)
-            }
-            None => None,
-        });
-        Ok(Box::new(mapped))
+        Ok(IndicesMapper::new(
+            Box::new(iter),
+            Self::TABLE_IDX_SHIFT,
+            Self::LOWER_MASK,
+        ))
     }
 
     fn probe_exists<'a>(

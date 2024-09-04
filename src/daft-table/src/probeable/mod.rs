@@ -29,16 +29,48 @@ pub trait ProbeableBuilder: Send + Sync {
     fn build(self: Box<Self>) -> Arc<dyn Probeable>;
 }
 
-type IndicesIter<'a> = Box<dyn Iterator<Item = (u32, u64)> + 'a>;
+pub struct IndicesMapper<'a> {
+    table_idx_shift: usize,
+    lower_mask: u64,
+    idx_iter: Box<dyn Iterator<Item = Option<&'a [u64]>> + 'a>,
+}
+
+impl<'a> IndicesMapper<'a> {
+    pub fn new(
+        idx_iter: Box<dyn Iterator<Item = Option<&'a [u64]>> + 'a>,
+        table_idx_shift: usize,
+        lower_mask: u64,
+    ) -> Self {
+        Self {
+            table_idx_shift,
+            lower_mask,
+            idx_iter,
+        }
+    }
+
+    pub fn make_iter(self) -> impl Iterator<Item = Option<impl Iterator<Item = (u32, u64)> + 'a>> {
+        let table_idx_shift = self.table_idx_shift;
+        let lower_mask = self.lower_mask;
+        self.idx_iter.map(move |indices| match indices {
+            Some(indices) => {
+                let inner_iter = indices.iter().map(move |idx| {
+                    let table_idx = (idx >> table_idx_shift) as u32;
+                    let row_idx = idx & lower_mask;
+                    (table_idx, row_idx)
+                });
+                Some(inner_iter)
+            }
+            None => None,
+        })
+    }
+}
+
 pub trait Probeable: Send + Sync {
     /// Probe_indices returns an iterator of optional iterators. The outer iterator iterates over the rows of the right table.
     /// The inner iterator, if present, iterates over the rows of the left table that match the right row.
     /// Otherwise, if the inner iterator is None, indicates that the right row has no matches.
     /// NOTE: This function only works if track_indices is true.
-    fn probe_indices<'a>(
-        &'a self,
-        table: &'a Table,
-    ) -> DaftResult<Box<dyn Iterator<Item = Option<IndicesIter>> + 'a>>;
+    fn probe_indices<'a>(&'a self, table: &'a Table) -> DaftResult<IndicesMapper<'a>>;
 
     /// Probe_exists returns an iterator of booleans. The iterator iterates over the rows of the right table.
     fn probe_exists<'a>(

@@ -15,7 +15,7 @@ use daft_core::{
 
 use crate::{ops::hash::IndexHash, Table};
 
-use super::{ArrowTableEntry, IndicesIter, Probeable, ProbeableBuilder};
+use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 pub(crate) struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
@@ -153,10 +153,7 @@ impl Probeable for ProbeSet {
         Ok(Box::new(self.probe(right)?))
     }
 
-    fn probe_indices<'a>(
-        &'a self,
-        _right: &'a Table,
-    ) -> DaftResult<Box<dyn Iterator<Item = Option<IndicesIter>> + 'a>> {
+    fn probe_indices<'a>(&'a self, _right: &'a Table) -> DaftResult<IndicesMapper<'a>> {
         panic!("Not implemented")
     }
 }

@@ -54,9 +54,9 @@ impl HashJoinProbeState {
                 for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                     // we should emit one table at a time when this is streaming
                     let join_keys = table.eval_expression_list(probe_on)?;
-                    let iter = probe_table.probe_indices(&join_keys)?;
+                    let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
-                    for (probe_row_idx, inner_iter) in iter.enumerate() {
+                    for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
                         if let Some(inner_iter) = inner_iter {
                             for (build_side_table_idx, build_row_idx) in inner_iter {
                                 build_side_growable.extend(
@@ -125,9 +125,9 @@ impl HashJoinProbeState {
                 let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
                 for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                     let join_keys = table.eval_expression_list(probe_on)?;
-                    let iter = probe_table.probe_indices(&join_keys)?;
+                    let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
-                    for (probe_row_idx, inner_iter) in iter.enumerate() {
+                    for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
                         if let Some(inner_iter) = inner_iter {
                             for (build_side_table_idx, build_row_idx) in inner_iter {
                                 build_side_growable.extend(
