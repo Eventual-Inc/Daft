@@ -283,6 +283,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+ "thiserror",
  "tokio",
  "tokio-util",
  "zstd 0.12.4",
