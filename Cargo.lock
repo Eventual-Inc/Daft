@@ -1834,6 +1834,7 @@ dependencies = [
  "globset",
  "google-cloud-storage",
  "google-cloud-token",
+ "hdrs",
  "home",
  "hyper",
  "hyper-tls",
@@ -2709,6 +2710,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdfs-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33e2d5cefba2d51a26b44d2a493f963a32725a0f6593c91be4a610ad449c49cb"
+dependencies = [
+ "cc",
+ "java-locator",
+]
+
+[[package]]
+name = "hdrs"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c42a693bfe5dc8fcad1f24044c5ec355c5f157b8ce63c7d62f51cecbc7878d"
+dependencies = [
+ "errno",
+ "hdfs-sys",
+ "libc",
+ "log",
+]
+
+[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3069,6 +3092,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ba44fe4428c71304604261ecbae047ee9cfb60c4f1a6bd222ebbb31726d3948"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "java-locator"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2abecabd9961c5e01405a6426687fcf1bd94a269927137e4c3cc1a7419b93fd"
+dependencies = [
+ "glob",
+ "lazy_static",
 ]
 
 [[package]]

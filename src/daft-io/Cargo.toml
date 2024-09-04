@@ -36,6 +36,7 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 url = {workspace = true}
+hdrs = {version = "0.3.2", features = ["vendored"], optional=true}
 
 [dependencies.reqwest]
 default-features = false
@@ -53,6 +54,7 @@ python = [
   "common-io-config/python",
   "common-py-serde/python"
 ]
+enable_hdfs = ["dep:hdrs"]
 
 [package]
 edition = {workspace = true}
