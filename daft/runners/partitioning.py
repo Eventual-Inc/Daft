@@ -175,12 +175,12 @@ class MaterializedResult(Generic[PartitionT]):
 
     @abstractmethod
     def partition(self) -> PartitionT:
-        """Get the partition of this result."""
+        """Get the result data as a generic PartitionT, which is an internal backend-specific representation of the result."""
         ...
 
     @abstractmethod
-    def vpartition(self) -> MicroPartition:
-        """Get the vPartition of this result."""
+    def micropartition(self) -> MicroPartition:
+        """Get the result data as an in-memory MicroPartition."""
         ...
 
     @abstractmethod
@@ -202,15 +202,15 @@ class MaterializedResult(Generic[PartitionT]):
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_merged_vpartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self) -> MicroPartition:
         raise NotImplementedError()
 
-    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+    def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         raise NotImplementedError()
 
     def to_pydict(self) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
-        merged_partition = self._get_merged_vpartition()
+        merged_partition = self._get_merged_micropartition()
         return merged_partition.to_pydict()
 
     def to_pandas(
@@ -219,7 +219,7 @@ class PartitionSet(Generic[PartitionT]):
         cast_tensors_to_ray_tensor_dtype: bool = False,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
-        merged_partition = self._get_merged_vpartition()
+        merged_partition = self._get_merged_micropartition()
         return merged_partition.to_pandas(
             schema=schema,
             cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
@@ -227,7 +227,7 @@ class PartitionSet(Generic[PartitionT]):
         )
 
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
-        merged_partition = self._get_merged_vpartition()
+        merged_partition = self._get_merged_micropartition()
         return merged_partition.to_arrow(cast_tensors_to_ray_tensor_dtype)
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:

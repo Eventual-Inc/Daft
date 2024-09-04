@@ -10,102 +10,66 @@ use daft_dsl::make_unary_udf_function;
 
 make_unary_udf_function! {
     name: "date",
-    to_field: (inputs, schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::Date))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to date to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input, schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::Date))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to date to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_date(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_date()
     }
 }
 
 make_unary_udf_function! {
     name: "day",
-    to_field: (inputs, schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to day to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input, schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::UInt32))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to day to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
+
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_day(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_day()
     }
 }
 
 make_unary_udf_function! {
     name: "day_of_week",
-    to_field: (inputs, schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to day to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input, schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::UInt32))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to day to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_day_of_week(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_day_of_week()
     }
 }
 
 make_unary_udf_function! {
     name: "hour",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
+    to_field: (input, schema) {
+        match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => {
                     Ok(Field::new(field.name, DataType::UInt32))
                 }
@@ -114,90 +78,54 @@ make_unary_udf_function! {
                     field.dtype
                 ))),
                 Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_hour(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_hour()
     }
 }
 
 make_unary_udf_function! {
     name: "minute",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to minute to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input,schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::UInt32))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to minute to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_minute(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_minute()
     }
 }
 
 make_unary_udf_function! {
     name: "month",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to month to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input,schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::UInt32))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to month to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_month(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_month()
     }
 }
 make_unary_udf_function! {
     name: "second",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
+    to_field: (input,schema) {
+        match input.to_field(schema) {
                 Ok(field) if field.dtype.is_temporal() => {
                     Ok(Field::new(field.name, DataType::UInt32))
                 }
@@ -206,88 +134,54 @@ make_unary_udf_function! {
                     field.dtype
                 ))),
                 Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_second(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_second()
     }
 }
 make_unary_udf_function! {
     name: "time",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) => match field.dtype {
-                    DataType::Time(_) => Ok(field),
-                    DataType::Timestamp(tu, _) => {
-                        let tu = match tu {
-                            TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
-                            _ => TimeUnit::Microseconds,
-                        };
-                        Ok(Field::new(field.name, DataType::Time(tu)))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected input to time to be time or timestamp, got {}",
-                        field.dtype
-                    ))),
-                },
-                Err(e) => Err(e),
+    to_field: (input,schema) {
+        match input.to_field(schema) {
+            Ok(field) => match field.dtype {
+                DataType::Time(_) => Ok(field),
+                DataType::Timestamp(tu, _) => {
+                    let tu = match tu {
+                        TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+                        _ => TimeUnit::Microseconds,
+                    };
+                    Ok(Field::new(field.name, DataType::Time(tu)))
+                }
+                _ => Err(DaftError::TypeError(format!(
+                    "Expected input to time to be time or timestamp, got {}",
+                    field.dtype
+                ))),
             },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
+            Err(e) => Err(e),
+
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_time(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_time()
     }
 }
 make_unary_udf_function! {
     name: "year",
-    to_field: (inputs,schema) {
-        match inputs {
-            [input] => match input.to_field(schema) {
-                Ok(field) if field.dtype.is_temporal() => {
-                    Ok(Field::new(field.name, DataType::UInt32))
-                }
-                Ok(field) => Err(DaftError::TypeError(format!(
-                    "Expected input to year to be temporal, got {}",
-                    field.dtype
-                ))),
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+    to_field: (input,schema) {
+        match input.to_field(schema) {
+            Ok(field) if field.dtype.is_temporal() => {
+                Ok(Field::new(field.name, DataType::UInt32))
+            }
+            Ok(field) => Err(DaftError::TypeError(format!(
+                "Expected input to year to be temporal, got {}",
+                field.dtype
             ))),
+            Err(e) => Err(e),
         }
     },
-    evaluate: (inputs) {
-        match inputs {
-            [input] => input.dt_year(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    evaluate: (input) {
+        input.dt_year()
     }
 }
 

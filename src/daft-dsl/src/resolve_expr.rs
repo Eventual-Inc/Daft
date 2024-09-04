@@ -4,7 +4,7 @@ use daft_core::{
     schema::Schema,
 };
 
-use crate::{col, AggExpr, ApproxPercentileParams, Expr, ExprRef};
+use crate::{col, expr::has_agg, has_stateful_udf, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 
 use common_error::{DaftError, DaftResult};
 
@@ -262,14 +262,29 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
 }
 
 /// Resolves and validates the expression with a schema, returning the new expression and its field.
+/// Specifically, makes sure the expression does not contain aggregations or stateful UDFs when they are not allowed,
+/// and resolves struct accessors and wildcards.
 /// May return multiple expressions if the expr contains a wildcard.
-fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
+///
+/// TODO: Use a builder pattern for this functionality
+fn resolve_expr(
+    expr: ExprRef,
+    schema: &Schema,
+    allow_stateful_udf: bool,
+) -> DaftResult<Vec<ExprRef>> {
     // TODO(Kevin): Support aggregation expressions everywhere
-    if expr.has_agg() {
+    if has_agg(&expr) {
         return Err(DaftError::ValueError(format!(
             "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
         )));
     }
+
+    if !allow_stateful_udf && has_stateful_udf(&expr) {
+        return Err(DaftError::ValueError(format!(
+            "Stateful UDFs are only allowed in projections: {expr}"
+        )));
+    }
+
     let struct_expr_map = calculate_struct_expr_map(schema);
     expand_wildcards(expr, schema, &struct_expr_map)?
         .into_iter()
@@ -278,8 +293,12 @@ fn resolve_expr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
 }
 
 // Resolve a single expression, erroring if any kind of expansion happens.
-pub fn resolve_single_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
-    let resolved_exprs = resolve_expr(expr.clone(), schema)?;
+pub fn resolve_single_expr(
+    expr: ExprRef,
+    schema: &Schema,
+    allow_stateful_udf: bool,
+) -> DaftResult<(ExprRef, Field)> {
+    let resolved_exprs = resolve_expr(expr.clone(), schema, allow_stateful_udf)?;
     match resolved_exprs.as_slice() {
         [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
         _ => Err(DaftError::ValueError(format!(
@@ -293,10 +312,13 @@ pub fn resolve_single_expr(expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRe
 pub fn resolve_exprs(
     exprs: Vec<ExprRef>,
     schema: &Schema,
+    allow_stateful_udf: bool,
 ) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
     // can't flat map because we need to deal with errors
-    let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> =
-        exprs.into_iter().map(|e| resolve_expr(e, schema)).collect();
+    let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> = exprs
+        .into_iter()
+        .map(|e| resolve_expr(e, schema, allow_stateful_udf))
+        .collect();
     let resolved_exprs: Vec<ExprRef> = resolved_exprs?.into_iter().flatten().collect();
     let resolved_fields: DaftResult<Vec<Field>> =
         resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
@@ -304,26 +326,40 @@ pub fn resolve_exprs(
 }
 
 /// Resolves and validates the expression with a schema, returning the extracted aggregation expression and its field.
+/// Specifically, makes sure the expression does not contain aggregationsnested  or stateful UDFs,
+/// and resolves struct accessors and wildcards.
+/// May return multiple expressions if the expr contains a wildcard.
+///
+/// TODO: Use a builder pattern for this functionality
 fn resolve_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<Vec<AggExpr>> {
+    let has_nested_agg = extract_agg_expr(&expr)?.children().iter().any(has_agg);
+
+    if has_nested_agg {
+        return Err(DaftError::ValueError(format!(
+            "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+        )));
+    }
+
+    if has_stateful_udf(&expr) {
+        return Err(DaftError::ValueError(format!(
+            "Stateful UDFs are only allowed in projections: {expr}"
+        )));
+    }
+
     let struct_expr_map = calculate_struct_expr_map(schema);
-    expand_wildcards(expr, schema, &struct_expr_map)?.into_iter().map(|expr| {
-        let agg_expr = extract_agg_expr(&expr)?;
+    expand_wildcards(expr, schema, &struct_expr_map)?
+        .into_iter()
+        .map(|expr| {
+            let agg_expr = extract_agg_expr(&expr)?;
 
-        let has_nested_agg = agg_expr.children().iter().any(|e| e.has_agg());
-
-        if has_nested_agg {
-            return Err(DaftError::ValueError(format!(
-                "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
-            )));
-        }
-
-        let resolved_children = agg_expr
-            .children()
-            .into_iter()
-            .map(|e| transform_struct_gets(e, &struct_expr_map))
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(agg_expr.with_new_children(resolved_children))
-    }).collect()
+            let resolved_children = agg_expr
+                .children()
+                .into_iter()
+                .map(|e| transform_struct_gets(e, &struct_expr_map))
+                .collect::<DaftResult<Vec<_>>>()?;
+            Ok(agg_expr.with_new_children(resolved_children))
+        })
+        .collect()
 }
 
 pub fn resolve_single_aggexpr(expr: ExprRef, schema: &Schema) -> DaftResult<(AggExpr, Field)> {
@@ -351,6 +387,32 @@ pub fn resolve_aggexprs(
     let resolved_fields: DaftResult<Vec<Field>> =
         resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
     Ok((resolved_exprs, resolved_fields?))
+}
+
+pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
+    let struct_expr_map = calculate_struct_expr_map(schema);
+
+    let names = if name.contains('*') {
+        if let Ok(names) = get_wildcard_matches(name, schema, &struct_expr_map) {
+            names
+        } else {
+            return Err(DaftError::ValueError(format!(
+                "Error matching wildcard `{name}` in schema: {schema}"
+            )));
+        }
+    } else {
+        vec![name.into()]
+    };
+
+    for n in names {
+        if !struct_expr_map.contains_key(&n) {
+            return Err(DaftError::ValueError(format!(
+                "Column `{n}` not found in schema: {schema}"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

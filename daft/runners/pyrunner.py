@@ -41,13 +41,13 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_vpartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self) -> MicroPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         return MicroPartition.concat([part.partition() for id, part in ids_and_partitions])
 
-    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+    def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
         for _, mat_result in ids_and_partitions:
@@ -401,7 +401,7 @@ class PyMaterializedResult(MaterializedResult[MicroPartition]):
     def partition(self) -> MicroPartition:
         return self._partition
 
-    def vpartition(self) -> MicroPartition:
+    def micropartition(self) -> MicroPartition:
         return self._partition
 
     def metadata(self) -> PartitionMetadata:

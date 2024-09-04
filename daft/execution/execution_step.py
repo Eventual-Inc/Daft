@@ -200,9 +200,9 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         [partial_metadata] = self.partial_metadatas
         return self.result().metadata().merge_with_partial(partial_metadata)
 
-    def vpartition(self) -> MicroPartition:
+    def micropartition(self) -> MicroPartition:
         """Get the raw vPartition of the result."""
-        return self.result().vpartition()
+        return self.result().micropartition()
 
     def __str__(self) -> str:
         return super().__str__()
@@ -248,10 +248,10 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
             for result, partial_metadata in zip(self._results, self.partial_metadatas)
         ]
 
-    def vpartition(self, index: int) -> MicroPartition:
+    def micropartition(self, index: int) -> MicroPartition:
         """Get the raw vPartition of the result."""
         assert self._results is not None
-        return self._results[index].vpartition()
+        return self._results[index].micropartition()
 
     def __str__(self) -> str:
         return super().__str__()

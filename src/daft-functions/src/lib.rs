@@ -4,6 +4,7 @@ pub mod distance;
 pub mod float;
 
 pub mod hash;
+pub mod image;
 pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
@@ -33,6 +34,8 @@ pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
     float::register_modules(py, parent)?;
     temporal::register_modules(py, parent)?;
+    image::register_modules(py, parent)?;
+    
     Ok(())
 }
 
@@ -47,6 +50,7 @@ impl From<Error> for std::io::Error {
         std::io::Error::new(std::io::ErrorKind::Other, err)
     }
 }
+
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         DaftError::External(err.into())

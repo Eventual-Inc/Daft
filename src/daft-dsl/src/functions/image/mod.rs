@@ -1,11 +1,9 @@
 mod crop;
-mod decode;
 mod encode;
 mod resize;
 mod to_mode;
 
 use crop::CropEvaluator;
-use decode::DecodeEvaluator;
 use encode::EncodeEvaluator;
 use resize::ResizeEvaluator;
 use serde::{Deserialize, Serialize};
@@ -19,21 +17,10 @@ use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ImageExpr {
-    Decode {
-        raise_error_on_failure: bool,
-        mode: Option<ImageMode>,
-    },
-    Encode {
-        image_format: ImageFormat,
-    },
-    Resize {
-        w: u32,
-        h: u32,
-    },
+    Encode { image_format: ImageFormat },
+    Resize { w: u32, h: u32 },
     Crop(),
-    ToMode {
-        mode: ImageMode,
-    },
+    ToMode { mode: ImageMode },
 }
 
 impl ImageExpr {
@@ -42,24 +29,12 @@ impl ImageExpr {
         use ImageExpr::*;
 
         match self {
-            Decode { .. } => &DecodeEvaluator {},
             Encode { .. } => &EncodeEvaluator {},
             Resize { .. } => &ResizeEvaluator {},
             Crop { .. } => &CropEvaluator {},
             ToMode { .. } => &ToModeEvaluator {},
         }
     }
-}
-
-pub fn decode(input: ExprRef, raise_error_on_failure: bool, mode: Option<ImageMode>) -> ExprRef {
-    Expr::Function {
-        func: super::FunctionExpr::Image(ImageExpr::Decode {
-            raise_error_on_failure,
-            mode,
-        }),
-        inputs: vec![input],
-    }
-    .into()
 }
 
 pub fn encode(input: ExprRef, image_format: ImageFormat) -> ExprRef {
