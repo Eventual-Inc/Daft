@@ -40,7 +40,7 @@ impl SQLFunction for SQLImageEncode {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args = planner.plan_function_args(args)?;
+                let args = planner.plan_function_args(args, &["image_format"], 0)?;
                 Ok(encode(input, args))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),

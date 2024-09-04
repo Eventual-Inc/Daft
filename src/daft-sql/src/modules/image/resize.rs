@@ -15,8 +15,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
         let width = args
-            .get_named("width")
-            .or_else(|| args.get_named("w"))
+            .get_named("w")
             .or_else(|| args.get_unnamed(0))
             .map(|arg| match arg.as_ref() {
                 Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
@@ -28,8 +27,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
             })?;
 
         let height = args
-            .get_named("height")
-            .or_else(|| args.get_named("h"))
+            .get_named("h")
             .or_else(|| args.get_unnamed(1))
             .map(|arg| match arg.as_ref() {
                 Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
@@ -59,7 +57,8 @@ impl SQLFunction for SQLImageResize {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let ImageResize { width, height } = planner.plan_function_args(args)?;
+                let ImageResize { width, height } =
+                    planner.plan_function_args(args, &["w", "h"], 2)?;
                 Ok(resize(input, width, height))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_resize: '{inputs:?}'"),

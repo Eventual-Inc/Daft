@@ -92,13 +92,13 @@ pub struct SQLFunctions {
 }
 
 pub(crate) struct SQLFunctionArguments {
-    pub unnamed: HashMap<usize, ExprRef>,
+    pub positional: HashMap<usize, ExprRef>,
     pub named: HashMap<String, ExprRef>,
 }
 
 impl SQLFunctionArguments {
     pub fn get_unnamed(&self, idx: usize) -> Option<&ExprRef> {
-        self.unnamed.get(&idx)
+        self.positional.get(&idx)
     }
     pub fn get_named(&self, name: &str) -> Option<&ExprRef> {
         self.named.get(name)
@@ -185,11 +185,16 @@ impl SQLPlanner {
         fn_match.to_expr(&args, self)
     }
 
-    pub(crate) fn plan_function_args<T>(&self, args: &[FunctionArg]) -> SQLPlannerResult<T>
+    pub(crate) fn plan_function_args<T>(
+        &self,
+        args: &[FunctionArg],
+        expected_named: &'static [&'static str],
+        expected_positional: usize,
+    ) -> SQLPlannerResult<T>
     where
         T: TryFrom<SQLFunctionArguments, Error = PlannerError>,
     {
-        let mut unnamed_args = HashMap::new();
+        let mut positional_args = HashMap::new();
         let mut named_args = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
             match arg {
@@ -198,17 +203,23 @@ impl SQLPlanner {
                     arg,
                     operator: FunctionArgOperator::Assignment,
                 } => {
+                    if !expected_named.contains(&name.value.as_str()) {
+                        unsupported_sql_err!("unexpected named argument: {}", name);
+                    }
                     named_args.insert(name.to_string(), self.try_unwrap_function_arg_expr(arg)?);
                 }
                 FunctionArg::Unnamed(arg) => {
-                    unnamed_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
+                    if idx >= expected_positional {
+                        unsupported_sql_err!("unexpected unnamed argument");
+                    }
+                    positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
                 _ => unsupported_sql_err!("unsupported function argument type"),
             }
         }
 
         SQLFunctionArguments {
-            unnamed: unnamed_args,
+            positional: positional_args,
             named: named_args,
         }
         .try_into()

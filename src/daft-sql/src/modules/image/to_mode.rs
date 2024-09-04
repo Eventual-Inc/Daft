@@ -35,7 +35,7 @@ impl SQLFunction for SQLImageToMode {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let ImageToMode { mode } = planner.plan_function_args(args)?;
+                let ImageToMode { mode } = planner.plan_function_args(args, &["mode"], 0)?;
                 Ok(image_to_mode(input, mode))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),

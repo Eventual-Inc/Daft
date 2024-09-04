@@ -55,7 +55,7 @@ impl SQLFunction for SQLImageDecode {
             }
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args = planner.plan_function_args(args)?;
+                let args = planner.plan_function_args(args, &["mode", "on_error"], 0)?;
                 Ok(decode(input, Some(args)))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_decode: '{inputs:?}'"),
