@@ -2,11 +2,11 @@ use super::SQLModule;
 use crate::{
     ensure,
     error::{PlannerError, SQLPlannerResult},
-    functions::SQLFunctions,
+    functions::{SQLFunction, SQLFunctions},
     invalid_operation_err,
 };
 use daft_dsl::{
-    functions::{self, numeric::NumericExpr, FunctionExpr},
+    functions::{self, numeric::NumericExpr},
     ExprRef, LiteralValue,
 };
 
@@ -15,36 +15,45 @@ pub struct SQLModuleNumeric;
 /// SQLModule for FunctionExpr::Numeric
 impl SQLModule for SQLModuleNumeric {
     fn register(parent: &mut SQLFunctions) {
-        use FunctionExpr::Numeric as f;
         use NumericExpr::*;
-        parent.add_fn("abs", f(Abs));
-        parent.add_fn("ceil", f(Ceil));
-        parent.add_fn("floor", f(Floor));
-        parent.add_fn("sign", f(Sign));
-        parent.add_fn("round", f(Round(0)));
-        parent.add_fn("sqrt", f(Sqrt));
-        parent.add_fn("sin", f(Sin));
-        parent.add_fn("cos", f(Cos));
-        parent.add_fn("tan", f(Tan));
-        parent.add_fn("cot", f(Cot));
-        parent.add_fn("asin", f(ArcSin));
-        parent.add_fn("acos", f(ArcCos));
-        parent.add_fn("atan", f(ArcTan));
-        parent.add_fn("atan2", f(ArcTan2));
-        parent.add_fn("radians", f(Radians));
-        parent.add_fn("degrees", f(Degrees));
-        parent.add_fn("log2", f(Log2));
-        parent.add_fn("log10", f(Log10));
+        parent.add_fn("abs", Abs);
+        parent.add_fn("ceil", Ceil);
+        parent.add_fn("floor", Floor);
+        parent.add_fn("sign", Sign);
+        parent.add_fn("round", Round(0));
+        parent.add_fn("sqrt", Sqrt);
+        parent.add_fn("sin", Sin);
+        parent.add_fn("cos", Cos);
+        parent.add_fn("tan", Tan);
+        parent.add_fn("cot", Cot);
+        parent.add_fn("asin", ArcSin);
+        parent.add_fn("acos", ArcCos);
+        parent.add_fn("atan", ArcTan);
+        parent.add_fn("atan2", ArcTan2);
+        parent.add_fn("radians", Radians);
+        parent.add_fn("degrees", Degrees);
+        parent.add_fn("log2", Log2);
+        parent.add_fn("log10", Log10);
         // parent.add("log", f(Log(FloatWrapper(0.0))));
-        parent.add_fn("ln", f(Ln));
-        parent.add_fn("exp", f(Exp));
-        parent.add_fn("atanh", f(ArcTanh));
-        parent.add_fn("acosh", f(ArcCosh));
-        parent.add_fn("asinh", f(ArcSinh));
+        parent.add_fn("ln", Ln);
+        parent.add_fn("exp", Exp);
+        parent.add_fn("atanh", ArcTanh);
+        parent.add_fn("acosh", ArcCosh);
+        parent.add_fn("asinh", ArcSinh);
     }
 }
 
-pub(crate) fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+impl SQLFunction for NumericExpr {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
+        to_expr(self, inputs.as_slice())
+    }
+}
+fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     use functions::numeric::*;
     use NumericExpr::*;
     match expr {

@@ -3141,7 +3141,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 mode = ImageMode.from_mode_string(mode.upper())
             if not isinstance(mode, ImageMode):
                 raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error, mode=mode))
+        return Expression._from_pyexpr(native.image_decode(self._expr, raise_on_error=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """

@@ -2084,6 +2084,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
  "daft-plan",
  "once_cell",
  "pyo3",

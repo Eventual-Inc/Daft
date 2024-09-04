@@ -2,6 +2,7 @@
 pub mod count_matches;
 pub mod distance;
 pub mod hash;
+pub mod image;
 pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
@@ -28,6 +29,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
+    image::register_modules(_py, parent)?;
     Ok(())
 }
 
@@ -42,6 +44,7 @@ impl From<Error> for std::io::Error {
         std::io::Error::new(std::io::ErrorKind::Other, err)
     }
 }
+
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         DaftError::External(err.into())

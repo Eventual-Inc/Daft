@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use daft_dsl::{functions::FunctionExpr, AggExpr, ExprRef};
+use daft_dsl::ExprRef;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{Function, FunctionArg, FunctionArgExpr, FunctionArguments};
 
@@ -51,50 +51,43 @@ fn check_features(func: &Function) -> SQLPlannerResult<()> {
 }
 
 /// [SQLFunction] extends [FunctionExpr] with basic input validation (arity-check).
-///
-/// TODOs
-///  - Support for ScalarUDF as either another enum variant or make SQLFunction a trait.
-pub enum SQLFunction {
-    Function(FunctionExpr),
-    Agg(AggExpr),
+pub trait SQLFunction: Send + Sync {
+    /// helper function to extract the function args into a list of [ExprRef]
+    /// This is used to convert unnamed arguments into [ExprRef]s.
+    /// ```sql
+    /// SELECT concat('hello', 'world');
+    /// ```
+    /// this  will be converted to: [lit("hello"), lit("world")]
+    ///
+    /// Using this on a function with named arguments will result in an error.
+    /// ```sql
+    /// SELECT concat(arg1 => 'hello', arg2 => 'world');
+    /// ```
+    fn args_to_expr_unnamed(
+        &self,
+        inputs: &[FunctionArg],
+        planner: &SQLPlanner,
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
+        inputs
+            .iter()
+            .map(|arg| planner.plan_function_arg(arg))
+            .collect::<SQLPlannerResult<Vec<_>>>()
+    }
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
+}
+
+/// Parse the arguments of a function into a struct.
+pub(crate) trait FromSQLArgs {
+    fn from_sql(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<Self>
+    where
+        Self: Sized;
 }
 
 /// TODOs
 ///   - Use multimap for function variants.
 ///   - Add more functions..
 pub struct SQLFunctions {
-    map: HashMap<String, SQLFunction>,
-}
-
-/// Adds a `to_expr` method to [SQLFunction] to convert it to an [ExprRef].
-///
-/// TODOs
-///   - Consider splitting input validation from creating an [ExprRef].
-///   - Consider extending ScalarUDF
-impl SQLFunction {
-    /// Convert the [SQLFunction] to an [ExprRef].
-    fn to_expr(&self, inputs: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-        match self {
-            SQLFunction::Function(func) => {
-                use FunctionExpr::*;
-                match func {
-                    Numeric(expr) => numeric::to_expr(expr, inputs),
-                    Float(_) => unsupported_sql_err!("Float functions"),
-                    Utf8(expr) => utf8::to_expr(expr, inputs),
-                    Temporal(_) => unsupported_sql_err!("Temporal functions"),
-                    List(_) => unsupported_sql_err!("List functions"),
-                    Map(_) => unsupported_sql_err!("Map functions"),
-                    Sketch(_) => unsupported_sql_err!("Sketch functions"),
-                    Struct(_) => unsupported_sql_err!("Struct functions"),
-                    Json(_) => unsupported_sql_err!("Json functions"),
-                    Image(_) => unsupported_sql_err!("Image functions"),
-                    Python(_) => unsupported_sql_err!("Python functions"),
-                    Partitioning(_) => unsupported_sql_err!("Partitioning functions"),
-                }
-            }
-            SQLFunction::Agg(expr) => aggs::to_expr(expr, inputs),
-        }
-    }
+    map: HashMap<String, Arc<dyn SQLFunction>>,
 }
 
 impl SQLFunctions {
@@ -111,18 +104,12 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
-    pub fn add_fn(&mut self, name: &str, func: FunctionExpr) {
-        self.map
-            .insert(name.to_string(), SQLFunction::Function(func));
-    }
-
-    /// Add an [AggExpr] to the [SQLFunctions] instance.
-    pub fn add_agg(&mut self, name: &str, agg: AggExpr) {
-        self.map.insert(name.to_string(), SQLFunction::Agg(agg));
+    pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        self.map.insert(name.to_string(), Arc::new(func));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
-    pub fn get(&self, name: &str) -> Option<&SQLFunction> {
+    pub fn get(&self, name: &str) -> Option<&Arc<dyn SQLFunction>> {
         self.map.get(name)
     }
 }
@@ -175,21 +162,31 @@ impl SQLPlanner {
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
                 }
-                args.args
-                    .iter()
-                    .map(|arg| self.plan_function_arg(arg))
-                    .collect::<SQLPlannerResult<Vec<_>>>()?
+                args.args.clone()
             }
         };
 
         // validate input argument arity and return the validated expression.
-        fn_match.to_expr(args.as_slice())
+        fn_match.to_expr(&args, self)
     }
 
-    fn plan_function_arg(&self, function_arg: &FunctionArg) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn plan_function_arg(
+        &self,
+        function_arg: &FunctionArg,
+    ) -> SQLPlannerResult<ExprRef> {
         match function_arg {
             FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
             _ => unsupported_sql_err!("named function args not yet supported"),
+        }
+    }
+
+    pub(crate) fn try_unwrap_function_arg_expr(
+        &self,
+        expr: &FunctionArgExpr,
+    ) -> SQLPlannerResult<ExprRef> {
+        match expr {
+            FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
+            _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
     }
 }
