@@ -473,3 +473,45 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         }
     })
 }
+
+#[cfg(test)]
+mod test {
+    use daft_core::{datatypes::UInt64Array, IntoSeries};
+
+    use super::LiteralValue;
+
+    #[test]
+    fn test_literals_to_series() {
+        let values = vec![
+            LiteralValue::UInt64(1),
+            LiteralValue::UInt64(2),
+            LiteralValue::UInt64(3),
+        ];
+        let expected = vec![1, 2, 3];
+        let expected = UInt64Array::from_values("literal", expected.into_iter());
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_literals_to_series_null() {
+        let values = vec![
+            LiteralValue::Null,
+            LiteralValue::UInt64(2),
+            LiteralValue::UInt64(3),
+        ];
+        let actual = super::literals_to_series(&values);
+        assert!(actual.is_err());
+    }
+
+    #[test]
+    fn test_literals_to_series_mismatched() {
+        let values = vec![
+            LiteralValue::UInt64(1),
+            LiteralValue::Utf8("test".to_string()),
+        ];
+        let actual = super::literals_to_series(&values);
+        assert!(actual.is_err());
+    }
+}
