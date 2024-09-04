@@ -59,7 +59,7 @@ skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*
 
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
-features = ["python", "enable_hdfs"]
+features = ["python"]
 
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']
