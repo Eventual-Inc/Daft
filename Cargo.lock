@@ -3791,6 +3791,7 @@ dependencies = [
  "serde",
  "snap 1.1.1",
  "streaming-decompression",
+ "thiserror",
  "tokio",
  "xxhash-rust",
  "zstd 0.12.4",
