@@ -5,41 +5,41 @@ pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Error)]
 pub enum DaftError {
-    #[error("{0:?}")]
-    SerdeJsonError(#[from] serde_json::Error),
-    #[error("{0}")]
-    ComputeError(String),
-    #[error("{0}")]
+    #[error("DaftError::FieldNotFound {0}")]
     FieldNotFound(String),
-    #[error("{0}")]
+    #[error("DaftError::SchemaMismatch {0}")]
     SchemaMismatch(String),
-    #[error("{0}")]
+    #[error("DaftError::TypeError {0}")]
     TypeError(String),
-    #[error("{0:?}")]
+    #[error("DaftError::ComputeError {0}")]
+    ComputeError(String),
+    #[error("DaftError::ArrowError {0:?}")]
     ArrowError(#[from] arrow2::error::Error),
-    #[error("{0}")]
+    #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]
-    #[error("{0:?}")]
+    #[error("DaftError::PyO3Error {0:?}")]
     PyO3Error(#[from] pyo3::PyErr),
-    #[error("{0:?}")]
+    #[error("DaftError::IoError {0:?}")]
     IoError(#[from] std::io::Error),
-    #[error("{0:?}")]
-    FmtError(#[from] std::fmt::Error),
     #[error("DaftError::FileNotFound {path}: {source}")]
     FileNotFound { path: String, source: GenericError },
-    #[error("{0}")]
+    #[error("DaftError::InternalError {0}")]
     InternalError(String),
-    #[error("{0:?}")]
+    #[error("ConnectTimeout {0:?}")]
     ConnectTimeout(GenericError),
-    #[error("{0:?}")]
+    #[error("ReadTimeout {0:?}")]
     ReadTimeout(GenericError),
-    #[error("{0:?}")]
+    #[error("ByteStreamError {0:?}")]
     ByteStreamError(GenericError),
-    #[error("{0:?}")]
+    #[error("SocketError {0:?}")]
     SocketError(GenericError),
-    #[error("{0:?}")]
-    RegexError(#[from] regex::Error),
-    #[error("{0:?}")]
+    #[error("DaftError::External {0:?}")]
     External(GenericError),
+    #[error("DaftError::SerdeJsonError {0:?}")]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error("DaftError::FmtError {0:?}")]
+    FmtError(#[from] std::fmt::Error),
+    #[error("DaftError::RegexError {0:?}")]
+    RegexError(#[from] regex::Error),
 }
