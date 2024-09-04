@@ -283,6 +283,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+ "thiserror",
  "tokio",
  "tokio-util",
  "zstd 0.12.4",
@@ -1317,6 +1318,7 @@ dependencies = [
  "pyo3",
  "regex",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -3790,6 +3792,7 @@ dependencies = [
  "serde",
  "snap 1.1.1",
  "streaming-decompression",
+ "thiserror",
  "tokio",
  "xxhash-rust",
  "zstd 0.12.4",
