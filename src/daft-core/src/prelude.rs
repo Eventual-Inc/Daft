@@ -8,18 +8,12 @@ pub use crate::series::{IntoSeries, Series};
 // Re-export common data types and arrays
 pub use crate::datatypes::prelude::*;
 
+pub use crate::array::prelude::*;
+
 // Re-export count mode enum
 pub use crate::count_mode::CountMode;
 
 pub use crate::schema::{Schema, SchemaRef};
-
-pub use crate::array::ops::as_arrow::AsArrow;
-
-pub use crate::array::ops::full::FullNull;
-
-pub use crate::array::ops::DaftCompare;
-
-pub use crate::array::ops::DaftLogical;
 
 // Re-export join-related types
 pub use crate::join::{JoinStrategy, JoinType};

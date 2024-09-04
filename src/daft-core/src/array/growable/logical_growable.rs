@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use common_error::DaftResult;
 
-use crate::{datatypes::prelude::*, series::IntoSeries, series::Series};
+use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries, series::Series};
 
 use super::{Growable, GrowableArray};
 

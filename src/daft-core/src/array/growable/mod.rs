@@ -1,6 +1,7 @@
 use common_error::DaftResult;
 
 use crate::{
+    array::prelude::*,
     array::{FixedSizeListArray, ListArray, StructArray},
     datatypes::prelude::*,
     series::Series,

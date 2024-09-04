@@ -1,4 +1,6 @@
+use crate::array::prelude::*;
 use crate::datatypes::prelude::*;
+
 use arrow2::{array::PrimitiveArray, compute::arithmetics::ArraySub};
 use chrono::{Duration, NaiveDate, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};

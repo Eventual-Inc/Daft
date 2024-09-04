@@ -36,7 +36,7 @@ mod tests {
     use arrow2::bitmap::Bitmap;
     use common_error::DaftResult;
 
-    use crate::{array::StructArray, datatypes::prelude::*, series::IntoSeries};
+    use crate::prelude::*;
 
     #[test]
     fn test_struct_get_invalid() -> DaftResult<()> {

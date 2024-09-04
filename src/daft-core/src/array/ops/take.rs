@@ -1,5 +1,6 @@
 use crate::{
     array::growable::{Growable, GrowableArray},
+    array::prelude::*,
     datatypes::prelude::*,
 };
 use arrow2::types::Index;

@@ -5,9 +5,9 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::logical::{DaftImageryType, LogicalArray};
+use crate::array::prelude::*;
 use crate::datatypes::prelude::*;
+
 use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};

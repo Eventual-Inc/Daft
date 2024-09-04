@@ -1,4 +1,4 @@
-use crate::{array::DataArray, datatypes::prelude::*};
+use crate::{array::prelude::*, array::DataArray, datatypes::prelude::*};
 
 use super::as_arrow::AsArrow;
 use super::{full::FullNull, DaftIsIn};

@@ -3,11 +3,7 @@ use std::{
     iter::{self, Repeat, Take},
 };
 
-use crate::{
-    array::{DataArray, ListArray},
-    datatypes::prelude::*,
-    series::Series,
-};
+use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
