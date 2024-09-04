@@ -3,6 +3,8 @@ pub mod count_matches;
 pub mod distance;
 pub mod float;
 
+pub mod json;
+
 pub mod hash;
 pub mod image;
 pub mod list_sort;
@@ -32,10 +34,11 @@ pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
     parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
+    parent.add_wrapped(wrap_pyfunction!(json::py_json_query))?;
     float::register_modules(py, parent)?;
     temporal::register_modules(py, parent)?;
     image::register_modules(py, parent)?;
-    
+
     Ok(())
 }
 

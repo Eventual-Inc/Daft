@@ -1782,7 +1782,6 @@ dependencies = [
  "indexmap 2.3.0",
  "itertools 0.11.0",
  "log",
- "paste",
  "pyo3",
  "serde",
  "typetag",
