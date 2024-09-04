@@ -10,13 +10,13 @@ pub enum Error {
     #[error("Not yet implemented: {0}")]
     NotYetImplemented(String),
 
-    #[error("{0:?}")]
+    #[error("{0}")]
     Utf8Error(#[from] simdutf8::basic::Utf8Error),
 
-    #[error("{0:?}")]
+    #[error("{0}")]
     StdUtf8Error(#[from] std::str::Utf8Error),
 
-    #[error("{0:?}")]
+    #[error("{0}")]
     TryReserveError(#[from] std::collections::TryReserveError),
 
     /// Wrapper for an error triggered by a dependency
