@@ -8,11 +8,10 @@ use crate::FileFormat;
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
 use async_trait::async_trait;
-use bytes::Bytes;
 use futures::stream::{self, BoxStream};
-use futures::StreamExt;
 use futures::TryStreamExt;
-use snafu::{OptionExt, ResultExt, Snafu};
+use futures::{AsyncReadExt, AsyncSeekExt, StreamExt};
+use snafu::{IntoError, OptionExt, ResultExt, Snafu};
 use std::sync::Arc;
 
 use hdrs::{Client, ClientBuilder};
@@ -54,6 +53,12 @@ enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("Unable to seek in file {}: {}", path, source))]
+    UnableToSeekReader {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to fetch file metadata for file {}: {}", path, source))]
     UnableToFetchFileMetadata {
         path: String,
@@ -75,7 +80,7 @@ fn _get_fs_for(uri: &str) -> Result<Arc<Client>> {
     let client = ClientBuilder::new(&name_node)
         .connect()
         .context(UnableToConnectSnafu { path: uri })?;
-    return Ok(Arc::new(client));
+    Ok(Arc::new(client))
 }
 
 fn _get_namenode_url(uri: &str) -> Result<String> {
@@ -168,22 +173,46 @@ impl ObjectSource for HDFSSource {
             .metadata(uri)
             .context(UnableToFetchFileMetadataSnafu { path: uri })?
             .len();
-        let read_file = fs
+        let mut read_file = fs
             .open_file()
             .read(true)
-            .open(path)
+            .async_open(path)
+            .await
             .context(UnableToOpenFileSnafu { path: uri })?;
-        let range = range
-            .map(|r| r.start as u64..r.end as u64)
-            .unwrap_or(0..len);
-        let mut buffer = vec![0u8; (range.end - range.start) as usize];
-        let n = read_file
-            .read_at(&mut buffer, range.start)
-            .context(UnableToReadBytesSnafu { path: uri })?;
-        buffer.truncate(n);
-        let stream = stream::iter(vec![Ok(Bytes::from(buffer))]);
-        let payload = GetResult::Stream(Box::pin(stream), None, None, None);
-        Ok(payload)
+
+        let owned_uri = uri.to_string();
+        use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+        let stream = if let Some(range) = range {
+            read_file
+                .seek(std::io::SeekFrom::Start(range.start as u64))
+                .await
+                .with_context(|_| UnableToSeekReaderSnafu {
+                    path: owned_uri.clone(),
+                })?;
+            let reader = read_file.take(range.len() as u64).compat();
+            tokio_util::io::ReaderStream::new(reader)
+                .map_err(move |err| {
+                    UnableToReadBytesSnafu {
+                        path: owned_uri.clone(),
+                    }
+                    .into_error(err)
+                    .into()
+                })
+                .boxed()
+        } else {
+            let reader = read_file.compat();
+            tokio_util::io::ReaderStream::new(reader)
+                .map_err(move |err| {
+                    UnableToReadBytesSnafu {
+                        path: owned_uri.clone(),
+                    }
+                    .into_error(err)
+                    .into()
+                })
+                .boxed()
+        };
+        Ok(GetResult::Stream(stream, Some(len as usize), None, None))
     }
 
     async fn put(
