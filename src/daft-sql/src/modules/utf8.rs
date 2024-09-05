@@ -1,9 +1,12 @@
 use daft_dsl::{
-    functions::{self, utf8::Utf8Expr, FunctionExpr},
+    functions::{self, utf8::Utf8Expr},
     ExprRef, LiteralValue,
 };
 
-use crate::{ensure, error::SQLPlannerResult, invalid_operation_err, unsupported_sql_err};
+use crate::{
+    ensure, error::SQLPlannerResult, functions::SQLFunction, invalid_operation_err,
+    unsupported_sql_err,
+};
 
 use super::SQLModule;
 
@@ -11,45 +14,56 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        use FunctionExpr::Utf8 as f;
         use Utf8Expr::*;
-        parent.add_fn("ends_with", f(EndsWith));
-        parent.add_fn("starts_with", f(StartsWith));
-        parent.add_fn("contains", f(Contains));
-        parent.add_fn("split", f(Split(true)));
+        parent.add_fn("ends_with", EndsWith);
+        parent.add_fn("starts_with", StartsWith);
+        parent.add_fn("contains", Contains);
+        parent.add_fn("split", Split(true));
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("match", f(Match));
-        parent.add_fn("extract", f(Extract(0)));
-        parent.add_fn("extract_all", f(ExtractAll(0)));
-        parent.add_fn("replace", f(Replace(true)));
+        parent.add_fn("match", Match);
+        parent.add_fn("extract", Extract(0));
+        parent.add_fn("extract_all", ExtractAll(0));
+        parent.add_fn("replace", Replace(true));
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
-        parent.add_fn("length", f(Length));
-        parent.add_fn("lower", f(Lower));
-        parent.add_fn("upper", f(Upper));
-        parent.add_fn("lstrip", f(Lstrip));
-        parent.add_fn("rstrip", f(Rstrip));
-        parent.add_fn("reverse", f(Reverse));
-        parent.add_fn("capitalize", f(Capitalize));
-        parent.add_fn("left", f(Left));
-        parent.add_fn("right", f(Right));
-        parent.add_fn("find", f(Find));
-        parent.add_fn("rpad", f(Rpad));
-        parent.add_fn("lpad", f(Lpad));
-        parent.add_fn("repeat", f(Repeat));
-        parent.add_fn("like", f(Like));
-        parent.add_fn("ilike", f(Ilike));
-        parent.add_fn("substr", f(Substr));
-        parent.add_fn("to_date", f(ToDate("".to_string())));
-        parent.add_fn("to_datetime", f(ToDatetime("".to_string(), None)));
+        parent.add_fn("length", Length);
+        parent.add_fn("lower", Lower);
+        parent.add_fn("upper", Upper);
+        parent.add_fn("lstrip", Lstrip);
+        parent.add_fn("rstrip", Rstrip);
+        parent.add_fn("reverse", Reverse);
+        parent.add_fn("capitalize", Capitalize);
+        parent.add_fn("left", Left);
+        parent.add_fn("right", Right);
+        parent.add_fn("find", Find);
+        parent.add_fn("rpad", Rpad);
+        parent.add_fn("lpad", Lpad);
+        parent.add_fn("repeat", Repeat);
+        parent.add_fn("like", Like);
+        parent.add_fn("ilike", Ilike);
+        parent.add_fn("substr", Substr);
+        parent.add_fn("to_date", ToDate("".to_string()));
+        parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
         // TODO add normalization variants.
         // parent.add("normalize", f(Normalize(Default::default())));
     }
 }
 
 impl SQLModuleUtf8 {}
-pub(crate) fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+
+impl SQLFunction for Utf8Expr {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
+        to_expr(self, &inputs)
+    }
+}
+
+fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     use functions::utf8::*;
     use Utf8Expr::*;
     match expr {

@@ -34,7 +34,9 @@ class NativeExecutor:
     ) -> Iterator[PyMaterializedResult]:
         from daft.runners.pyrunner import PyMaterializedResult
 
-        psets_mp = {part_id: [part.vpartition()._micropartition for part in parts] for part_id, parts in psets.items()}
+        psets_mp = {
+            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
+        }
         return (
             PyMaterializedResult(MicroPartition._from_pymicropartition(part))
             for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)

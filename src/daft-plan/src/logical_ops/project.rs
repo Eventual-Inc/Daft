@@ -21,7 +21,7 @@ pub struct Project {
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
-            resolve_exprs(projection, &input.schema()).context(CreationSnafu)?;
+            resolve_exprs(projection, &input.schema(), true).context(CreationSnafu)?;
 
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
