@@ -9,9 +9,9 @@ use crate::{
         ListArray, StructArray,
     },
     datatypes::logical::{
-        COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-        FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray,
-        MapArray, TensorArray, TimeArray, TimestampArray,
+        DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+        FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+        SparseTensorArray, TensorArray, TimeArray, TimestampArray,
     },
     with_match_daft_types, DataType, IntoSeries, Series,
 };
@@ -296,19 +296,19 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    COOSparseTensor(..) => {
-                        type PType = <<COOSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                    SparseTensor(..) => {
+                        type PType = <<SparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
-                        Ok(COOSparseTensorArray::new(
+                        Ok(SparseTensorArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
                         .into_series())
                     }
-                    FixedShapeCOOSparseTensor(..) => {
-                        type PType = <<FixedShapeCOOSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                    FixedShapeSparseTensor(..) => {
+                        type PType = <<FixedShapeSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
-                        Ok(FixedShapeCOOSparseTensorArray::new(
+                        Ok(FixedShapeSparseTensorArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )

@@ -5,9 +5,9 @@ use crate::{
     },
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
-            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, NullArray, Utf8Array,
@@ -78,8 +78,8 @@ impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
 impl_logicalarray_take!(TensorArray);
-impl_logicalarray_take!(COOSparseTensorArray);
-impl_logicalarray_take!(FixedShapeCOOSparseTensorArray);
+impl_logicalarray_take!(SparseTensorArray);
+impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
 

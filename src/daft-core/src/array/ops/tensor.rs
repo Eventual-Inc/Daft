@@ -75,9 +75,9 @@ mod tests {
         );
         let tensor_array =
             TensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
-        let coo_sparse_tensor_dtype = DataType::COOSparseTensor(Box::new(DataType::Int64));
-        let coo_sparse_tensor_array = tensor_array.cast(&coo_sparse_tensor_dtype)?;
-        let roundtrip_tensor = coo_sparse_tensor_array.cast(&dtype)?;
+        let sparse_tensor_dtype = DataType::SparseTensor(Box::new(DataType::Int64));
+        let sparse_tensor_array = tensor_array.cast(&sparse_tensor_dtype)?;
+        let roundtrip_tensor = sparse_tensor_array.cast(&dtype)?;
         assert!(tensor_array.to_arrow().eq(&roundtrip_tensor.to_arrow()));
         Ok(())
     }

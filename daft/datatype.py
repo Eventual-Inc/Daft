@@ -347,12 +347,12 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
-    def coo_sparse_tensor(
+    def sparse_tensor(
         cls,
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a COOSparseTensor DataType: COOSparseYensor arrays contain 'COO' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
         ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
@@ -362,13 +362,13 @@ class DataType:
 
         Args:
             dtype: The type of the data contained within the tensor elements.
-            shape: The shape of each COOSparseTensor in the column. This is ``None`` by default, which allows the shapes of
+            shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-                raise ValueError("COOSparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
-        return cls._from_pydatatype(PyDataType.coo_sparse_tensor(dtype._dtype, shape))
+                raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
+        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:

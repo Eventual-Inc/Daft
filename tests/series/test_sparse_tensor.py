@@ -13,7 +13,7 @@ ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
-def test_coo_sparse_tensor_roundtrip(dtype):
+def test_sparse_tensor_roundtrip(dtype):
     np_dtype = dtype.to_pandas_dtype()
     data = [
         np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np_dtype),
@@ -29,7 +29,7 @@ def test_coo_sparse_tensor_roundtrip(dtype):
     assert t.datatype() == tensor_dtype
 
     # Test sparse tensor roundtrip.
-    sparse_tensor_dtype = DataType.coo_sparse_tensor(dtype=DataType.from_arrow_type(dtype))
+    sparse_tensor_dtype = DataType.sparse_tensor(dtype=DataType.from_arrow_type(dtype))
     sparse_tensor_series = t.cast(sparse_tensor_dtype)
     assert sparse_tensor_series.datatype() == sparse_tensor_dtype
     back = sparse_tensor_series.cast(tensor_dtype)
@@ -37,22 +37,22 @@ def test_coo_sparse_tensor_roundtrip(dtype):
     np.testing.assert_equal(out, data)
 
 
-def test_coo_sparse_tensor_repr():
+def test_sparse_tensor_repr():
     arr = np.arange(np.prod((2, 2)), dtype=np.int64).reshape((2, 2))
     arrs = [arr, arr, None]
     s = Series.from_pylist(arrs, pyobj="allow")
-    s = s.cast(DataType.coo_sparse_tensor(dtype=DataType.from_arrow_type(pa.int64())))
+    s = s.cast(DataType.sparse_tensor(dtype=DataType.from_arrow_type(pa.int64())))
     out_repr = ANSI_ESCAPE.sub("", repr(s))
     assert (
         out_repr.replace("\r", "")
         == """╭────────────────────────────────╮
 │ list_series                    │
 │ ---                            │
-│ COOSparseTensor(Int64)         │
+│ SparseTensor(Int64)         │
 ╞════════════════════════════════╡
-│ <COOSparseTensor shape=(2, 2)> │
+│ <SparseTensor shape=(2, 2)> │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ <COOSparseTensor shape=(2, 2)> │
+│ <SparseTensor shape=(2, 2)> │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ None                           │
 ╰────────────────────────────────╯

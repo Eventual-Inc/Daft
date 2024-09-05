@@ -4,9 +4,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
-            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
         ImageFormat, NullArray, UInt64Array, Utf8Array,
@@ -271,7 +271,7 @@ impl ImageArray {
     }
 }
 
-impl COOSparseTensorArray {
+impl SparseTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         // Shapes are always valid, use values array validity
         let is_valid = self
@@ -285,7 +285,7 @@ impl COOSparseTensorArray {
         };
         match shape_element {
             Some(shape) => Ok(format!(
-                "<COOSparseTensor shape=({})>",
+                "<SparseTensor shape=({})>",
                 shape
                     .downcast::<UInt64Array>()
                     .unwrap()
@@ -302,10 +302,10 @@ impl COOSparseTensorArray {
     }
 }
 
-impl FixedShapeCOOSparseTensorArray {
+impl FixedShapeSparseTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok("<FixedShapeCOOSparseTensor>".to_string())
+            Ok("<FixedShapeSparseTensor>".to_string())
         } else {
             Ok("None".to_string())
         }
@@ -522,7 +522,7 @@ impl TensorArray {
     }
 }
 
-impl COOSparseTensorArray {
+impl SparseTensorArray {
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)
@@ -531,7 +531,7 @@ impl COOSparseTensorArray {
     }
 }
 
-impl FixedShapeCOOSparseTensorArray {
+impl FixedShapeSparseTensorArray {
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)

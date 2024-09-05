@@ -9,10 +9,9 @@ use crate::{
     },
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
-            ImageArray, LogicalArray, LogicalArrayImpl, MapArray, TensorArray, TimeArray,
-            TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray,
+            LogicalArrayImpl, MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, Float32Array,
         Float64Array, ImageMode, Int16Array, Int32Array, Int64Array, Int8Array, TimeUnit,
@@ -1410,7 +1409,7 @@ impl TensorArray {
                 );
                 Ok(tensor_array.into_series())
             }
-            DataType::COOSparseTensor(inner_dtype) => {
+            DataType::SparseTensor(inner_dtype) => {
                 let shape_iterator = self.shape_array().into_iter();
                 let data_iterator = self.data_array().into_iter();
                 let validity = self.data_array().validity();
@@ -1485,7 +1484,7 @@ impl TensorArray {
                     ],
                     validity.cloned(),
                 );
-                Ok(COOSparseTensorArray::new(
+                Ok(SparseTensorArray::new(
                     Field::new(sparse_struct_array.name(), dtype.clone()),
                     sparse_struct_array,
                 )
@@ -1730,14 +1729,14 @@ fn cast_sparse_to_dense_for_inner_dtype(
             offsets
         ),
         _ => panic!(
-            "Wrong dtype when casting from COOSparseTensor to Tensor: {}",
+            "Wrong dtype when casting from SparseTensor to Tensor: {}",
             inner_dtype
         ),
     };
     Ok(item)
 }
 
-impl COOSparseTensorArray {
+impl SparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Tensor(inner_dtype) => {
@@ -1784,7 +1783,7 @@ impl COOSparseTensorArray {
                         .into_series(),
                 )
             }
-            DataType::FixedShapeCOOSparseTensor(inner_dtype, shape) => {
+            DataType::FixedShapeSparseTensor(inner_dtype, shape) => {
                 let sa = self.shape_array();
                 let va = self.values_array();
                 let ia = self.indices_array();
@@ -1798,7 +1797,7 @@ impl COOSparseTensorArray {
                     })
                 }) {
                     return Err(DaftError::TypeError(format!(
-                        "Can not cast COOSparseTensor array to FixedShapeCOOSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
+                        "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
                         dtype,
                         shape,
                     )));
@@ -1810,7 +1809,7 @@ impl COOSparseTensorArray {
                     vec![values_array, ia.clone().into_series()],
                     va.validity().cloned(),
                 );
-                let sparse_tensor_array = FixedShapeCOOSparseTensorArray::new(
+                let sparse_tensor_array = FixedShapeSparseTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     struct_array,
                 );
@@ -1821,12 +1820,12 @@ impl COOSparseTensorArray {
     }
 }
 
-impl FixedShapeCOOSparseTensorArray {
+impl FixedShapeSparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
             (
-                DataType::COOSparseTensor(_),
-                DataType::FixedShapeCOOSparseTensor(inner_dtype, tensor_shape),
+                DataType::SparseTensor(_),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
             ) => {
                 let ndim = tensor_shape.len();
                 let shapes = tensor_shape
@@ -1871,13 +1870,13 @@ impl FixedShapeCOOSparseTensorArray {
                     validity.cloned(),
                 );
                 Ok(
-                    COOSparseTensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
+                    SparseTensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
                         .into_series(),
                 )
             }
             (
                 DataType::FixedShapeTensor(_, target_tensor_shape),
-                DataType::FixedShapeCOOSparseTensor(inner_dtype, tensor_shape),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
             ) => {
                 let non_zero_values_array = self.values_array();
                 let non_zero_indices_array = self.indices_array();
@@ -1885,7 +1884,7 @@ impl FixedShapeCOOSparseTensorArray {
                 let target_size = target_tensor_shape.iter().product::<u64>() as usize;
                 if size != target_size {
                     return Err(DaftError::TypeError(format!(
-                        "Can not cast FixedShapeCOOSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeCOOSparseTensor array has shapes different than {:?};",
+                        "Can not cast FixedShapeSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeSparseTensor array has shapes different than {:?};",
                         dtype,
                         tensor_shape,
                     )));
@@ -1989,7 +1988,7 @@ impl FixedShapeTensorArray {
                 )
             }
             (
-                DataType::FixedShapeCOOSparseTensor(_, _),
+                DataType::FixedShapeSparseTensor(_, _),
                 DataType::FixedShapeTensor(inner_dtype, tensor_shape),
             ) => {
                 let physical_arr = &self.physical;
@@ -2052,7 +2051,7 @@ impl FixedShapeTensorArray {
                     vec![data_list_arr.into_series(), indices_list_arr.into_series()],
                     validity.cloned(),
                 );
-                Ok(FixedShapeCOOSparseTensorArray::new(
+                Ok(FixedShapeSparseTensorArray::new(
                     Field::new(sparse_struct_array.name(), dtype.clone()),
                     sparse_struct_array,
                 )
@@ -2272,19 +2271,19 @@ impl StructArray {
                         .into_series(),
                 )
             }
-            (DataType::Struct(..), DataType::COOSparseTensor(..)) => {
+            (DataType::Struct(..), DataType::SparseTensor(..)) => {
                 let casted_struct_array =
                     self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
-                Ok(COOSparseTensorArray::new(
+                Ok(SparseTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_struct_array,
                 )
                 .into_series())
             }
-            (DataType::Struct(..), DataType::FixedShapeCOOSparseTensor(..)) => {
+            (DataType::Struct(..), DataType::FixedShapeSparseTensor(..)) => {
                 let casted_struct_array =
                     self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
-                Ok(FixedShapeCOOSparseTensorArray::new(
+                Ok(FixedShapeSparseTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_struct_array,
                 )

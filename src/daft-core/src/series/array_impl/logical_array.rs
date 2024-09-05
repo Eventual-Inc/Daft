@@ -1,7 +1,7 @@
 use crate::datatypes::logical::{
-    COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-    FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray, ImageArray,
-    LogicalArray, MapArray, TensorArray, TimeArray, TimestampArray,
+    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+    FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
+    SparseTensorArray, TensorArray, TimeArray, TimestampArray,
 };
 use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
 
@@ -236,6 +236,6 @@ impl_series_like_for_logical_array!(TensorArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);
-impl_series_like_for_logical_array!(COOSparseTensorArray);
-impl_series_like_for_logical_array!(FixedShapeCOOSparseTensorArray);
+impl_series_like_for_logical_array!(SparseTensorArray);
+impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);

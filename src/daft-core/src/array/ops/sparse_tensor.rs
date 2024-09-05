@@ -1,7 +1,7 @@
 use crate::array::ListArray;
-use crate::datatypes::logical::{COOSparseTensorArray, FixedShapeCOOSparseTensorArray};
+use crate::datatypes::logical::{FixedShapeSparseTensorArray, SparseTensorArray};
 
-impl COOSparseTensorArray {
+impl SparseTensorArray {
     pub fn values_array(&self) -> &ListArray {
         const VALUES_IDX: usize = 0;
         let array = self.physical.children.get(VALUES_IDX).unwrap();
@@ -21,7 +21,7 @@ impl COOSparseTensorArray {
     }
 }
 
-impl FixedShapeCOOSparseTensorArray {
+impl FixedShapeSparseTensorArray {
     pub fn values_array(&self) -> &ListArray {
         const VALUES_IDX: usize = 0;
         let array = self.physical.children.get(VALUES_IDX).unwrap();
@@ -41,7 +41,7 @@ mod tests {
 
     use crate::{
         array::{ListArray, StructArray},
-        datatypes::{logical::COOSparseTensorArray, DataType, Field, Int64Array, UInt64Array},
+        datatypes::{logical::SparseTensorArray, DataType, Field, Int64Array, UInt64Array},
         IntoSeries,
     };
     use common_error::DaftResult;
@@ -91,22 +91,22 @@ mod tests {
             Some(validity.clone()),
         )
         .into_series();
-        let dtype = DataType::COOSparseTensor(Box::new(DataType::Int64));
+        let dtype = DataType::SparseTensor(Box::new(DataType::Int64));
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![values_array, indices_array, shapes_array],
             Some(validity.clone()),
         );
-        let coo_sparse_tensor_array =
-            COOSparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
-        let fixed_shape_coo_sparse_tensor =
-            DataType::FixedShapeCOOSparseTensor(Box::new(DataType::Int64), vec![3]);
-        let fixed_shape_coo_sparse_tensor_array =
-            coo_sparse_tensor_array.cast(&fixed_shape_coo_sparse_tensor)?;
-        let roundtrip_tensor = fixed_shape_coo_sparse_tensor_array.cast(&dtype)?;
+        let sparse_tensor_array =
+            SparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
+        let fixed_shape_sparse_tensor_dtype =
+            DataType::FixedShapeSparseTensor(Box::new(DataType::Int64), vec![3]);
+        let fixed_shape_sparse_tensor_array =
+            sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
+        let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
         assert!(roundtrip_tensor
             .to_arrow()
-            .eq(&coo_sparse_tensor_array.to_arrow()));
+            .eq(&sparse_tensor_array.to_arrow()));
         Ok(())
     }
 }

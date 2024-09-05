@@ -2,9 +2,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
-            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
@@ -683,15 +683,15 @@ impl TensorArray {
     }
 }
 
-impl COOSparseTensorArray {
+impl SparseTensorArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
-        todo!("impl sort for COOSparseTensorArray")
+        todo!("impl sort for SparseTensorArray")
     }
 }
 
-impl FixedShapeCOOSparseTensorArray {
+impl FixedShapeSparseTensorArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
-        todo!("impl sort for FixedShapeCOOSparseTensorArray")
+        todo!("impl sort for FixedShapeSparseTensorArray")
     }
 }
 

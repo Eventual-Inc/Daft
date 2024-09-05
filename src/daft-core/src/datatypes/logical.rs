@@ -8,10 +8,9 @@ use crate::{
 use common_error::DaftResult;
 
 use super::{
-    COOSparseTensorType, DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type,
-    DurationType, EmbeddingType, FixedShapeCOOSparseTensorType, FixedShapeImageType,
-    FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType, TimeType,
-    TimestampType,
+    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -173,8 +172,8 @@ pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
-pub type COOSparseTensorArray = LogicalArray<COOSparseTensorType>;
-pub type FixedShapeCOOSparseTensorArray = LogicalArray<FixedShapeCOOSparseTensorType>;
+pub type SparseTensorArray = LogicalArray<SparseTensorType>;
+pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
 pub trait DaftImageryType: DaftLogicalType {}

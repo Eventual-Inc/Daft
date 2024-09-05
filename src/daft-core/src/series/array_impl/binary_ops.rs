@@ -8,7 +8,7 @@ use crate::{
         FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{
-        logical::{Decimal128Array, FixedShapeCOOSparseTensorArray, MapArray},
+        logical::{Decimal128Array, FixedShapeSparseTensorArray, MapArray},
         Field, FixedSizeBinaryArray, Int128Array,
     },
     series::series_like::SeriesLike,
@@ -17,8 +17,8 @@ use crate::{
 };
 
 use crate::datatypes::logical::{
-    COOSparseTensorArray, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
+    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
+    ImageArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
@@ -399,5 +399,5 @@ impl SeriesBinaryOps for ArrayWrapper<ImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<TensorArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeTensorArray> {}
-impl SeriesBinaryOps for ArrayWrapper<COOSparseTensorArray> {}
-impl SeriesBinaryOps for ArrayWrapper<FixedShapeCOOSparseTensorArray> {}
+impl SeriesBinaryOps for ArrayWrapper<SparseTensorArray> {}
+impl SeriesBinaryOps for ArrayWrapper<FixedShapeSparseTensorArray> {}

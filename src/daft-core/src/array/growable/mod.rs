@@ -4,9 +4,9 @@ use crate::{
     array::{FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            COOSparseTensorArray, DateArray, Decimal128Array, DurationArray, EmbeddingArray,
-            FixedShapeCOOSparseTensorArray, FixedShapeImageArray, FixedShapeTensorArray,
-            ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, ExtensionArray, FixedSizeBinaryArray, Float32Array,
         Float64Array, Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,
@@ -211,12 +211,12 @@ impl_growable_array!(
     logical_growable::LogicalFixedShapeTensorGrowable<'a>
 );
 impl_growable_array!(
-    COOSparseTensorArray,
-    logical_growable::LogicalCOOSparseTensorGrowable<'a>
+    SparseTensorArray,
+    logical_growable::LogicalSparseTensorGrowable<'a>
 );
 impl_growable_array!(
-    FixedShapeCOOSparseTensorArray,
-    logical_growable::LogicalFixedShapeCOOSparseTensorGrowable<'a>
+    FixedShapeSparseTensorArray,
+    logical_growable::LogicalFixedShapeSparseTensorGrowable<'a>
 );
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
