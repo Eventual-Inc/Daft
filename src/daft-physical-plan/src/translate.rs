@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::JoinStrategy;
+use daft_core::join::JoinStrategy;
 use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 

@@ -2,7 +2,7 @@ use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
 use crate::array::{DataArray, FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::{BooleanArray, DaftPhysicalType};
-use crate::{DataType, IntoSeries, Series};
+use crate::{datatypes::DataType, series::IntoSeries, series::Series};
 use arrow2::array::Array;
 use common_error::DaftResult;
 

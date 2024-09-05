@@ -20,7 +20,7 @@ import pyarrow as pa
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest
+from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -1131,6 +1131,9 @@ class Expression:
     def _input_mapping(self) -> builtins.str | None:
         return self._expr._input_mapping()
 
+    def _bind_stateful_udfs(self, initialized_funcs: dict[builtins.str, Callable]) -> Expression:
+        return Expression._from_pyexpr(bind_stateful_udfs(self._expr, initialized_funcs))
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2142,6 +2145,33 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_length())
 
+    def length_bytes(self) -> Expression:
+        """Retrieves the length for a UTF-8 string column in bytes.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
+            >>> df = df.select(df["x"].str.length_bytes())
+            >>> df.show()
+            ╭────────╮
+            │ x      │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 8      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 5      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: an UInt64 expression with the length of each string
+        """
+        return Expression._from_pyexpr(self._expr.utf8_length_bytes())
+
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase
 
@@ -3141,7 +3171,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 mode = ImageMode.from_mode_string(mode.upper())
             if not isinstance(mode, ImageMode):
                 raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error, mode=mode))
+        return Expression._from_pyexpr(native.image_decode(self._expr, raise_on_error=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """
@@ -3158,7 +3188,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
             image_format = ImageFormat.from_format_string(image_format.upper())
         if not isinstance(image_format, ImageFormat):
             raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Expression._from_pyexpr(self._expr.image_encode(image_format))
+        return Expression._from_pyexpr(native.image_encode(self._expr, image_format))
 
     def resize(self, w: int, h: int) -> Expression:
         """
@@ -3175,7 +3205,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
             raise TypeError(f"expected int for w but got {type(w)}")
         if not isinstance(h, int):
             raise TypeError(f"expected int for h but got {type(h)}")
-        return Expression._from_pyexpr(self._expr.image_resize(w, h))
+        return Expression._from_pyexpr(native.image_resize(self._expr, w, h))
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """
@@ -3196,14 +3226,14 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 )
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
-        return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
+        return Expression._from_pyexpr(native.image_crop(self._expr, bbox._expr))
 
     def to_mode(self, mode: str | ImageMode) -> Expression:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(self._expr.image_to_mode(mode))
+        return Expression._from_pyexpr(native.image_to_mode(self._expr, mode))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):

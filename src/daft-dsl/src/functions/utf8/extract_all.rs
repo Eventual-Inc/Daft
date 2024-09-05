@@ -1,8 +1,4 @@
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::Series,
-};
+use daft_core::prelude::*;
 
 use crate::ExprRef;
 

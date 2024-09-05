@@ -26,7 +26,8 @@ impl Explode {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
-        let (to_explode, _) = resolve_exprs(to_explode, &upstream_schema).context(CreationSnafu)?;
+        let (to_explode, _) =
+            resolve_exprs(to_explode, &upstream_schema, false).context(CreationSnafu)?;
 
         let explode_exprs = to_explode
             .iter()

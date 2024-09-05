@@ -4,11 +4,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_core::{
-    join::{JoinStrategy, JoinType},
-    schema::{Schema, SchemaRef},
-    DataType,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     col,
     join::{get_common_join_keys, infer_join_schema},
@@ -59,9 +55,9 @@ impl Join {
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
         let (left_on, left_fields) =
-            resolve_exprs(left_on, &left.schema()).context(CreationSnafu)?;
+            resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
         let (right_on, right_fields) =
-            resolve_exprs(right_on, &right.schema()).context(CreationSnafu)?;
+            resolve_exprs(right_on, &right.schema(), false).context(CreationSnafu)?;
 
         for (on_exprs, on_fields) in [(&left_on, left_fields), (&right_on, right_fields)] {
             let on_schema = Schema::new(on_fields).context(CreationSnafu)?;

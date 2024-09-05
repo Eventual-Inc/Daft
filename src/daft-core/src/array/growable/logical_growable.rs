@@ -2,14 +2,7 @@ use std::marker::PhantomData;
 
 use common_error::DaftResult;
 
-use crate::{
-    datatypes::{
-        logical::LogicalArray, DaftDataType, DaftLogicalType, DateType, Decimal128Type,
-        DurationType, EmbeddingType, Field, FixedShapeImageType, FixedShapeTensorType, ImageType,
-        MapType, TensorType, TimeType, TimestampType,
-    },
-    DataType, IntoSeries, Series,
-};
+use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries, series::Series};
 
 use super::{Growable, GrowableArray};
 

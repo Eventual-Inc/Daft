@@ -3,10 +3,10 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use common_treenode::TreeNode;
-use daft_core::{schema::Schema, JoinType};
+use daft_core::prelude::*;
+
 use daft_dsl::{
-    col,
-    functions::{python::PythonUDF, FunctionExpr},
+    col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
     Expr, ExprRef,
 };
@@ -279,17 +279,7 @@ impl PushDownProjection {
                             .collect_vec();
 
                         // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has StatefulUDFs
-                        let new_plan = if new_actor_pool_projections.iter().any(|e| {
-                            e.exists(|e| {
-                                matches!(
-                                    e.as_ref(),
-                                    Expr::Function {
-                                        func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                                        ..
-                                    }
-                                )
-                            })
-                        }) {
+                        let new_plan = if new_actor_pool_projections.iter().any(has_stateful_udf) {
                             LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                                 upstream_actor_pool_projection.input.clone(),
                                 new_actor_pool_projections,
@@ -674,8 +664,12 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, functions::python::RuntimePyObject, lit};
+    use daft_core::prelude::*;
+    use daft_dsl::{
+        col,
+        functions::python::{RuntimePyObject, UDFRuntimeBinding},
+        lit,
+    };
     use daft_scan::Pushdowns;
 
     use crate::{
@@ -934,6 +928,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("c")],
         }
@@ -991,6 +986,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("a")],
         }
@@ -1071,6 +1067,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("c")],
         }

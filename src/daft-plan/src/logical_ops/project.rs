@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::datatypes::FieldID;
-use daft_core::schema::{Schema, SchemaRef};
+use daft_core::prelude::*;
 use daft_dsl::{optimization, resolve_exprs, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -22,7 +21,7 @@ pub struct Project {
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
-            resolve_exprs(projection, &input.schema()).context(CreationSnafu)?;
+            resolve_exprs(projection, &input.schema(), true).context(CreationSnafu)?;
 
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
@@ -462,7 +461,8 @@ fn replace_column_with_semantic_id_aggexpr(
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
+
     use daft_dsl::{binary_op, col, lit, Operator};
 
     use crate::{

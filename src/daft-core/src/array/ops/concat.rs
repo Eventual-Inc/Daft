@@ -97,11 +97,11 @@ where
                 ));
                 DataArray::new(field.clone(), cat_array)
             }
-            crate::DataType::Utf8 => {
+            crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
                 DataArray::new(field.clone(), cat_array)
             }
-            crate::DataType::Binary => {
+            crate::datatypes::DataType::Binary => {
                 let cat_array = binary_concat(arrow_arrays.as_slice())?;
                 DataArray::new(field.clone(), cat_array)
             }

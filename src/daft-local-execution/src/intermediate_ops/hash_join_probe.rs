@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::JoinType;
+use daft_core::join::JoinType;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeTable, Table};

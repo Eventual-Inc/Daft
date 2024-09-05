@@ -1,15 +1,17 @@
 use common_hashable_float_wrapper::FloatWrapper;
+use common_treenode::TreeNode;
 use daft_core::{
-    count_mode::CountMode,
-    datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
-    schema::Schema,
+    datatypes::{try_mean_supertype, try_sum_supertype},
+    prelude::*,
     utils::supertype::try_get_supertype,
 };
 use itertools::Itertools;
 
 use crate::{
     functions::{
-        function_display, function_semantic_id, scalar_function_semantic_id,
+        function_display, function_semantic_id,
+        python::PythonUDF,
+        scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
         FunctionEvaluator, ScalarFunction,
@@ -965,16 +967,6 @@ impl Expr {
             _ => None,
         }
     }
-
-    pub fn has_agg(&self) -> bool {
-        use Expr::*;
-
-        match self {
-            Agg(_) => true,
-            Column(_) | Literal(_) => false,
-            _ => self.children().into_iter().any(|e| e.has_agg()),
-        }
-    }
 }
 
 impl Display for Expr {
@@ -1120,6 +1112,22 @@ pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     let a: Vec<&str> = a.iter().map(|a| a.name()).sorted().collect();
     let b: Vec<&str> = b.iter().map(|a| a.name()).sorted().collect();
     a == b
+}
+
+pub fn has_agg(expr: &ExprRef) -> bool {
+    expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
+}
+
+pub fn has_stateful_udf(expr: &ExprRef) -> bool {
+    expr.exists(|e| {
+        matches!(
+            e.as_ref(),
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+                ..
+            }
+        )
+    })
 }
 
 #[cfg(test)]

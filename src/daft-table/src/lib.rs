@@ -13,9 +13,7 @@ use num_traits::ToPrimitive;
 use daft_core::array::ops::{DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
-use daft_core::schema::{Schema, SchemaRef};
-use daft_core::series::{IntoSeries, Series};
+use daft_core::prelude::*;
 
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{
@@ -792,9 +790,8 @@ impl<'a> IntoIterator for &'a Table {
 mod test {
     use crate::Table;
     use common_error::DaftResult;
-    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
-    use daft_core::schema::Schema;
-    use daft_core::series::IntoSeries;
+    use daft_core::prelude::*;
+
     use daft_dsl::col;
 
     #[test]

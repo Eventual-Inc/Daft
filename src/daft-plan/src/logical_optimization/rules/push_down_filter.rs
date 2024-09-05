@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_core::JoinType;
+use daft_core::join::JoinType;
 use daft_dsl::{
     col,
     optimization::{
@@ -349,7 +349,8 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, join::JoinType, DataType};
+    use daft_core::prelude::*;
+
     use daft_dsl::{col, lit};
     use daft_scan::Pushdowns;
     use rstest::rstest;

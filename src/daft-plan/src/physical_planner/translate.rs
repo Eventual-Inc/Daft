@@ -8,10 +8,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
-use daft_core::count_mode::CountMode;
-use daft_core::join::{JoinStrategy, JoinType};
-use daft_core::schema::SchemaRef;
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
@@ -293,15 +290,18 @@ pub(super) fn translate_single_logical_node(
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
                         populate_aggregation_stages(aggregations, &schema, groupby);
 
-                    let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_physical
+                    let (first_stage_agg, groupby) = if first_stage_aggs.is_empty() {
+                        (input_physical, groupby.clone())
                     } else {
-                        PhysicalPlan::Aggregate(Aggregate::new(
-                            input_physical,
-                            first_stage_aggs.values().cloned().collect(),
-                            groupby.clone(),
-                        ))
-                        .arced()
+                        (
+                            PhysicalPlan::Aggregate(Aggregate::new(
+                                input_physical,
+                                first_stage_aggs.values().cloned().collect(),
+                                groupby.clone(),
+                            ))
+                            .arced(),
+                            groupby.iter().map(|e| col(e.name())).collect(),
+                        )
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
@@ -326,7 +326,7 @@ pub(super) fn translate_single_logical_node(
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan,
                         second_stage_aggs.values().cloned().collect(),
-                        groupby.clone(),
+                        groupby,
                     ));
 
                     PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
@@ -774,7 +774,7 @@ pub fn populate_aggregation_stages(
     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     // Project the aggregation results to their final output names
-    let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
+    let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
 
     for agg_expr in aggregations {
         let output_name = agg_expr.name();
@@ -961,7 +961,7 @@ pub fn populate_aggregation_stages(
 mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use std::assert_matches::assert_matches;
     use std::sync::Arc;
@@ -1120,8 +1120,8 @@ mod tests {
                 join_node,
                 vec![col("a"), col("b")],
                 vec![col("a"), col("b")],
-                daft_core::JoinType::Inner,
-                Some(daft_core::JoinStrategy::Hash),
+                JoinType::Inner,
+                Some(JoinStrategy::Hash),
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

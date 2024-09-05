@@ -7,6 +7,7 @@ mod find;
 mod ilike;
 mod left;
 mod length;
+mod length_bytes;
 mod like;
 mod lower;
 mod lpad;
@@ -36,6 +37,7 @@ use find::FindEvaluator;
 use ilike::IlikeEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
+use length_bytes::LengthBytesEvaluator;
 use like::LikeEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
@@ -70,6 +72,7 @@ pub enum Utf8Expr {
     ExtractAll(usize),
     Replace(bool),
     Length,
+    LengthBytes,
     Lower,
     Upper,
     Lstrip,
@@ -104,6 +107,7 @@ impl Utf8Expr {
             ExtractAll(_) => &ExtractAllEvaluator {},
             Replace(_) => &ReplaceEvaluator {},
             Length => &LengthEvaluator {},
+            LengthBytes => &LengthBytesEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
             Lstrip => &LstripEvaluator {},
@@ -193,6 +197,14 @@ pub fn replace(data: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: boo
 pub fn length(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Length),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn length_bytes(data: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::LengthBytes),
         inputs: vec![data],
     }
     .into()

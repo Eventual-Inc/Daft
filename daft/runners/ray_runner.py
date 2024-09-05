@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 import pyarrow as pa
 
 from daft.context import execution_config_ctx, get_context
+from daft.expressions import ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -91,7 +93,7 @@ def _glob_path_into_file_infos(
 
 
 @ray.remote
-def _make_ray_block_from_vpartition(partition: MicroPartition) -> RayDatasetBlock:
+def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
         return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
     except pa.ArrowInvalid:
@@ -135,14 +137,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
-    def _get_merged_vpartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self) -> MicroPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
         return MicroPartition.concat(all_partitions)
 
-    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+    def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
         for _, mat_result in ids_and_partitions:
@@ -163,7 +165,9 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
                 "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
             )
 
-        blocks = [_make_ray_block_from_vpartition.remote(self._results[k].partition()) for k in self._results.keys()]
+        blocks = [
+            _make_ray_block_from_micropartition.remote(self._results[k].partition()) for k in self._results.keys()
+        ]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
@@ -179,11 +183,12 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         dask.config.set(scheduler=ray_dask_get)
 
         @dask.delayed
-        def _make_dask_dataframe_partition_from_vpartition(partition: MicroPartition) -> pd.DataFrame:
+        def _make_dask_dataframe_partition_from_micropartition(partition: MicroPartition) -> pd.DataFrame:
             return partition.to_pandas()
 
         ddf_parts = [
-            _make_dask_dataframe_partition_from_vpartition(self._results[k].partition()) for k in self._results.keys()
+            _make_dask_dataframe_partition_from_micropartition(self._results[k].partition())
+            for k in self._results.keys()
         ]
         return dd.from_delayed(ddf_parts, meta=meta)
 
@@ -266,12 +271,12 @@ class RayRunnerIO(runner_io.RunnerIO):
 
         # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
         # which can iterate on Ray Dataset blocks and materialize as-needed
-        daft_vpartitions = [
+        daft_micropartitions = [
             _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
         ]
         pset = RayPartitionSet()
 
-        for i, obj in enumerate(daft_vpartitions):
+        for i, obj in enumerate(daft_micropartitions):
             pset.set_partition(i, RayMaterializedResult(obj))
         return (
             pset,
@@ -290,7 +295,9 @@ class RayRunnerIO(runner_io.RunnerIO):
             raise ValueError("Can't convert an empty Dask DataFrame (with no partitions) to a Daft DataFrame.")
         persisted_partitions = dask.persist(*partitions, scheduler=ray_dask_get)
         parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
-        daft_vpartitions, schemas = zip(*(_make_daft_partition_from_dask_dataframe_partitions.remote(p) for p in parts))
+        daft_micropartitions, schemas = zip(
+            *(_make_daft_partition_from_dask_dataframe_partitions.remote(p) for p in parts)
+        )
         schemas = ray.get(list(schemas))
         # Dask shouldn't allow inconsistent schemas across partitions, but we double-check here.
         if not all(schemas[0] == schema for schema in schemas[1:]):
@@ -301,7 +308,7 @@ class RayRunnerIO(runner_io.RunnerIO):
 
         pset = RayPartitionSet()
 
-        for i, obj in enumerate(daft_vpartitions):
+        for i, obj in enumerate(daft_micropartitions):
             pset.set_partition(i, RayMaterializedResult(obj))
         return (
             pset,
@@ -877,6 +884,12 @@ class RayRunner(Runner[ray.ObjectRef]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self, name: str, resource_request: ResourceRequest, num_actors: PartID, projection: ExpressionsProjection
+    ) -> Iterator[str]:
+        raise NotImplementedError("actor_pool_context not yet implemented in RayRunner")
+
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
 
@@ -924,7 +937,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def partition(self) -> ray.ObjectRef:
         return self._partition
 
-    def vpartition(self) -> MicroPartition:
+    def micropartition(self) -> MicroPartition:
         return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:

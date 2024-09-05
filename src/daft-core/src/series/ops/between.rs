@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::DaftBetween, datatypes::BooleanArray, with_match_numeric_daft_types, DataType,
-    IntoSeries, Series,
+    array::ops::DaftBetween, datatypes::BooleanArray, datatypes::DataType, series::IntoSeries,
+    series::Series, with_match_numeric_daft_types,
 };
 
 #[cfg(feature = "python")]
@@ -51,7 +51,7 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DataType, Series};
+    use crate::{datatypes::DataType, series::Series};
 
     use common_error::DaftResult;
 
