@@ -2147,7 +2147,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"})
+            >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
             >>> df = df.select(df["x"].str.length_bytes())
             >>> df.show()
             ╭────────╮
