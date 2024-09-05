@@ -1,4 +1,3 @@
-pub mod image;
 pub mod map;
 pub mod numeric;
 pub mod partitioning;
@@ -13,7 +12,6 @@ use std::hash::Hash;
 
 use crate::ExprRef;
 
-use self::image::ImageExpr;
 use self::map::MapExpr;
 use self::numeric::NumericExpr;
 use self::partitioning::PartitioningExpr;
@@ -40,7 +38,6 @@ pub enum FunctionExpr {
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
-    Image(ImageExpr),
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
 }
@@ -67,7 +64,6 @@ impl FunctionExpr {
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
-            Image(expr) => expr.get_evaluator(),
             Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }

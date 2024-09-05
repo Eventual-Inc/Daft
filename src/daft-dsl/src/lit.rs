@@ -1,6 +1,7 @@
 use crate::expr::Expr;
 use crate::ExprRef;
 
+use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
 use daft_core::utils::display_table::{display_decimal128, display_time64};
@@ -369,4 +370,148 @@ pub fn lit<L: Literal>(t: L) -> ExprRef {
 
 pub fn null_lit() -> ExprRef {
     Arc::new(Expr::Literal(LiteralValue::Null))
+}
+
+/// Convert a slice of literals to a series.
+/// This function will return an error if the literals are not all the same type
+pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
+    use daft_core::datatypes::*;
+    use daft_core::series::IntoSeries;
+
+    let dtype = values[0].get_type();
+
+    // make sure all dtypes are the same
+    if !values
+        .windows(2)
+        .all(|w| w[0].get_type() == w[1].get_type())
+    {
+        return Err(DaftError::ValueError(format!(
+            "All literals must have the same data type. Found: {:?}",
+            values.iter().map(|lit| lit.get_type()).collect::<Vec<_>>()
+        )));
+    }
+
+    macro_rules! unwrap_unchecked {
+        ($expr:expr, $variant:ident) => {
+            match $expr {
+                LiteralValue::$variant(val, ..) => *val,
+                _ => unreachable!("datatype is already checked"),
+            }
+        };
+    }
+    macro_rules! unwrap_unchecked_ref {
+        ($expr:expr, $variant:ident) => {
+            match $expr {
+                LiteralValue::$variant(val) => val.clone(),
+                _ => unreachable!("datatype is already checked"),
+            }
+        };
+    }
+
+    Ok(match dtype {
+        DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
+        DataType::Boolean => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Boolean));
+            BooleanArray::from_values("literal", data).into_series()
+        }
+        DataType::Utf8 => {
+            let data = values.iter().map(|lit| unwrap_unchecked_ref!(lit, Utf8));
+            Utf8Array::from_values("literal", data).into_series()
+        }
+        DataType::Binary => {
+            let data = values.iter().map(|lit| unwrap_unchecked_ref!(lit, Binary));
+            BinaryArray::from_values("literal", data).into_series()
+        }
+        DataType::Int32 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int32));
+            Int32Array::from_values("literal", data).into_series()
+        }
+        DataType::UInt32 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt32));
+            UInt32Array::from_values("literal", data).into_series()
+        }
+        DataType::Int64 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int64));
+            Int64Array::from_values("literal", data).into_series()
+        }
+        DataType::UInt64 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt64));
+            UInt64Array::from_values("literal", data).into_series()
+        }
+
+        dtype @ DataType::Timestamp(_, _) => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Timestamp));
+            let physical = Int64Array::from_values("literal", data);
+            TimestampArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        dtype @ DataType::Date => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Date));
+            let physical = Int32Array::from_values("literal", data);
+            DateArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        dtype @ DataType::Time(_) => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Time));
+            let physical = Int64Array::from_values("literal", data);
+            TimeArray::new(Field::new("literal", dtype), physical).into_series()
+        }
+        DataType::Float64 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
+
+            Float64Array::from_values("literal", data).into_series()
+        }
+        dtype @ DataType::Decimal128 { .. } => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
+
+            let physical = Int128Array::from_values("literal", data);
+            Decimal128Array::new(Field::new("literal", dtype), physical).into_series()
+        }
+        _ => {
+            return Err(DaftError::ValueError(format!(
+                "Unsupported data type: {:?}",
+                dtype
+            )))
+        }
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use daft_core::{datatypes::UInt64Array, IntoSeries};
+
+    use super::LiteralValue;
+
+    #[test]
+    fn test_literals_to_series() {
+        let values = vec![
+            LiteralValue::UInt64(1),
+            LiteralValue::UInt64(2),
+            LiteralValue::UInt64(3),
+        ];
+        let expected = vec![1, 2, 3];
+        let expected = UInt64Array::from_values("literal", expected.into_iter());
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_literals_to_series_null() {
+        let values = vec![
+            LiteralValue::Null,
+            LiteralValue::UInt64(2),
+            LiteralValue::UInt64(3),
+        ];
+        let actual = super::literals_to_series(&values);
+        assert!(actual.is_err());
+    }
+
+    #[test]
+    fn test_literals_to_series_mismatched() {
+        let values = vec![
+            LiteralValue::UInt64(1),
+            LiteralValue::Utf8("test".to_string()),
+        ];
+        let actual = super::literals_to_series(&values);
+        assert!(actual.is_err());
+    }
 }

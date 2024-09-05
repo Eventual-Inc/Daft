@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
-    datatypes::{ImageFormat, ImageMode},
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
@@ -770,36 +769,6 @@ impl PyExpr {
         };
 
         Ok(normalize(self.into(), opts).into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        use crate::functions::image::encode;
-        Ok(encode(self.into(), image_format).into())
-    }
-
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-        use crate::functions::image::resize;
-        Ok(resize(self.into(), w as u32, h as u32).into())
-    }
-
-    pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
-        use crate::functions::image::crop;
-        Ok(crop(self.into(), bbox.into()).into())
-    }
-
-    pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
-        use crate::functions::image::to_mode;
-        Ok(to_mode(self.into(), mode).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {

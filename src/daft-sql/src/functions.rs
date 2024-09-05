@@ -2,9 +2,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use daft_dsl::ExprRef;
 use once_cell::sync::Lazy;
-use sqlparser::ast::{Function, FunctionArg, FunctionArgExpr, FunctionArguments};
+use sqlparser::ast::{
+    Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
+};
 
-use crate::{error::SQLPlannerResult, modules::*, planner::SQLPlanner, unsupported_sql_err};
+use crate::{
+    error::{PlannerError, SQLPlannerResult},
+    modules::*,
+    planner::SQLPlanner,
+    unsupported_sql_err,
+};
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
 static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
@@ -73,14 +80,8 @@ pub trait SQLFunction: Send + Sync {
             .map(|arg| planner.plan_function_arg(arg))
             .collect::<SQLPlannerResult<Vec<_>>>()
     }
-    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
-}
 
-/// Parse the arguments of a function into a struct.
-pub(crate) trait FromSQLArgs {
-    fn from_sql(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<Self>
-    where
-        Self: Sized;
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
 }
 
 /// TODOs
@@ -88,6 +89,20 @@ pub(crate) trait FromSQLArgs {
 ///   - Add more functions..
 pub struct SQLFunctions {
     map: HashMap<String, Arc<dyn SQLFunction>>,
+}
+
+pub(crate) struct SQLFunctionArguments {
+    pub positional: HashMap<usize, ExprRef>,
+    pub named: HashMap<String, ExprRef>,
+}
+
+impl SQLFunctionArguments {
+    pub fn get_unnamed(&self, idx: usize) -> Option<&ExprRef> {
+        self.positional.get(&idx)
+    }
+    pub fn get_named(&self, name: &str) -> Option<&ExprRef> {
+        self.named.get(name)
+    }
 }
 
 impl SQLFunctions {
@@ -170,6 +185,46 @@ impl SQLPlanner {
         fn_match.to_expr(&args, self)
     }
 
+    pub(crate) fn plan_function_args<T>(
+        &self,
+        args: &[FunctionArg],
+        expected_named: &'static [&'static str],
+        expected_positional: usize,
+    ) -> SQLPlannerResult<T>
+    where
+        T: TryFrom<SQLFunctionArguments, Error = PlannerError>,
+    {
+        let mut positional_args = HashMap::new();
+        let mut named_args = HashMap::new();
+        for (idx, arg) in args.iter().enumerate() {
+            match arg {
+                FunctionArg::Named {
+                    name,
+                    arg,
+                    operator: FunctionArgOperator::Assignment,
+                } => {
+                    if !expected_named.contains(&name.value.as_str()) {
+                        unsupported_sql_err!("unexpected named argument: {}", name);
+                    }
+                    named_args.insert(name.to_string(), self.try_unwrap_function_arg_expr(arg)?);
+                }
+                FunctionArg::Unnamed(arg) => {
+                    if idx >= expected_positional {
+                        unsupported_sql_err!("unexpected unnamed argument");
+                    }
+                    positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
+                }
+                _ => unsupported_sql_err!("unsupported function argument type"),
+            }
+        }
+
+        SQLFunctionArguments {
+            positional: positional_args,
+            named: named_args,
+        }
+        .try_into()
+    }
+
     pub(crate) fn plan_function_arg(
         &self,
         function_arg: &FunctionArg,
@@ -180,10 +235,7 @@ impl SQLPlanner {
         }
     }
 
-    pub(crate) fn try_unwrap_function_arg_expr(
-        &self,
-        expr: &FunctionArgExpr,
-    ) -> SQLPlannerResult<ExprRef> {
+    fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
