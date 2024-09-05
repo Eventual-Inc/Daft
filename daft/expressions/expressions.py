@@ -2145,6 +2145,33 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_length())
 
+    def length_bytes(self) -> Expression:
+        """Retrieves the length for a UTF-8 string column in bytes.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
+            >>> df = df.select(df["x"].str.length_bytes())
+            >>> df.show()
+            ╭────────╮
+            │ x      │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 8      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 5      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: an UInt64 expression with the length of each string
+        """
+        return Expression._from_pyexpr(self._expr.utf8_length_bytes())
+
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase
 

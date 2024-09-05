@@ -111,6 +111,10 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "length takes exactly one argument");
             Ok(length(args[0].clone()))
         }
+        LengthBytes => {
+            ensure!(args.len() == 1, "length_bytes takes exactly one argument");
+            Ok(length_bytes(args[0].clone()))
+        }
         Lower => {
             ensure!(args.len() == 1, "lower takes exactly one argument");
             Ok(lower(args[0].clone()))
