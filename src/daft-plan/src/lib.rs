@@ -8,6 +8,7 @@ pub mod display;
 mod logical_ops;
 mod logical_optimization;
 pub mod logical_plan;
+mod optimizer;
 mod partitioning;
 pub mod physical_ops;
 mod physical_optimization;

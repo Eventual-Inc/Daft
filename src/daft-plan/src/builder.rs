@@ -5,8 +5,9 @@ use std::{
 
 use crate::{
     logical_ops,
-    logical_optimization::{Optimizer, OptimizerConfig},
+    logical_optimization::{LogicalOptimizer, Optimizer as OldOptimizer, OptimizerConfig},
     logical_plan::LogicalPlan,
+    optimizer::Optimizer,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -800,11 +801,11 @@ impl PyLogicalPlanBuilder {
             // Create optimizer
             let default_optimizer_config: OptimizerConfig = Default::default();
             let optimizer_config = OptimizerConfig { enable_actor_pool_projections: self.builder.config.as_ref().map(|planning_cfg| planning_cfg.enable_actor_pool_projections).unwrap_or(default_optimizer_config.enable_actor_pool_projections), ..default_optimizer_config };
-            let optimizer = Optimizer::new(optimizer_config);
+            let old_optimizer = OldOptimizer::new(optimizer_config);
 
             // Run LogicalPlan optimizations
             let unoptimized_plan = self.builder.build();
-            let optimized_plan = optimizer.optimize(
+            let optimized_plan = old_optimizer.optimize(
                 unoptimized_plan,
                 |new_plan, rule_batch, pass, transformed, seen| {
                     if transformed {
@@ -825,6 +826,10 @@ impl PyLogicalPlanBuilder {
                     }
                 },
             )?;
+
+            let optimizer = LogicalOptimizer::new();
+
+            let optimized_plan = optimizer.execute(optimized_plan)?;
 
             let builder = LogicalPlanBuilder::new(optimized_plan, self.builder.config.clone());
             Ok(builder.into())

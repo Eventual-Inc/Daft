@@ -2,7 +2,7 @@ use std::{collections::HashSet, ops::ControlFlow, sync::Arc};
 
 use common_error::DaftResult;
 
-use crate::LogicalPlan;
+use crate::{optimizer::RuleBatchStrategy, LogicalPlan};
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
@@ -150,7 +150,7 @@ impl Optimizer {
         // --- Bulk of our rules ---
         rule_batches.push(RuleBatch::new(
             vec![
-                Box::new(DropRepartition::new()),
+                // Box::new(DropRepartition::new()),
                 Box::new(PushDownFilter::new()),
                 Box::new(PushDownProjection::new()),
             ],
@@ -332,6 +332,24 @@ impl Optimizer {
         Ok(Transformed::Yes(
             plan.with_new_children(&new_children).into(),
         ))
+    }
+}
+
+pub struct LogicalOptimizer {}
+
+impl LogicalOptimizer {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl crate::optimizer::Optimizer<LogicalPlan> for LogicalOptimizer {
+    fn batches(&self) -> impl IntoIterator<Item = crate::optimizer::RuleBatch<LogicalPlan>> {
+        vec![crate::optimizer::RuleBatch::new(
+            "Drop Repartition",
+            vec![Box::new(DropRepartition::new())],
+            RuleBatchStrategy::Once,
+        )]
     }
 }
 

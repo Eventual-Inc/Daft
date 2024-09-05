@@ -31,3 +31,29 @@ pub fn dummy_scan_node_with_pushdowns(
 ) -> LogicalPlanBuilder {
     LogicalPlanBuilder::table_scan(daft_scan::ScanOperatorRef(scan_op), Some(pushdowns)).unwrap()
 }
+
+#[macro_export]
+macro_rules! assert_optimized_plan_with_batches_eq {
+    ($type:ty, $plan:expr, $expected:expr, $batches:expr) => {
+        use crate::optimizer::Optimizer;
+
+        struct TestOptimizer {}
+        impl Optimizer<$type> for TestOptimizer {
+            fn batches(&self) -> impl IntoIterator<Item = RuleBatch<$type>> {
+                $batches
+            }
+        }
+
+        let optimizer = TestOptimizer {};
+        let optimized_plan = optimizer.execute($plan.clone())?;
+
+        assert_eq!(
+            optimized_plan,
+            $expected,
+            "\n\nOptimized plan not equal to expected.\n\nBefore Optimization:\n{}\n\nOptimized:\n{}\n\nExpected:\n{}",
+            $plan.repr_ascii(false),
+            optimized_plan.repr_ascii(false),
+            $expected.repr_ascii(false)
+        );
+    };
+}
