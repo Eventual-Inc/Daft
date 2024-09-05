@@ -470,7 +470,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
 
 #[cfg(test)]
 mod test {
-    use daft_core::{datatypes::UInt64Array, IntoSeries};
+    use daft_core::prelude::*;
 
     use super::LiteralValue;
 
