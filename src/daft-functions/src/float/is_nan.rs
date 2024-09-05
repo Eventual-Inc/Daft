@@ -1,6 +1,5 @@
 use common_error::DaftError;
 use daft_core::datatypes::{DataType, Field};
-use daft_dsl::make_udf_function;
 
 make_udf_function! {
     name: "is_nan",

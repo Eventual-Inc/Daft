@@ -5,11 +5,10 @@ use daft_core::{
 
 use common_error::DaftError;
 
-use daft_dsl::{make_parameterized_udf_function, make_udf_function};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-make_parameterized_udf_function! {
+make_udf_function! {
     name: "list_chunk",
     params: (size: usize),
     to_field: (self, input, schema) {
@@ -24,7 +23,7 @@ make_parameterized_udf_function! {
     }
 }
 
-make_parameterized_udf_function! {
+make_udf_function! {
     name: "list_count",
     params: (mode: CountMode),
     to_field: (self, input, schema) {

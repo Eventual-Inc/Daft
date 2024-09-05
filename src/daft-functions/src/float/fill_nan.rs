@@ -1,6 +1,5 @@
 use common_error::DaftError;
 use daft_core::{datatypes::Field, utils::supertype::try_get_supertype};
-use daft_dsl::make_udf_function;
 
 make_udf_function! {
     name: "fill_nan",
