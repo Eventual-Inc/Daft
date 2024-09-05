@@ -528,7 +528,7 @@ mod tests {
     use daft_dsl::{
         col,
         functions::{
-            python::{PythonUDF, StatefulPythonUDF},
+            python::{PythonUDF, StatefulPythonUDF, UDFRuntimeBinding},
             FunctionExpr,
         },
         Expr, ExprRef,
@@ -588,6 +588,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs,
         }
