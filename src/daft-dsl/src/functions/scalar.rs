@@ -1,14 +1,14 @@
+use crate::{Expr, ExprRef};
+use common_error::DaftResult;
+use daft_core::datatypes::FieldID;
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use daft_core::datatypes::FieldID;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
-
-use crate::{Expr, ExprRef};
-
-use serde::{Deserialize, Serialize};
+// need to reexport this so other crates can use the macro without importing `paste` crate
+pub use paste;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
@@ -144,7 +144,7 @@ macro_rules! make_udf_function {
         to_field: ($to_field_input0:ident, $schema:ident) $to_field:block,
         evaluate: ($input0:ident) $evaluate:block
     ) => {
-        paste::paste! {
+        $crate::functions::paste::paste! {
             #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
             pub struct [<$func_name:camel Function>] {}
 
@@ -183,7 +183,7 @@ macro_rules! make_udf_function {
         to_field: ($to_field_input0:ident, $to_field_input1:ident, $schema:ident) $to_field:block,
         evaluate: ($input0:ident, $input1:ident) $evaluate:block
     ) => {
-        paste::paste! {
+        $crate::functions::paste::paste! {
             #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
             pub struct [<$func_name:camel Function>] {}
 
@@ -224,7 +224,7 @@ macro_rules! make_udf_function {
         to_field: ($to_field_input0:ident, $to_field_input1:ident, $to_field_input2:ident,  $schema:ident) $to_field:block,
         evaluate: ($input0:ident, $input1:ident, $input2:ident) $evaluate:block
     ) => {
-        paste::paste! {
+        $crate::functions::paste::paste! {
             #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
             pub struct [<$func_name:camel Function>] {}
 
@@ -324,7 +324,7 @@ macro_rules! make_parameterized_udf_function {
         to_field: ($self0:ident, $to_field_input0:ident, $schema:ident) $to_field:block,
         evaluate: ($self1:ident, $input0:ident) $evaluate:block
     ) => {
-        paste::paste! {
+        $crate::functions::paste::paste! {
             #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
             pub struct [<$func_name:camel Function>] {
                 $(
@@ -374,7 +374,7 @@ macro_rules! make_parameterized_udf_function {
         to_field: ($to_field_input0:ident, $schema:ident) $to_field:block,
         evaluate: ($self:ident, $input0:ident) $evaluate:block
     ) => {
-        paste::paste! {
+        $crate::functions::paste::paste! {
             #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
             pub struct [<$func_name:camel Function>] {
                 $(
