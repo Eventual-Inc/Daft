@@ -1802,7 +1802,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "futures",
- "paste",
  "pyo3",
  "serde",
  "snafu",
