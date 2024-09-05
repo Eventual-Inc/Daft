@@ -187,6 +187,10 @@ path = "src/arrow2"
 [workspace.dependencies.bincode]
 version = "1.3.3"
 
+[workspace.dependencies.derive_more]
+features = ["display"]
+version = "1.0.0"
+
 [workspace.dependencies.lazy_static]
 version = "1.4.0"
 
