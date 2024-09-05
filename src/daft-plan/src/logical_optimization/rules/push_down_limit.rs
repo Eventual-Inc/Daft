@@ -116,7 +116,8 @@ impl OptimizerRule for PushDownLimit {
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::prelude::*;
+
     use daft_dsl::col;
     use daft_scan::Pushdowns;
     use rstest::rstest;

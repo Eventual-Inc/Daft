@@ -1,4 +1,4 @@
-use daft_core::DataType;
+use daft_core::datatypes::DataType;
 
 #[cfg(feature = "python")]
 use pyo3::{types::PyModule, PyAny, PyResult};

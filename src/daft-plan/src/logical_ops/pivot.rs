@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::datatypes::Field;
+use daft_core::prelude::*;
 use itertools::Itertools;
 use snafu::ResultExt;
 

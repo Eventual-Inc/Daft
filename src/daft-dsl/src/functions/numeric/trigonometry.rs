@@ -1,8 +1,6 @@
 use common_error::{DaftError, DaftResult};
 pub use daft_core::array::ops::trigonometry::TrigonometricFunction;
-use daft_core::datatypes::Field;
-use daft_core::schema::Schema;
-use daft_core::{DataType, Series};
+use daft_core::prelude::*;
 
 use crate::functions::{FunctionEvaluator, FunctionExpr};
 use crate::ExprRef;

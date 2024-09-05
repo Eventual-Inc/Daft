@@ -7,7 +7,8 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
@@ -669,11 +670,10 @@ mod tests {
         ReaderBuilder,
     };
     use daft_core::{
-        datatypes::Field,
-        schema::Schema,
+        prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        DataType,
     };
+
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use rstest::rstest;

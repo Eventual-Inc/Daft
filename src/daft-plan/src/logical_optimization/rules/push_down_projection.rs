@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use common_treenode::TreeNode;
-use daft_core::{schema::Schema, JoinType};
+use daft_core::prelude::*;
+
 use daft_dsl::{
     col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
@@ -663,7 +664,8 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
+
     use daft_dsl::{col, functions::python::RuntimePyObject, lit};
     use daft_scan::Pushdowns;
 

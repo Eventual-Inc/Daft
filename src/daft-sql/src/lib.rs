@@ -26,11 +26,7 @@ mod tests {
 
     use super::*;
     use catalog::SQLCatalog;
-    use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
-        DataType,
-    };
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use daft_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
@@ -261,7 +257,7 @@ mod tests {
                 tbl_3,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .build();

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::array::ops::as_arrow::AsArrow;
-use daft_core::datatypes::{Field, Utf8Array};
-use daft_core::{DataType, IntoSeries};
+use daft_core::prelude::*;
+
 use daft_dsl::functions::ScalarUDF;
 use daft_dsl::ExprRef;
 use daft_io::{get_io_client, get_runtime, IOConfig, IOStatsRef, SourceType};
@@ -10,8 +9,6 @@ use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct UploadFunction {

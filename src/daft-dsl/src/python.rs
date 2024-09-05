@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
-    count_mode::CountMode,
+    prelude::*,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 

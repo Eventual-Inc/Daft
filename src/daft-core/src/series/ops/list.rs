@@ -1,6 +1,7 @@
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
+use crate::prelude::CountMode;
+use crate::series::IntoSeries;
 use crate::series::Series;
-use crate::{CountMode, IntoSeries};
 use common_error::DaftError;
 
 use common_error::DaftResult;

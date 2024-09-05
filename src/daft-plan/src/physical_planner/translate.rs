@@ -8,10 +8,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
-use daft_core::count_mode::CountMode;
-use daft_core::join::{JoinStrategy, JoinType};
-use daft_core::schema::SchemaRef;
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};
 
@@ -961,7 +958,7 @@ pub fn populate_aggregation_stages(
 mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use std::assert_matches::assert_matches;
     use std::sync::Arc;
@@ -1120,8 +1117,8 @@ mod tests {
                 join_node,
                 vec![col("a"), col("b")],
                 vec![col("a"), col("b")],
-                daft_core::JoinType::Inner,
-                Some(daft_core::JoinStrategy::Hash),
+                JoinType::Inner,
+                Some(JoinStrategy::Hash),
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

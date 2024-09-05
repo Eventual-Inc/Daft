@@ -1,9 +1,5 @@
 use crate::ExprRef;
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::{IntoSeries, Series},
-};
+use daft_core::prelude::*;
 
 use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};

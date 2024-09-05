@@ -1,6 +1,6 @@
 use crate::datatypes::DataType;
+use crate::series::IntoSeries;
 use crate::series::Series;
-use crate::IntoSeries;
 use common_error::DaftError;
 use common_error::DaftResult;
 

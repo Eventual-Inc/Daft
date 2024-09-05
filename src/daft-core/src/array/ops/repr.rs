@@ -2,6 +2,7 @@ use base64::Engine;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::DataType,
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -10,8 +11,9 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
         ImageFormat, NullArray, UInt64Array, Utf8Array,
     },
+    series::Series,
     utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
-    with_match_daft_types, DataType, Series,
+    with_match_daft_types,
 };
 use common_error::DaftResult;
 

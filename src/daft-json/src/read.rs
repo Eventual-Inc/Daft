@@ -1,7 +1,7 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
@@ -565,11 +565,10 @@ mod tests {
     use common_error::DaftResult;
 
     use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
+        prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        DataType,
     };
+
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use indexmap::IndexMap;

@@ -4,11 +4,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_core::{
-    join::{JoinStrategy, JoinType},
-    schema::{Schema, SchemaRef},
-    DataType,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     col,
     join::{get_common_join_keys, infer_join_schema},
