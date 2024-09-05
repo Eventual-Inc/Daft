@@ -7,6 +7,7 @@ mod image_mode;
 mod matching;
 mod time_unit;
 
+pub mod prelude;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
 pub use agg_ops::{try_mean_supertype, try_sum_supertype};
@@ -15,6 +16,7 @@ use arrow2::{
     types::{simd::Simd, NativeType},
 };
 pub use binary_ops::try_physical_supertype;
+
 pub use dtype::DataType;
 pub use field::Field;
 pub use field::FieldID;
@@ -24,7 +26,6 @@ pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-pub use time_unit::infer_timeunit_from_format_string;
 pub use time_unit::TimeUnit;
 
 pub mod logical;
@@ -349,7 +350,6 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
-// pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
@@ -364,4 +364,8 @@ impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow().values().as_slice()
     }
+}
+
+pub mod utils {
+    pub use super::time_unit::infer_timeunit_from_format_string;
 }

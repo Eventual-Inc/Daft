@@ -523,11 +523,12 @@ mod tests {
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
-    use daft_core::datatypes::Field;
+    use daft_core::prelude::*;
+
     use daft_dsl::{
         col,
         functions::{
-            python::{PythonUDF, StatefulPythonUDF},
+            python::{PythonUDF, StatefulPythonUDF, UDFRuntimeBinding},
             FunctionExpr,
         },
         Expr, ExprRef,
@@ -582,11 +583,12 @@ mod tests {
                 stateful_partial_func:
                     daft_dsl::functions::python::RuntimePyObject::new_testing_none(),
                 num_expressions: inputs.len(),
-                return_dtype: daft_core::DataType::Int64,
+                return_dtype: DataType::Int64,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs,
         }
@@ -603,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stateful_project_expr = create_stateful_udf(vec![col("a")]);
 
@@ -630,8 +632,8 @@ mod tests {
     #[test]
     fn test_multiple_with_column_parallel() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Utf8),
-            Field::new("b", daft_core::DataType::Utf8),
+            Field::new("a", DataType::Utf8),
+            Field::new("b", DataType::Utf8),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
@@ -717,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_multiple_with_column_serial() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr =
             create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
@@ -794,8 +796,8 @@ mod tests {
     #[test]
     fn test_multiple_with_column_serial_multiarg() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Utf8),
-            Field::new("b", daft_core::DataType::Utf8),
+            Field::new("a", DataType::Utf8),
+            Field::new("b", DataType::Utf8),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr = create_stateful_udf(vec![
@@ -897,8 +899,8 @@ mod tests {
     #[test]
     fn test_multiple_with_column_serial_multiarg_with_intermediate_stateless() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Int64),
-            Field::new("b", daft_core::DataType::Int64),
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr = create_stateful_udf(vec![create_stateful_udf(vec![
@@ -1016,7 +1018,7 @@ mod tests {
 
     #[test]
     fn test_nested_with_column_same_names() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr =
             create_stateful_udf(vec![col("a").add(create_stateful_udf(vec![col("a")]))]);
@@ -1087,7 +1089,7 @@ mod tests {
 
     #[test]
     fn test_stateless_expr_with_only_some_stateful_children() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
 
         // (col("a") + col("a"))  +  foo(col("a"))

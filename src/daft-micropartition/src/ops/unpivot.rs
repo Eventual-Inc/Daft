@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, utils::supertype::try_get_supertype, DataType};
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 

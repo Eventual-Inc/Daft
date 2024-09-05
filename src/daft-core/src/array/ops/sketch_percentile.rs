@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     array::{FixedSizeListArray, StructArray},
+    datatypes::DataType,
     datatypes::{Field, Float64Array},
-    DataType, IntoSeries, Series,
+    series::IntoSeries,
+    series::Series,
 };
 
 use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};

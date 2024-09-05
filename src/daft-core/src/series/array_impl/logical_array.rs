@@ -1,9 +1,5 @@
-use crate::datatypes::logical::{
-    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
-    TimestampArray,
-};
-use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
+use crate::array::prelude::*;
+use crate::datatypes::prelude::*;
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -11,7 +7,6 @@ use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;
-use crate::DataType;
 use std::sync::Arc;
 
 impl<L> IntoSeries for LogicalArray<L>

@@ -321,7 +321,7 @@ pub mod pylib {
                 let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);
                 let series = eval_pred.get_column_by_index(0)?;
-                assert_eq!(series.data_type(), &daft_core::DataType::Boolean);
+                assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
                 let boolean = series.bool()?;
                 assert_eq!(boolean.len(), 1);
                 let value = boolean.get(0);

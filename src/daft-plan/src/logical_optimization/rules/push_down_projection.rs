@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use common_treenode::TreeNode;
-use daft_core::{schema::Schema, JoinType};
+use daft_core::prelude::*;
+
 use daft_dsl::{
     col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
@@ -663,8 +664,12 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, functions::python::RuntimePyObject, lit};
+    use daft_core::prelude::*;
+    use daft_dsl::{
+        col,
+        functions::python::{RuntimePyObject, UDFRuntimeBinding},
+        lit,
+    };
     use daft_scan::Pushdowns;
 
     use crate::{
@@ -923,6 +928,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("c")],
         }
@@ -980,6 +986,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("a")],
         }
@@ -1060,6 +1067,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs: vec![col("c")],
         }

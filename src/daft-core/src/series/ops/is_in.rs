@@ -1,8 +1,11 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::DaftIsIn, datatypes::BooleanArray, with_match_comparable_daft_types, DataType,
-    IntoSeries, Series,
+    array::ops::DaftIsIn,
+    datatypes::BooleanArray,
+    datatypes::DataType,
+    series::{IntoSeries, Series},
+    with_match_comparable_daft_types,
 };
 
 #[cfg(feature = "python")]

@@ -1,5 +1,5 @@
 use common_error::DaftError;
-use daft_core::{datatypes::Field, DataType};
+use daft_core::prelude::*;
 
 make_udf_function! {
     name: "is_inf",

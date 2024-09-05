@@ -3,16 +3,7 @@ use std::{
     iter::{self, Repeat, Take},
 };
 
-use crate::{
-    array::{DataArray, ListArray},
-    datatypes::{
-        infer_timeunit_from_format_string,
-        logical::{DateArray, TimestampArray},
-        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int32Array,
-        Int64Array, TimeUnit, UInt64Array, Utf8Array,
-    },
-    DataType, Series,
-};
+use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
@@ -618,6 +609,19 @@ impl Utf8Array {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
+    pub fn length_bytes(&self) -> DaftResult<UInt64Array> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                Some(v.len() as u64)
+            })
+            .collect::<arrow2::array::UInt64Array>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
+    }
+
     pub fn lower(&self) -> DaftResult<Utf8Array> {
         self.unary_broadcasted_op(|val| val.to_lowercase().into())
     }
@@ -933,7 +937,7 @@ impl Utf8Array {
     pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {
         let len = self.len();
         let self_iter = self.as_arrow().iter();
-        let timeunit = infer_timeunit_from_format_string(format);
+        let timeunit = crate::datatypes::utils::infer_timeunit_from_format_string(format);
 
         let arrow_result = self_iter
             .map(|val| match val {

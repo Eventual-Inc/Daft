@@ -1,6 +1,6 @@
 use daft_core::{
-    datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field},
-    CountMode, IntoSeries,
+    datatypes::{try_mean_supertype, try_sum_supertype},
+    prelude::*,
 };
 
 use common_error::DaftError;

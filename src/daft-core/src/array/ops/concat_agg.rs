@@ -154,8 +154,9 @@ mod test {
 
     use crate::{
         array::{ops::DaftConcatAggable, ListArray},
+        datatypes::DataType,
         datatypes::{Field, Int64Array},
-        DataType, IntoSeries,
+        series::IntoSeries,
     };
 
     #[test]

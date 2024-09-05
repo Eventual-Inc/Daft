@@ -14,7 +14,7 @@ pub use list_array::ListArray;
 pub use struct_array::StructArray;
 mod boolean;
 mod from_iter;
-
+pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};

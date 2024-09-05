@@ -11,15 +11,7 @@ use crate::datatypes::FixedSizeBinaryArray;
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::{
-    datatypes::{
-        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
-    },
-    series::series_like::SeriesLike,
-    with_match_integer_daft_types,
-};
+use crate::{array::prelude::*, series::series_like::SeriesLike, with_match_integer_daft_types};
 use common_error::DaftResult;
 
 use crate::datatypes::DataType;

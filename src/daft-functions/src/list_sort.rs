@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use daft_core::{datatypes::Field, schema::Schema, DataType, Series};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,

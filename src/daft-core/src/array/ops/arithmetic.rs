@@ -4,9 +4,10 @@ use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
     array::{DataArray, FixedSizeListArray},
+    datatypes::DataType,
     datatypes::{DaftNumericType, Field, Float64Array, Int64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
-    DataType, Series,
+    series::Series,
 };
 
 use common_error::{DaftError, DaftResult};

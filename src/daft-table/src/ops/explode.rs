@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
+use daft_core::count_mode::CountMode;
 use daft_core::series::IntoSeries;
-use daft_core::CountMode;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{DataType, UInt64Array},

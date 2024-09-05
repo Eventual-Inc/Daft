@@ -142,6 +142,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.extract_all
    Expression.str.replace
    Expression.str.length
+   Expression.str.length_bytes
    Expression.str.lower
    Expression.str.upper
    Expression.str.lstrip
