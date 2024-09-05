@@ -27,6 +27,7 @@ common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+derive_more = {workspace = true}
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}

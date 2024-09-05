@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, Result};
+use derive_more::Display;
 use std::str::FromStr;
 
 #[cfg(feature = "python")]
@@ -9,7 +9,7 @@ use common_error::{DaftError, DaftResult};
 
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageFormat {
     PNG,
@@ -90,12 +90,5 @@ impl From<ImageFormat> for image::ImageFormat {
             ImageFormat::GIF => image::ImageFormat::Gif,
             ImageFormat::BMP => image::ImageFormat::Bmp,
         }
-    }
-}
-
-impl Display for ImageFormat {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

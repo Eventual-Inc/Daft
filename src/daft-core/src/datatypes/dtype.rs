@@ -1,6 +1,7 @@
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::Write;
 
 use arrow2::datatypes::DataType as ArrowType;
+use derive_more::Display;
 
 use crate::datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
@@ -8,42 +9,53 @@ use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};
 
-// pub type TimeZone = String;
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
-    // Start ArrowTypes
+    // ArrowTypes:
     /// Null type
     Null,
+
     /// `true` and `false`.
     Boolean,
+
     /// An [`i8`]
     Int8,
+
     /// An [`i16`]
     Int16,
+
     /// An [`i32`]
     Int32,
+
     /// An [`i64`]
     Int64,
+
     /// An [`i128`]
     Int128,
+
     /// An [`u8`]
     UInt8,
+
     /// An [`u16`]
     UInt16,
+
     /// An [`u32`]
     UInt32,
+
     /// An [`u64`]
     UInt64,
-    /// An 16-bit float
-    // Float16,
+
     /// A [`f32`]
     Float32,
+
     /// A [`f64`]
     Float64,
+
     /// Fixed-precision decimal type.
     /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
+    #[display("{_0}.{_1}")]
     Decimal128(usize, usize),
+
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
     ///
     /// Time is measured as a Unix epoch, counting the seconds from
@@ -58,45 +70,90 @@ pub enum DataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
+    #[display("Time[{_0} {}]", _1.as_deref().map_or_else(|| "UTC".to_owned(), |zone| zone.to_owned()))]
     Timestamp(TimeUnit, Option<String>),
+
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days.
     Date,
+
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     /// Only [`TimeUnit::Microsecond`] and [`TimeUnit::Nanosecond`] are supported on this variant.
+    #[display("Time[{_0}]")]
     Time(TimeUnit),
+
     /// Measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
+    #[display("Duration[{_0}]")]
     Duration(TimeUnit),
+
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
+
     /// Opaque binary data of fixed size. Enum parameter specifies the number of bytes per value.
+    #[display("FixedSizeBinary[{_0}]")]
     FixedSizeBinary(usize),
+
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
+
     /// A list of some logical data type with a fixed number of elements.
+    #[display("FixedSizeList[{_0}; {_1}]")]
     FixedSizeList(Box<DataType>, usize),
+
     /// A list of some logical data type whose offsets are represented as [`i64`].
+    #[display("List[{_0}]")]
     List(Box<DataType>),
+
     /// A nested [`DataType`] with a given number of [`Field`]s.
+    #[display("{}", format_struct(_0)?)]
     Struct(Vec<Field>),
+
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
+    #[display("Map[{_0}]")]
     Map(Box<DataType>),
+
     /// Extension type.
+    #[display("{_1}")]
     Extension(String, Box<DataType>, Option<String>),
-    // Stop ArrowTypes
+
+    // Non-ArrowTypes:
     /// A logical type for embeddings.
+    #[display("Embedding[{_0}; {_1}]")]
     Embedding(Box<DataType>, usize),
+
     /// A logical type for images with variable shapes.
+    #[display("Image[{}]", _0.map_or_else(|| "MIXED".to_string(), |mode| mode.to_string()))]
     Image(Option<ImageMode>),
+
     /// A logical type for images with the same size (height x width).
+    #[display("Image[{_0}; {_1} x {_2}]")]
     FixedShapeImage(ImageMode, u32, u32),
+
     /// A logical type for tensors with variable shapes.
+    #[display("Tensor[{_0}]")]
     Tensor(Box<DataType>),
+
     /// A logical type for tensors with the same shape.
+    #[display("FixedShapeTensor[{_0}; {_1:?}]")]
     FixedShapeTensor(Box<DataType>, Vec<u64>),
+
     #[cfg(feature = "python")]
     Python,
+
     Unknown,
+}
+
+fn format_struct(fields: &[Field]) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    for (index, field) in fields.iter().enumerate() {
+        if index != 0 {
+            write!(&mut f, ", ")?;
+        }
+        if !(field.name.is_empty() && field.dtype.is_null()) {
+            write!(&mut f, "{}", field)?;
+        }
+    }
+    Ok(f)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -587,49 +644,6 @@ impl From<&ImageMode> for DataType {
             L16 | LA16 | RGB16 | RGBA16 => DataType::UInt16,
             RGB32F | RGBA32F => DataType::Float32,
             _ => DataType::UInt8,
-        }
-    }
-}
-
-impl Display for DataType {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            DataType::List(nested) => write!(f, "List[{}]", nested),
-            DataType::FixedSizeList(inner, size) => {
-                write!(f, "FixedSizeList[{}; {}]", inner, size)
-            }
-            DataType::Map(inner, ..) => {
-                write!(f, "Map[{}]", inner)
-            }
-            DataType::Struct(fields) => {
-                let fields: String = fields
-                    .iter()
-                    .filter_map(|f| {
-                        if f.name.is_empty() && f.dtype == DataType::Null {
-                            None
-                        } else {
-                            Some(format!("{}: {}", f.name, f.dtype))
-                        }
-                    })
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "Struct[{fields}]")
-            }
-            DataType::Embedding(inner, size) => {
-                write!(f, "Embedding[{}; {}]", inner, size)
-            }
-            DataType::Image(mode) => {
-                write!(
-                    f,
-                    "Image[{}]",
-                    mode.map_or("MIXED".to_string(), |m| m.to_string())
-                )
-            }
-            DataType::FixedShapeImage(mode, height, width) => {
-                write!(f, "Image[{}; {} x {}]", mode, height, width)
-            }
-            _ => write!(f, "{self:?}"),
         }
     }
 }

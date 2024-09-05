@@ -1,17 +1,15 @@
-use std::{
-    fmt::{Display, Formatter, Result},
-    str::FromStr,
-};
+use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
+use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, pyclass, pymethods, PyObject, PyResult, Python};
 
 use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum JoinType {
     Inner,
@@ -71,14 +69,7 @@ impl FromStr for JoinType {
     }
 }
 
-impl Display for JoinType {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum JoinStrategy {
     Hash,
@@ -129,12 +120,5 @@ impl FromStr for JoinStrategy {
                 JoinStrategy::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl Display for JoinStrategy {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

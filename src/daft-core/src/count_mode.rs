@@ -2,8 +2,9 @@ use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
+
+use derive_more::Display;
 
 use common_error::{DaftError, DaftResult};
 
@@ -13,7 +14,7 @@ use common_error::{DaftError, DaftResult};
 /// | Valid - Count only valid values.
 /// | Null  - Count only null values.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum CountMode {
     All = 1,
@@ -64,12 +65,5 @@ impl FromStr for CountMode {
                 CountMode::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl Display for CountMode {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

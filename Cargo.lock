@@ -1702,6 +1702,7 @@ dependencies = [
  "common-py-serde",
  "daft-minhash",
  "daft-sketch",
+ "derive_more",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
