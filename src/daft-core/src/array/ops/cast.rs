@@ -42,7 +42,7 @@ use {
     crate::with_match_numeric_daft_types,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
-    numpy::{PyArray3, PyReadonlyArrayDyn},
+    numpy::{PyArray3, PyReadonlyArrayDyn, PyUntypedArrayMethods},
     pyo3::prelude::*,
     std::iter,
     std::ops::Deref,
@@ -1190,7 +1190,7 @@ impl ImageArray {
                         Some(element) => ffi::to_py_array(element.to_arrow(), py, pyarrow)?
                             .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?,
-                        None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false)
+                        None => PyArray3::<u8>::zeros_bound(py, shape.into_dimension(), false)
                             .deref()
                             .to_object(py),
                     };

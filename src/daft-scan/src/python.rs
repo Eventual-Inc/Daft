@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
+use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -249,7 +249,7 @@ pub mod pylib {
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_object(py, &pyiter)?;
+                let pyiter = PyIterator::from_object(pyiter.as_ref(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
