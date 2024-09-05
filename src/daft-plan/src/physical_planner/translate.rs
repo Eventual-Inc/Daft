@@ -292,19 +292,19 @@ pub(super) fn translate_single_logical_node(
 
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
                         populate_aggregation_stages(aggregations, &schema, groupby);
-                    let first_stage_group_by = groupby;
-                    let second_stage_group_by =
-                        groupby.iter().map(|e| col(e.name())).collect::<Vec<_>>();
 
-                    let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_physical
+                    let (first_stage_agg, groupby) = if first_stage_aggs.is_empty() {
+                        (input_physical, groupby.clone())
                     } else {
-                        PhysicalPlan::Aggregate(Aggregate::new(
-                            input_physical,
-                            first_stage_aggs.values().cloned().collect(),
-                            first_stage_group_by.clone(),
-                        ))
-                        .arced()
+                        (
+                            PhysicalPlan::Aggregate(Aggregate::new(
+                                input_physical,
+                                first_stage_aggs.values().cloned().collect(),
+                                groupby.clone(),
+                            ))
+                            .arced(),
+                            groupby.iter().map(|e| col(e.name())).collect(),
+                        )
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
@@ -320,11 +320,7 @@ pub(super) fn translate_single_logical_node(
                                 num_input_partitions,
                                 cfg.shuffle_aggregation_default_partitions,
                             ),
-                            if first_stage_aggs.is_empty() {
-                                first_stage_group_by.clone()
-                            } else {
-                                second_stage_group_by.clone()
-                            },
+                            groupby.clone(),
                         ))
                         .arced();
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
@@ -333,7 +329,7 @@ pub(super) fn translate_single_logical_node(
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan,
                         second_stage_aggs.values().cloned().collect(),
-                        second_stage_group_by,
+                        groupby,
                     ));
 
                     PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
