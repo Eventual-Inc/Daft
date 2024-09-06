@@ -70,7 +70,7 @@ pub enum DataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    #[display("Time[{_0}, {_1:?}]")]
+    #[display("Timestamp[{_0}, {_1:?}]")]
     Timestamp(TimeUnit, Option<String>),
 
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
