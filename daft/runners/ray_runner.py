@@ -76,7 +76,7 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
 try:
-    from ray.data.extensions import ArrowTensorType
+    from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 except ImportError:
     _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
 
@@ -101,12 +101,14 @@ def _glob_path_into_file_infos(
 @ray.remote
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
+        daft_schema = partition.schema()
         arrow_tbl = partition.to_arrow()
 
-        # Convert PyArrow FixedShapeTensor type to Ray Data's native ArrowTensorType
+        # Convert arrays to Ray Data's native ArrowTensorType arrays
         new_arrs = {}
         for idx, field in enumerate(arrow_tbl.schema):
-            if isinstance(field.type, pa.FixedShapeTensorType):
+            if daft_schema[field.name].dtype._is_fixed_shape_tensor_type():
+                assert isinstance(field.type, pa.FixedShapeTensorType)
                 new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
                 arrow_arr = arrow_tbl[field.name].combine_chunks()
                 storage_arr = arrow_arr.storage
@@ -119,13 +121,14 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
                     storage_arr.values,
                 )
                 new_arrs[idx] = (
-                    pa.field(field.name, new_dtype),
+                    field.name,
                     pa.ExtensionArray.from_storage(new_dtype, new_storage_arr),
                 )
-        for idx, (field, arr) in new_arrs.items():
-            arrow_tbl = arrow_tbl.set_column(idx, field, arr)
-
-        print(arrow_tbl)
+            elif daft_schema[field.name].dtype._is_tensor_type():
+                assert isinstance(field.type, pa.ExtensionType)
+                new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
+        for idx, (field_name, arr) in new_arrs.items():
+            arrow_tbl = arrow_tbl.set_column(idx, pa.field(field_name, arr.type), arr)
 
         return arrow_tbl
     except pa.ArrowInvalid:
