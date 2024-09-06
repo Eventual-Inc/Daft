@@ -3,7 +3,7 @@ use daft_core::prelude::*;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    kernel::{image_array_from_img_buffers, ImageOps},
+    ops::{image_array_from_img_buffers, ImageOps},
     DaftImageBuffer,
 };
 fn image_decode_impl(

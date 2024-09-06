@@ -1,7 +1,7 @@
 mod counting_writer;
 mod image_buffer;
 mod iters;
-pub mod kernel;
+pub mod ops;
 pub use counting_writer::CountingWriter;
 pub use image_buffer::DaftImageBuffer;
 pub mod series;
