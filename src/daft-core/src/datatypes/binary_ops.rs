@@ -1,4 +1,7 @@
-use std::ops::{Add, Div, Mul, Rem, Shl, Shr, Sub};
+use std::{
+    fmt::{write, Display},
+    ops::{Add, Div, Mul, Rem, Shl, Shr, Sub},
+};
 
 use common_error::{DaftError, DaftResult};
 
@@ -6,11 +9,34 @@ use crate::{impl_binary_trait_by_reference, utils::supertype::try_get_supertype}
 
 use super::DataType;
 
-impl DataType {
+// This is a stopgap to keep this logic separated from the DataTypes themselves
+// Once we convert daft-dsl to a root level crate, this logic should move there
+struct InferDataType<'a>(&'a DataType);
+
+impl<'a> Display for InferDataType<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl<'a> From<&'a DataType> for InferDataType<'a> {
+    fn from(value: &'a DataType) -> Self {
+        InferDataType(value)
+    }
+}
+
+impl<'a> AsRef<DataType> for InferDataType<'a> {
+    fn as_ref(&self) -> &DataType {
+        self.0
+    }
+}
+
+impl<'a> InferDataType<'a> {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
         // Whether a logical op (and, or, xor) is supported between the two types.
         use DataType::*;
-        match (self, other) {
+        let left = self.0;
+        let other = other.0;
+        match (left, other) {
             #[cfg(feature = "python")]
             (Python, _) | (_, Python) => Ok(Boolean),
             (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(Boolean),
@@ -19,7 +45,7 @@ impl DataType {
                 if dtype.is_floating() {
                     Err(DaftError::TypeError(format!(
                         "Cannot perform logic on types: {}, {}",
-                        self, other
+                        left, other
                     )))
                 } else {
                     Ok(dtype)
@@ -29,7 +55,7 @@ impl DataType {
             (s, o) if (s.is_null() && o.is_integer()) => Ok(o.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot perform logic on types: {}, {}",
-                self, other
+                left, other
             ))),
         }
     }
@@ -43,19 +69,22 @@ impl DataType {
         // - the output type,
         // - an optional intermediate type
         // - the type at which the comparison should be performed.
+
+        let left = &self.0;
+        let other = &other.0;
         let evaluator = || {
             use DataType::*;
-            match (self, other) {
+            match (left, other) {
                 (s, o) if s == o => Ok((Boolean, None, s.to_physical())),
                 (Utf8, o) | (o, Utf8) if o.is_numeric() => Err(DaftError::TypeError(format!(
                     "Cannot perform comparison on Utf8 and numeric type.\ntypes: {}, {}",
-                    self, other
+                    left, other
                 ))),
                 (s, o) if s.is_physical() && o.is_physical() => {
                     Ok((Boolean, None, try_physical_supertype(s, o)?))
                 }
                 (Timestamp(..), Timestamp(..)) => {
-                    let intermediate_type = try_get_supertype(self, other)?;
+                    let intermediate_type = try_get_supertype(left, other)?;
                     let pt = intermediate_type.to_physical();
                     Ok((Boolean, Some(intermediate_type), pt))
                 }
@@ -66,7 +95,7 @@ impl DataType {
                 }
                 _ => Err(DaftError::TypeError(format!(
                     "Cannot perform comparison on types: {}, {}",
-                    self, other
+                    left, other
                 ))),
             }
         };
@@ -74,7 +103,7 @@ impl DataType {
         evaluator().map_err(|err| {
             DaftError::TypeError(format!(
                 "Cannot perform comparison on types: {}, {}\nDetails:\n{err}",
-                self, other
+                left, other
             ))
         })
     }
@@ -87,13 +116,14 @@ impl DataType {
     }
 }
 
-impl Add for &DataType {
+impl<'a> Add for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn add(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(try_fixed_shape_numeric_datatype(self, other, |l, r| {l + r})).or(
-            match (self, other) {
+
+        try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) + InferDataType::from(r)})).or(
+            match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 (Timestamp(t_unit, tz), Duration(d_unit))
@@ -144,13 +174,13 @@ impl Add for &DataType {
     }
 }
 
-impl Sub for &DataType {
+impl<'a> Sub for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn sub(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other).or(try_fixed_shape_numeric_datatype(self, other, |l, r| {l - r})).or(
-            match (self, other) {
+        try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) - InferDataType::from(r)})).or(
+            match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 (Timestamp(t_unit, tz), Duration(d_unit))
@@ -179,12 +209,12 @@ impl Sub for &DataType {
     }
 }
 
-impl Div for &DataType {
+impl<'a> Div for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn div(self, other: Self) -> Self::Output {
         use DataType::*;
-        match (self, other) {
+        match (&self.0, &other.0) {
             #[cfg(feature = "python")]
             (Python, _) | (_, Python) => Ok(Python),
             (s, o) if s.is_numeric() && o.is_numeric() => Ok(Float64),
@@ -193,18 +223,22 @@ impl Div for &DataType {
                 self, other
             ))),
         }
-        .or(try_fixed_shape_numeric_datatype(self, other, |l, r| l / r))
+        .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+            InferDataType::from(l) / InferDataType::from(r)
+        }))
     }
 }
 
-impl Mul for &DataType {
+impl<'a> Mul for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn mul(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other)
-            .or(try_fixed_shape_numeric_datatype(self, other, |l, r| l * r))
-            .or(match (self, other) {
+        try_numeric_supertype(self.0, other.0)
+            .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+                InferDataType::from(l) * InferDataType::from(r)
+            }))
+            .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 _ => Err(DaftError::TypeError(format!(
@@ -215,14 +249,16 @@ impl Mul for &DataType {
     }
 }
 
-impl Rem for &DataType {
+impl<'a> Rem for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn rem(self, other: Self) -> Self::Output {
         use DataType::*;
-        try_numeric_supertype(self, other)
-            .or(try_fixed_shape_numeric_datatype(self, other, |l, r| l % r))
-            .or(match (self, other) {
+        try_numeric_supertype(self.0, other.0)
+            .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+                InferDataType::from(l) % InferDataType::from(r)
+            }))
+            .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 _ => Err(DaftError::TypeError(format!(
@@ -233,11 +269,11 @@ impl Rem for &DataType {
     }
 }
 
-impl Shl for &DataType {
+impl<'a> Shl for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn shl(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.0, rhs.0) {
             (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot operate shift left on types: {}, {}",
@@ -247,11 +283,11 @@ impl Shl for &DataType {
     }
 }
 
-impl Shr for &DataType {
+impl<'a> Shr for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn shr(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.0, rhs.0) {
             (s, o) if s.is_integer() && o.is_integer() => Ok(s.clone()),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot operate shift right on types: {}, {}",

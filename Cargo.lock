@@ -1711,6 +1711,7 @@ dependencies = [
  "common-hashable-float-wrapper",
  "common-py-serde",
  "daft-minhash",
+ "daft-schema",
  "daft-sketch",
  "fastrand 2.1.0",
  "fnv",

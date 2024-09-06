@@ -1,11 +1,11 @@
 mod agg_ops;
 mod binary_ops;
-mod dtype;
-mod field;
-mod image_format;
-mod image_mode;
+// mod dtype;
+// mod field;
+// mod image_format;
+// mod image_mode;
 mod matching;
-mod time_unit;
+// mod time_unit;
 
 pub mod prelude;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
@@ -16,16 +16,25 @@ use arrow2::{
     types::{simd::Simd, NativeType},
 };
 pub use binary_ops::try_physical_supertype;
-pub use dtype::DataType;
-pub use field::Field;
-pub use field::FieldID;
-pub use field::FieldRef;
-pub use image_format::ImageFormat;
-pub use image_mode::ImageMode;
+// pub use dtype::DataType;
+// pub use field::Field;
+// pub use field::FieldID;
+// pub use field::FieldRef;
+// pub use image_format::ImageFormat;
+// pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-pub use time_unit::TimeUnit;
+// pub use time_unit::TimeUnit;
+
+pub use daft_schema::field::{Field, FieldID, FieldRef};
+
+pub use daft_schema::image_format::ImageFormat;
+pub use daft_schema::image_mode::ImageMode;
+pub use daft_schema::time_unit::{infer_timeunit_from_format_string, TimeUnit};
+
+// Import DataType enum
+pub use daft_schema::dtype::DataType;
 
 pub mod logical;
 
@@ -363,8 +372,4 @@ impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow().values().as_slice()
     }
-}
-
-pub mod utils {
-    pub use super::time_unit::infer_timeunit_from_format_string;
 }
