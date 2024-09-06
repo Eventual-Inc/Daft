@@ -800,9 +800,14 @@ jobs:
       DAFT_BOLD_TABLE_HEADERS: '0'
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v1
+    - name: Set up Python ${{ env.python-version }}
+      uses: actions/setup-python@v5
       with:
-        cache: false
+        python-version: ${{ env.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
     - name: Download built package
       uses: actions/download-artifact@v4
       with:
@@ -828,13 +833,6 @@ jobs:
       DAFT_BOLD_TABLE_HEADERS: '0'
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v1
-      with:
-        cache: false
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
     - name: Set up Python ${{ env.python-version }}
       uses: actions/setup-python@v5
       with:
