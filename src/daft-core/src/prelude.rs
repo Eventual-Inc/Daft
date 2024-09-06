@@ -13,7 +13,7 @@ pub use crate::array::prelude::*;
 // Re-export count mode enum
 pub use crate::count_mode::CountMode;
 
-pub use crate::schema::{Schema, SchemaRef};
+pub use daft_schema::schema::{Schema, SchemaRef};
 
 // Re-export join-related types
 pub use crate::join::{JoinStrategy, JoinType};

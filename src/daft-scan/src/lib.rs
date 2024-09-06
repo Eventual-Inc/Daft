@@ -9,8 +9,8 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::Field,
+use daft_schema::{
+    field::Field,
     schema::{Schema, SchemaRef},
 };
 use daft_dsl::ExprRef;
@@ -962,7 +962,7 @@ mod test {
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
-    use daft_core::{datatypes::TimeUnit, schema::Schema};
+    use daft_schema::{time_unit::TimeUnit, schema::Schema};
     use itertools::Itertools;
 
     use crate::{

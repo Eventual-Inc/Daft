@@ -21,7 +21,7 @@ use crate::{
 
 use common_arrow_ffi as ffi;
 
-use super::datatype::PyDataType;
+use daft_schema::python::PyDataType;
 use crate::array::ops::as_arrow::AsArrow;
 use crate::array::ops::trigonometry::TrigonometricFunction;
 

@@ -1,10 +1,10 @@
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
-    daft_core::python::schema::PySchema,
+    daft_schema::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     pyo3::{pyclass, pyclass::CompareOp, pymethods, PyObject, PyResult, Python},
 };

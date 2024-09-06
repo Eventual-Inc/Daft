@@ -31,6 +31,7 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
+daft-schema = {path = "../daft-schema", default-features = false}
 
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
@@ -52,7 +53,8 @@ python = [
   "daft-io/python",
   "daft-functions/python",
   "daft-table/python",
-  "daft-scan/python"
+  "daft-scan/python",
+  "daft-schema/python"
 ]
 
 [package]

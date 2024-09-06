@@ -1,7 +1,7 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{
     parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,

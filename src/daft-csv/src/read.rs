@@ -593,7 +593,7 @@ fn parse_into_column_array_chunk_stream(
         .iter()
         .map(|i| fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::schema::Schema::new(fields_subset)?);
+    let read_schema = Arc::new(daft_schema::schema::Schema::new(fields_subset)?);
     let read_daft_fields = Arc::new(
         read_schema
             .fields

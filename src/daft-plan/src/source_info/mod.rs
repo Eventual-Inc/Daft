@@ -1,5 +1,5 @@
 pub mod file_info;
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 use daft_scan::PhysicalScanInfo;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};

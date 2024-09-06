@@ -10,7 +10,7 @@ use {
     common_daft_config::PyDaftExecutionConfig,
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
-    daft_core::schema::SchemaRef,
+    daft_schema::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     daft_io::FileFormat,

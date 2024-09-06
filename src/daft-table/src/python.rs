@@ -9,7 +9,7 @@ use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::python::PyExpr;
 
-use daft_core::python::schema::PySchema;
+use daft_schema::python::schema::PySchema;
 use daft_core::python::series::PySeries;
 
 #[pyclass]

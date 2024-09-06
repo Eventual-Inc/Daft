@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::{datatypes::DataType, schema::Schema};
+use crate::datatypes::DataType;
+
+use daft_schema::schema::Schema;
 
 use arrow2::array::Array;
 use common_error::DaftError;

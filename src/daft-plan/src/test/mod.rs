@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::{datatypes::Field, schema::Schema};
+use daft_schema::{field::Field, schema::Schema};
 use daft_scan::{
     file_format::FileFormatConfig, storage_config::NativeStorageConfig,
     storage_config::StorageConfig, AnonymousScanOperator, Pushdowns, ScanOperator,

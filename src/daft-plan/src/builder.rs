@@ -18,10 +18,9 @@ use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use daft_core::{
-    join::{JoinStrategy, JoinType},
-    schema::{Schema, SchemaRef},
-};
+use daft_core::join::{JoinStrategy, JoinType};
+use daft_schema::schema::{Schema, SchemaRef};
+
 use daft_dsl::{col, ExprRef};
 use daft_io::FileFormat;
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
@@ -31,7 +30,7 @@ use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::source_info::InMemoryInfo,
     common_daft_config::PyDaftPlanningConfig,
-    daft_core::python::schema::PySchema,
+    daft_schema::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::python::pylib::ScanOperatorHandle,
     pyo3::prelude::*,

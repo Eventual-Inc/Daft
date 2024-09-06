@@ -519,7 +519,7 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<u64>,
 ) -> DaftResult<(usize, usize)> {
-    use crate::python::PyDataType;
+    use daft_schema::python::PyDataType;
     use std::num::Wrapping;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;

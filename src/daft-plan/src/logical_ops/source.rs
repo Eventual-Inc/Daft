@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 use daft_scan::PhysicalScanInfo;
 
 use crate::source_info::SourceInfo;

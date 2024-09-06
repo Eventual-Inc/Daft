@@ -6,7 +6,7 @@ use pyo3::types::PyList;
 use crate::Table;
 use common_error::DaftResult;
 use daft_core::{
-    schema::SchemaRef,
+    prelude::SchemaRef,
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };

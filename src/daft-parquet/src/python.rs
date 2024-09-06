@@ -2,7 +2,8 @@ use pyo3::prelude::*;
 
 pub mod pylib {
     use common_arrow_ffi::{field_to_py, to_py_array};
-    use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
+    use daft_schema::python::{datatype::PyTimeUnit, schema::PySchema};
+    use daft_core::python::PySeries;
     use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;

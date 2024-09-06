@@ -28,8 +28,7 @@ use self::utf8::Utf8Expr;
 pub use scalar::*;
 
 use common_error::DaftResult;
-use daft_core::datatypes::FieldID;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
 use serde::{Deserialize, Serialize};
 
