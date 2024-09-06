@@ -1055,8 +1055,8 @@ def test_series_cast_duration_numeric(dtype, result_n1, result_0, result_p1) -> 
         ),
     ],
 )
-def test_series_cast_temporal_numeric(dtype, result_n1, result_0, result_p1) -> None:
-    # Temporal -> numeric.
+def test_series_cast_date_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Date -> numeric.
     series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
     casted = series.cast(DataType.int64())
     assert casted.to_pylist() == [-1, 0, 1]
