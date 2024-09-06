@@ -2494,6 +2494,12 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        for name in self.schema().column_names():
+            if self.schema()[name].dtype._is_python_type():
+                raise ValueError(
+                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
+                )
+
         self.collect()
         result = self._result
         assert result is not None

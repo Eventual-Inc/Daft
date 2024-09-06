@@ -254,10 +254,10 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
     assert set(df.column_names) == set(t.column_names)
     # Type not natively supported, so should have Python object dtype.
     assert df.schema()["obj"].dtype == DataType.python()
-    casted_field = t.schema.field("variety").with_type(pa.large_string())
-    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
-    # Check roundtrip.
-    assert df.to_arrow() == expected
+
+    # Assert that it raises an error when trying to convert back to arrow
+    with pytest.raises(ValueError):
+        df.to_arrow()
 
 
 ###
