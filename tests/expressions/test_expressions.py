@@ -500,7 +500,7 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
 
     # Series repr is very long, so we just check the last line which contains the timestamp
     # Also remove the │ │, which is what the [1:-1] and strip is doing
-    timestamp_repr = output.split("\n")[-2][1:-1].strip()
+    timestamp_repr = output.split("\n")[-3][1:-1].strip()
     assert timestamp_repr == expected
 
 
