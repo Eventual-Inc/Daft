@@ -24,6 +24,7 @@ pub mod ffi;
 mod growable;
 mod ops;
 mod probe_table;
+mod repr_html;
 
 pub use growable::GrowableTable;
 
@@ -33,6 +34,7 @@ pub use probe_table::{ProbeTable, ProbeTableBuilder};
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Table {
@@ -714,7 +716,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
             }
 
@@ -736,7 +738,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</td>");
             }
 

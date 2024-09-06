@@ -34,7 +34,6 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
     fn take(&self, idx: &Series) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
-    // fn html_value(&self, idx: usize) -> String;
     fn add(&self, rhs: &Series) -> DaftResult<Series>;
     fn sub(&self, rhs: &Series) -> DaftResult<Series>;
     fn mul(&self, rhs: &Series) -> DaftResult<Series>;

@@ -14,7 +14,7 @@ use crate::{
         DataArray,
     },
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
+    datatypes::{DataType, Field, ImageMode, PythonType},
     ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},

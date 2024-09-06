@@ -126,7 +126,7 @@ impl<'a> DaftImageBuffer<'a> {
             self.width(),
             self.height(),
             self.color(),
-            image::ImageFormat::from(image_format),
+            convert_img_fmt(image_format),
         )
         .map_err(|e| {
             DaftError::ValueError(format!(
@@ -303,5 +303,15 @@ impl<'a> From<DaftImageBuffer<'a>> for DynamicImage {
             DaftImageBuffer::RGB32F(buf) => image_buffer_cow_to_vec(buf).into(),
             DaftImageBuffer::RGBA32F(buf) => image_buffer_cow_to_vec(buf).into(),
         }
+    }
+}
+
+fn convert_img_fmt(fmt: ImageFormat) -> image::ImageFormat {
+    match fmt {
+        ImageFormat::PNG => image::ImageFormat::Png,
+        ImageFormat::JPEG => image::ImageFormat::Jpeg,
+        ImageFormat::TIFF => image::ImageFormat::Tiff,
+        ImageFormat::GIF => image::ImageFormat::Gif,
+        ImageFormat::BMP => image::ImageFormat::Bmp,
     }
 }

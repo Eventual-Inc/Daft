@@ -50,11 +50,6 @@ serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
 unicode-normalization = "0.1.23"
 
-[dependencies.image]
-default-features = false
-features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.24.7"
-
 [dependencies.numpy]
 optional = true
 version = "0.19"

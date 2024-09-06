@@ -7,7 +7,7 @@ use crate::{
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
-        ImageFormat, NullArray, UInt64Array, Utf8Array,
+        NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
@@ -413,35 +413,6 @@ where
             .replace('\n', "<br />")
     }
 }
-
-// impl ImageArray {
-//     pub fn html_value(&self, idx: usize) -> String {
-
-//     }
-// }
-
-// impl FixedShapeImageArray {
-//     pub fn html_value(&self, idx: usize) -> String {
-//         let maybe_image = self.as_image_obj(idx);
-//         let str_val = self.str_value(idx).unwrap();
-
-//         match maybe_image {
-//             None => "None".to_string(),
-//             Some(image) => {
-//                 let thumb = image.fit_to(128, 128);
-//                 let mut bytes: Vec<u8> = vec![];
-//                 let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-//                 thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
-//                 drop(writer);
-//                 format!(
-//                     "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-//                     base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-//                     str_val,
-//                 )
-//             }
-//         }
-//     }
-// }
 
 impl FixedShapeTensorArray {
     pub fn html_value(&self, idx: usize) -> String {

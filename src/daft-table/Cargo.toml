@@ -4,6 +4,7 @@ comfy-table = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-image = {path = "../daft-image", default-features = false}
 html-escape = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -11,7 +12,13 @@ rand = {workspace = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python",
+  "daft-image/python"
+]
 
 [package]
 edition = {workspace = true}

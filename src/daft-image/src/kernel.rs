@@ -9,6 +9,7 @@ use num_traits::FromPrimitive;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+#[allow(clippy::len_without_is_empty)]
 pub trait AsImageObj {
     fn name(&self) -> &str;
     fn len(&self) -> usize;
@@ -41,7 +42,7 @@ pub(crate) fn image_array_from_img_buffers(
 ) -> DaftResult<ImageArray> {
     use DaftImageBuffer::*;
     let is_all_u8 = inputs
-        .into_iter()
+        .iter()
         .filter_map(|b| b.as_ref())
         .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
     assert!(is_all_u8);
@@ -201,7 +202,7 @@ impl ImageOps for FixedShapeImageArray {
     {
         let result = resize_images(self, w, h);
         let mode = self.image_mode();
-        fixed_image_array_from_img_buffers(self.name(), result.as_slice(), &mode, h, w)
+        fixed_image_array_from_img_buffers(self.name(), result.as_slice(), mode, h, w)
     }
 
     fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray>
@@ -221,7 +222,7 @@ impl ImageOps for FixedShapeImageArray {
         };
         let result = crop_images(self, &mut bboxes_iterator);
 
-        image_array_from_img_buffers(self.name(), result.as_slice(), &Some(self.image_mode().clone()))
+        image_array_from_img_buffers(self.name(), result.as_slice(), &Some(*self.image_mode()))
     }
 
     fn resize_to_fixed_shape_image_array(
@@ -323,7 +324,7 @@ impl AsImageObj for FixedShapeImageArray {
                 let end = (idx + 1) * size as usize;
                 let slice_data = Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
                 let result = DaftImageBuffer::from_raw(mode, *width, *height, slice_data);
-    
+
                 assert_eq!(result.height(), *height);
                 assert_eq!(result.width(), *width);
                 Some(result)
@@ -333,10 +334,10 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
-fn encode_images<'a, Arr>(images: &'a Arr, image_format: ImageFormat) -> DaftResult<BinaryArray>
-where
-    Arr: AsImageObj,
-{
+fn encode_images<Arr: AsImageObj>(
+    images: &Arr,
+    image_format: ImageFormat,
+) -> DaftResult<BinaryArray> {
     let arrow_array = match image_format {
         ImageFormat::TIFF => {
             // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
@@ -421,10 +422,7 @@ where
     )
 }
 
-fn resize_images<'a, Arr>(images: &'a Arr, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
-where
-    Arr: AsImageObj,
-{
+fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>> {
     ImageBufferIter::new(images)
         .map(|img| img.map(|img| img.resize(w, h)))
         .collect::<Vec<_>>()
@@ -446,7 +444,28 @@ where
         .collect::<Vec<_>>()
 }
 
-pub fn html_value(arr: &ImageArray, idx: usize) -> String {
+pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
+    let maybe_image = arr.as_image_obj(idx);
+    let str_val = arr.str_value(idx).unwrap();
+
+    match maybe_image {
+        None => "None".to_string(),
+        Some(image) => {
+            let thumb = image.fit_to(128, 128);
+            let mut bytes: Vec<u8> = vec![];
+            let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+            thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+            drop(writer);
+            format!(
+                "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                base64::engine::general_purpose::STANDARD.encode(&mut bytes),
+                str_val,
+            )
+        }
+    }
+}
+
+pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 
