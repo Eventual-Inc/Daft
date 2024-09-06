@@ -15,7 +15,6 @@ arrow2 = {workspace = true, features = [
   "compute_substring",
   "io_ipc"
 ]}
-base64 = "0.22.0"
 bincode = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
