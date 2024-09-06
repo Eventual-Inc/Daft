@@ -24,7 +24,7 @@ pub use ops::cast_series_to_supertype;
 pub(crate) use self::series_like::SeriesLike;
 
 #[derive(Clone, Debug, Display)]
-#[display("{}", self.to_comfy_table())]
+#[display("{}\n", self.to_comfy_table())]
 pub struct Series {
     pub inner: Arc<dyn SeriesLike>,
 }
