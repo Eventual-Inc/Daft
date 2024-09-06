@@ -752,7 +752,7 @@ jobs:
     - name: Run Machete
       run: cargo machete --with-metadata
 
-  docbuild:
+  doctests:
     runs-on: ubuntu-latest
     continue-on-error: true
     env:
@@ -783,40 +783,47 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
-    - name: Build Daft in dev mode
+    - name: Run doctests
       run: |
         source activate
         maturin develop
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: docbuild-files
-        path: .
-
-  doc-tests:
-    runs-on: ubuntu-latest
-    needs: docbuild
-    steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: docbuild-files
-    - name: Run doctests
-      run: |
-        source venv/bin/activate
         pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
 
-  doc-gen:
+  docgen:
     runs-on: ubuntu-latest
-    needs: docbuild
+    continue-on-error: true
+    env:
+      python-version: '3.10'
+      DAFT_BOLD_TABLE_HEADERS: '0'
     steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
       with:
-        name: docbuild-files
-    - name: Generate docs
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-build
+        cache-all-crates: 'true'
+    - name: Set up Python ${{ env.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+    - name: Setup Virtual Env
       run: |
-        source venv/bin/activate
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+    - name: Install dependencies
+      run: |
+        uv pip install -r requirements-dev.txt
+    - name: Build docs
+      run: |
+        source activate
+        maturin develop
         cd docs/
         make html
     - name: Upload docs
