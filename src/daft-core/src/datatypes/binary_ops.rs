@@ -11,7 +11,7 @@ use super::DataType;
 
 // This is a stopgap to keep this logic separated from the DataTypes themselves
 // Once we convert daft-dsl to a root level crate, this logic should move there
-struct InferDataType<'a>(&'a DataType);
+pub(crate) struct InferDataType<'a>(&'a DataType);
 
 impl<'a> Display for InferDataType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -296,12 +296,6 @@ impl<'a> Shr for InferDataType<'a> {
         }
     }
 }
-
-impl_binary_trait_by_reference!(DataType, Add, add);
-impl_binary_trait_by_reference!(DataType, Sub, sub);
-impl_binary_trait_by_reference!(DataType, Mul, mul);
-impl_binary_trait_by_reference!(DataType, Div, div);
-impl_binary_trait_by_reference!(DataType, Rem, rem);
 
 pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     // Given two physical data types,

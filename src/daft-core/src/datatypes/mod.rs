@@ -7,6 +7,7 @@ mod binary_ops;
 mod matching;
 // mod time_unit;
 
+pub(crate) use binary_ops::InferDataType;
 pub mod prelude;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
