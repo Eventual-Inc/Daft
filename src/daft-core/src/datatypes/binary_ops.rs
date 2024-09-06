@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{impl_binary_trait_by_reference, utils::supertype::try_get_supertype};
 
-use super::DataType;
+use daft_schema::prelude::DataType;
 
 impl DataType {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {

@@ -1,7 +1,13 @@
-use crate::{
-    datatypes::{DataType, Field, ImageMode, TimeUnit},
-    ffi,
-};
+// use crate::{
+//     dtype::{DataType, Field, ImageMode, TimeUnit},
+//     ffi,
+// };
+
+use crate::dtype::DataType;
+use crate::field::Field;
+use crate::image_mode::ImageMode;
+
+use common_arrow_ffi as ffi;
 
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{
@@ -11,6 +17,8 @@ use pyo3::{
     types::{PyDict, PyString},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::time_unit::TimeUnit;
 
 #[pyclass]
 #[derive(Clone)]

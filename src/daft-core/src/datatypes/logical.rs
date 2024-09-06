@@ -2,13 +2,15 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     array::{ListArray, StructArray},
-    datatypes::{DaftLogicalType, DateType, Field},
+    datatypes::{DaftLogicalType, DateType},
     with_match_daft_logical_primitive_types,
 };
 use common_error::DaftResult;
 
+use daft_schema::prelude::{Field, DataType};
+
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    DaftArrayType, DaftDataType, DataArray, Decimal128Type, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
     TimeType, TimestampType,
 };
@@ -94,7 +96,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
         let daft_type = self.data_type();
         let arrow_logical_type = daft_type.to_arrow().unwrap();
         let physical_arrow_array = self.physical.data();
-        use crate::datatypes::DataType::*;
+        use DataType::*;
         match daft_type {
             // For wrapped primitive types, switch the datatype label on the arrow2 Array.
             Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {

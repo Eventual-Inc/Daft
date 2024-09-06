@@ -3,7 +3,7 @@ macro_rules! with_match_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     #[allow(unused_imports)]
     use $crate::datatypes::*;
 
@@ -55,7 +55,7 @@ macro_rules! with_match_physical_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     #[allow(unused_imports)]
     use $crate::datatypes::*;
 
@@ -92,7 +92,7 @@ macro_rules! with_match_arrow_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     use $crate::datatypes::*;
 
     match $key_type {
@@ -125,7 +125,7 @@ macro_rules! with_match_comparable_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     #[allow(unused_imports)]
     use $crate::datatypes::*;
 
@@ -156,7 +156,7 @@ macro_rules! with_match_hashable_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     #[allow(unused_imports)]
     use $crate::datatypes::*;
 
@@ -190,7 +190,7 @@ macro_rules! with_match_numeric_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     use $crate::datatypes::*;
 
     match $key_type {
@@ -214,7 +214,7 @@ macro_rules! with_match_integer_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     use $crate::datatypes::*;
 
     match $key_type {
@@ -235,7 +235,7 @@ macro_rules! with_match_float_and_null_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     use $crate::datatypes::*;
 
     match $key_type {
@@ -252,7 +252,7 @@ macro_rules! with_match_daft_logical_primitive_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::prelude::DataType::*;
     match $key_type {
         Decimal128(..) => __with_ty__! { i128 },
         Duration(..) => __with_ty__! { i64 },

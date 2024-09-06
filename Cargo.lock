@@ -1291,6 +1291,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-arrow-ffi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "pyo3",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1662,6 +1670,7 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "daft-scheduler",
+ "daft-schema",
  "daft-sql",
  "daft-stats",
  "daft-table",
@@ -1695,12 +1704,14 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 7.1.1",
+ "common-arrow-ffi",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
  "daft-minhash",
+ "daft-schema",
  "daft-sketch",
  "fastrand 2.1.0",
  "fnv",
@@ -2064,6 +2075,24 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "daft-schema"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "common-py-serde",
+ "html-escape",
+ "indexmap 2.3.0",
+ "num-derive",
+ "num-traits",
+ "pyo3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

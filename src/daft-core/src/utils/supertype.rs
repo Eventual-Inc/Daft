@@ -1,5 +1,5 @@
-use crate::datatypes::DataType;
-use crate::datatypes::TimeUnit;
+use daft_schema::dtype::DataType;
+use daft_schema::time_unit::TimeUnit;
 use common_error::DaftError;
 use common_error::DaftResult;
 

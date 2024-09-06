@@ -1,0 +1,10 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+arrow2 = {workspace = true}
+[features]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "common-arrow-ffi"
+version = {workspace = true}

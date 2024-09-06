@@ -25,8 +25,12 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
+
+daft-schema = {path = "../daft-schema", default-features = false}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+
 fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
@@ -68,7 +72,9 @@ python = [
   "dep:pyo3",
   "dep:numpy",
   "common-error/python",
-  "common-py-serde/python"
+  "common-py-serde/python",
+  "common-arrow-ffi/python",
+  "daft-schema/python",
 ]
 
 [package]

@@ -1,0 +1,28 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true, features = ["rc"]}
+arrow2 = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
+
+num-derive = {workspace = true}
+num-traits = {workspace = true}
+serde_json = {workspace = true}
+indexmap = {workspace = true}
+html-escape = {workspace = true}
+common-py-serde = {path = "../common/py-serde", default-features = false}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-display/python",
+  "common-py-serde/python",
+  "common-arrow-ffi/python"
+]
+
+[package]
+edition = {workspace = true}
+name = "daft-schema"
+version = {workspace = true}

@@ -2,7 +2,7 @@ mod fixed_size_list_array;
 pub mod from;
 pub mod growable;
 pub mod iterator;
-mod list_array;
+pub mod list_array;
 pub mod ops;
 pub mod pseudo_arrow;
 mod serdes;

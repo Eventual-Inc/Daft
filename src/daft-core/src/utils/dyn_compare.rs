@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::{datatypes::DataType, schema::Schema};
+use daft_schema::dtype::DataType;
 
 use arrow2::array::Array;
 use common_error::DaftError;
@@ -8,6 +8,7 @@ use common_error::DaftResult;
 
 use arrow2::array::dyn_ord::build_dyn_array_compare;
 use arrow2::array::dyn_ord::DynArrayComparator;
+use daft_schema::schema::Schema;
 
 pub type MultiDynArrayComparator =
     Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>;

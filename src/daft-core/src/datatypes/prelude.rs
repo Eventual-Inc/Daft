@@ -2,14 +2,12 @@
 pub use super::{
     BinaryType, BooleanType, ExtensionType, FixedSizeBinaryType, FixedSizeListType, Float32Type,
     Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, NullType, UInt16Type,
-    UInt32Type, UInt64Type, UInt8Type, Utf8Type,
+    UInt32Type, UInt64Type, UInt8Type, Utf8Type
 };
 
-// Import utility types and structs
-pub use super::{Field, FieldID, FieldRef, ImageFormat, ImageMode, TimeUnit};
 
-// Import DataType enum
-pub use super::DataType;
+// Import utility types and structs
+pub use daft_schema::prelude::*;
 
 // Conditionally import PythonArray if the 'python' feature is enabled
 #[cfg(feature = "python")]
