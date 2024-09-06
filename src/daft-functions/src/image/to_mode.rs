@@ -53,7 +53,7 @@ impl ScalarUDF for ImageToMode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_to_mode(self.mode),
+            [input] => daft_image::series::to_mode(input, self.mode),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

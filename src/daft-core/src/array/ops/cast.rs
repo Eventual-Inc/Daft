@@ -4,7 +4,8 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{
         growable::make_growable,
-        ops::{from_arrow::FromArrow, full::FullNull, image::ImageArraySidecarData},
+        image_array::ImageArraySidecarData,
+        ops::{from_arrow::FromArrow, full::FullNull},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{

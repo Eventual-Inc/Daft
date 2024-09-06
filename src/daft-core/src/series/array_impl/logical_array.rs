@@ -125,9 +125,9 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.str_value(idx)
             }
 
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
-            }
+            // fn html_value(&self, idx: usize) -> String {
+            //     self.0.html_value(idx)
+            // }
 
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
@@ -227,8 +227,8 @@ impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
+impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TensorArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
-impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(MapArray);

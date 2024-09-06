@@ -1,5 +1,3 @@
-use base64::Engine;
-
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::DataType,
@@ -16,8 +14,6 @@ use crate::{
     with_match_daft_types,
 };
 use common_error::DaftResult;
-
-use super::image::AsImageObj;
 
 // Default implementation of str_value: format the value with the given format string.
 macro_rules! impl_array_str_value {
@@ -418,51 +414,34 @@ where
     }
 }
 
-impl ImageArray {
-    pub fn html_value(&self, idx: usize) -> String {
-        let maybe_image = self.as_image_obj(idx);
-        let str_val = self.str_value(idx).unwrap();
+// impl ImageArray {
+//     pub fn html_value(&self, idx: usize) -> String {
 
-        match maybe_image {
-            None => "None".to_string(),
-            Some(image) => {
-                let thumb = image.fit_to(128, 128);
-                let mut bytes: Vec<u8> = vec![];
-                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
-                drop(writer);
-                format!(
-                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                    str_val,
-                )
-            }
-        }
-    }
-}
+//     }
+// }
 
-impl FixedShapeImageArray {
-    pub fn html_value(&self, idx: usize) -> String {
-        let maybe_image = self.as_image_obj(idx);
-        let str_val = self.str_value(idx).unwrap();
+// impl FixedShapeImageArray {
+//     pub fn html_value(&self, idx: usize) -> String {
+//         let maybe_image = self.as_image_obj(idx);
+//         let str_val = self.str_value(idx).unwrap();
 
-        match maybe_image {
-            None => "None".to_string(),
-            Some(image) => {
-                let thumb = image.fit_to(128, 128);
-                let mut bytes: Vec<u8> = vec![];
-                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
-                drop(writer);
-                format!(
-                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                    str_val,
-                )
-            }
-        }
-    }
-}
+//         match maybe_image {
+//             None => "None".to_string(),
+//             Some(image) => {
+//                 let thumb = image.fit_to(128, 128);
+//                 let mut bytes: Vec<u8> = vec![];
+//                 let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
+//                 thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+//                 drop(writer);
+//                 format!(
+//                     "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+//                     base64::engine::general_purpose::STANDARD.encode(&mut bytes),
+//                     str_val,
+//                 )
+//             }
+//         }
+//     }
+// }
 
 impl FixedShapeTensorArray {
     pub fn html_value(&self, idx: usize) -> String {

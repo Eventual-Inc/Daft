@@ -53,7 +53,7 @@ impl ScalarUDF for ImageEncode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_encode(self.image_format),
+            [input] => daft_image::series::encode(input, self.image_format),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

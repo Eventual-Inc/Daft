@@ -94,32 +94,33 @@ pub mod pylib {
     }
 
     #[pymodule]
-    fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-        refresh_logger(_py)?;
+    fn daft(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+        refresh_logger(py)?;
         init_tracing(crate::should_enable_chrome_trace());
 
-        common_daft_config::register_modules(_py, m)?;
-        common_system_info::register_modules(_py, m)?;
-        common_resource_request::register_modules(_py, m)?;
-        daft_core::register_modules(_py, m)?;
-        daft_core::python::register_modules(_py, m)?;
-        daft_local_execution::register_modules(_py, m)?;
-        daft_dsl::register_modules(_py, m)?;
-        daft_table::register_modules(_py, m)?;
-        daft_io::register_modules(_py, m)?;
-        daft_parquet::register_modules(_py, m)?;
-        daft_csv::register_modules(_py, m)?;
-        daft_json::register_modules(_py, m)?;
-        daft_plan::register_modules(_py, m)?;
-        daft_micropartition::register_modules(_py, m)?;
-        daft_scan::register_modules(_py, m)?;
-        daft_scheduler::register_modules(_py, m)?;
-        daft_sql::register_modules(_py, m)?;
-        daft_functions::register_modules(_py, m)?;
+        common_daft_config::register_modules(py, m)?;
+        common_system_info::register_modules(py, m)?;
+        common_resource_request::register_modules(py, m)?;
+        daft_core::register_modules(py, m)?;
+        daft_core::python::register_modules(py, m)?;
+        daft_local_execution::register_modules(py, m)?;
+        daft_dsl::register_modules(py, m)?;
+        daft_table::register_modules(py, m)?;
+        daft_io::register_modules(py, m)?;
+        daft_parquet::register_modules(py, m)?;
+        daft_csv::register_modules(py, m)?;
+        daft_json::register_modules(py, m)?;
+        daft_plan::register_modules(py, m)?;
+        daft_micropartition::register_modules(py, m)?;
+        daft_scan::register_modules(py, m)?;
+        daft_scheduler::register_modules(py, m)?;
+        daft_sql::register_modules(py, m)?;
+        daft_functions::register_modules(py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
+        daft_image::register_modules(py, m)?;
         Ok(())
     }
 }

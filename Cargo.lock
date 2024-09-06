@@ -1653,6 +1653,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-image",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -1800,6 +1801,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "daft-io",
  "futures",
  "pyo3",
@@ -1809,6 +1811,21 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
+]
+
+[[package]]
+name = "daft-image"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "base64 0.22.1",
+ "common-error",
+ "daft-core",
+ "image",
+ "log",
+ "num-traits",
+ "pyo3",
+ "serde",
 ]
 
 [[package]]
