@@ -1711,7 +1711,6 @@ dependencies = [
  "common-hashable-float-wrapper",
  "common-py-serde",
  "daft-minhash",
- "daft-schema",
  "daft-sketch",
  "fastrand 2.1.0",
  "fnv",
@@ -1968,6 +1967,7 @@ dependencies = [
  "async-stream",
  "bincode",
  "bytes",
+ "common-arrow-ffi",
  "common-error",
  "crossbeam-channel",
  "daft-core",
@@ -2143,6 +2143,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
+ "common-arrow-ffi",
  "common-error",
  "daft-core",
  "daft-dsl",

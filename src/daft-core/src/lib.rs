@@ -10,6 +10,7 @@ pub mod join;
 pub mod kernels;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod schema;
 pub mod series;
 pub mod utils;
 #[cfg(feature = "python")]

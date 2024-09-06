@@ -1,6 +1,5 @@
 use crate::array::ops::DaftHllMergeAggable;
-use crate::datatypes::prelude::*;
-use crate::prelude::ListArray;
+use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
 use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
@@ -24,7 +23,7 @@ impl Series {
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftSumAggable;
-        use DataType::*;
+        use crate::datatypes::DataType::*;
 
         match self.data_type() {
             // intX -> int64 (in line with numpy)

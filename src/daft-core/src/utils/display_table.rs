@@ -1,7 +1,7 @@
-use crate::series::Series;
-
-use daft_schema::field::Field;
-use daft_schema::time_unit::TimeUnit;
+use crate::{
+    datatypes::{Field, TimeUnit},
+    series::Series,
+};
 use common_daft_config::BOLD_TABLE_HEADERS_IN_DISPLAY;
 use itertools::Itertools;
 

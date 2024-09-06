@@ -8,4 +8,4 @@ pub use crate::image_mode::ImageMode;
 
 pub use crate::schema::{Schema, SchemaRef};
 
-pub use crate::time_unit::{TimeUnit, infer_timeunit_from_format_string};
+pub use crate::time_unit::{infer_timeunit_from_format_string, TimeUnit};

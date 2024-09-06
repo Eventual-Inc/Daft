@@ -38,8 +38,8 @@ use indexmap::IndexMap;
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    crate::ffi,
     crate::with_match_numeric_daft_types,
+    common_arrow_ffi as ffi,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn},
