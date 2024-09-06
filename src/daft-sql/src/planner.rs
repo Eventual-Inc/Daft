@@ -453,7 +453,13 @@ impl SQLPlanner {
                 let alias = alias.value.to_string();
                 Ok(vec![expr.alias(alias)])
             }
-            SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
+            SelectItem::UnnamedExpr(expr) => {
+                let expr = self.plan_expr(expr)?;
+                match *expr {
+                    Expr::Column(..) => Ok(vec![expr]),
+                    _ => Ok(vec![expr.alias(expr.to_string())]),
+                }
+            }
             SelectItem::Wildcard(WildcardAdditionalOptions {
                 opt_ilike,
                 opt_exclude,

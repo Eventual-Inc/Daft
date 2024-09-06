@@ -95,7 +95,14 @@ def test_fizzbuzz_sql():
 )
 def test_sql_expr(actual, expected):
     actual = daft.sql_expr(actual)
+    # Non plain-column-select expressions will be aliased with the representation
+    expected = expected.alias(repr(expected))
     assert repr(actual) == repr(expected)
+
+
+def test_sql_expr_plain_col():
+    # Plain-column-select expressions are NOT aliased (in dataframe they will retain their original name)
+    assert repr(daft.sql_expr("n")) == "col(n)"
 
 
 def test_sql_global_agg():
@@ -112,4 +119,4 @@ def test_sql_groupby_agg():
     df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
     catalog = SQLCatalog({"test": df})
     df = daft.sql("SELECT sum(v) FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert df.collect().to_pydict() == {"n": [1, 2], "v": [3, 7]}
+    assert df.collect().to_pydict() == {"n": [1, 2], "sum(col(v))": [3, 7]}
