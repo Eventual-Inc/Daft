@@ -74,6 +74,12 @@ from daft.logical.schema import Schema
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
+_RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
+try:
+    from ray.data.extensions import ArrowTensorType
+except ImportError:
+    _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
+
 
 @ray.remote
 def _glob_path_into_file_infos(
@@ -95,34 +101,35 @@ def _glob_path_into_file_infos(
 @ray.remote
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
-        return partition.to_arrow()
+        arrow_tbl = partition.to_arrow()
+
+        # Convert PyArrow FixedShapeTensor type to Ray Data's native ArrowTensorType
+        new_arrs = {}
+        for idx, field in enumerate(arrow_tbl.schema):
+            if isinstance(field.type, pa.FixedShapeTensorType):
+                new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
+                arrow_arr = arrow_tbl[field.name].combine_chunks()
+                storage_arr = arrow_arr.storage
+                list_size = storage_arr.type.list_size
+                new_storage_arr = pa.ListArray.from_arrays(
+                    pa.array(
+                        list(range(0, (len(arrow_arr) + 1) * list_size, list_size)),
+                        pa.int32(),
+                    ),
+                    storage_arr.values,
+                )
+                new_arrs[idx] = (
+                    pa.field(field.name, new_dtype),
+                    pa.ExtensionArray.from_storage(new_dtype, new_storage_arr),
+                )
+        for idx, (field, arr) in new_arrs.items():
+            arrow_tbl = arrow_tbl.set_column(idx, field, arr)
+
+        print(arrow_tbl)
+
+        return arrow_tbl
     except pa.ArrowInvalid:
         return partition.to_pylist()
-
-    # TODO: Implement this for Ray
-    # if dtype._is_tensor_type() or dtype._is_fixed_shape_tensor_type():
-    # if not _RAY_DATA_EXTENSIONS_AVAILABLE:
-    #     raise ValueError("Trying to convert tensors to Ray tensor dtypes, but Ray is not installed.")
-    # pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=True)
-    # if isinstance(pyarrow_dtype, ArrowTensorType):
-    #     assert dtype._is_fixed_shape_tensor_type()
-    #     arrow_series = self._series.to_arrow()
-    #     storage = arrow_series.storage
-    #     list_size = storage.type.list_size
-    #     storage = pa.ListArray.from_arrays(
-    #         pa.array(
-    #             list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
-    #             pa.int32(),
-    #         ),
-    #         storage.values,
-    #     )
-    #     return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
-    # else:
-    #     # Variable-shaped tensor columns can't be converted directly to Ray's variable-shaped tensor extension
-    #     # type since it expects all tensor elements to have the same number of dimensions, which Daft does not enforce.
-    #     # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
-    #     # elements have the same number of dimensions, without going through pylist roundtrip.
-    #     return ArrowTensorArray.from_numpy(self.to_pylist())
 
 
 @ray.remote

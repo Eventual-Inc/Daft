@@ -251,7 +251,7 @@ class Series:
         # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
         # TODO: Push this down into self._series.to_arrow()?
         if dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
+            pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
 
