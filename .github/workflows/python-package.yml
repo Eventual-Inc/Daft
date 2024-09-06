@@ -784,16 +784,12 @@ jobs:
     - name: Build Daft in development mode
       run: |
         source venv/bin/activate
-        maturin develop
-    - name: Create wheel package
-      run: |
-        source venv/bin/activate
-        pip wheel . -w ./dist
+        maturin build --debug
     - name: Upload built package
       uses: actions/upload-artifact@v4
       with:
         name: daft-docs-build-package
-        path: dist/*.whl
+        path: target/wheels/*.whl
 
   doctests:
     runs-on: ubuntu-latest
