@@ -11,7 +11,7 @@ use super::DataType;
 
 // This is a stopgap to keep this logic separated from the DataTypes themselves
 // Once we convert daft-dsl to a root level crate, this logic should move there
-pub(crate) struct InferDataType<'a>(&'a DataType);
+pub struct InferDataType<'a>(&'a DataType);
 
 impl<'a> Display for InferDataType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
