@@ -477,7 +477,9 @@ impl Decimal128Array {
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             DataType::Int128 => Ok(self.physical.clone().into_series()),
-            _ => {
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
+            DataType::Decimal128(_, _) => {
+                // Use the arrow2 Decimal128 casting logic.
                 let target_arrow_type = dtype.to_arrow()?;
                 let arrow_decimal_array = self
                     .as_arrow()
@@ -493,25 +495,13 @@ impl Decimal128Array {
                     },
                 )?;
 
-                // If the target type is also Logical, get the Arrow Physical.
-                let result_arrow_physical_array = {
-                    if dtype.is_logical() {
-                        let target_physical_type = dtype.to_physical().to_arrow()?;
-                        casted_arrow_array
-                            .as_any()
-                            .downcast_ref::<arrow2::array::PrimitiveArray<i128>>()
-                            .unwrap()
-                            .clone()
-                            .to(target_physical_type)
-                            .to_boxed()
-                    } else {
-                        casted_arrow_array
-                    }
-                };
-
                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, result_arrow_physical_array)
+                Series::from_arrow(new_field, casted_arrow_array)
             }
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Decimal128 to {}",
+                dtype
+            ))),
         }
     }
 }
