@@ -1,3 +1,0 @@
-[build]
-command = "./netlify-build.sh"
-publish = "build/html/"
