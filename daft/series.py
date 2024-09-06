@@ -1029,7 +1029,7 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(h, int):
             raise TypeError(f"expected int for h but got {type(h)}")
 
-        return Series._from_pyseries(image.resize(self._series,w, h))
+        return Series._from_pyseries(image.resize(self._series, w, h))
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
