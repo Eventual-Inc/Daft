@@ -1584,7 +1584,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────────────╮
             │ x                             ┆ time               │
             │ ---                           ┆ ---                │
-            │ Timestamp[Microseconds, None] ┆ Time(Microseconds) │
+            │ Timestamp[Microseconds, None] ┆ Time[Microseconds] │
             ╞═══════════════════════════════╪════════════════════╡
             │ 2021-01-01 00:01:01           ┆ 00:01:01           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
