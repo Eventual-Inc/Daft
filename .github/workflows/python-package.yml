@@ -783,15 +783,24 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
-    - name: Run doctests
+    - name: Build Daft in dev mode
       run: |
         source activate
         maturin develop
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: docbuild-files
+        path: .
 
   doc-tests:
     runs-on: ubuntu-latest
     needs: docbuild
     steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docbuild-files
     - name: Run doctests
       run: |
         source activate
@@ -801,6 +810,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: docbuild
     steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docbuild-files
     - name: Generate docs
       run: |
         source activate
@@ -811,6 +824,20 @@ jobs:
       with:
         name: html-docs
         path: docs/build/html
+    - name: Deploy to Netlify
+      uses: nwtgck/actions-netlify@v2.0
+      with:
+        publish-dir: ./docs/build/html
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: Deploy from GitHub Actions
+        enable-pull-request-comment: true
+        enable-commit-comment: false
+        overwrites-pull-request-comment: true
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      timeout-minutes: 1
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
