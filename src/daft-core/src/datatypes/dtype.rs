@@ -70,7 +70,7 @@ pub enum DataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    #[display("Time[{_0} {}]", _1.as_deref().map_or_else(|| "UTC".to_owned(), |zone| zone.to_owned()))]
+    #[display("Time[{_0} {}]", _1.as_deref().map_or_else(|| "(n/a)".to_owned(), |zone| zone.to_owned()))]
     Timestamp(TimeUnit, Option<String>),
 
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
@@ -105,7 +105,7 @@ pub enum DataType {
     List(Box<DataType>),
 
     /// A nested [`DataType`] with a given number of [`Field`]s.
-    #[display("{}", format_struct(_0)?)]
+    #[display("Struct[{}]", format_struct(_0)?)]
     Struct(Vec<Field>),
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.

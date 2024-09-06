@@ -21,7 +21,7 @@ pub type SchemaRef = Arc<Schema>;
 
 #[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-#[display("{}", make_schema_vertical_table(fields.values().map(Cow::Borrowed).collect::<Vec<_>>().as_slice()))]
+#[display("{}\n", make_schema_vertical_table(fields.values().map(Cow::Borrowed).collect::<Vec<_>>().as_slice()))]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
     pub fields: indexmap::IndexMap<String, Field>,
