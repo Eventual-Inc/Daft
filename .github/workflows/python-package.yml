@@ -803,7 +803,7 @@ jobs:
         name: docbuild-files
     - name: Run doctests
       run: |
-        source activate
+        source venv/bin/activate
         pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
 
   doc-gen:
@@ -816,7 +816,7 @@ jobs:
         name: docbuild-files
     - name: Generate docs
       run: |
-        source activate
+        source venv/bin/activate
         cd docs/
         make html
     - name: Upload docs
