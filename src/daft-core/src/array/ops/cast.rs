@@ -398,36 +398,13 @@ impl TimeArray {
 impl DurationArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::Duration(tu) => {
-                let self_tu = match self.data_type() {
-                    DataType::Duration(tu) => tu,
-                    _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
-                };
-                match self_tu.cmp(tu) {
-                    std::cmp::Ordering::Equal => Ok(self.clone().into_series()),
-                    std::cmp::Ordering::Greater => {
-                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?;
-                        Ok(
-                            DurationArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series(),
-                        )
-                    }
-                    std::cmp::Ordering::Less => {
-                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?;
-                        Ok(
-                            DurationArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series(),
-                        )
-                    }
-                }
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
-            dtype if dtype.is_numeric() => self.physical.cast(dtype),
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            DataType::Float32 => self.physical.cast(&DataType::Float32),
+            DataType::Float64 => self.physical.cast(&DataType::Float64),
+            DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => Err(DaftError::TypeError(format!(

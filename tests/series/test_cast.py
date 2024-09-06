@@ -872,6 +872,29 @@ def test_series_cast_timestamp(input_t, input, output_t, output) -> None:
 
 
 @pytest.mark.parametrize(
+    ["input_t", "input", "output_t", "output"],
+    [
+        (
+            DataType.time("ns"),
+            1000,
+            DataType.time("us"),
+            time(0, 0, 0, 1),
+        ),
+        (
+            DataType.time("us"),
+            1,
+            DataType.time("ns"),
+            time(0, 0, 0, 1),
+        ),
+    ],
+)
+def test_series_cast_time(input_t, input, output_t, output) -> None:
+    series = Series.from_pylist([input]).cast(input_t)
+    res = series.cast(output_t).to_pylist()[0]
+    assert res == output
+
+
+@pytest.mark.parametrize(
     ["timeunit", "sec_str"],
     [
         (TimeUnit.s(), ":01"),
@@ -981,6 +1004,24 @@ def test_series_cast_numeric_temporal(dtype, result_n1, result_0, result_p1) -> 
             datetime(1970, 1, 1, 0, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 0, 1),
         ),
+    ],
+)
+def test_series_cast_timestamp_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Timestamp -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
+        (
+            DataType.duration(TimeUnit.us()),
+            timedelta(microseconds=-1),
+            timedelta(microseconds=0),
+            timedelta(microseconds=1),
+        ),
         # Casting between duration types is currently not supported in Arrow2.
         # (
         #     DataType.duration(TimeUnit.s()),
@@ -994,11 +1035,23 @@ def test_series_cast_numeric_temporal(dtype, result_n1, result_0, result_p1) -> 
         #     timedelta(milliseconds=0),
         #     timedelta(milliseconds=1),
         # ),
+    ],
+)
+def test_series_cast_duration_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Duration -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
         (
-            DataType.duration(TimeUnit.us()),
-            timedelta(microseconds=-1),
-            timedelta(microseconds=0),
-            timedelta(microseconds=1),
+            DataType.date(),
+            date(1969, 12, 31),
+            date(1970, 1, 1),
+            date(1970, 1, 2),
         ),
     ],
 )
