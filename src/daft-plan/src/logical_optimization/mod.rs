@@ -5,4 +5,3 @@ mod rules;
 mod test;
 
 pub use optimizer::{Optimizer, OptimizerConfig};
-pub use rules::Transformed;

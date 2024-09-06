@@ -631,6 +631,31 @@ impl<T> Transformed<T> {
         f(self.data).map(|data| Transformed::new(data, self.transformed, self.tnr))
     }
 
+    /// Returns self if self is transformed, otherwise returns other.
+    pub fn or(self, other: Self) -> Self {
+        if self.transformed {
+            self
+        } else {
+            other
+        }
+    }
+
+    /// Maps a `Transformed<T>` to `Transformed<U>`,
+    /// by supplying a function to apply to a contained Yes value
+    /// as well as a function to apply to a contained No value.
+    #[inline]
+    pub fn map_yes_no<U, Y: FnOnce(T) -> U, N: FnOnce(T) -> U>(
+        self,
+        yes_op: Y,
+        no_op: N,
+    ) -> Transformed<U> {
+        if self.transformed {
+            Transformed::yes(yes_op(self.data))
+        } else {
+            Transformed::no(no_op(self.data))
+        }
+    }
+
     /// Maps the [`Transformed`] object to the result of the given `f`.
     pub fn transform_data<U, F: FnOnce(T) -> Result<Transformed<U>>>(
         self,
