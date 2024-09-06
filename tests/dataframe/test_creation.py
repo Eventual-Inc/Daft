@@ -13,7 +13,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
-from ray.data.extensions import ArrowTensorArray
 
 import daft
 from daft.api_annotations import APITypeError
@@ -187,25 +186,6 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
     # Check roundtrip.
     assert df.to_arrow() == expected
-
-
-def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
-    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    shape = (2, 2)
-    arr = np.ones((len(valid_data),) + shape)
-    ata = ArrowTensorArray.from_numpy(arr)
-    pydict["tensor"] = ata
-    t = pa.Table.from_pydict(pydict)
-    df = daft.from_arrow(t)
-    assert set(df.column_names) == set(t.column_names)
-    # Tensor type should be inferred.
-    expected_tensor_dtype = DataType.tensor(DataType.float64(), shape)
-    assert df.schema()["tensor"].dtype == expected_tensor_dtype
-    casted_variety = t.schema.field("variety").with_type(pa.large_string())
-    schema = t.schema.set(t.schema.get_field_index("variety"), casted_variety)
-    expected = t.cast(schema)
-    # Check roundtrip.
-    assert df.to_arrow(True) == expected
 
 
 @pytest.mark.skipif(

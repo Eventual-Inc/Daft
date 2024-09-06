@@ -169,25 +169,8 @@ class Table:
         """For compatibility with MicroPartition"""
         return self
 
-    def to_arrow(self, convert_large_arrays: bool = False) -> pa.Table:
-        python_fields = set()
-        for field in self.schema():
-            if field.dtype._is_python_type():
-                python_fields.add(field.name)
-        if python_fields:
-            table = {}
-            for colname in self.column_names():
-                column_series = self.get_column(colname)
-                if colname in python_fields:
-                    column = column_series.to_pylist()
-                else:
-                    column = column_series.to_arrow()
-                table[colname] = column
-
-            tab = pa.Table.from_pydict(table)
-        else:
-            tab = pa.Table.from_batches([self._table.to_arrow_record_batch()])
-
+    def to_arrow(self) -> pa.Table:
+        tab = pa.Table.from_pydict({colname: self.get_column(colname).to_arrow() for colname in self.column_names()})
         return tab
 
     def to_pydict(self) -> dict[str, list]:
@@ -209,16 +192,21 @@ class Table:
 
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
+
         python_fields = set()
+        tensor_fields = set()
         for field in self.schema():
             if field.dtype._is_python_type():
                 python_fields.add(field.name)
-        if python_fields:
-            # Use Python list representation for Python typed columns.
+            elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
+                tensor_fields.add(field.name)
+
+        if python_fields or tensor_fields:
             table = {}
             for colname in self.column_names():
                 column_series = self.get_column(colname)
-                if colname in python_fields:
+                # Use Python list representation for Python typed columns or tensor columns (return as numpy)
+                if colname in python_fields or colname in tensor_fields:
                     column = column_series.to_pylist()
                 else:
                     # Arrow-native field, so provide column as Arrow array.
