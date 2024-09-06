@@ -12,7 +12,6 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 try:
     from ray.data.extensions import (
-        ArrowTensorArray,
         ArrowTensorType,
         ArrowVariableShapedTensorType,
     )
@@ -242,40 +241,21 @@ class Series:
     def datatype(self) -> DataType:
         return DataType._from_pydatatype(self._series.data_type())
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Array:
+    def to_arrow(self) -> pa.Array:
         """
         Convert this Series to an pyarrow array.
         """
         dtype = self.datatype()
-        if cast_tensors_to_ray_tensor_dtype and (dtype._is_tensor_type() or dtype._is_fixed_shape_tensor_type()):
-            if not _RAY_DATA_EXTENSIONS_AVAILABLE:
-                raise ValueError("Trying to convert tensors to Ray tensor dtypes, but Ray is not installed.")
-            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=True)
-            if isinstance(pyarrow_dtype, ArrowTensorType):
-                assert dtype._is_fixed_shape_tensor_type()
-                arrow_series = self._series.to_arrow()
-                storage = arrow_series.storage
-                list_size = storage.type.list_size
-                storage = pa.ListArray.from_arrays(
-                    pa.array(
-                        list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
-                        pa.int32(),
-                    ),
-                    storage.values,
-                )
-                return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
-            else:
-                # Variable-shaped tensor columns can't be converted directly to Ray's variable-shaped tensor extension
-                # type since it expects all tensor elements to have the same number of dimensions, which Daft does not enforce.
-                # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
-                # elements have the same number of dimensions, without going through pylist roundtrip.
-                return ArrowTensorArray.from_numpy(self.to_pylist())
-        elif dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
+        arrow_arr = self._series.to_arrow()
+
+        # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
+        # TODO: Push this down into self._series.to_arrow()?
+        if dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
             pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-        else:
-            return self._series.to_arrow()
+
+        return arrow_arr
 
     def to_pylist(self) -> list:
         """

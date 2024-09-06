@@ -95,7 +95,31 @@ def _glob_path_into_file_infos(
 @ray.remote
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
-        return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
+        return partition.to_arrow()
+        # TODO: Apply conversions here!!
+        # if dtype._is_tensor_type() or dtype._is_fixed_shape_tensor_type():
+        # if not _RAY_DATA_EXTENSIONS_AVAILABLE:
+        #     raise ValueError("Trying to convert tensors to Ray tensor dtypes, but Ray is not installed.")
+        # pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=True)
+        # if isinstance(pyarrow_dtype, ArrowTensorType):
+        #     assert dtype._is_fixed_shape_tensor_type()
+        #     arrow_series = self._series.to_arrow()
+        #     storage = arrow_series.storage
+        #     list_size = storage.type.list_size
+        #     storage = pa.ListArray.from_arrays(
+        #         pa.array(
+        #             list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
+        #             pa.int32(),
+        #         ),
+        #         storage.values,
+        #     )
+        #     return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
+        # else:
+        #     # Variable-shaped tensor columns can't be converted directly to Ray's variable-shaped tensor extension
+        #     # type since it expects all tensor elements to have the same number of dimensions, which Daft does not enforce.
+        #     # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
+        #     # elements have the same number of dimensions, without going through pylist roundtrip.
+        #     return ArrowTensorArray.from_numpy(self.to_pylist())
     except pa.ArrowInvalid:
         return partition.to_pylist()
 
