@@ -18,7 +18,7 @@ pub mod pylib {
     pub fn read_parquet(
         py: Python,
         uri: &str,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
@@ -92,7 +92,7 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
@@ -131,8 +131,8 @@ pub mod pylib {
     #[pyfunction]
     pub fn read_parquet_bulk(
         py: Python,
-        uris: Vec<&str>,
-        columns: Option<Vec<&str>>,
+        uris: Vec<String>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -153,7 +153,7 @@ pub mod pylib {
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             Ok(crate::read::read_parquet_bulk(
-                uris.as_ref(),
+                uris.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_ref(),
                 columns.as_deref(),
                 start_offset,
                 num_rows,
@@ -179,8 +179,8 @@ pub mod pylib {
     #[pyfunction]
     pub fn read_parquet_into_pyarrow_bulk(
         py: Python,
-        uris: Vec<&str>,
-        columns: Option<Vec<&str>>,
+        uris: Vec<String>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -199,7 +199,7 @@ pub mod pylib {
             );
 
             crate::read::read_parquet_into_pyarrow_bulk(
-                uris.as_ref(),
+                uris.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_ref(),
                 columns.as_deref(),
                 start_offset,
                 num_rows,

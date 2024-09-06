@@ -127,7 +127,7 @@ fn run_glob_parallel(
 
 impl GlobScanOperator {
     pub fn try_new(
-        glob_paths: &[&str],
+        glob_paths: Vec<String>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
@@ -244,7 +244,7 @@ impl GlobScanOperator {
             false => schema.expect("Schema must be provided if infer_schema is false"),
         };
         Ok(Self {
-            glob_paths: glob_paths.iter().map(|s| s.to_string()).collect(),
+            glob_paths,
             file_format_config,
             schema,
             storage_config,

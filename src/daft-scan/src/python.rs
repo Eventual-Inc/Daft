@@ -114,7 +114,7 @@ pub mod pylib {
         #[staticmethod]
         pub fn glob_scan(
             py: Python,
-            glob_path: Vec<&str>,
+            glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             infer_schema: bool,
@@ -122,7 +122,7 @@ pub mod pylib {
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path.as_slice(),
+                    glob_path,
                     file_format_config.into(),
                     storage_config.into(),
                     infer_schema,

@@ -569,7 +569,7 @@ impl PyMicroPartition {
     pub fn read_parquet(
         py: Python,
         uri: &str,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
@@ -613,8 +613,8 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn read_parquet_bulk(
         py: Python,
-        uris: Vec<&str>,
-        columns: Option<Vec<&str>>,
+        uris: Vec<String>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -634,7 +634,7 @@ impl PyMicroPartition {
             );
 
             crate::micropartition::read_parquet_into_micropartition(
-                uris.as_ref(),
+                uris.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_ref(),
                 columns.as_deref(),
                 start_offset,
                 num_rows,
