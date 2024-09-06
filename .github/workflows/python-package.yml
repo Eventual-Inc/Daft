@@ -752,12 +752,10 @@ jobs:
     - name: Run Machete
       run: cargo machete --with-metadata
 
-  doctests:
+  docs-build:
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       python-version: '3.10'
-      DAFT_BOLD_TABLE_HEADERS: '0'
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -783,14 +781,51 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
+    - name: Build Daft in development mode
+      run: |
+        source venv/bin/activate
+        maturin develop
+    - name: Create wheel package
+      run: |
+        source venv/bin/activate
+        pip wheel . -w ./dist
+    - name: Upload built package
+      uses: actions/upload-artifact@v4
+      with:
+        name: daft-docs-build-package
+        path: dist/*.whl
+
+  doctests:
+    runs-on: ubuntu-latest
+    needs: docs-build
+    continue-on-error: true
+    env:
+      python-version: '3.10'
+      DAFT_BOLD_TABLE_HEADERS: '0'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - name: Download built package
+      uses: actions/download-artifact@v4
+      with:
+        name: daft-docs-build-package
+        path: ./dist
+    - name: Install Daft and dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install uv
+        uv pip install -r requirements-dev.txt
+        uv pip install ./dist/*.whl
     - name: Run doctests
       run: |
-        source activate
-        maturin develop
         pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
 
   docgen:
     runs-on: ubuntu-latest
+    needs: docs-build
     continue-on-error: true
     env:
       python-version: '3.10'
@@ -812,18 +847,20 @@ jobs:
         cache-dependency-path: |
           pyproject.toml
           requirements-dev.txt
-    - name: Setup Virtual Env
+    - name: Download built package
+      uses: actions/download-artifact@v4
+      with:
+        name: daft-docs-build-package
+        path: ./dist
+    - name: Install Daft and dependencies
       run: |
         python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        source venv/bin/activate
         pip install uv
-    - name: Install dependencies
-      run: |
         uv pip install -r requirements-dev.txt
+        uv pip install ./dist/*.whl
     - name: Build docs
       run: |
-        source activate
-        maturin develop
         cd docs/
         make html
     - name: Upload docs
