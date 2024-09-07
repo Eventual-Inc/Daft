@@ -98,8 +98,7 @@ repos:
     description: Lint rust sources
     entry: cargo clippy
     language: system
-    # args: [--workspace, --all-features, --, -D, warnings]
-    args: [--workspace, --all-features]
+    args: [--workspace, --all-features, --, -D, warnings]
     types: [rust]
     pass_filenames: false
 

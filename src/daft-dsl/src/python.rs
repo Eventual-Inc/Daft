@@ -103,7 +103,7 @@ pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
+pub fn lit(item: Bound<'_, PyAny>) -> PyResult<PyExpr> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
         Ok(crate::lit(val).into())
@@ -127,7 +127,7 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     } else if let Ok(pystr) = item.downcast::<PyString>() {
         Ok(crate::lit(
             pystr
-                .to_str()
+                .extract::<String>()
                 .expect("could not transform Python string to Rust Unicode"),
         )
         .into())
@@ -147,9 +147,8 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 // * `return_dtype` - returned column's DataType
 #[pyfunction]
 pub fn stateless_udf(
-    py: Python,
     name: &str,
-    partial_stateless_udf: &PyAny,
+    partial_stateless_udf: PyObject,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
@@ -165,9 +164,6 @@ pub fn stateless_udf(
         }
     }
 
-    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
-    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let partial_stateless_udf = partial_stateless_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
         expr: stateless_udf(
@@ -189,13 +185,12 @@ pub fn stateless_udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn stateful_udf(
-    py: Python,
     name: &str,
-    partial_stateful_udf: &PyAny,
+    partial_stateful_udf: PyObject,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
-    init_args: Option<&PyAny>,
+    init_args: Option<PyObject>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
 ) -> PyResult<PyExpr> {
@@ -209,11 +204,8 @@ pub fn stateful_udf(
         }
     }
 
-    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
-    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let partial_stateful_udf = partial_stateful_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    let init_args = init_args.map(|args| args.to_object(py));
+    let init_args = init_args.map(|args| args.into());
     Ok(PyExpr {
         expr: stateful_udf(
             name,
@@ -221,7 +213,7 @@ pub fn stateful_udf(
             &expressions_map,
             return_dtype.dtype,
             resource_request,
-            init_args.map(|a| a.into()),
+            init_args,
             batch_size,
             concurrency,
         )?

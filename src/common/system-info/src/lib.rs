@@ -41,7 +41,7 @@ impl SystemInfo {
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_class::<SystemInfo>()?;
     Ok(())
 }

@@ -57,20 +57,20 @@ impl PyDaftPlanningConfig {
         let bin_data = bincode::serialize(self.config.as_ref())
             .expect("DaftPlanningConfig should be serializable to bytes");
         Ok((
-            Self::type_object(py)
+            Self::type_object_bound(py)
                 .getattr("_from_serialized")?
-                .to_object(py),
+                .into(),
             (bin_data,),
         ))
     }
 
     #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftPlanningConfig> {
+    fn _from_serialized(bin_data: Vec<u8>) -> PyDaftPlanningConfig {
         let daft_planning_config: DaftPlanningConfig = bincode::deserialize(bin_data.as_slice())
             .expect("DaftExecutionConfig should be deserializable from bytes");
-        Ok(PyDaftPlanningConfig {
+        PyDaftPlanningConfig {
             config: daft_planning_config.into(),
-        })
+        }
     }
 }
 
@@ -269,9 +269,9 @@ impl PyDaftExecutionConfig {
         let bin_data = bincode::serialize(self.config.as_ref())
             .expect("DaftExecutionConfig should be serializable to bytes");
         Ok((
-            Self::type_object(py)
+            Self::type_object_bound(py)
                 .getattr("_from_serialized")?
-                .to_object(py),
+                .into(),
             (bin_data,),
         ))
     }

@@ -77,18 +77,17 @@ macro_rules! py_binary_op_utilfn {
         let right_pylist = PySeries::from(rhs.clone()).to_pylist()?;
 
         let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-            let py_operator = PyModule::import(py, pyo3::intern!(py, "operator"))?
-                .getattr(pyo3::intern!(py, $pyoperator))?;
+            let py_operator = PyModule::import_bound(py, "operator")?.getattr(($pyoperator))?;
 
-            let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
-                .getattr(pyo3::intern!(py, $utilfn))?
+            let result_pylist = PyModule::import_bound(py, "daft.utils")?
+                .getattr(($utilfn))?
                 .call1((py_operator, left_pylist, right_pylist))?;
 
-            PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                .getattr(pyo3::intern!(py, "Series"))?
-                .getattr(pyo3::intern!(py, "from_pylist"))?
-                .call1((result_pylist, lhs.name(), pyo3::intern!(py, "disallow")))?
-                .getattr(pyo3::intern!(py, "_series"))?
+            PyModule::import_bound(py, "daft.series")?
+                .getattr("Series")?
+                .getattr("from_pylist")?
+                .call1((result_pylist, lhs.name(), ("disallow")))?
+                .getattr("_series")?
                 .extract()
         })?
         .into();
@@ -112,19 +111,15 @@ pub(super) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<
     let right_pylist = PySeries::from(rhs_casted.clone()).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
-            .getattr(pyo3::intern!(py, "python_list_membership_check"))?
+        let result_pylist = PyModule::import_bound(py, "daft.utils")?
+            .getattr("python_list_membership_check")?
             .call1((left_pylist, right_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-            .getattr(pyo3::intern!(py, "Series"))?
-            .getattr(pyo3::intern!(py, "from_pylist"))?
-            .call1((
-                result_pylist,
-                lhs_casted.name(),
-                pyo3::intern!(py, "disallow"),
-            ))?
-            .getattr(pyo3::intern!(py, "_series"))?
+        PyModule::import_bound(py, "daft.series")?
+            .getattr("Series")?
+            .getattr("from_pylist")?
+            .call1((result_pylist, lhs_casted.name(), ("disallow")))?
+            .getattr("_series")?
             .extract()
     })?
     .into();
@@ -177,19 +172,15 @@ pub(super) fn py_between_op_utilfn(
     let upper_pylist = PySeries::from(upper_casted.clone()).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
-            .getattr(pyo3::intern!(py, "python_list_between_check"))?
+        let result_pylist = PyModule::import_bound(py, "daft.utils")?
+            .getattr("python_list_between_check")?
             .call1((value_pylist, lower_pylist, upper_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-            .getattr(pyo3::intern!(py, "Series"))?
-            .getattr(pyo3::intern!(py, "from_pylist"))?
-            .call1((
-                result_pylist,
-                value_casted.name(),
-                pyo3::intern!(py, "disallow"),
-            ))?
-            .getattr(pyo3::intern!(py, "_series"))?
+        PyModule::import_bound(py, "daft.series")?
+            .getattr("Series")?
+            .getattr("from_pylist")?
+            .call1((result_pylist, value_casted.name(), ("disallow")))?
+            .getattr("_series")?
             .extract()
     })?
     .into();

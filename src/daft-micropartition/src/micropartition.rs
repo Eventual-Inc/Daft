@@ -385,7 +385,7 @@ fn materialize_scan_task(
                     })?
                 }
                 FileFormatConfig::PythonFunction => {
-                    use pyo3::ToPyObject;
+                    use pyo3::{types::PyAnyMethods, PyObject};
 
                     let table_iterators = scan_task.sources.iter().map(|source| {
                         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -397,8 +397,13 @@ fn materialize_scan_task(
                                 ..
                             } => {
                                 Python::with_gil(|py| {
-                                    let func = py.import(pyo3::types::PyString::new(py, module)).unwrap_or_else(|_| panic!("Cannot import factory function from module {module}")).getattr(pyo3::types::PyString::new(py, func_name)).unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                                    Ok(func.call(func_args.to_pytuple(py), None).with_context(|_| PyIOSnafu)?.downcast::<pyo3::types::PyIterator>().expect("Function must return an iterator of tables")).map(|it| it.to_object(py))
+                                    let func = py.import_bound(module.as_str())
+                                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
+                                        .getattr(func_name.as_str())
+                                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                                    func.call(func_args.to_pytuple(py), None)
+                                        .with_context(|_| PyIOSnafu)
+                                        .map(Into::<PyObject>::into)
                                 })
                             },
                             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
@@ -420,8 +425,9 @@ fn materialize_scan_task(
                             // Grab the GIL to call next() on the iterator, and then release it once we have the Table
                             let table = match Python::with_gil(|py| {
                                 iterator
-                                    .downcast::<pyo3::types::PyIterator>(py)
-                                    .unwrap()
+                                    .downcast_bound::<pyo3::types::PyIterator>(py)
+                                    .expect("Function must return an iterator of tables")
+                                    .clone()
                                     .next()
                                     .map(|result| {
                                         result

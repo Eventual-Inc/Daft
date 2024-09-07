@@ -8,7 +8,7 @@ pub mod pylib {
     use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
-    use pyo3::{pyfunction, types::PyModule, PyResult, Python};
+    use pyo3::{pyfunction, types::PyModule, Bound, PyResult, Python};
     use std::{collections::BTreeMap, sync::Arc};
 
     use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
@@ -68,20 +68,20 @@ pub mod pylib {
         schema: arrow2::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
-        pyarrow: &PyModule,
+        pyarrow: Bound<'_, PyModule>,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(a, py, pyarrow))
+                    .map(|a| to_py_array(a, py, pyarrow.clone()))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(f, py, pyarrow))
+            .map(|f| field_to_py(f, pyarrow.clone()))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
@@ -124,7 +124,7 @@ pub mod pylib {
             )
         })?;
         let (schema, all_arrays, num_rows) = read_parquet_result;
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let pyarrow = py.import_bound("pyarrow")?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
@@ -211,11 +211,17 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let pyarrow = py.import_bound("pyarrow")?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays, num_rows)| {
-                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows, pyarrow)
+                convert_pyarrow_parquet_read_result_into_py(
+                    py,
+                    s,
+                    all_arrays,
+                    num_rows,
+                    pyarrow.clone(),
+                )
             })
             .collect::<PyResult<Vec<_>>>()
     }
@@ -278,12 +284,21 @@ pub mod pylib {
         })
     }
 }
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_into_pyarrow))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_into_pyarrow_bulk))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_bulk))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_schema))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::read_parquet_into_pyarrow,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::read_parquet_into_pyarrow_bulk,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet_bulk, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet_schema, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::read_parquet_statistics,
+        parent
+    )?)?;
     Ok(())
 }

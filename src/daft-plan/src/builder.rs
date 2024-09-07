@@ -527,7 +527,7 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
@@ -535,7 +535,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            cache_entry.to_object(cache_entry.py()),
+            cache_entry,
             schema.into(),
             num_partitions,
             size_bytes,

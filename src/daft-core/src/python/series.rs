@@ -33,7 +33,7 @@ pub struct PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn from_arrow(name: &str, pyarrow_array: &PyAny) -> PyResult<Self> {
+    pub fn from_arrow(name: &str, pyarrow_array: Bound<'_, PyAny>) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(pyarrow_array)?;
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
@@ -42,7 +42,7 @@ impl PySeries {
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: &PyAny, pyobj: &str) -> PyResult<Self> {
+    pub fn from_pylist(name: &str, pylist: Bound<'_, PyAny>, pyobj: &str) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let py = pylist.py();
         let dtype = match pyobj {
@@ -65,14 +65,14 @@ impl PySeries {
     pub fn to_pylist(&self) -> PyResult<PyObject> {
         let pseudo_arrow_array = self.series.python()?.as_arrow();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
-        Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
+        Python::with_gil(|py| Ok(PyList::new_bound(py, pyobj_vec).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
+            let pyarrow = py.import_bound("pyarrow")?;
             ffi::to_py_array(arrow_array, py, pyarrow)
         })
     }
@@ -724,12 +724,12 @@ impl PySeries {
 
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
         let values = bincode::serialize(&self.series).unwrap();
-        Ok(PyBytes::new(py, &values).to_object(py))
+        Ok(PyBytes::new_bound(py, &values).into())
     }
 
     #[staticmethod]
-    pub fn _debug_bincode_deserialize(bytes: &PyBytes) -> PyResult<Self> {
-        let values = bincode::deserialize::<Series>(bytes.as_bytes()).unwrap();
+    pub fn _debug_bincode_deserialize(bytes: &[u8]) -> PyResult<Self> {
+        let values = bincode::deserialize::<Series>(bytes).unwrap();
         Ok(Self { series: values })
     }
 
@@ -756,28 +756,22 @@ fn infer_daft_dtype_for_sequence(
     _name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
-        .import(pyo3::intern!(py, "PIL.Image"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
-    let np_ndarray_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
-    let np_generic_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
+        .import_bound("PIL.Image")
+        .and_then(|m| m.getattr("Image"));
+    let np_ndarray_type = py.import_bound("numpy").and_then(|m| m.getattr("ndarray"));
+    let np_generic_type = py.import_bound("numpy").and_then(|m| m.getattr("generic"));
     let from_numpy_dtype = {
-        py.import(pyo3::intern!(py, "daft.datatype"))?
-            .getattr(pyo3::intern!(py, "DataType"))?
-            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
+        py.import_bound("daft.datatype")?
+            .getattr("DataType")?
+            .getattr("from_numpy_dtype")?
     };
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
-        let obj = obj.as_ref(py);
-        if let Ok(pil_image_type) = py_pil_image_type
+        let obj = obj.bind(py);
+        if let Ok(pil_image_type) = &py_pil_image_type
             && obj.is_instance(pil_image_type)?
         {
-            let mode_str = obj
-                .getattr(pyo3::intern!(py, "mode"))?
-                .extract::<String>()?;
+            let mode_str = obj.getattr("mode")?.extract::<String>()?;
             let mode = ImageMode::from_pil_mode_str(&mode_str)?;
             match &dtype {
                 Some(DataType::Image(Some(existing_mode))) => {
@@ -798,19 +792,19 @@ fn infer_daft_dtype_for_sequence(
                     break;
                 }
             }
-        } else if let Ok(np_ndarray_type) = np_ndarray_type
-            && let Ok(np_generic_type) = np_generic_type
+        } else if let Ok(np_ndarray_type) = &np_ndarray_type
+            && let Ok(np_generic_type) = &np_generic_type
             && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
         {
-            let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
+            let np_dtype = obj.getattr("dtype")?;
             let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| {
-                dt.getattr(pyo3::intern!(py, "_dtype"))
+                dt.getattr("_dtype")
                     .unwrap()
                     .extract::<PyDataType>()
                     .unwrap()
                     .dtype
             });
-            let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
+            let shape: Vec<u64> = obj.getattr("shape")?.extract()?;
             let inferred_dtype = match inferred_inner_dtype {
                 Ok(inferred_inner_dtype) if shape.len() == 1 => {
                     Some(DataType::List(Box::new(inferred_inner_dtype)))

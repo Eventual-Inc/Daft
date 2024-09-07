@@ -11,10 +11,10 @@ pub mod python;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::sql))?;
-    parent.add_wrapped(wrap_pyfunction!(python::sql_expr))?;
+    parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
     Ok(())
 }
 

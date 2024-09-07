@@ -21,8 +21,8 @@ impl PythonTablesFactoryArgs {
         Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
     }
 
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
-        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
+        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
     }
 }
 
@@ -156,7 +156,7 @@ pub mod pylib {
 
     impl PythonScanOperatorBridge {
         fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
-            let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
+            let result = abc.call_method0(py, "partitioning_keys")?;
             let result = result.extract::<&PyList>(py)?;
             result
                 .into_iter()
@@ -165,31 +165,30 @@ pub mod pylib {
         }
 
         fn _schema(abc: &PyObject, py: Python) -> PyResult<SchemaRef> {
-            let python_schema = abc.call_method0(py, pyo3::intern!(py, "schema"))?;
+            let python_schema = abc.call_method0(py, "schema")?;
             let pyschema = python_schema
-                .getattr(py, pyo3::intern!(py, "_schema"))?
+                .getattr(py, "_schema")?
                 .extract::<PySchema>(py)?;
             Ok(pyschema.schema)
         }
 
         fn _can_absorb_filter(abc: &PyObject, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_filter"))?
+            abc.call_method0(py, "can_absorb_filter")?
                 .extract::<bool>(py)
         }
 
         fn _can_absorb_limit(abc: &PyObject, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_limit"))?
+            abc.call_method0(py, "can_absorb_limit")?
                 .extract::<bool>(py)
         }
 
         fn _can_absorb_select(abc: &PyObject, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
+            abc.call_method0(py, "can_absorb_select")?
                 .extract::<bool>(py)
         }
 
         fn _display_name(abc: &PyObject, py: Python) -> PyResult<String> {
-            abc.call_method0(py, pyo3::intern!(py, "display_name"))?
-                .extract::<String>(py)
+            abc.call_method0(py, "display_name")?.extract::<String>(py)
         }
     }
 
@@ -246,10 +245,8 @@ pub mod pylib {
         > {
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.into()).into_py(py);
-                let pyiter =
-                    self.operator
-                        .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_object(pyiter.as_ref(py))?;
+                let pyiter = self.operator.call_method1(py, "to_scan_tasks", (pypd,))?;
+                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -402,7 +399,7 @@ pub mod pylib {
             py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<&PyAny>,
+            func_args: Vec<Bound<'_, PyAny>>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -580,7 +577,7 @@ pub mod pylib {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;

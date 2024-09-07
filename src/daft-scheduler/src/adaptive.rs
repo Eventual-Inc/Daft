@@ -59,13 +59,12 @@ impl AdaptivePhysicalPlanScheduler {
         &mut self,
         source_id: usize,
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
-        let cache_entry = cache_entry.into();
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan

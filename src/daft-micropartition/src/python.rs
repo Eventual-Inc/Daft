@@ -115,12 +115,12 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn from_arrow_record_batches(
         py: Python,
-        record_batches: Vec<&PyAny>,
+        record_batches: Vec<Bound<'_, PyAny>>,
         schema: &PySchema,
     ) -> PyResult<Self> {
         // TODO: Cleanup and refactor code for sharing with Table
         let tables = record_batches
-            .iter()
+            .into_iter()
             .map(|rb| daft_table::ffi::record_batches_to_table(py, &[rb], schema.schema.clone()))
             .collect::<PyResult<Vec<_>>>()?;
 
@@ -658,17 +658,15 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn _from_unloaded_table_state(
-        schema_bytes: &PyBytes,
-        loading_scan_task_bytes: &PyBytes,
-        metadata_bytes: &PyBytes,
-        statistics_bytes: &PyBytes,
+        schema_bytes: &[u8],
+        loading_scan_task_bytes: &[u8],
+        metadata_bytes: &[u8],
+        statistics_bytes: &[u8],
     ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
-        let scan_task =
-            bincode::deserialize::<ScanTask>(loading_scan_task_bytes.as_bytes()).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
-        let statistics =
-            bincode::deserialize::<Option<TableStatistics>>(statistics_bytes.as_bytes()).unwrap();
+        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
+        let scan_task = bincode::deserialize::<ScanTask>(loading_scan_task_bytes).unwrap();
+        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
+        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
 
         Ok(MicroPartition {
             schema: Arc::new(schema),
@@ -682,23 +680,18 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn _from_loaded_table_state(
         py: Python,
-        schema_bytes: &PyBytes,
+        schema_bytes: &[u8],
         table_objs: Vec<PyObject>,
-        metadata_bytes: &PyBytes,
-        statistics_bytes: &PyBytes,
+        metadata_bytes: &[u8],
+        statistics_bytes: &[u8],
     ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
-        let statistics =
-            bincode::deserialize::<Option<TableStatistics>>(statistics_bytes.as_bytes()).unwrap();
+        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
+        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
+        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
 
         let tables = table_objs
             .into_iter()
-            .map(|p| {
-                Ok(p.getattr(py, pyo3::intern!(py, "_table"))?
-                    .extract::<PyTable>(py)?
-                    .table)
-            })
+            .map(|p| Ok(p.getattr(py, "_table")?.extract::<PyTable>(py)?.table))
             .collect::<PyResult<Vec<_>>>()?;
 
         Ok(MicroPartition {
@@ -711,35 +704,36 @@ impl PyMicroPartition {
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
-        let schema_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.schema).unwrap());
+        let schema_bytes = PyBytes::new_bound(py, &bincode::serialize(&self.inner.schema).unwrap());
 
         let py_metadata_bytes =
-            PyBytes::new(py, &bincode::serialize(&self.inner.metadata).unwrap());
-        let py_stats_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.statistics).unwrap());
+            PyBytes::new_bound(py, &bincode::serialize(&self.inner.metadata).unwrap());
+        let py_stats_bytes =
+            PyBytes::new_bound(py, &bincode::serialize(&self.inner.statistics).unwrap());
 
         let guard = self.inner.state.lock().unwrap();
         if let TableState::Loaded(tables) = guard.deref() {
             let _from_pytable = py
-                .import(pyo3::intern!(py, "daft.table"))?
-                .getattr(pyo3::intern!(py, "Table"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .import_bound("daft.table")?
+                .getattr("Table")?
+                .getattr("_from_pytable")?;
 
             let pytables = tables.iter().map(|t| PyTable { table: t.clone() });
             let pyobjs = pytables
                 .map(|pt| _from_pytable.call1((pt,)))
                 .collect::<PyResult<Vec<_>>>()?;
             Ok((
-                Self::type_object(py)
-                    .getattr(pyo3::intern!(py, "_from_loaded_table_state"))?
-                    .to_object(py),
+                Self::type_object_bound(py)
+                    .getattr("_from_loaded_table_state")?
+                    .into(),
                 (schema_bytes, pyobjs, py_metadata_bytes, py_stats_bytes).to_object(py),
             ))
         } else if let TableState::Unloaded(params) = guard.deref() {
-            let py_params_bytes = PyBytes::new(py, &bincode::serialize(params).unwrap());
+            let py_params_bytes = PyBytes::new_bound(py, &bincode::serialize(params).unwrap());
             Ok((
-                Self::type_object(py)
-                    .getattr(pyo3::intern!(py, "_from_unloaded_table_state"))?
-                    .to_object(py),
+                Self::type_object_bound(py)
+                    .getattr("_from_unloaded_table_state")?
+                    .into(),
                 (
                     schema_bytes,
                     py_params_bytes,
@@ -763,20 +757,20 @@ pub(crate) fn read_json_into_py_table(
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
     let read_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableReadOptions")?
         .call1((num_rows, include_columns))?;
     let py_schema = py
-        .import(pyo3::intern!(py, "daft.logical.schema"))?
-        .getattr(pyo3::intern!(py, "Schema"))?
-        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .import_bound("daft.logical.schema")?
+        .getattr("Schema")?
+        .getattr("_from_pyschema")?
         .call1((schema,))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
-        .getattr(pyo3::intern!(py, "read_json"))?
+    py.import_bound("daft.table.table_io")?
+        .getattr("read_json")?
         .call1((uri, py_schema, storage_config, read_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr("to_table")?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr("_table")?
         .extract()
 }
 
@@ -793,25 +787,25 @@ pub(crate) fn read_csv_into_py_table(
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
     let py_schema = py
-        .import(pyo3::intern!(py, "daft.logical.schema"))?
-        .getattr(pyo3::intern!(py, "Schema"))?
-        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .import_bound("daft.logical.schema")?
+        .getattr("Schema")?
+        .getattr("_from_pyschema")?
         .call1((schema,))?;
     let read_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableReadOptions")?
         .call1((num_rows, include_columns))?;
     let header_idx = if has_header { Some(0) } else { None };
     let parse_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableParseCSVOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableParseCSVOptions")?
         .call1((delimiter, header_idx, double_quote))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
-        .getattr(pyo3::intern!(py, "read_csv"))?
+    py.import_bound("daft.table.table_io")?
+        .getattr("read_csv")?
         .call1((uri, py_schema, storage_config, parse_options, read_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr("to_table")?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr("_table")?
         .extract()
 }
 
@@ -825,29 +819,29 @@ pub(crate) fn read_parquet_into_py_table(
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
     let py_schema = py
-        .import(pyo3::intern!(py, "daft.logical.schema"))?
-        .getattr(pyo3::intern!(py, "Schema"))?
-        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .import_bound("daft.logical.schema")?
+        .getattr("Schema")?
+        .getattr("_from_pyschema")?
         .call1((schema,))?;
     let read_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableReadOptions")?
         .call1((num_rows, include_columns))?;
     let py_coerce_int96_timestamp_unit = py
-        .import(pyo3::intern!(py, "daft.datatype"))?
-        .getattr(pyo3::intern!(py, "TimeUnit"))?
-        .getattr(pyo3::intern!(py, "_from_pytimeunit"))?
+        .import_bound("daft.datatype")?
+        .getattr("TimeUnit")?
+        .getattr("_from_pytimeunit")?
         .call1((coerce_int96_timestamp_unit,))?;
     let parse_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableParseParquetOptions")?
         .call1((py_coerce_int96_timestamp_unit,))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
-        .getattr(pyo3::intern!(py, "read_parquet"))?
+    py.import_bound("daft.table.table_io")?
+        .getattr("read_parquet")?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr("to_table")?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr("_table")?
         .extract()
 }
 
@@ -861,29 +855,29 @@ pub(crate) fn read_sql_into_py_table(
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
     let py_schema = py
-        .import(pyo3::intern!(py, "daft.logical.schema"))?
-        .getattr(pyo3::intern!(py, "Schema"))?
-        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .import_bound("daft.logical.schema")?
+        .getattr("Schema")?
+        .getattr("_from_pyschema")?
         .call1((schema,))?;
     let py_predicate = match predicate {
         Some(p) => Some(
-            py.import(pyo3::intern!(py, "daft.expressions.expressions"))?
-                .getattr(pyo3::intern!(py, "Expression"))?
-                .getattr(pyo3::intern!(py, "_from_pyexpr"))?
+            py.import_bound("daft.expressions.expressions")?
+                .getattr("Expression")?
+                .getattr("_from_pyexpr")?
                 .call1((p,))?,
         ),
         None => None,
     };
     let read_options = py
-        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
-        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .import_bound("daft.runners.partitioning")?
+        .getattr("TableReadOptions")?
         .call1((num_rows, include_columns))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
-        .getattr(pyo3::intern!(py, "read_sql"))?
+    py.import_bound("daft.table.table_io")?
+        .getattr("read_sql")?
         .call1((sql, conn, py_schema, read_options, py_predicate))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr("to_table")?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr("_table")?
         .extract()
 }
 
@@ -905,7 +899,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     Ok(())
 }
