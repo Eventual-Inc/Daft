@@ -830,13 +830,6 @@ jobs:
   docgen:
     runs-on: ubuntu-latest
     needs: docs-build
-    # Only run this job on pull requests that touch docs
-    if: |
-      github.event_name == 'pull_request' && (
-        contains(github.event.pull_request.changed_files, 'docs/') ||
-        contains(github.event.pull_request.changed_files, '.md') ||
-        contains(github.event.pull_request.changed_files, '.rst')
-      )
     continue-on-error: true
     env:
       python-version: '3.10'
@@ -872,10 +865,29 @@ jobs:
       with:
         name: html-docs
         path: docs/build/html
+
+  docpublish:
+    runs-on: ubuntu-latest
+    needs: docgen
+    # Only publish to netlify on pull requests that touch docs
+    # Or on pull requests that have the `documentation` label
+    if: |
+      github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.changed_files, 'docs/') ||
+        contains(github.event.pull_request.changed_files, '.md') ||
+        contains(github.event.pull_request.changed_files, '.rst') ||
+        contains(github.event.pull_request.labels.*.name, 'documentation')
+      )
+    steps:
+    - name: Download built HTML docs
+      uses: actions/download-artifact@v4
+      with:
+        name: html-docs
+        path: ./built_html
     - name: Deploy to Netlify
       uses: nwtgck/actions-netlify@v2.0
       with:
-        publish-dir: ./docs/build/html
+        publish-dir: ./built_html
         production-branch: main
         github-token: ${{ secrets.GITHUB_TOKEN }}
         deploy-message: Deploy from GitHub Actions
