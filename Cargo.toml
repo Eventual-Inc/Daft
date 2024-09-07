@@ -22,8 +22,6 @@ daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
-daft-schema = {path = "src/daft-schema", default-features = false}
-
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -49,7 +47,6 @@ python = [
   "daft-scheduler/python",
   "daft-stats/python",
   "daft-sql/python",
-  "daft-schema/python",
   "daft-table/python",
   "daft-functions/python",
   "common-daft-config/python",

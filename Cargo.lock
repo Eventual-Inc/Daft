@@ -1670,7 +1670,6 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "daft-scheduler",
- "daft-schema",
  "daft-sql",
  "daft-stats",
  "daft-table",
