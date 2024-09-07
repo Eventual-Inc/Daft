@@ -60,8 +60,8 @@ fn run_udf(
     return_dtype: &DataType,
     batch_size: Option<usize>,
 ) -> DaftResult<Series> {
-    use daft_schema::python::PyDataType;
     use daft_core::python::PySeries;
+    use daft_schema::python::PyDataType;
 
     // Convert input Rust &[Series] to wrapped Python Vec<&PyAny>
     let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;

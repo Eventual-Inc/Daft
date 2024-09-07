@@ -9,6 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-json = {path = "../daft-json", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 parquet2 = {workspace = true}
@@ -16,7 +17,7 @@ pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python", "daft-schema/python"]
 
 [package]
 edition = {workspace = true}

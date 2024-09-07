@@ -1,8 +1,8 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
-use daft_schema::schema::SchemaRef;
 use daft_dsl::optimization::get_required_columns;
+use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
 

@@ -1920,6 +1920,7 @@ dependencies = [
  "daft-physical-plan",
  "daft-plan",
  "daft-scan",
+ "daft-schema",
  "daft-table",
  "futures",
  "lazy_static",
@@ -1946,6 +1947,7 @@ dependencies = [
  "daft-json",
  "daft-parquet",
  "daft-scan",
+ "daft-schema",
  "daft-stats",
  "daft-table",
  "parquet2",
@@ -2079,6 +2081,7 @@ dependencies = [
  "daft-io",
  "daft-plan",
  "daft-scan",
+ "daft-schema",
  "pyo3",
  "rstest",
  "serde",
@@ -2089,6 +2092,7 @@ name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "comfy-table 7.1.1",
  "common-arrow-ffi",
  "common-display",
  "common-error",

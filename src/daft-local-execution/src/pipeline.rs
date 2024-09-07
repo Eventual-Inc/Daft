@@ -18,11 +18,10 @@ use crate::{
 
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
-use daft_core::{
-    datatypes::Field,
-    schema::{Schema, SchemaRef},
-    utils::supertype,
-};
+use daft_core::{datatypes::Field, utils::supertype};
+
+use daft_schema::schema::{Schema, SchemaRef};
+
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{

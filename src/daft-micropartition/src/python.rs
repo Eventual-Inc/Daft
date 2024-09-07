@@ -4,10 +4,11 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_core::{
-    prelude::*,
-    python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
-};
+use daft_core::prelude::*;
+
+use daft_core::python::PySeries;
+use daft_schema::python::{datatype::PyTimeUnit, schema::PySchema};
+
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};

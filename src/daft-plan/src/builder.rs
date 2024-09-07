@@ -30,9 +30,9 @@ use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::source_info::InMemoryInfo,
     common_daft_config::PyDaftPlanningConfig,
-    daft_schema::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::python::pylib::ScanOperatorHandle,
+    daft_schema::python::schema::PySchema,
     pyo3::prelude::*,
 };
 

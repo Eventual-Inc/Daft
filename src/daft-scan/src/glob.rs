@@ -1,12 +1,12 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use daft_schema::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{
     parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
 };
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_schema::schema::SchemaRef;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 

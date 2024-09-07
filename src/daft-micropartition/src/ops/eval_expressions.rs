@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_schema::schema::Schema;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
+use daft_schema::schema::Schema;
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};

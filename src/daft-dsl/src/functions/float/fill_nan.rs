@@ -1,7 +1,4 @@
-use daft_core::{
-    utils::supertype::try_get_supertype,
-    prelude::*
-};
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 
 use crate::ExprRef;
 

@@ -8,8 +8,8 @@ use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
-use daft_schema::python::{datatype::PyTimeUnit, field::PyField, schema::PySchema, PyDataType};
 use daft_core::python::PySeries;
+use daft_schema::python::{datatype::PyTimeUnit, field::PyField, schema::PySchema, PyDataType};
 use serde::{Deserialize, Serialize};
 
 use crate::{functions, Expr, ExprRef, LiteralValue};

@@ -1,6 +1,5 @@
 use daft_core::prelude::*;
 
-
 use crate::functions::FunctionExpr;
 use crate::ExprRef;
 use common_error::{DaftError, DaftResult};
