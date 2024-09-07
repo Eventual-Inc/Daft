@@ -183,7 +183,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
                     let bound_args = self
                         .stateful_partial_func
                         .as_ref()
-                        .getattr(py, pyo3::intern!(py, "bound_args"))?;
+                        .getattr(py, "bound_args")?;
                     run_udf(
                         py,
                         inputs,
