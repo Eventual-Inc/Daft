@@ -821,6 +821,8 @@ jobs:
         uv pip install -r requirements-dev.txt
         uv pip install ./dist/*.whl
     - name: Run doctests
+      # Move daft files out of the `daft` directory so that `import daft` doesn't
+      # import the local (non-built) version of Daft.
       run: |
         mv daft daft-files
         pytest --doctest-modules --continue-on-collection-errors daft-files/dataframe/dataframe.py daft-files/expressions/expressions.py daft-files/convert.py daft-files/udf.py
@@ -828,6 +830,13 @@ jobs:
   docgen:
     runs-on: ubuntu-latest
     needs: docs-build
+    # Only run this job on pull requests that touch docs
+    if: |
+      github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.changed_files, 'docs/') ||
+        contains(github.event.pull_request.changed_files, '.md') ||
+        contains(github.event.pull_request.changed_files, '.rst')
+      )
     continue-on-error: true
     env:
       python-version: '3.10'
