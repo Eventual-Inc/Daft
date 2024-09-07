@@ -1296,6 +1296,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "bincode",
  "common-io-config",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]

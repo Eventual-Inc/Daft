@@ -69,7 +69,10 @@ macro_rules! impl_bincode_py_state_serialization {
         #[cfg(feature = "python")]
         #[pymethods]
         impl $ty {
-            pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
+            pub fn __reduce__<'py>(
+                &self,
+                py: Python<'py>,
+            ) -> PyResult<(PyObject, (pyo3::Bound<'py, pyo3::types::PyBytes>,))> {
                 use pyo3::{
                     types::{PyAnyMethods, PyBytes},
                     PyTypeInfo, ToPyObject,
@@ -78,7 +81,10 @@ macro_rules! impl_bincode_py_state_serialization {
                     Self::type_object_bound(py)
                         .getattr("_from_serialized")?
                         .into(),
-                    PyBytes::new_bound(py, &$crate::bincode::serialize(&self).unwrap()).into(),
+                    (PyBytes::new_bound(
+                        py,
+                        &$crate::bincode::serialize(&self).unwrap(),
+                    ),),
                 ))
             }
 
