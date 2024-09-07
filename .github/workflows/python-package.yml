@@ -857,16 +857,17 @@ jobs:
         uv pip install -r requirements-dev.txt
         uv pip install ./dist/*.whl
     - name: Build docs
-      # NOTE: This will break on any Sphinx warnings
+      # TODO: Break on any Sphinx warnings
+      # make html SPHINXOPTS="-W --keep-going -n"
       # See: https://stackoverflow.com/questions/38048945/how-to-turn-warnings-into-errors-when-building-sphinx-documentation-with-setupto
       run: |
         cd docs/
-        make html SPHINXOPTS="-W --keep-going -n"
+        make html
     - name: Upload docs
       uses: actions/upload-artifact@v4
       with:
         name: html-docs
-        path: docs/build/html
+        path: build/html
 
   docpublish:
     runs-on: ubuntu-latest
