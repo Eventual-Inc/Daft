@@ -39,6 +39,11 @@ pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(python::series_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::stateless_udf, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::stateful_udf, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        python::extract_partial_stateful_udf_py,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::bind_stateful_udfs, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::eq, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         python::check_column_name_validity,

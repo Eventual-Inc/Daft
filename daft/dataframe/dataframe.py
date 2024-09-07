@@ -2179,6 +2179,8 @@ class DataFrame:
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
+        For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
+
         Example:
             >>> import daft
             >>> from daft import col
@@ -2833,6 +2835,8 @@ class GroupedDataFrame:
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
+
+        For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
 
         Example:
             >>> import daft

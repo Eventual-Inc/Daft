@@ -1,7 +1,7 @@
 use std::{collections::HashSet, iter, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeRewriter};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
     functions::{
         python::{PythonUDF, StatefulPythonUDF},
@@ -17,7 +17,7 @@ use crate::{
     LogicalPlan,
 };
 
-use super::{ApplyOrder, OptimizerRule, Transformed};
+use super::OptimizerRule;
 
 #[derive(Default, Debug)]
 pub struct SplitActorPoolProjects {}
@@ -121,16 +121,11 @@ impl SplitActorPoolProjects {
 ///        │                 │  │                    │                 │           │
 ///        └─────────────────┘  └────────────────────┘                 └───────────┘
 impl OptimizerRule for SplitActorPoolProjects {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan.as_ref() {
-            LogicalPlan::Project(projection) => try_optimize_project(projection, plan.clone(), 0),
-            // TODO: Figure out how to split other nodes as well such as Filter, Agg etc
-            _ => Ok(Transformed::No(plan)),
-        }
+        plan.transform_down(|node| match node.as_ref() {
+            LogicalPlan::Project(projection) => try_optimize_project(projection, node.clone(), 0),
+            _ => Ok(Transformed::no(node)),
+        })
     }
 }
 
@@ -381,7 +376,7 @@ fn try_optimize_project(
     // Base case: no stateful UDFs at all
     let has_stateful_udfs = projection.projection.iter().any(has_stateful_udf);
     if !has_stateful_udfs {
-        return Ok(Transformed::No(plan));
+        return Ok(Transformed::no(plan));
     }
 
     log::debug!(
@@ -424,7 +419,7 @@ fn try_optimize_project(
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
         let optimized_child_plan =
             try_optimize_project(&new_project, new_child_project.clone(), recursive_count + 1)?;
-        optimized_child_plan.unwrap().clone()
+        optimized_child_plan.data.clone()
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
@@ -500,7 +495,7 @@ fn try_optimize_project(
     )?)
     .arced();
 
-    Ok(Transformed::Yes(final_selection_project))
+    Ok(Transformed::yes(final_selection_project))
 }
 
 #[inline]
@@ -528,7 +523,7 @@ mod tests {
     use daft_dsl::{
         col,
         functions::{
-            python::{PythonUDF, StatefulPythonUDF},
+            python::{PythonUDF, StatefulPythonUDF, UDFRuntimeBinding},
             FunctionExpr,
         },
         Expr, ExprRef,
@@ -588,6 +583,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs,
         }
