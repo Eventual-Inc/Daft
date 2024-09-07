@@ -1294,7 +1294,6 @@ dependencies = [
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
- "bincode",
  "common-io-config",
  "common-py-serde",
  "pyo3",
@@ -1305,7 +1304,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "pyo3",
  "terminal_size",
  "textwrap",
@@ -1708,7 +1707,7 @@ dependencies = [
  "html-escape",
  "hyperloglog",
  "image",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "jaq-core",
  "jaq-interpret",
@@ -1782,7 +1781,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pyo3",
@@ -1873,7 +1872,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "memchr",
  "memmap2",
  "num-traits",
@@ -1966,7 +1965,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "parquet2",
@@ -2011,7 +2010,7 @@ dependencies = [
  "daft-io",
  "daft-scan",
  "daft-table",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pretty_assertions",
@@ -2104,7 +2103,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "serde",
  "snafu",
 ]
@@ -2119,6 +2118,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "html-escape",
+ "indexmap 2.5.0",
  "num-traits",
  "pyo3",
  "rand 0.8.5",
@@ -2661,7 +2661,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2943,9 +2943,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.3.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
+checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
@@ -3041,7 +3041,7 @@ dependencies = [
  "ahash",
  "dyn-clone",
  "hifijson",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "jaq-syn",
  "once_cell",
  "serde_json",
@@ -3784,7 +3784,7 @@ dependencies = [
  "criterion",
  "flate2",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "lz4",
  "lz4_flex",
  "parquet-format-safe",
@@ -4084,6 +4084,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5e00b96a521718e08e03b1a622f01c8a8deb50719335de3f60b3b3950f069d8"
 dependencies = [
  "cfg-if",
+ "indexmap 2.5.0",
  "indoc",
  "inventory",
  "libc",
@@ -4699,7 +4700,7 @@ version = "1.0.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66ad62847a56b3dba58cc891acd13884b9c61138d330c0d7b6181713d4fce38d"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itoa",
  "memchr",
  "ryu",

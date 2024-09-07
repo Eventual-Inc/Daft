@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use daft_core::join::JoinType;
+use indexmap::IndexMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -414,7 +413,7 @@ impl PyTable {
     }
 
     #[staticmethod]
-    pub fn from_pylist_series(dict: HashMap<String, PySeries>) -> PyResult<Self> {
+    pub fn from_pylist_series(dict: IndexMap<String, PySeries>) -> PyResult<Self> {
         let mut fields: Vec<Field> = Vec::new();
         let mut columns: Vec<Series> = Vec::new();
         fields.reserve(dict.len());

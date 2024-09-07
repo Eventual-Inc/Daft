@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
 use crate::{
     datatypes::{DataType, Field, ImageMode, TimeUnit},
     ffi,
 };
 
 use common_py_serde::impl_bincode_py_state_serialization;
+use indexmap::IndexMap;
 use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -219,7 +218,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn r#struct(fields: HashMap<String, PyDataType>) -> Self {
+    pub fn r#struct(fields: IndexMap<String, PyDataType>) -> Self {
         DataType::Struct(
             fields
                 .into_iter()
