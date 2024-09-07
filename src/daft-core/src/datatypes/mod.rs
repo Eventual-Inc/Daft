@@ -1,11 +1,6 @@
 mod agg_ops;
 mod binary_ops;
-// mod dtype;
-// mod field;
-// mod image_format;
-// mod image_mode;
 mod matching;
-// mod time_unit;
 
 pub use binary_ops::InferDataType;
 pub mod prelude;
