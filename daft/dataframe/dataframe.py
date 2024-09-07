@@ -2462,14 +2462,11 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(
-        self, cast_tensors_to_ray_tensor_dtype: bool = False, coerce_temporal_nanoseconds: bool = False
-    ) -> "pandas.DataFrame":
+    def to_pandas(self, coerce_temporal_nanoseconds: bool = False) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
         If results have not computed yet, collect will be called.
 
         Args:
-            cast_tensors_to_ray_tensor_dtype (bool): Whether to cast tensors to Ray tensor dtype. Defaults to False.
             coerce_temporal_nanoseconds (bool): Whether to coerce temporal columns to nanoseconds. Only applicable to pandas version >= 2.0 and pyarrow version >= 13.0.0. Defaults to False. See `pyarrow.Table.to_pandas <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html#pyarrow.Table.to_pandas>`__ for more information.
 
         Returns:
@@ -2484,13 +2481,12 @@ class DataFrame:
 
         pd_df = result.to_pandas(
             schema=self._builder.schema(),
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
         return pd_df
 
     @DataframePublicAPI
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pyarrow.Table":
+    def to_arrow(self) -> "pyarrow.Table":
         """Converts the current DataFrame to a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__.
         If results have not computed yet, collect will be called.
 
@@ -2500,11 +2496,17 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        for name in self.schema().column_names():
+            if self.schema()[name].dtype._is_python_type():
+                raise ValueError(
+                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
+                )
+
         self.collect()
         result = self._result
         assert result is not None
 
-        return result.to_arrow(cast_tensors_to_ray_tensor_dtype)
+        return result.to_arrow()
 
     @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:

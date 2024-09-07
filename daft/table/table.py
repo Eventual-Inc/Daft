@@ -29,12 +29,6 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
 _PANDAS_AVAILABLE = True
 try:
     import pandas as pd
@@ -42,7 +36,6 @@ except ImportError:
     _PANDAS_AVAILABLE = False
 
 if TYPE_CHECKING:
-    import numpy as np
     import pandas as pd
     import pyarrow as pa
 
@@ -176,36 +169,9 @@ class Table:
         """For compatibility with MicroPartition"""
         return self
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False, convert_large_arrays: bool = False) -> pa.Table:
-        python_fields = set()
-        tensor_fields = set()
-        for field in self.schema():
-            if field.dtype._is_python_type():
-                python_fields.add(field.name)
-            elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
-                tensor_fields.add(field.name)
-        if python_fields or tensor_fields:
-            table = {}
-            for colname in self.column_names():
-                column_series = self.get_column(colname)
-                if colname in python_fields:
-                    column = column_series.to_pylist()
-                else:
-                    column = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype)
-                table[colname] = column
-
-            tab = pa.Table.from_pydict(table)
-        else:
-            tab = pa.Table.from_batches([self._table.to_arrow_record_batch()])
-
-        if not convert_large_arrays:
-            return tab
-
-        new_columns = []
-        for col in tab.columns:
-            new_columns.append(_trim_pyarrow_large_arrays(col))
-
-        return pa.Table.from_arrays(new_columns, names=tab.column_names)
+    def to_arrow(self) -> pa.Table:
+        tab = pa.Table.from_pydict({colname: self.get_column(colname).to_arrow() for colname in self.column_names()})
+        return tab
 
     def to_pydict(self) -> dict[str, list]:
         return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
@@ -220,13 +186,13 @@ class Table:
     def to_pandas(
         self,
         schema: Schema | None = None,
-        cast_tensors_to_ray_tensor_dtype: bool = False,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         from packaging.version import parse
 
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
+
         python_fields = set()
         tensor_fields = set()
         for field in self.schema():
@@ -234,16 +200,17 @@ class Table:
                 python_fields.add(field.name)
             elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
                 tensor_fields.add(field.name)
+
         if python_fields or tensor_fields:
-            # Use Python list representation for Python typed columns.
             table = {}
             for colname in self.column_names():
                 column_series = self.get_column(colname)
-                if colname in python_fields or (colname in tensor_fields and not cast_tensors_to_ray_tensor_dtype):
+                # Use Python list representation for Python typed columns or tensor columns (return as numpy)
+                if colname in python_fields or colname in tensor_fields:
                     column = column_series.to_pylist()
                 else:
                     # Arrow-native field, so provide column as Arrow array.
-                    column_arrow = column_series.to_arrow(cast_tensors_to_ray_tensor_dtype)
+                    column_arrow = column_series.to_arrow()
                     if parse(pa.__version__) < parse("13.0.0"):
                         column = column_arrow.to_pandas()
                     else:
@@ -252,7 +219,7 @@ class Table:
 
             return pd.DataFrame.from_dict(table)
         else:
-            arrow_table = self.to_arrow(cast_tensors_to_ray_tensor_dtype)
+            arrow_table = self.to_arrow()
             if parse(pa.__version__) < parse("13.0.0"):
                 return arrow_table.to_pandas()
             else:
@@ -557,30 +524,6 @@ class Table:
                 max_chunks_in_flight=max_chunks_in_flight,
             )
         )
-
-
-def _trim_pyarrow_large_arrays(arr: pa.ChunkedArray) -> pa.ChunkedArray:
-    if pa.types.is_large_binary(arr.type) or pa.types.is_large_string(arr.type):
-        if pa.types.is_large_binary(arr.type):
-            target_type = pa.binary()
-        else:
-            target_type = pa.string()
-
-        all_chunks = []
-        for chunk in arr.chunks:
-            if len(chunk) == 0:
-                continue
-            offsets = np.frombuffer(chunk.buffers()[1], dtype=np.int64)
-            if offsets[-1] < 2**31:
-                all_chunks.append(chunk.cast(target_type))
-            else:
-                raise ValueError(
-                    f"Can not convert {arr.type} into {target_type} due to the offset array being too large: {offsets[-1]}. Maximum: {2**31}"
-                )
-
-        return pa.chunked_array(all_chunks, type=target_type)
-    else:
-        return arr
 
 
 def read_parquet_into_pyarrow(

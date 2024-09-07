@@ -216,19 +216,17 @@ class PartitionSet(Generic[PartitionT]):
     def to_pandas(
         self,
         schema: Schema | None = None,
-        cast_tensors_to_ray_tensor_dtype: bool = False,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         merged_partition = self._get_merged_micropartition()
         return merged_partition.to_pandas(
             schema=schema,
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
+    def to_arrow(self) -> pa.Table:
         merged_partition = self._get_merged_micropartition()
-        return merged_partition.to_arrow(cast_tensors_to_ray_tensor_dtype)
+        return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
         """

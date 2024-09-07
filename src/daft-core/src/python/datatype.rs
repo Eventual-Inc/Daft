@@ -308,15 +308,10 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
-    pub fn to_arrow(
-        &self,
-        py: Python,
-        cast_tensor_type_for_ray: Option<bool>,
-    ) -> PyResult<PyObject> {
+    pub fn to_arrow(&self, py: Python) -> PyResult<PyObject> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
-        match (&self.dtype, cast_tensor_to_ray_type) {
-            (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
+        match &self.dtype {
+            DataType::FixedShapeTensor(dtype, shape) => Ok(
                 if py
                     .import(pyo3::intern!(py, "daft.utils"))?
                     .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
@@ -329,7 +324,7 @@ impl PyDataType {
                             Self {
                                 dtype: *dtype.clone(),
                             }
-                            .to_arrow(py, None)?,
+                            .to_arrow(py)?,
                             pyo3::types::PyTuple::new(py, shape.clone()),
                         ))?
                         .to_object(py)
@@ -339,18 +334,7 @@ impl PyDataType {
                     ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
                 },
             ),
-            (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
-                .import(pyo3::intern!(py, "ray.data.extensions"))?
-                .getattr(pyo3::intern!(py, "ArrowTensorType"))?
-                .call1((
-                    pyo3::types::PyTuple::new(py, shape.clone()),
-                    Self {
-                        dtype: *dtype.clone(),
-                    }
-                    .to_arrow(py, None)?,
-                ))?
-                .to_object(py)),
-            (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+            _ => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
                 .getattr(py, pyo3::intern!(py, "type")),
         }
     }
