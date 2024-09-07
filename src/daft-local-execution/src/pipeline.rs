@@ -20,7 +20,7 @@ use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_core::{datatypes::Field, utils::supertype};
 
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_core::prelude::{Schema, SchemaRef};
 
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;

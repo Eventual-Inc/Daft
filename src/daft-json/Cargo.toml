@@ -9,8 +9,6 @@ daft-decoding = {path = "../daft-decoding"}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
-
 futures = {workspace = true}
 indexmap = {workspace = true}
 memchr = "2.7.2"
@@ -37,8 +35,7 @@ python = [
   "daft-core/python",
   "daft-io/python",
   "daft-table/python",
-  "daft-dsl/python",
-  "daft-schema/python"
+  "daft-dsl/python"
 ]
 
 [package]

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::pipeline::PipelineResultType;
 use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use daft_schema::schema::SchemaRef;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{ProbeTable, ProbeTableBuilder, Table};

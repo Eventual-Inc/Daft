@@ -503,7 +503,7 @@ fn parse_into_column_array_chunk_stream(
     schema: Arc<arrow2::datatypes::Schema>,
     schema_is_projection: bool,
 ) -> DaftResult<impl TableChunkStream + Send> {
-    let daft_schema = Arc::new(daft_schema::schema::Schema::try_from(schema.as_ref())?);
+    let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(schema.as_ref())?);
     let daft_fields = Arc::new(
         daft_schema
             .fields

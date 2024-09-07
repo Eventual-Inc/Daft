@@ -7,7 +7,7 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 
 use daft_core::python::PySeries;
-use daft_schema::python::{datatype::PyTimeUnit, schema::PySchema};
+use daft_core::python::{PySchema, PyTimeUnit};
 
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;

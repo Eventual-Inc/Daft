@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 use {
     common_daft_config::PyDaftExecutionConfig,
     common_io_config::IOConfig,
+    daft_core::prelude::SchemaRef,
+    daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
-    daft_schema::python::schema::PySchema,
-    daft_schema::schema::SchemaRef,
     pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };

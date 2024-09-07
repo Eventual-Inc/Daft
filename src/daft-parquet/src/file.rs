@@ -400,7 +400,7 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-        let daft_schema = Arc::new(daft_schema::schema::Schema::try_from(
+        let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
         )?);
 
@@ -720,7 +720,7 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_schema::schema::Schema::try_from(self.arrow_schema.as_ref())?;
+        let daft_schema = daft_core::prelude::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new_with_size(
             daft_schema,
