@@ -825,8 +825,7 @@ jobs:
       # See: https://stackoverflow.com/questions/38048945/how-to-turn-warnings-into-errors-when-building-sphinx-documentation-with-setupto
       run: |
         source activate
-        maturin build
-        pip install .
+        maturin develop
         cd docs/
         make html
     - name: Upload built docs
