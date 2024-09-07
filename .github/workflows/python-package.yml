@@ -822,7 +822,8 @@ jobs:
         uv pip install ./dist/*.whl
     - name: Run doctests
       run: |
-        pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
+        mv daft daft-files
+        pytest --doctest-modules --continue-on-collection-errors daft-files/dataframe/dataframe.py daft-files/expressions/expressions.py daft-files/convert.py daft-files/udf.py
 
   docgen:
     runs-on: ubuntu-latest
