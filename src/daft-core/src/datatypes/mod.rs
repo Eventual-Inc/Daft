@@ -12,16 +12,9 @@ use arrow2::{
     types::{simd::Simd, NativeType},
 };
 pub use binary_ops::try_physical_supertype;
-// pub use dtype::DataType;
-// pub use field::Field;
-// pub use field::FieldID;
-// pub use field::FieldRef;
-// pub use image_format::ImageFormat;
-// pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-// pub use time_unit::TimeUnit;
 
 pub use daft_schema::field::{Field, FieldID, FieldRef};
 
