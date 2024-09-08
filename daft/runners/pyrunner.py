@@ -371,14 +371,16 @@ class PyRunner(Runner[MicroPartition]):
                 while True:
                     if next_step is None:
                         # Blocked on already dispatched tasks; await some tasks.
-                        logger.debug("Skipping to wait on dispatched tasks: plan waiting on work")
+                        logger.debug(
+                            "execution[%s] Skipping to wait on dispatched tasks: plan waiting on work", execution_id
+                        )
                         break
 
                     elif isinstance(next_step, MaterializedResult):
                         assert isinstance(next_step, PyMaterializedResult)
 
                         # A final result.
-                        logger.debug("Yielding completed step")
+                        logger.debug("execution[%s] Yielding completed step", execution_id)
                         yield next_step
                         next_step = next(plan)
                         continue
@@ -391,7 +393,10 @@ class PyRunner(Runner[MicroPartition]):
 
                         if not task_admitted:
                             # Insufficient resources; await some tasks.
-                            logger.debug("Skipping to wait on dispatched tasks: insufficient resources")
+                            logger.debug(
+                                "execution[%s] Skipping to wait on dispatched tasks: insufficient resources",
+                                execution_id,
+                            )
                             break
 
                         # Run the task in the main thread, instead of the thread pool, in certain conditions:
@@ -408,7 +413,8 @@ class PyRunner(Runner[MicroPartition]):
                             )
                         ):
                             logger.debug(
-                                "Running task synchronously in main thread: %s",
+                                "execution[%s] Running task synchronously in main thread: %s",
+                                execution_id,
                                 next_step,
                             )
                             materialized_results = self.build_partitions(
@@ -423,7 +429,7 @@ class PyRunner(Runner[MicroPartition]):
 
                         else:
                             # Submit the task for execution.
-                            logger.debug("Submitting task for execution: %s", next_step)
+                            logger.debug("execution[%s] Submitting task for execution: %s", execution_id, next_step)
 
                             # update progress bar
                             pbar.mark_task_start(next_step)
@@ -477,7 +483,8 @@ class PyRunner(Runner[MicroPartition]):
                     del self._inflight_futures[(execution_id, done_task.id())]
 
                     logger.debug(
-                        "Task completed: %s -> <%s partitions>",
+                        "execution[%s] Task completed: %s -> <%s partitions>",
+                        execution_id,
                         done_task.id(),
                         len(materialized_results),
                     )
@@ -486,6 +493,10 @@ class PyRunner(Runner[MicroPartition]):
 
                 if next_step is None:
                     next_step = next(plan)
+
+        # StopIteration is raised when the plan is exhausted, and all materialized results have been yielded.
+        except StopIteration:
+            logger.debug("execution[%s] Exhausted all materialized results", execution_id)
 
         # Perform any cleanups when the generator is closed (StopIteration is raised, generator is deleted with `__del__` on GC, etc)
         finally:
