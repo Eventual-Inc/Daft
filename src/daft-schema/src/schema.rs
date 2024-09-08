@@ -366,8 +366,6 @@ fn make_schema_vertical_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table::Tab
 fn make_schema_horizontal_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
-    let mut table = comfy_table::Table::new();
-
     let default_width_if_no_tty = 120usize;
 
     table
@@ -389,15 +387,12 @@ fn make_schema_horizontal_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table::T
 
     let head_cols;
     let tail_cols;
-    let total_cols;
     if num_columns > max_cols {
         head_cols = (max_cols + 1) / 2;
         tail_cols = max_cols / 2;
-        total_cols = head_cols + tail_cols + 1;
     } else {
         head_cols = num_columns;
         tail_cols = 0;
-        total_cols = head_cols;
     }
     let mut header = fields
         .iter()

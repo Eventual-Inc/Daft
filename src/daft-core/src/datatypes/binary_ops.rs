@@ -1,11 +1,11 @@
 use std::{
-    fmt::{write, Display},
+    fmt::Display,
     ops::{Add, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
 use common_error::{DaftError, DaftResult};
 
-use crate::{impl_binary_trait_by_reference, utils::supertype::try_get_supertype};
+use crate::utils::supertype::try_get_supertype;
 
 use super::DataType;
 
