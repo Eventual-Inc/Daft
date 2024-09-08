@@ -25,3 +25,6 @@ python = [
 edition = {workspace = true}
 name = "daft-schema"
 version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = ["num_traits"]  # needed by num-derive
