@@ -77,6 +77,10 @@ jobs:
       with:
         name: html-docs
         path: ./built_html
+    - name: Add a robots.txt to disable indexing of docs
+      run: |
+        echo "User-agent: *" > ./built_html/robots.txt
+        echo "Disallow: /" >> ./built_html/robots.txt
     - name: Deploy to Netlify
       uses: nwtgck/actions-netlify@v2.0
       with:
