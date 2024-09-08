@@ -1,6 +1,7 @@
 [dependencies]
-pyo3 = {workspace = true, optional = true}
 arrow2 = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
 [features]
 python = ["dep:pyo3"]
 
