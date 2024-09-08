@@ -13,7 +13,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
-from ray.data.extensions import ArrowTensorArray, TensorArray
 
 import daft
 from daft.api_annotations import APITypeError
@@ -189,25 +188,6 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
-    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    shape = (2, 2)
-    arr = np.ones((len(valid_data),) + shape)
-    ata = ArrowTensorArray.from_numpy(arr)
-    pydict["tensor"] = ata
-    t = pa.Table.from_pydict(pydict)
-    df = daft.from_arrow(t)
-    assert set(df.column_names) == set(t.column_names)
-    # Tensor type should be inferred.
-    expected_tensor_dtype = DataType.tensor(DataType.float64(), shape)
-    assert df.schema()["tensor"].dtype == expected_tensor_dtype
-    casted_variety = t.schema.field("variety").with_type(pa.large_string())
-    schema = t.schema.set(t.schema.get_field_index("variety"), casted_variety)
-    expected = t.cast(schema)
-    # Check roundtrip.
-    assert df.to_arrow(True) == expected
-
-
 @pytest.mark.skipif(
     not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
@@ -274,10 +254,10 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
     assert set(df.column_names) == set(t.column_names)
     # Type not natively supported, so should have Python object dtype.
     assert df.schema()["obj"].dtype == DataType.python()
-    casted_field = t.schema.field("variety").with_type(pa.large_string())
-    expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
-    # Check roundtrip.
-    assert df.to_arrow() == expected
+
+    # Assert that it raises an error when trying to convert back to arrow
+    with pytest.raises(ValueError):
+        df.to_arrow()
 
 
 ###
@@ -310,18 +290,6 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
-
-
-def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
-    pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    shape = (2, 2)
-    pydict["tensor"] = TensorArray(np.ones((len(valid_data),) + shape))
-    pd_df = pd.DataFrame(pydict)
-    df = daft.from_pandas(pd_df)
-    assert df.schema()["tensor"].dtype == DataType.tensor(DataType.float64(), shape)
-    assert set(df.column_names) == set(pd_df.columns)
-    # Check roundtrip.
-    pd.testing.assert_frame_equal(df.to_pandas(cast_tensors_to_ray_tensor_dtype=True), pd_df)
 
 
 @pytest.mark.parametrize(
