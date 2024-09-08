@@ -1312,6 +1312,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
+ "comfy-table 7.1.1",
  "indexmap 2.3.0",
  "pyo3",
  "terminal_size",
@@ -2086,7 +2087,6 @@ name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
- "comfy-table 7.1.1",
  "common-arrow-ffi",
  "common-display",
  "common-error",
