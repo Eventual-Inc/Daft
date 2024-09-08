@@ -60,16 +60,14 @@ jobs:
     # Only publish to netlify on:
     # 1. If the previous doc building step didn't fail
     # 2. If this is a PR from the current repo (since it needs access to secrets)
-    # 3. If some of the documentation files changed (.md, .rst, etc) and it has the `documentation` label
+    # 3. If some of the documentation files changed or it has the `documentation` label
     if: |
       ${{ success() }} &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
-      github.event_name == 'pull_request_target' && (
-              contains(github.event.pull_request.changed_files, 'docs/') ||
-          contains(github.event.pull_request.changed_files, '.md') ||
-          contains(github.event.pull_request.changed_files, '.rst') ||
-          contains(github.event.pull_request.changed_files, '.ipynb') ||
-          contains(github.event.pull_request.labels.*.name, 'documentation')
+      github.event.pull_request != null &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        contains(github.event.pull_request.changed_files, 'docs/') ||
+        contains(github.event.pull_request.labels.*.name, 'documentation')
       )
     steps:
     - name: Download built HTML docs
