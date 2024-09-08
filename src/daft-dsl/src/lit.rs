@@ -5,7 +5,7 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     prelude::*,
-    utils::display_table::{
+    utils::display::{
         display_date32, display_decimal128, display_series_literal, display_time64,
         display_timestamp,
     },

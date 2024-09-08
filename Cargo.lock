@@ -2149,6 +2149,7 @@ dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
  "common-arrow-ffi",
+ "common-display",
  "common-error",
  "daft-core",
  "daft-dsl",

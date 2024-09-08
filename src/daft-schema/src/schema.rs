@@ -6,7 +6,7 @@ use std::{
 };
 
 use common_display::{
-    table_display::{make_schema_horizontal_table, make_schema_vertical_table},
+    table_display::{make_comfy_table, make_schema_vertical_table},
     DisplayAs,
 };
 use indexmap::IndexMap;
@@ -215,12 +215,15 @@ impl Schema {
     }
 
     pub fn truncated_table_string(&self) -> String {
-        let table = make_schema_horizontal_table(
+        let table = make_comfy_table(
             self.fields
                 .values()
                 .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
+            None,
+            None,
+            None,
         );
         format!("{}\n", table)
     }

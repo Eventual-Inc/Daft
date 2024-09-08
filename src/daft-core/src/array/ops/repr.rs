@@ -12,7 +12,7 @@ use crate::{
         ImageFormat, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
-    utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
+    utils::display::{display_date32, display_decimal128, display_time64, display_timestamp},
     with_match_daft_types,
 };
 use common_error::DaftResult;

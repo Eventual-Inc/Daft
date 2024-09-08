@@ -42,7 +42,12 @@ pub fn make_schema_vertical_table<S: ToString>(names: &[S], dtypes: &[S]) -> com
     table
 }
 
-pub fn make_schema_horizontal_table<S: AsRef<str>>(fields: &[S]) -> comfy_table::Table {
+pub fn make_comfy_table<'a, S: AsRef<str>>(
+    fields: &[S],
+    columns: Option<&[Box<dyn Fn(usize) -> String + 'a>]>,
+    num_rows: Option<usize>,
+    max_col_width: Option<usize>,
+) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
     let default_width_if_no_tty = 120usize;
@@ -66,12 +71,15 @@ pub fn make_schema_horizontal_table<S: AsRef<str>>(fields: &[S]) -> comfy_table:
 
     let head_cols;
     let tail_cols;
+    let total_cols;
     if num_columns > max_cols {
         head_cols = (max_cols + 1) / 2;
         tail_cols = max_cols / 2;
+        total_cols = head_cols + tail_cols + 1;
     } else {
         head_cols = num_columns;
         tail_cols = 0;
+        total_cols = head_cols;
     }
     let mut header = fields
         .iter()
@@ -95,6 +103,90 @@ pub fn make_schema_horizontal_table<S: AsRef<str>>(fields: &[S]) -> comfy_table:
                 .map(|field| create_table_cell(field.as_ref())),
         );
     }
-    table.add_row(header);
+
+    if let Some(columns) = columns
+        && !columns.is_empty()
+    {
+        table.set_header(header);
+        let len = num_rows.expect("if columns are set, so should `num_rows`");
+        const TOTAL_ROWS: usize = 10;
+        let head_rows;
+        let tail_rows;
+
+        if len > TOTAL_ROWS {
+            head_rows = TOTAL_ROWS / 2;
+            tail_rows = TOTAL_ROWS / 2;
+        } else {
+            head_rows = len;
+            tail_rows = 0;
+        }
+
+        for i in 0..head_rows {
+            let all_cols = columns
+                .iter()
+                .map(|f| {
+                    let mut str_val = f(i);
+                    if let Some(max_col_width) = max_col_width {
+                        if str_val.len() > max_col_width - DOTS.len() {
+                            str_val = format!(
+                                "{}{DOTS}",
+                                &str_val
+                                    .char_indices()
+                                    .take(max_col_width - DOTS.len())
+                                    .map(|(_, c)| c)
+                                    .collect::<String>()
+                            );
+                        }
+                    }
+                    str_val
+                })
+                .collect::<Vec<_>>();
+
+            if tail_cols > 0 {
+                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
+                final_row.push(DOTS.into());
+                final_row.extend(all_cols.iter().skip(num_columns - tail_cols).cloned());
+                table.add_row(final_row);
+            } else {
+                table.add_row(all_cols);
+            }
+        }
+        if tail_rows != 0 {
+            table.add_row((0..total_cols).map(|_| DOTS).collect::<Vec<_>>());
+        }
+
+        for i in (len - tail_rows)..(len) {
+            let all_cols = columns
+                .iter()
+                .map(|f| {
+                    let mut str_val = f(i);
+                    if let Some(max_col_width) = max_col_width {
+                        if str_val.len() > max_col_width - DOTS.len() {
+                            str_val = format!(
+                                "{}{DOTS}",
+                                &str_val
+                                    .char_indices()
+                                    .take(max_col_width - DOTS.len())
+                                    .map(|(_, c)| c)
+                                    .collect::<String>()
+                            );
+                        }
+                    }
+                    str_val
+                })
+                .collect::<Vec<_>>();
+
+            if tail_cols > 0 {
+                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
+                final_row.push(DOTS.into());
+                final_row.extend(all_cols.iter().skip(num_columns - tail_cols).cloned());
+                table.add_row(final_row);
+            } else {
+                table.add_row(all_cols);
+            }
+        }
+    } else {
+        table.add_row(header);
+    }
     table
 }

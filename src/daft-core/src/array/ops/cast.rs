@@ -17,7 +17,7 @@ use crate::{
         Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
-    utils::display_table::display_time64,
+    utils::display::display_time64,
     with_match_daft_logical_primitive_types,
 };
 

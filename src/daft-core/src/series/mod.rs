@@ -15,9 +15,9 @@ use crate::{
         DataArray,
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
-    utils::display_table::make_comfy_table,
     with_match_daft_types,
 };
+use common_display::table_display::make_comfy_table;
 use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;
@@ -100,9 +100,14 @@ impl Series {
     }
 
     pub fn to_comfy_table(&self) -> comfy_table::Table {
+        let func = Box::new(|idx| self.str_value(idx).unwrap()) as Box<dyn Fn(usize) -> String>;
+        let field = self.field();
+        let field_disp = format!("{}\n---\n{}", field.name, field.dtype);
+
         make_comfy_table(
-            vec![Cow::Borrowed(self.field())].as_slice(),
-            Some([self].as_slice()),
+            [field_disp].as_slice(),
+            Some([func].as_slice()),
+            Some(self.len()),
             Some(80),
         )
     }
