@@ -21,7 +21,6 @@ chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
-common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
@@ -43,7 +42,6 @@ lazy_static = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"
 ndarray = "0.15.6"
-num-derive = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
