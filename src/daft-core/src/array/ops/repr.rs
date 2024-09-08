@@ -1,4 +1,5 @@
 use base64::Engine;
+use common_display::table_display::StrValue;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
@@ -326,7 +327,7 @@ impl StructArray {
                         .iter()
                         .zip(self.children.iter())
                         .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
-                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx)?)))
+                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {

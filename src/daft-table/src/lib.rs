@@ -5,7 +5,7 @@ use core::slice;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
 
-use common_display::table_display::make_comfy_table;
+use common_display::table_display::{make_comfy_table, StrValue};
 use daft_core::array::ops::full::FullNull;
 use num_traits::ToPrimitive;
 
@@ -750,10 +750,10 @@ impl Table {
     }
 
     pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
-        let funcs = self
+        let str_values = self
             .columns
             .iter()
-            .map(|s| Box::new(|idx| s.str_value(idx).unwrap()) as Box<dyn Fn(usize) -> String>)
+            .map(|s| s as &dyn StrValue)
             .collect::<Vec<_>>();
 
         make_comfy_table(
@@ -763,7 +763,7 @@ impl Table {
                 .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            Some(funcs.as_slice()),
+            Some(str_values.as_slice()),
             Some(self.len()),
             max_col_width,
         )

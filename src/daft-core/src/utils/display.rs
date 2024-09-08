@@ -1,5 +1,5 @@
 use crate::{datatypes::TimeUnit, series::Series};
-use common_daft_config::BOLD_TABLE_HEADERS_IN_DISPLAY;
+use common_display::table_display::StrValue;
 use itertools::Itertools;
 
 pub fn display_date32(val: i32) -> String {
@@ -96,9 +96,7 @@ pub fn display_series_literal(series: &Series) -> String {
     if !series.is_empty() {
         format!(
             "[{}]",
-            (0..series.len())
-                .map(|i| series.str_value(i).unwrap())
-                .join(", ")
+            (0..series.len()).map(|i| series.str_value(i)).join(", ")
         )
     } else {
         "[]".to_string()

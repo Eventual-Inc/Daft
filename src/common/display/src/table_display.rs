@@ -42,9 +42,13 @@ pub fn make_schema_vertical_table<S: ToString>(names: &[S], dtypes: &[S]) -> com
     table
 }
 
-pub fn make_comfy_table<'a, S: AsRef<str>>(
+pub trait StrValue {
+    fn str_value(&self, idx: usize) -> String;
+}
+
+pub fn make_comfy_table<S: AsRef<str>>(
     fields: &[S],
-    columns: Option<&[Box<dyn Fn(usize) -> String + 'a>]>,
+    columns: Option<&[&dyn StrValue]>,
     num_rows: Option<usize>,
     max_col_width: Option<usize>,
 ) -> comfy_table::Table {
@@ -124,8 +128,8 @@ pub fn make_comfy_table<'a, S: AsRef<str>>(
         for i in 0..head_rows {
             let all_cols = columns
                 .iter()
-                .map(|f| {
-                    let mut str_val = f(i);
+                .map(|s| {
+                    let mut str_val = s.str_value(i);
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
@@ -158,8 +162,8 @@ pub fn make_comfy_table<'a, S: AsRef<str>>(
         for i in (len - tail_rows)..(len) {
             let all_cols = columns
                 .iter()
-                .map(|f| {
-                    let mut str_val = f(i);
+                .map(|s| {
+                    let mut str_val = s.str_value(i);
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
