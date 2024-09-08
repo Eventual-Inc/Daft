@@ -1331,6 +1331,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-file-format"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-py-serde",
+ "pyo3",
+ "serde",
+]
+
+[[package]]
 name = "common-hashable-float-wrapper"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1657,6 +1667,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file-format",
  "common-hashable-float-wrapper",
  "common-resource-request",
  "common-system-info",
@@ -1846,6 +1857,7 @@ dependencies = [
  "azure_storage_blobs",
  "bytes",
  "common-error",
+ "common-file-format",
  "common-io-config",
  "common-py-serde",
  "futures",
@@ -2017,6 +2029,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-format",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -2024,7 +2037,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-io",
  "daft-scan",
  "daft-schema",
  "daft-table",
@@ -2046,6 +2058,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-format",
  "common-io-config",
  "common-py-serde",
  "daft-core",
@@ -2073,11 +2086,11 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-format",
  "common-io-config",
  "common-py-serde",
  "daft-core",
  "daft-dsl",
- "daft-io",
  "daft-plan",
  "daft-scan",
  "pyo3",

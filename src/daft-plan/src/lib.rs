@@ -21,7 +21,6 @@ mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 pub use daft_core::join::{JoinStrategy, JoinType};
-use daft_io::FileFormat;
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
 pub use physical_plan::{PhysicalPlan, PhysicalPlanRef};
@@ -49,7 +48,6 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     use daft_scan::file_format::DatabaseSourceConfig;
 
     parent.add_class::<PyLogicalPlanBuilder>()?;
-    parent.add_class::<FileFormat>()?;
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<ParquetSourceConfig>()?;
     parent.add_class::<JsonSourceConfig>()?;

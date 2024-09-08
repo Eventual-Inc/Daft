@@ -8,6 +8,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
+use common_file_format::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};
@@ -30,7 +31,6 @@ use crate::physical_ops::*;
 use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::{PlaceHolderInfo, SourceInfo};
-use crate::FileFormat;
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,

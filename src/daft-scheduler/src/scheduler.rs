@@ -1,5 +1,6 @@
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_file_format::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
 
@@ -13,7 +14,6 @@ use {
     daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},

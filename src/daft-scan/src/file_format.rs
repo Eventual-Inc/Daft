@@ -1,5 +1,5 @@
+use common_file_format::FileFormat;
 use daft_core::datatypes::{Field, TimeUnit};
-use daft_io::FileFormat;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::BTreeMap, sync::Arc};

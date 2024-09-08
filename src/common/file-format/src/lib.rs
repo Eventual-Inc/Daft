@@ -1,9 +1,16 @@
+/// Defines FileFormat enum, which represents the format of a file, e.g. Parquet, CSV, JSON.
+///
+/// NOTE: This is currently abused to also represent data being read from a Database or from a Python
+/// location. We should refactor our code to remove this.
 use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 use serde::{Deserialize, Serialize};
 

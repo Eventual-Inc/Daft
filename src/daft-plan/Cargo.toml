@@ -16,13 +16,13 @@ arrow2 = {workspace = true, features = [
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-file-format = {path = "../common/file-format", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
@@ -45,12 +45,12 @@ python = [
   "dep:pyo3",
   "common-display/python",
   "common-error/python",
+  "common-file-format/python",
   "common-io-config/python",
   "common-daft-config/python",
   "common-resource-request/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-io/python",
   "daft-functions/python",
   "daft-table/python",
   "daft-scan/python",
