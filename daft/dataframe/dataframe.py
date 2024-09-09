@@ -2533,6 +2533,18 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        self.collect()
+        result = self._result
+        assert result is not None
+        return result.to_pylist()
+
+    @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
         """Convert the current DataFrame into a map-style
         `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
