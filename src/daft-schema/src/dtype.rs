@@ -130,7 +130,7 @@ pub enum DataType {
     FixedShapeImage(ImageMode, u32, u32),
 
     /// A logical type for tensors with variable shapes.
-    #[display("Tensor[{_0}]")]
+    #[display("Tensor({_0})")]
     Tensor(Box<DataType>),
 
     /// A logical type for tensors with the same shape.
