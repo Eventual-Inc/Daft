@@ -150,7 +150,7 @@ fn format_struct(fields: &[Field]) -> std::result::Result<String, std::fmt::Erro
             write!(&mut f, ", ")?;
         }
         if !(field.name.is_empty() && field.dtype.is_null()) {
-            write!(&mut f, "{}", field)?;
+            write!(&mut f, "{}: {}", field.name, field.dtype)?;
         }
     }
     Ok(f)
