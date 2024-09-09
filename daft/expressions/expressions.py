@@ -1129,7 +1129,17 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def hash(self, seed: Any | None = None) -> Expression:
-        """Hashes the values in the Expression"""
+        """
+        Hashes the values in the Expression.
+
+        Uses the `XXH3_64bits` non-cryptographic hash function to hash the values in the expression.
+
+        .. NOTE::
+            Null values will produce a hash value instead of being propagated as null.
+
+        Args:
+            seed (optional): Seed used for generating the hash. Defaults to 0.
+        """
         if seed is None:
             expr = native.hash(self._expr)
         else:
