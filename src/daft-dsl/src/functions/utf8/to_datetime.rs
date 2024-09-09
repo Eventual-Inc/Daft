@@ -3,7 +3,7 @@ use crate::ExprRef;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
-use daft_core::datatypes::utils::infer_timeunit_from_format_string;
+use daft_core::datatypes::infer_timeunit_from_format_string;
 
 use super::{super::FunctionEvaluator, Utf8Expr};
 

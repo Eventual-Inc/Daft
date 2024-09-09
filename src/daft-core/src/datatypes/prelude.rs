@@ -6,10 +6,15 @@ pub use super::{
 };
 
 // Import utility types and structs
-pub use super::{Field, FieldID, FieldRef, ImageFormat, ImageMode, TimeUnit};
+
+pub use daft_schema::field::{Field, FieldID, FieldRef};
+
+pub use daft_schema::image_format::ImageFormat;
+pub use daft_schema::image_mode::ImageMode;
+pub use daft_schema::time_unit::TimeUnit;
 
 // Import DataType enum
-pub use super::DataType;
+pub use daft_schema::dtype::DataType;
 
 // Conditionally import PythonArray if the 'python' feature is enabled
 #[cfg(feature = "python")]

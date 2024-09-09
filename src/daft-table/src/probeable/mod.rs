@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use daft_core::schema::SchemaRef;
+use daft_core::prelude::SchemaRef;
 use probe_set::{ProbeSet, ProbeSetBuilder};
 use probe_table::{ProbeTable, ProbeTableBuilder};
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arrow2::datatypes::Field as ArrowField;
 
-use crate::datatypes::dtype::DataType;
+use crate::dtype::DataType;
 use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};

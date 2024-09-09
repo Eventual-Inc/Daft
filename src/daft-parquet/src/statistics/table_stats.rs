@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::schema::Schema;
+use daft_core::prelude::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 

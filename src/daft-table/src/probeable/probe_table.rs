@@ -4,14 +4,11 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_core::{
-    array::ops::as_arrow::AsArrow,
-    schema::SchemaRef,
-    utils::{
-        dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
-        identity_hash_set::IdentityBuildHasher,
-    },
-};
+
+use daft_core::utils::dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator};
+use daft_core::utils::identity_hash_set::IdentityBuildHasher;
+
+use daft_core::{array::ops::as_arrow::AsArrow, prelude::SchemaRef};
 
 use crate::{ops::hash::IndexHash, Table};
 

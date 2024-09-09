@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
-    schema::SchemaRef,
+    prelude::SchemaRef,
     utils::{
         dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
         identity_hash_set::IdentityBuildHasher,

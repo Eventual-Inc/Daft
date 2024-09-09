@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 
 use crate::{
     file_format::{FileFormatConfig, ParquetSourceConfig},
