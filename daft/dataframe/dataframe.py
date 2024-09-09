@@ -223,7 +223,9 @@ class DataFrame:
         return self.iter_rows(results_buffer_size=None)
 
     @DataframePublicAPI
-    def iter_rows(self, results_buffer_size: Optional[int] | Literal["num_cpus"] = "num_cpus") -> Iterator[Dict[str, Any]]:
+    def iter_rows(
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+    ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
@@ -287,7 +289,8 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_arrow_iter(
-        self, results_buffer_size: Optional[int] | Literal["num_cpus"] = "num_cpus",
+        self,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
     ) -> Iterator["pyarrow.RecordBatch"]:
         """
         Return an iterator of pyarrow recordbatches for this dataframe.
@@ -306,11 +309,7 @@ class DataFrame:
             # If the dataframe has already finished executing,
             # use the precomputed results.
             for _, result in self._result.items():
-                yield from (
-                    result.vpartition()
-                    .to_arrow()
-                    .to_batches()
-                )
+                yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -322,7 +321,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Optional[int] | Literal["num_cpus"] = "num_cpus"
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
@@ -379,10 +378,10 @@ class DataFrame:
         Statistics: missing
         <BLANKLINE>
         """
-        if results_buffer_size is not None and not results_buffer_size > 0:
-            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-        elif results_buffer_size == "num_cpus":
+        if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
+        elif results_buffer_size is not None and not results_buffer_size > 0:
+            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
 
         if self._result is not None:
             # If the dataframe has already finished executing,
