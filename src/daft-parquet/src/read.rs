@@ -163,8 +163,8 @@ async fn read_parquet_single<T: AsRef<str>>(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns_to_read.as_ref() {
-            builder.prune_columns(columns.as_slice())?
+        let builder = if let Some(columns) = &columns_to_read {
+            builder.prune_columns(columns)?
         } else {
             builder
         };
@@ -376,8 +376,8 @@ async fn stream_parquet_single(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns_to_read.as_ref() {
-            builder.prune_columns(columns.as_slice())?
+        let builder = if let Some(columns) = &columns_to_read {
+            builder.prune_columns(columns)?
         } else {
             builder
         };
@@ -461,9 +461,9 @@ async fn stream_parquet_single(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn read_parquet_single_into_arrow<T: AsRef<str>>(
+async fn read_parquet_single_into_arrow(
     uri: &str,
-    columns: Option<&[T]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -479,7 +479,7 @@ async fn read_parquet_single_into_arrow<T: AsRef<str>>(
         let (metadata, schema, all_arrays, num_rows_read) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
                 fixed_uri.as_ref(),
-                columns.map(|s| s.iter().map(|s| s.as_ref().to_string()).collect_vec()),
+                columns.clone(),
                 start_offset,
                 num_rows,
                 row_groups.clone(),
@@ -500,7 +500,7 @@ async fn read_parquet_single_into_arrow<T: AsRef<str>>(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
+        let builder = if let Some(columns) = &columns {
             builder.prune_columns(columns)?
         } else {
             builder
@@ -587,7 +587,7 @@ async fn read_parquet_single_into_arrow<T: AsRef<str>>(
         }?;
     };
 
-    let expected_num_columns = if let Some(columns) = columns {
+    let expected_num_columns = if let Some(columns) = &columns {
         columns.len()
     } else {
         metadata_num_columns
@@ -649,9 +649,9 @@ pub type ArrowChunkIters = Vec<
 >;
 pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
-pub fn read_parquet_into_pyarrow<T: AsRef<str>>(
+pub fn read_parquet_into_pyarrow(
     uri: &str,
-    columns: Option<&[T]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -853,7 +853,7 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
                         i,
                         read_parquet_single_into_arrow(
                             &uri,
-                            owned_columns.as_deref(),
+                            owned_columns,
                             start_offset,
                             num_rows,
                             owned_row_group,

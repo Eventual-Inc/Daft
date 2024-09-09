@@ -81,7 +81,7 @@ pub mod pylib {
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, pyarrow.clone()))
+            .map(|f| field_to_py(py, f, &pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
@@ -112,7 +112,7 @@ pub mod pylib {
 
             crate::read::read_parquet_into_pyarrow(
                 uri,
-                columns.as_deref(),
+                columns,
                 start_offset,
                 num_rows,
                 row_groups,

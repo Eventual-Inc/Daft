@@ -60,7 +60,7 @@ pub fn to_py_array<'py>(
 pub fn field_to_py(
     py: Python,
     field: &arrow2::datatypes::Field,
-    pyarrow: Bound<PyModule>,
+    pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let schema_ptr: *const ffi::ArrowSchema = &*schema;

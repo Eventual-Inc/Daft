@@ -29,7 +29,7 @@ impl PySchema {
             .schema
             .fields
             .iter()
-            .map(|(_, f)| field_to_py(py, &f.to_arrow()?, pyarrow.clone()))
+            .map(|(_, f)| field_to_py(py, &f.to_arrow()?, &pyarrow))
             .collect::<PyResult<Vec<_>>>()?;
         pyarrow
             .getattr(pyo3::intern!(py, "schema"))
