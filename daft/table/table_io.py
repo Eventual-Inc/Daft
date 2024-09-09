@@ -248,7 +248,7 @@ def read_sql(
         MicroPartition: MicroPartition from SQL query
     """
 
-    pa_table = conn.read(sql)
+    pa_table = conn.execute_sql_query(sql)
     mp = MicroPartition.from_arrow(pa_table)
 
     if len(mp) != 0:
