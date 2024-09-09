@@ -7,11 +7,7 @@ use std::{
 use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
 use common_error::DaftResult;
 
-use daft_core::{
-    datatypes::{BooleanArray, Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
-    schema::Schema,
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;

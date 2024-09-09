@@ -290,7 +290,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::{DaftError, DaftResult};
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 

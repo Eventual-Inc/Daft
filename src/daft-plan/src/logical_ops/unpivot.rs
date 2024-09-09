@@ -1,12 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use daft_core::{
-    datatypes::Field,
-    schema::{Schema, SchemaRef},
-    utils::supertype::try_get_supertype,
-    DataType,
-};
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
+
 use daft_dsl::{resolve_exprs, ExprRef};
 
 use itertools::Itertools;

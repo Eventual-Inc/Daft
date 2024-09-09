@@ -1,4 +1,5 @@
-use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, series::IntoSeries, Series};
+use daft_core::{array::ops::IntoGroups, prelude::*};
+
 use daft_dsl::{functions::FunctionExpr, AggExpr, Expr};
 
 use common_error::{DaftError, DaftResult};
@@ -72,7 +73,7 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
-        use daft_core::schema::Schema;
+        use daft_core::{array::ops::IntoGroups, schema::Schema};
         use daft_dsl::functions::python::PythonUDF;
 
         let udf = match func {

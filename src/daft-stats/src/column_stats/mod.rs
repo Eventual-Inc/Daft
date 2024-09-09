@@ -4,11 +4,7 @@ mod logical;
 
 use std::string::FromUtf8Error;
 
-use daft_core::{
-    array::ops::full::FullNull,
-    datatypes::{BooleanArray, NullArray},
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
@@ -111,9 +107,7 @@ impl ColumnRangeStatistics {
 
     pub(crate) fn combined_series(&self) -> crate::Result<Series> {
         match self {
-            Self::Missing => {
-                Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series())
-            }
+            Self::Missing => Ok(NullArray::full_null("null", &DataType::Null, 2).into_series()),
             Self::Loaded(l, u) => Series::concat([l, u].as_slice()).context(DaftCoreComputeSnafu),
         }
     }
@@ -133,14 +127,14 @@ impl ColumnRangeStatistics {
         let lower = series.min(None).unwrap();
         let upper = series.max(None).unwrap();
         let _count = series
-            .count(None, daft_core::CountMode::All)
+            .count(None, CountMode::All)
             .unwrap()
             .u64()
             .unwrap()
             .get(0)
             .unwrap() as usize;
         let _null_count = series
-            .count(None, daft_core::CountMode::Null)
+            .count(None, CountMode::Null)
             .unwrap()
             .u64()
             .unwrap()
@@ -253,7 +247,7 @@ impl From<Error> for crate::Error {
 #[cfg(test)]
 mod test {
 
-    use daft_core::{array::ops::DaftCompare, datatypes::Int32Array, IntoSeries};
+    use daft_core::prelude::*;
 
     use crate::column_stats::TruthValue;
 

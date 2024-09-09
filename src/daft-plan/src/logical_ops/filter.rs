@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_dsl::{resolve_single_expr, ExprRef};
 use snafu::ResultExt;
 

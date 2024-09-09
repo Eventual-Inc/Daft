@@ -1,7 +1,7 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_core::Series;
+use daft_core::prelude::*;
 use daft_table::Table;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]

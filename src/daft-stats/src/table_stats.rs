@@ -11,10 +11,7 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::column_stats::ColumnRangeStatistics;
 
-use daft_core::{
-    array::ops::DaftCompare,
-    schema::{Schema, SchemaRef},
-};
+use daft_core::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
@@ -199,7 +196,8 @@ impl Display for TableStatistics {
 #[cfg(test)]
 mod test {
 
-    use daft_core::{datatypes::Int64Array, IntoSeries};
+    use daft_core::prelude::*;
+
     use daft_dsl::{col, lit};
     use daft_table::Table;
 

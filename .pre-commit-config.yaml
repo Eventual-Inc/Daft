@@ -82,7 +82,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace]
+    args: [--workspace, --all-targets]
 
   - id: cargo-check-all-features
     name: cargo check (all features)
@@ -91,7 +91,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --all-features]
+    args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
     name: clippy

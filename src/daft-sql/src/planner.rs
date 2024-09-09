@@ -6,11 +6,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
-use daft_core::{
-    array::FixedSizeListArray,
-    datatypes::{Field, TimeUnit},
-    DataType, IntoSeries, JoinType,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::{

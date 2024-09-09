@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::{datatypes::Field, schema::Schema, DataType};
+use daft_core::prelude::*;
 
 use crate::LogicalPlan;
 

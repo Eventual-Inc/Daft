@@ -1,9 +1,5 @@
 use crate::ExprRef;
-use daft_core::{
-    datatypes::{try_mean_supertype, Field},
-    schema::Schema,
-    series::Series,
-};
+use daft_core::{datatypes::try_mean_supertype, prelude::*};
 
 use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};

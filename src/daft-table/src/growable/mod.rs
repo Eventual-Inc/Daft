@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::growable::{make_growable, Growable},
-    Series,
+    series::Series,
 };
 
 use crate::Table;

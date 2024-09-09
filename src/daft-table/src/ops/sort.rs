@@ -1,6 +1,6 @@
 use crate::Table;
 use common_error::{DaftError, DaftResult};
-use daft_core::Series;
+use daft_core::series::Series;
 use daft_dsl::ExprRef;
 
 impl Table {

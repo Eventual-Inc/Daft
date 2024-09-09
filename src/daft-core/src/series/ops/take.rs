@@ -1,4 +1,7 @@
-use crate::{datatypes::Utf8Array, series::Series, IntoSeries};
+use crate::{
+    datatypes::Utf8Array,
+    series::{IntoSeries, Series},
+};
 
 use arrow2::types::IndexRange;
 use common_error::DaftResult;
