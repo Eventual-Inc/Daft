@@ -63,7 +63,7 @@ jobs:
     # 2. If this is a PR from the current repo (since it needs access to secrets)
     # 3. If some of the documentation files changed or it has the `documentation` label
     if: |
-      ${{ success() }} &&
+      ${{ needs.docgen.result }} == 'success' &&
       github.event.pull_request != null &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(github.event.pull_request.labels.*.name, 'documentation')
@@ -76,7 +76,7 @@ jobs:
         echo "Has documentation label: ${{ contains(github.event.pull_request.labels.*.name, 'documentation') }}"
     - name: Conditional Step
       if: |
-        ${{ success() }} &&
+        ${{ needs.docgen.result }} == 'success' &&
         github.event.pull_request != null &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         contains(github.event.pull_request.labels.*.name, 'documentation')
