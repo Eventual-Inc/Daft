@@ -42,14 +42,13 @@ jobs:
       run: |
         uv pip install -r requirements-dev.txt
     - name: Build Daft in development mode and generate docs
-      # TODO: Break on any Sphinx warnings
+      # TODO: Break on any Sphinx warnings with nitpicks
       # make html SPHINXOPTS="-W --keep-going -n"
-      # See: https://stackoverflow.com/questions/38048945/how-to-turn-warnings-into-errors-when-building-sphinx-documentation-with-setupto
       run: |
         source activate
         maturin develop
         cd docs/
-        make html
+        make html SPHINXOPTS="-W --keep-going"
     - name: Upload built docs
       uses: actions/upload-artifact@v4
       with:
