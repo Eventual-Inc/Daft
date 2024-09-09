@@ -8,6 +8,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   docgen:
@@ -41,14 +42,13 @@ jobs:
       run: |
         uv pip install -r requirements-dev.txt
     - name: Build Daft in development mode and generate docs
-      # TODO: Break on any Sphinx warnings
+      # TODO: Break on any Sphinx warnings with nitpicks
       # make html SPHINXOPTS="-W --keep-going -n"
-      # See: https://stackoverflow.com/questions/38048945/how-to-turn-warnings-into-errors-when-building-sphinx-documentation-with-setupto
       run: |
         source activate
         maturin develop
         cd docs/
-        make html
+        make html SPHINXOPTS="-W --keep-going"
     - name: Upload built docs
       uses: actions/upload-artifact@v4
       with:
@@ -60,15 +60,12 @@ jobs:
     # Only publish to netlify on:
     # 1. If the previous doc building step didn't fail
     # 2. If this is a PR from the current repo (since it needs access to secrets)
-    # 3. If some of the documentation files changed or it has the `documentation` label
+    # 3. If it has the `documentation` label
     if: |
-      ${{ success() }} &&
-      github.event.pull_request != null &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (
-        contains(github.event.pull_request.changed_files, 'docs/') ||
-        contains(github.event.pull_request.labels.*.name, 'documentation')
-      )
+      success() &&
+      (github.event.pull_request != null) &&
+      (github.event.pull_request.head.repo.full_name == github.repository) &&
+      contains(github.event.pull_request.labels.*.name, 'documentation')
     steps:
     - name: Download built HTML docs
       uses: actions/download-artifact@v4
@@ -80,15 +77,17 @@ jobs:
         echo "User-agent: *" > ./built_html/robots.txt
         echo "Disallow: /" >> ./built_html/robots.txt
     - name: Deploy to Netlify
-      uses: nwtgck/actions-netlify@v2.0
+      uses: nwtgck/actions-netlify@v3.0
       with:
         publish-dir: ./built_html
         production-branch: main
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        deploy-message: Deploy from GitHub Actions
         enable-pull-request-comment: true
         enable-commit-comment: false
         overwrites-pull-request-comment: true
+        enable-github-deployment: false
+        alias: deploy-preview-${{ github.event.number }}
+        deploy-message: 'Deploy preview for PR #${{ github.event.number }} (current built commit: ${{ github.sha }})'
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

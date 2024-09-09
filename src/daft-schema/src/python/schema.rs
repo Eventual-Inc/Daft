@@ -8,7 +8,6 @@ use super::datatype::PyDataType;
 use super::field::PyField;
 use crate::field::Field;
 use crate::schema;
-use common_arrow_ffi::field_to_py;
 use common_py_serde::impl_bincode_py_state_serialization;
 
 #[pyclass(module = "daft.daft")]
@@ -29,7 +28,16 @@ impl PySchema {
             .schema
             .fields
             .iter()
-            .map(|(_, f)| field_to_py(&f.to_arrow()?, py, pyarrow))
+            .map(|(_, f)| {
+                // NOTE: Use PyDataType::to_arrow because we need to dip into Python to get
+                // the registered Arrow extension types
+                let py_dtype: PyDataType = f.dtype.clone().into();
+                let py_arrow_dtype = py_dtype.to_arrow(py)?;
+                pyarrow
+                    .getattr(pyo3::intern!(py, "field"))
+                    .unwrap()
+                    .call1((f.name.clone(), py_arrow_dtype))
+            })
             .collect::<PyResult<Vec<_>>>()?;
         pyarrow
             .getattr(pyo3::intern!(py, "schema"))
