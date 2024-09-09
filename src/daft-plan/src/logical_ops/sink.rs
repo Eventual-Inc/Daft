@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{
-    datatypes::Field,
-    schema::{Schema, SchemaRef},
-};
+use daft_core::prelude::*;
+
 use daft_dsl::resolve_exprs;
 
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
@@ -33,7 +31,7 @@ impl Sink {
                 let resolved_partition_cols = partition_cols
                     .clone()
                     .map(|cols| {
-                        resolve_exprs(cols, &schema).map(|(resolved_cols, _)| resolved_cols)
+                        resolve_exprs(cols, &schema, false).map(|(resolved_cols, _)| resolved_cols)
                     })
                     .transpose()?;
 
@@ -50,7 +48,7 @@ impl Sink {
 
         let fields = match sink_info.as_ref() {
             SinkInfo::OutputFileInfo(output_file_info) => {
-                let mut fields = vec![Field::new("path", daft_core::DataType::Utf8)];
+                let mut fields = vec![Field::new("path", DataType::Utf8)];
                 if let Some(ref pcols) = output_file_info.partition_cols {
                     for pc in pcols {
                         fields.push(pc.to_field(&schema)?);
@@ -62,7 +60,7 @@ impl Sink {
             SinkInfo::CatalogInfo(..) => {
                 vec![
                     // We have to return datafile since PyIceberg Table is not picklable yet
-                    Field::new("data_file", daft_core::DataType::Python),
+                    Field::new("data_file", DataType::Python),
                 ]
             }
         };

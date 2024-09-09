@@ -1,8 +1,15 @@
 use std::sync::Arc;
 
 use daft_dsl::{AggExpr, Expr, ExprRef, LiteralValue};
+use sqlparser::ast::FunctionArg;
 
-use crate::{ensure, error::SQLPlannerResult, functions::SQLFunctions, unsupported_sql_err};
+use crate::{
+    ensure,
+    error::SQLPlannerResult,
+    functions::{SQLFunction, SQLFunctions},
+    planner::SQLPlanner,
+    unsupported_sql_err,
+};
 
 use super::SQLModule;
 
@@ -13,12 +20,22 @@ impl SQLModule for SQLModuleAggs {
         use AggExpr::*;
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
-        parent.add_agg("count", Count(nil.clone(), daft_core::CountMode::Valid));
-        parent.add_agg("sum", Sum(nil.clone()));
-        parent.add_agg("avg", Mean(nil.clone()));
-        parent.add_agg("mean", Mean(nil.clone()));
-        parent.add_agg("min", Min(nil.clone()));
-        parent.add_agg("max", Max(nil.clone()));
+        parent.add_fn(
+            "count",
+            Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
+        );
+        parent.add_fn("sum", Sum(nil.clone()));
+        parent.add_fn("avg", Mean(nil.clone()));
+        parent.add_fn("mean", Mean(nil.clone()));
+        parent.add_fn("min", Min(nil.clone()));
+        parent.add_fn("max", Max(nil.clone()));
+    }
+}
+
+impl SQLFunction for AggExpr {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
+        to_expr(self, inputs.as_slice())
     }
 }
 
@@ -27,7 +44,9 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
         AggExpr::Count(_, _) => {
             // SQL default COUNT ignores nulls.
             ensure!(args.len() == 1, "count takes exactly one argument");
-            Ok(args[0].clone().count(daft_core::CountMode::Valid))
+            Ok(args[0]
+                .clone()
+                .count(daft_core::count_mode::CountMode::Valid))
         }
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");

@@ -54,10 +54,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::Field,
-        schema::{Schema, SchemaRef},
-    };
+    use daft_core::prelude::*;
     use daft_dsl::{col, ExprRef};
 
     use crate::{
@@ -94,9 +91,9 @@ mod tests {
     fn test_repartition_removed() -> DaftResult<()> {
         let base = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );
@@ -116,9 +113,9 @@ mod tests {
     fn test_repartition_not_removed() -> DaftResult<()> {
         let plan = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );

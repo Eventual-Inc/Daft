@@ -1,4 +1,4 @@
-use daft_core::JoinType;
+use daft_core::join::JoinType;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -6,10 +6,7 @@ use pyo3::types::PyDict;
 use crate::ffi;
 use crate::Table;
 use common_error::DaftError;
-use daft_core::datatypes::Field;
-use daft_core::schema::Schema;
-use daft_core::series::Series;
-
+use daft_core::prelude::*;
 use daft_dsl::python::PyExpr;
 
 use daft_core::python::schema::PySchema;

@@ -1,5 +1,4 @@
 pub mod float;
-pub mod image;
 pub mod json;
 pub mod list;
 pub mod map;
@@ -17,7 +16,6 @@ use std::hash::Hash;
 use crate::ExprRef;
 
 use self::float::FloatExpr;
-use self::image::ImageExpr;
 use self::json::JsonExpr;
 use self::list::ListExpr;
 use self::map::MapExpr;
@@ -49,7 +47,6 @@ pub enum FunctionExpr {
     Sketch(SketchExpr),
     Struct(StructExpr),
     Json(JsonExpr),
-    Image(ImageExpr),
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
 }
@@ -79,7 +76,6 @@ impl FunctionExpr {
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
             Json(expr) => expr.get_evaluator(),
-            Image(expr) => expr.get_evaluator(),
             Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }

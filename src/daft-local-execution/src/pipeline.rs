@@ -22,7 +22,6 @@ use daft_core::{
     datatypes::Field,
     schema::{Schema, SchemaRef},
     utils::supertype,
-    JoinType,
 };
 use daft_dsl::{join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
@@ -30,7 +29,7 @@ use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
     UnGroupedAggregate,
 };
-use daft_plan::populate_aggregation_stages;
+use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
 use indexmap::IndexSet;
 use snafu::ResultExt;

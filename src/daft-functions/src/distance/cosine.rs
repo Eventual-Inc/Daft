@@ -1,10 +1,6 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    array::FixedSizeListArray,
-    datatypes::{DaftNumericType, Field, Float64Array, NumericNative},
-    schema::Schema,
-    DataType, IntoSeries, Series,
-};
+use daft_core::{datatypes::NumericNative, prelude::*};
+
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,

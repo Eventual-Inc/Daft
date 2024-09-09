@@ -25,12 +25,8 @@ pub fn assert_optimized_plan_with_rules_eq(
         Default::default(),
     );
     let optimized_plan = optimizer
-        .optimize_with_rules(
-            optimizer.rule_batches[0].rules.as_slice(),
-            plan.clone(),
-            &optimizer.rule_batches[0].order,
-        )?
-        .unwrap()
+        .optimize_with_rules(optimizer.rule_batches[0].rules.as_slice(), plan.clone())?
+        .data
         .clone();
     assert_eq!(
         optimized_plan,

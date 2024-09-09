@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use crate::pipeline::PipelineResultType;
 use common_error::DaftResult;
-use daft_core::{schema::SchemaRef, JoinType};
+use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use daft_plan::JoinType;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};

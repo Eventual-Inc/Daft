@@ -2,8 +2,10 @@ use common_error::DaftResult;
 
 use crate::{
     array::{growable::make_growable, StructArray},
+    datatypes::DataType,
     datatypes::Field,
-    DataType, IntoSeries, Series,
+    series::IntoSeries,
+    series::Series,
 };
 
 use super::{bitmap_growable::ArrowBitmapGrowable, Growable};

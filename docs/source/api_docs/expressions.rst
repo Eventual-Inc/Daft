@@ -118,6 +118,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.agg_list
    Expression.agg_concat
    Expression.approx_percentiles
+   Expression.approx_count_distinct
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
@@ -142,6 +143,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.extract_all
    Expression.str.replace
    Expression.str.length
+   Expression.str.length_bytes
    Expression.str.lower
    Expression.str.upper
    Expression.str.lstrip

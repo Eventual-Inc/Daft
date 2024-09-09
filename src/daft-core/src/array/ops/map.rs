@@ -1,9 +1,9 @@
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::ops::DaftCompare,
-    datatypes::{logical::MapArray, DaftArrayType},
-    DataType, Series,
+    array::{ops::DaftCompare, prelude::*},
+    datatypes::prelude::*,
+    series::Series,
 };
 
 fn single_map_get(structs: &Series, key_to_get: &Series) -> DaftResult<Series> {

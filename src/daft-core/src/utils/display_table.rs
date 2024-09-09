@@ -1,6 +1,6 @@
 use crate::{
     datatypes::{Field, TimeUnit},
-    Series,
+    series::Series,
 };
 use common_daft_config::BOLD_TABLE_HEADERS_IN_DISPLAY;
 use itertools::Itertools;

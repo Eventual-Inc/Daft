@@ -197,11 +197,8 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
-        DataType,
-    };
+    use daft_core::prelude::*;
+
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 

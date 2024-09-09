@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{schema::SchemaRef, JoinType};
+use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use daft_plan::JoinType;
 use daft_table::{GrowableTable, Probeable, Table};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};

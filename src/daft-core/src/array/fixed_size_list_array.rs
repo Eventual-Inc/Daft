@@ -3,9 +3,9 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 
 use crate::array::growable::{Growable, GrowableArray};
+use crate::datatypes::DataType;
 use crate::datatypes::{DaftArrayType, Field};
 use crate::series::Series;
-use crate::DataType;
 
 #[derive(Clone, Debug)]
 pub struct FixedSizeListArray {
@@ -223,8 +223,8 @@ mod tests {
     use common_error::DaftResult;
 
     use crate::{
-        datatypes::{Field, Int32Array},
-        DataType, IntoSeries,
+        datatypes::{DataType, Field, Int32Array},
+        series::IntoSeries,
     };
 
     use super::FixedSizeListArray;

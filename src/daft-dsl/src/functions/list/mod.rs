@@ -11,7 +11,7 @@ mod sum;
 
 use chunk::ChunkEvaluator;
 use count::CountEvaluator;
-use daft_core::CountMode;
+use daft_core::count_mode::CountMode;
 use explode::ExplodeEvaluator;
 use get::GetEvaluator;
 use join::JoinEvaluator;
