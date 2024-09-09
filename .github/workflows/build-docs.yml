@@ -77,15 +77,17 @@ jobs:
         echo "User-agent: *" > ./built_html/robots.txt
         echo "Disallow: /" >> ./built_html/robots.txt
     - name: Deploy to Netlify
-      uses: nwtgck/actions-netlify@v2.0
+      uses: nwtgck/actions-netlify@v3.0
       with:
         publish-dir: ./built_html
         production-branch: main
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        deploy-message: Deploy from GitHub Actions
         enable-pull-request-comment: true
         enable-commit-comment: false
         overwrites-pull-request-comment: true
+        enable-github-deployment: false
+        alias: deploy-preview-${{ github.event.number }}
+        deploy-message: 'Deploy preview for PR #${{ github.event.number }} (current built commit: ${{ github.sha }})'
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
