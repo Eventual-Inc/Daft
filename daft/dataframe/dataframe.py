@@ -65,9 +65,6 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
-NUM_CPUS = multiprocessing.cpu_count()
-
-
 class DataFrame:
     """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
     number of items (rows) as all other columns.
@@ -226,7 +223,9 @@ class DataFrame:
         return self.iter_rows(results_buffer_size=None)
 
     @DataframePublicAPI
-    def iter_rows(self, results_buffer_size: Optional[int] = NUM_CPUS) -> Iterator[Dict[str, Any]]:
+    def iter_rows(
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+    ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
@@ -263,6 +262,9 @@ class DataFrame:
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
         """
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -270,7 +272,6 @@ class DataFrame:
             for i in range(len(self)):
                 row = {key: value[i] for (key, value) in pydict.items()}
                 yield row
-
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -286,21 +287,32 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.RecordBatch"]:
+    def to_arrow_iter(
+        self,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+    ) -> Iterator["pyarrow.RecordBatch"]:
         """
         Return an iterator of pyarrow recordbatches for this dataframe.
         """
+        for name in self.schema().column_names():
+            if self.schema()[name].dtype._is_python_type():
+                raise ValueError(
+                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
+                )
+
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield from self.to_arrow().to_batches()
-
+            for _, result in self._result.items():
+                yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -308,7 +320,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Optional[int] = NUM_CPUS
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
@@ -365,7 +377,9 @@ class DataFrame:
         Statistics: missing
         <BLANKLINE>
         """
-        if results_buffer_size is not None and not results_buffer_size > 0:
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
+        elif results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
 
         if self._result is not None:
@@ -2496,17 +2510,10 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        for name in self.schema().column_names():
-            if self.schema()[name].dtype._is_python_type():
-                raise ValueError(
-                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
-                )
+        import pyarrow as pa
 
-        self.collect()
-        result = self._result
-        assert result is not None
-
-        return result.to_arrow()
+        arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
+        return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:
