@@ -175,7 +175,7 @@ class SQLScanOperator(ScanOperator):
             )
 
             min_max_sql = self.conn.construct_sql_query(
-                self.sql, projection=[f"MIN({self._partition_col})", f"MAX({self._partition_col})"]
+                self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
             )
             pa_table = self.conn.execute_sql_query(min_max_sql)
 
