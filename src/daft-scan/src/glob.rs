@@ -272,9 +272,28 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
+        let condensed_glob_paths = if self.glob_paths.len() <= 7 {
+            self.glob_paths.join(", ")
+        } else {
+            let first_three: Vec<String> = self.glob_paths.iter().take(3).cloned().collect();
+            let last_three: Vec<String> = self
+                .glob_paths
+                .iter()
+                .skip(self.glob_paths.len() - 3)
+                .cloned()
+                .collect();
+
+            let mut result = first_three.join(", ");
+            result.push_str(", ...");
+            result.push_str(", ");
+            result.push_str(&last_three.join(", "));
+
+            result
+        };
+
         let mut lines = vec![
             "GlobScanOperator".to_string(),
-            format!("Glob paths = [{}]", self.glob_paths.join(", ")),
+            format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());
