@@ -141,7 +141,8 @@ impl Display for LiteralValue {
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
-                Python::with_gil(|py| pyobj.0.call_method0(py, "__str__")).unwrap()
+                Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
+                    .unwrap()
             }),
         }
     }

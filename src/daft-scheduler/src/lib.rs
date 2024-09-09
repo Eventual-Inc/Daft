@@ -8,7 +8,7 @@ pub use scheduler::PhysicalPlanScheduler;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PhysicalPlanScheduler>()?;
     parent.add_class::<AdaptivePhysicalPlanScheduler>()?;
 

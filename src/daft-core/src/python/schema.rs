@@ -24,15 +24,15 @@ impl PySchema {
     }
 
     pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let pyarrow = py.import_bound("pyarrow")?;
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let pyarrow_fields = self
             .schema
             .fields
             .iter()
-            .map(|(_, f)| field_to_py(&f.to_arrow()?, pyarrow.clone()))
+            .map(|(_, f)| field_to_py(py, &f.to_arrow()?, pyarrow.clone()))
             .collect::<PyResult<Vec<_>>>()?;
         pyarrow
-            .getattr("schema")
+            .getattr(pyo3::intern!(py, "schema"))
             .expect("PyArrow module must contain .schema function")
             .call1((pyarrow_fields,))
     }

@@ -68,20 +68,20 @@ pub mod pylib {
         schema: arrow2::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
-        pyarrow: Bound<'_, PyModule>,
+        pyarrow: Bound<PyModule>,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(a, py, pyarrow.clone()))
+                    .map(|a| to_py_array(py, a, pyarrow.clone()).map(|pyarray| pyarray.unbind()))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(f, pyarrow.clone()))
+            .map(|f| field_to_py(py, f, pyarrow.clone()))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
@@ -124,7 +124,7 @@ pub mod pylib {
             )
         })?;
         let (schema, all_arrays, num_rows) = read_parquet_result;
-        let pyarrow = py.import_bound("pyarrow")?;
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
@@ -211,7 +211,7 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import_bound("pyarrow")?;
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays, num_rows)| {
@@ -284,7 +284,7 @@ pub mod pylib {
         })
     }
 }
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         pylib::read_parquet_into_pyarrow,

@@ -27,7 +27,7 @@ pub use resolve_expr::{
 };
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyExpr>()?;
 
     parent.add_function(wrap_pyfunction_bound!(python::col, parent)?)?;

@@ -45,7 +45,7 @@ use {
 };
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use daft_scan::file_format::DatabaseSourceConfig;
 
     parent.add_class::<PyLogicalPlanBuilder>()?;

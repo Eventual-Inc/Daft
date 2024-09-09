@@ -71,11 +71,11 @@ pub mod pylib {
     #[pyfunction]
     pub fn refresh_logger(py: Python) -> PyResult<()> {
         use log::LevelFilter;
-        let logging = py.import_bound("logging")?;
+        let logging = py.import_bound(pyo3::intern!(py, "logging"))?;
         let python_log_level = logging
-            .getattr("getLogger")?
+            .getattr(pyo3::intern!(py, "getLogger"))?
             .call0()?
-            .getattr("level")?
+            .getattr(pyo3::intern!(py, "level"))?
             .extract::<usize>()
             .unwrap_or(0);
 
@@ -94,7 +94,7 @@ pub mod pylib {
     }
 
     #[pymodule]
-    fn daft(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
         init_tracing(crate::should_enable_chrome_trace());
 

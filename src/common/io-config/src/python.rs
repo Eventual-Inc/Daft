@@ -228,10 +228,12 @@ impl IOConfig {
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
-        let io_config_module = py.import_bound("daft.io.config")?;
+        let io_config_module = py.import_bound(pyo3::intern!(py, "daft.io.config"))?;
         let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
         Ok((
-            io_config_module.getattr("_io_config_from_json")?.into(),
+            io_config_module
+                .getattr(pyo3::intern!(py, "_io_config_from_json"))?
+                .into(),
             (json_string,),
         ))
     }
@@ -256,7 +258,7 @@ impl S3Config {
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<Bound<'_, PyAny>>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -316,7 +318,7 @@ impl S3Config {
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<Bound<'_, PyAny>>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -376,9 +378,9 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import_bound("daft")?
-            .getattr("daft")?
-            .getattr("s3_config_from_env")?;
+            .import_bound(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "daft"))?
+            .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
             pyany
                 .extract()
@@ -529,15 +531,16 @@ impl S3Config {
 impl S3Credentials {
     #[new]
     pub fn new(
+        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<Bound<'_, PyAny>>,
+        expiry: Option<Bound<PyAny>>,
     ) -> PyResult<Self> {
         // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
         let expiry = expiry
             .map(|e| {
-                let ts = e.call_method0("timestamp")?.extract()?;
+                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
 
                 Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
             })
@@ -576,14 +579,16 @@ impl S3Credentials {
         self.credentials
             .expiry
             .map(|e| {
-                let datetime = py.import_bound("datetime")?;
+                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
 
-                datetime.getattr("datetime")?.call_method1(
-                    "fromtimestamp",
-                    (e.duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs_f64(),),
-                )
+                datetime
+                    .getattr(pyo3::intern!(py, "datetime"))?
+                    .call_method1(
+                        pyo3::intern!(py, "fromtimestamp"),
+                        (e.duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs_f64(),),
+                    )
             })
             .transpose()
     }
@@ -600,7 +605,7 @@ pub struct PyS3CredentialsProvider {
 }
 
 impl PyS3CredentialsProvider {
-    pub fn new(provider: Bound<'_, PyAny>) -> PyResult<Self> {
+    pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
         let hash = provider.hash()?;
         Ok(PyS3CredentialsProvider {
             provider: provider.into(),
@@ -913,7 +918,7 @@ impl HTTPConfig {
     }
 }
 
-pub fn register_modules(parent: Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;

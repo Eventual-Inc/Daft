@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 use snafu::Snafu;
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     // keep in sorted order
     parent.add_function(wrap_pyfunction_bound!(
         count_matches::python::utf8_count_matches,

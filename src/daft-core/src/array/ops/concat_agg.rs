@@ -21,7 +21,7 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
             let pylist: Py<PyList> = PyList::empty_bound(py).into();
             for pyobj in pyobj_vec {
                 if !pyobj.is_none(py) {
-                    pylist.call_method1(py, "extend", (pyobj,))?;
+                    pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
                 }
             }
             Ok(pylist)
@@ -43,7 +43,7 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
                 let pylist: Py<PyList> = PyList::empty_bound(py).into();
                 for pyobj in group_pyobjs {
                     if !pyobj.is_none(py) {
-                        pylist.call_method1(py, "extend", (pyobj,))?;
+                        pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
                     }
                 }
                 result_pylists.push(pylist.into());

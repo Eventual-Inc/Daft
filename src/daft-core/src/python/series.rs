@@ -33,8 +33,8 @@ pub struct PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn from_arrow(name: &str, pyarrow_array: Bound<'_, PyAny>) -> PyResult<Self> {
-        let arrow_array = ffi::array_to_rust(pyarrow_array)?;
+    pub fn from_arrow(py: Python, name: &str, pyarrow_array: Bound<PyAny>) -> PyResult<Self> {
+        let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
@@ -42,7 +42,7 @@ impl PySeries {
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<'_, PyAny>, pyobj: &str) -> PyResult<Self> {
+    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, pyobj: &str) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let py = pylist.py();
         let dtype = match pyobj {
@@ -72,8 +72,8 @@ impl PySeries {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
-            let pyarrow = py.import_bound("pyarrow")?;
-            ffi::to_py_array(arrow_array, py, pyarrow)
+            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            Ok(ffi::to_py_array(py, arrow_array, pyarrow)?.unbind())
         })
     }
 
@@ -760,14 +760,18 @@ fn infer_daft_dtype_for_sequence(
     _name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
-        .import_bound("PIL.Image")
-        .and_then(|m| m.getattr("Image"));
-    let np_ndarray_type = py.import_bound("numpy").and_then(|m| m.getattr("ndarray"));
-    let np_generic_type = py.import_bound("numpy").and_then(|m| m.getattr("generic"));
+        .import_bound(pyo3::intern!(py, "PIL.Image"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
+    let np_ndarray_type = py
+        .import_bound(pyo3::intern!(py, "numpy"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
+    let np_generic_type = py
+        .import_bound(pyo3::intern!(py, "numpy"))
+        .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
     let from_numpy_dtype = {
-        py.import_bound("daft.datatype")?
-            .getattr("DataType")?
-            .getattr("from_numpy_dtype")?
+        py.import_bound(pyo3::intern!(py, "daft.datatype"))?
+            .getattr(pyo3::intern!(py, "DataType"))?
+            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
@@ -775,7 +779,9 @@ fn infer_daft_dtype_for_sequence(
         if let Ok(pil_image_type) = &py_pil_image_type
             && obj.is_instance(pil_image_type)?
         {
-            let mode_str = obj.getattr("mode")?.extract::<String>()?;
+            let mode_str = obj
+                .getattr(pyo3::intern!(py, "mode"))?
+                .extract::<String>()?;
             let mode = ImageMode::from_pil_mode_str(&mode_str)?;
             match &dtype {
                 Some(DataType::Image(Some(existing_mode))) => {
@@ -800,15 +806,15 @@ fn infer_daft_dtype_for_sequence(
             && let Ok(np_generic_type) = &np_generic_type
             && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
         {
-            let np_dtype = obj.getattr("dtype")?;
+            let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
             let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| {
-                dt.getattr("_dtype")
+                dt.getattr(pyo3::intern!(py, "_dtype"))
                     .unwrap()
                     .extract::<PyDataType>()
                     .unwrap()
                     .dtype
             });
-            let shape: Vec<u64> = obj.getattr("shape")?.extract()?;
+            let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
             let inferred_dtype = match inferred_inner_dtype {
                 Ok(inferred_inner_dtype) if shape.len() == 1 => {
                     Some(DataType::List(Box::new(inferred_inner_dtype)))

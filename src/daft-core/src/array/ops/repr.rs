@@ -145,7 +145,8 @@ impl crate::datatypes::PythonArray {
 
         let val = self.get(idx);
 
-        let call_result = Python::with_gil(|py| val.call_method0(py, "__str__"))?;
+        let call_result =
+            Python::with_gil(|py| val.call_method0(py, pyo3::intern!(py, "__str__")))?;
 
         let extracted = Python::with_gil(|py| call_result.extract(py))?;
 
@@ -384,8 +385,8 @@ impl crate::datatypes::PythonArray {
             // Find visualization hooks for this object's class
             let pyany = val.bind(py);
             let get_viz_hook = py
-                .import_bound("daft.viz.html_viz_hooks")?
-                .getattr("get_viz_hook")?;
+                .import_bound(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
+                .getattr(pyo3::intern!(py, "get_viz_hook"))?;
             let hook = get_viz_hook.call1((pyany,))?;
 
             if hook.is_none() {

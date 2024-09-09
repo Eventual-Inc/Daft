@@ -10,8 +10,8 @@ where
     S: Serializer,
 {
     let bytes = Python::with_gil(|py| {
-        py.import_bound("daft.pickle")
-            .and_then(|m| m.getattr("dumps"))
+        py.import_bound(pyo3::intern!(py, "daft.pickle"))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
             .and_then(|f| f.call1((obj,)))
             .and_then(|b| b.extract::<Vec<u8>>())
             .map_err(|e| SerError::custom(e.to_string()))
@@ -35,8 +35,8 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import_bound("daft.pickle")
-                .and_then(|m| m.getattr("loads"))
+            py.import_bound(pyo3::intern!(py, "daft.pickle"))
+                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
                 .and_then(|f| Ok(f.call1((v,))?.into()))
                 .map_err(|e| DeError::custom(e.to_string()))
         })
@@ -47,8 +47,8 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import_bound("daft.pickle")
-                .and_then(|m| m.getattr("loads"))
+            py.import_bound(pyo3::intern!(py, "daft.pickle"))
+                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
                 .and_then(|f| Ok(f.call1((v,))?.into()))
                 .map_err(|e| DeError::custom(e.to_string()))
         })
@@ -79,7 +79,7 @@ macro_rules! impl_bincode_py_state_serialization {
                 };
                 Ok((
                     Self::type_object_bound(py)
-                        .getattr("_from_serialized")?
+                        .getattr(pyo3::intern!(py, "_from_serialized"))?
                         .into(),
                     (PyBytes::new_bound(
                         py,

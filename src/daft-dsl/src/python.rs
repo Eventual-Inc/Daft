@@ -104,7 +104,7 @@ pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn lit(item: Bound<'_, PyAny>) -> PyResult<PyExpr> {
+pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
         Ok(crate::lit(val).into())

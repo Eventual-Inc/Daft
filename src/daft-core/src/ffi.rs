@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 
 pub type ArrayRef = Box<dyn Array>;
 
-pub fn array_to_rust(arrow_array: Bound<'_, PyAny>) -> PyResult<ArrayRef> {
+pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
     let array = Box::new(ffi::ArrowArray::empty());
     let schema = Box::new(ffi::ArrowSchema::empty());
@@ -18,7 +18,7 @@ pub fn array_to_rust(arrow_array: Bound<'_, PyAny>) -> PyResult<ArrayRef> {
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
     arrow_array.call_method1(
-        "_export_to_c",
+        pyo3::intern!(py, "_export_to_c"),
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
@@ -29,11 +29,11 @@ pub fn array_to_rust(arrow_array: Bound<'_, PyAny>) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_py_array(
+pub fn to_py_array<'py>(
+    py: Python<'py>,
     array: ArrayRef,
-    py: Python,
-    pyarrow: Bound<'_, PyModule>,
-) -> PyResult<PyObject> {
+    pyarrow: Bound<'py, PyModule>,
+) -> PyResult<Bound<'py, PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new(
         "",
         array.data_type().clone(),
@@ -45,42 +45,46 @@ pub fn to_py_array(
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
     let array_ptr: *const ffi::ArrowArray = &*arrow_arr;
 
-    let array = pyarrow.getattr("Array")?.call_method1(
-        "_import_from_c",
+    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    let array = PyModule::import_bound(py, "daft.arrow_utils")?
-        .getattr("remove_empty_struct_placeholders")?
+    let array = PyModule::import_bound(py, pyo3::intern!(py, "daft.arrow_utils"))?
+        .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
         .call1((array,))?;
 
-    Ok(array.into())
+    Ok(array)
 }
 
 pub fn field_to_py(
+    py: Python,
     field: &arrow2::datatypes::Field,
-    pyarrow: Bound<'_, PyModule>,
+    pyarrow: Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
 
-    let field = pyarrow
-        .getattr("Field")?
-        .call_method1("_import_from_c", (schema_ptr as Py_uintptr_t,))?;
+    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (schema_ptr as Py_uintptr_t,),
+    )?;
 
     Ok(field.into())
 }
 
 pub fn to_py_schema<'py>(
+    py: Python<'py>,
     dtype: &arrow2::datatypes::DataType,
     pyarrow: Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new("", dtype.clone(), true)));
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
 
-    let field = pyarrow
-        .getattr("Field")?
-        .call_method1("_import_from_c", (schema_ptr as Py_uintptr_t,))?;
+    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (schema_ptr as Py_uintptr_t,),
+    )?;
 
     Ok(field)
 }

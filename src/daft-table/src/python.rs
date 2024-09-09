@@ -404,7 +404,7 @@ impl PyTable {
     #[staticmethod]
     pub fn from_arrow_record_batches(
         py: Python,
-        record_batches: Vec<Bound<'_, PyAny>>,
+        record_batches: Vec<Bound<PyAny>>,
         schema: &PySchema,
     ) -> PyResult<Self> {
         let table =
@@ -447,8 +447,8 @@ impl PyTable {
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let pyarrow = py.import_bound("pyarrow")?;
-            ffi::table_to_record_batch(&self.table, py, pyarrow)
+            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            ffi::table_to_record_batch(py, &self.table, pyarrow)
         })
     }
 
@@ -480,7 +480,7 @@ impl AsRef<Table> for PyTable {
     }
 }
 
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyTable>()?;
     Ok(())
 }

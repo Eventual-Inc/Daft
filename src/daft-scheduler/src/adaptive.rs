@@ -32,7 +32,7 @@ impl AdaptivePhysicalPlanScheduler {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         py.allow_threads(|| {

@@ -13,7 +13,7 @@ use daft_core::{
 
 pub fn record_batches_to_table(
     py: Python,
-    batches: &[Bound<'_, PyAny>],
+    batches: &[Bound<PyAny>],
     schema: SchemaRef,
 ) -> PyResult<Table> {
     if batches.is_empty() {
@@ -27,11 +27,11 @@ pub fn record_batches_to_table(
         Vec::with_capacity(num_batches);
 
     for rb in batches {
-        let pycolumns = rb.getattr("columns")?;
+        let pycolumns = rb.getattr(pyo3::intern!(py, "columns"))?;
         let columns = pycolumns
             .downcast::<PyList>()?
             .into_iter()
-            .map(daft_core::ffi::array_to_rust)
+            .map(|col| daft_core::ffi::array_to_rust(py, col))
             .collect::<PyResult<Vec<_>>>()?;
         if names.len() != columns.len() {
             return Err(PyValueError::new_err(format!("Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}", names.len(), columns.len())));
@@ -57,9 +57,9 @@ pub fn record_batches_to_table(
 }
 
 pub fn table_to_record_batch(
-    table: &Table,
     py: Python,
-    pyarrow: Bound<'_, PyModule>,
+    table: &Table,
+    pyarrow: Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(table.num_columns());
     let mut names: Vec<String> = Vec::with_capacity(table.num_columns());
@@ -68,14 +68,14 @@ pub fn table_to_record_batch(
         let s = table.get_column_by_index(i)?;
         let arrow_array = s.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
-        let py_array = daft_core::ffi::to_py_array(arrow_array, py, pyarrow.clone())?;
+        let py_array = daft_core::ffi::to_py_array(py, arrow_array, pyarrow.clone())?;
         arrays.push(py_array);
         names.push(s.name().to_string());
     }
 
     let record = pyarrow
-        .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names.to_vec()))?;
+        .getattr(pyo3::intern!(py, "RecordBatch"))?
+        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.to_vec()))?;
 
     Ok(record.into())
 }

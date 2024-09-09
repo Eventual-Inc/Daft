@@ -65,20 +65,24 @@ fn run_udf(
 ) -> DaftResult<Series> {
     use daft_core::python::{PyDataType, PySeries};
 
-    // Convert input Rust &[Series] to wrapped Python Vec<Bound<'_, PyAny>>
-    let py_series_module = PyModule::import_bound(py, "daft.series")?;
-    let py_series_class = py_series_module.getattr("Series")?;
-    let pyseries: PyResult<Vec<Bound<'_, PyAny>>> = inputs
+    // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
+    let py_series_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?;
+    let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
+    let pyseries: PyResult<Vec<Bound<PyAny>>> = inputs
         .iter()
         .map(|s| {
-            py_series_class.call_method("_from_pyseries", (PySeries { series: s.clone() },), None)
+            py_series_class.call_method(
+                pyo3::intern!(py, "_from_pyseries"),
+                (PySeries { series: s.clone() },),
+                None,
+            )
         })
         .collect();
     let pyseries = pyseries?;
 
-    // Run the function on the converted Vec<Bound<'_, PyAny>>
-    let py_udf_module = PyModule::import_bound(py, "daft.udf")?;
-    let run_udf_func = py_udf_module.getattr("run_udf")?;
+    // Run the function on the converted Vec<Bound<PyAny>>
+    let py_udf_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.udf"))?;
+    let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
         func,                                   // Function to run
         bound_args,                             // Arguments bound to the function
@@ -114,8 +118,14 @@ impl StatelessPythonUDF {
 
         Python::with_gil(|py| {
             // Extract the required Python objects to call our run_udf helper
-            let func = self.partial_func.as_ref().getattr(py, "func")?;
-            let bound_args = self.partial_func.as_ref().getattr(py, "bound_args")?;
+            let func = self
+                .partial_func
+                .as_ref()
+                .getattr(py, pyo3::intern!(py, "func"))?;
+            let bound_args = self
+                .partial_func
+                .as_ref()
+                .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
             run_udf(
                 py,
@@ -183,7 +193,7 @@ impl FunctionEvaluator for StatefulPythonUDF {
                     let bound_args = self
                         .stateful_partial_func
                         .as_ref()
-                        .getattr(py, "bound_args")?;
+                        .getattr(py, pyo3::intern!(py, "bound_args"))?;
                     run_udf(
                         py,
                         inputs,
@@ -201,11 +211,11 @@ impl FunctionEvaluator for StatefulPythonUDF {
                     let func = self
                         .stateful_partial_func
                         .as_ref()
-                        .getattr(py, "func_cls")?;
+                        .getattr(py, pyo3::intern!(py, "func_cls"))?;
                     let bound_args = self
                         .stateful_partial_func
                         .as_ref()
-                        .getattr(py, "bound_args")?;
+                        .getattr(py, pyo3::intern!(py, "bound_args"))?;
 
                     let func = match &self.init_args {
                         None => func.call0(py)?,

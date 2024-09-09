@@ -16,7 +16,7 @@ mod py {
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
-    ) -> PyResult<Vec<Bound<'_, PyDict>>> {
+    ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
         let io_stats_handle = io_stats.clone();
@@ -68,7 +68,7 @@ mod py {
         Ok(common_io_config::python::S3Config { config: s3_config? })
     }
 
-    pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+    pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         common_io_config::python::register_modules(parent.clone())?;
         parent.add_function(wrap_pyfunction_bound!(io_glob, parent.clone())?)?;
         parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent.clone())?)?;

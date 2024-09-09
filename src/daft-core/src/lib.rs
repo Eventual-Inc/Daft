@@ -31,7 +31,7 @@ pub const DAFT_BUILD_TYPE: &str = {
 };
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<count_mode::CountMode>()?;
     parent.add_class::<join::JoinType>()?;
     parent.add_class::<join::JoinStrategy>()?;

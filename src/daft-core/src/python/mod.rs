@@ -9,7 +9,7 @@ use crate::datatypes::ImageMode;
 pub use datatype::PyDataType;
 pub use series::PySeries;
 
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<series::PySeries>()?;
     parent.add_class::<datatype::PyDataType>()?;
     parent.add_class::<datatype::PyTimeUnit>()?;

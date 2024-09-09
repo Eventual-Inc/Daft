@@ -242,7 +242,7 @@ impl ResourceRequest {
 impl_bincode_py_state_serialization!(ResourceRequest);
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<ResourceRequest>()?;
     Ok(())
 }
