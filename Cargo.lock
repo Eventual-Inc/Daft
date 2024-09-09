@@ -1717,6 +1717,7 @@ dependencies = [
  "daft-minhash",
  "daft-schema",
  "daft-sketch",
+ "derive_more",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
@@ -1795,6 +1796,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
+ "derive_more",
  "indexmap 2.3.0",
  "itertools 0.11.0",
  "log",
@@ -2093,6 +2095,7 @@ dependencies = [
  "common-error",
  "common-py-serde",
  "common-version",
+ "derive_more",
  "html-escape",
  "indexmap 2.3.0",
  "num-derive",
@@ -2187,6 +2190,27 @@ checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
  "serde",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
+ "unicode-xid",
 ]
 
 [[package]]

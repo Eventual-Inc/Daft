@@ -3,10 +3,8 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
-use std::{
-    fmt::{Display, Formatter, Result},
-    sync::Arc,
-};
+use derive_more::Display;
+use std::sync::Arc;
 
 use crate::{
     array::{
@@ -24,7 +22,8 @@ pub use ops::cast_series_to_supertype;
 
 pub(crate) use self::series_like::SeriesLike;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
+#[display("{}\n", self.to_comfy_table())]
 pub struct Series {
     pub inner: Arc<dyn SeriesLike>,
 }
@@ -136,13 +135,3 @@ impl Series {
         Ok(data.as_slice())
     }
 }
-impl Display for Series {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_comfy_table();
-        writeln!(f, "{table}")
-    }
-}
-
-#[cfg(test)]
-mod tests {}

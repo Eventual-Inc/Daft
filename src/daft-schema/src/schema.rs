@@ -1,6 +1,5 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
-    fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -9,6 +8,7 @@ use common_display::{
     table_display::{make_comfy_table, make_schema_vertical_table},
     DisplayAs,
 };
+use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -18,8 +18,12 @@ use common_error::{DaftError, DaftResult};
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
+#[display("{}\n", make_schema_vertical_table(
+    fields.keys().collect::<Vec<_>>().as_slice(),
+    fields.values().map(|field| field.dtype.to_string()).collect::<Vec<_>>().as_slice(),
+))]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
     pub fields: indexmap::IndexMap<String, Field>,
@@ -253,8 +257,6 @@ impl Schema {
     }
 }
 
-impl Eq for Schema {}
-
 impl Hash for Schema {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_u64(hash_index_map(&self.fields))
@@ -285,24 +287,6 @@ pub fn hash_index_map<K: Hash, V: Hash>(indexmap: &indexmap::IndexMap<K, V>) -> 
 impl Default for Schema {
     fn default() -> Self {
         Self::empty()
-    }
-}
-
-impl Display for Schema {
-    // Produces an ASCII table.
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        let names = self
-            .fields
-            .values()
-            .map(|f| f.name.clone())
-            .collect::<Vec<_>>();
-        let dtypes = self
-            .fields
-            .values()
-            .map(|f| format!("{}", f.dtype))
-            .collect::<Vec<_>>();
-        let table = make_schema_vertical_table(&names, &dtypes);
-        writeln!(f, "{table}")
     }
 }
 

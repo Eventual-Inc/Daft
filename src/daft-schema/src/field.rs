@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter, Result};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -6,12 +5,14 @@ use arrow2::datatypes::Field as ArrowField;
 
 use crate::dtype::DataType;
 use common_error::{DaftError, DaftResult};
+use derive_more::Display;
 
 use serde::{Deserialize, Serialize};
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
-#[derive(Clone, Debug, Eq, Deserialize, Serialize)]
+#[derive(Clone, Display, Debug, Eq, Deserialize, Serialize)]
+#[display("{name}: {dtype}")]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
@@ -20,7 +21,8 @@ pub struct Field {
 
 pub type FieldRef = Arc<Field>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
+#[derive(Clone, Display, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
+#[display("{id}")]
 pub struct FieldID {
     pub id: Arc<str>,
 }
@@ -59,12 +61,6 @@ impl FieldID {
             .replace(')', "\\x29")
             .replace('\\', "\\x5c");
         Self::new(sanitized)
-    }
-}
-
-impl Display for FieldID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.id)
     }
 }
 
@@ -149,11 +145,5 @@ impl From<&ArrowField> for Field {
             dtype: af.data_type().into(),
             metadata: af.metadata.clone().into(),
         }
-    }
-}
-
-impl Display for Field {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{}#{}", self.name, self.dtype)
     }
 }

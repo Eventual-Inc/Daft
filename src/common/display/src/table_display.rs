@@ -20,7 +20,10 @@ fn create_table_cell(value: &str) -> comfy_table::Cell {
     cell
 }
 
-pub fn make_schema_vertical_table<S: ToString>(names: &[S], dtypes: &[S]) -> comfy_table::Table {
+pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
+    names: &[S1],
+    dtypes: &[S2],
+) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
     let default_width_if_no_tty = 120usize;

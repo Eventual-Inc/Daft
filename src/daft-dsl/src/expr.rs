@@ -9,7 +9,8 @@ use itertools::Itertools;
 
 use crate::{
     functions::{
-        function_display, function_semantic_id,
+        binary_op_display_without_formatter, function_display_without_formatter,
+        function_semantic_id,
         python::PythonUDF,
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -22,9 +23,9 @@ use crate::{
 
 use common_error::{DaftError, DaftResult};
 
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::{Display, Formatter, Result},
     io::{self, Write},
     sync::Arc,
 };
@@ -33,33 +34,62 @@ use super::functions::FunctionExpr;
 
 pub type ExprRef = Arc<Expr>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
+    #[display("{_0} as {_1}")]
     Alias(ExprRef, Arc<str>),
+
+    #[display("{_0}")]
     Agg(AggExpr),
+
+    #[display("{}", binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
         left: ExprRef,
         right: ExprRef,
     },
+
+    #[display("cast({_0} as {_1})")]
     Cast(ExprRef, DataType),
+
+    #[display("col({_0})")]
     Column(Arc<str>),
+
+    #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+
+    #[display("not({_0})")]
     Not(ExprRef),
+
+    #[display("is_null({_0})")]
     IsNull(ExprRef),
+
+    #[display("not_null({_0})")]
     NotNull(ExprRef),
+
+    #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
+
+    #[display("{_0} in {_1}")]
     IsIn(ExprRef, ExprRef),
+
+    #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
+
+    #[display("lit({_0})")]
     Literal(lit::LiteralValue),
+
+    #[display("if [{predicate}] then [{if_true}] else [{if_false}]")]
     IfElse {
         if_true: ExprRef,
         if_false: ExprRef,
         predicate: ExprRef,
     },
+
+    #[display("{_0}")]
     ScalarFunction(ScalarFunction),
 }
 
@@ -70,20 +100,45 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
+    #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
+
+    #[display("sum({_0})")]
     Sum(ExprRef),
+
+    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
     ApproxPercentile(ApproxPercentileParams),
+
+    #[display("approx_count_distinct({_0})")]
     ApproxCountDistinct(ExprRef),
+
+    #[display("approx_sketch({_0}, sketch_type={_1:?})")]
     ApproxSketch(ExprRef, SketchType),
+
+    #[display("merge_sketch({_0}, sketch_type={_1:?})")]
     MergeSketch(ExprRef, SketchType),
+
+    #[display("mean({_0})")]
     Mean(ExprRef),
+
+    #[display("min({_0})")]
     Min(ExprRef),
+
+    #[display("max({_0})")]
     Max(ExprRef),
+
+    #[display("any_value({_0}, ignore_nulls={_1})")]
     AnyValue(ExprRef, bool),
+
+    #[display("list({_0})")]
     List(ExprRef),
+
+    #[display("list({_0})")]
     Concat(ExprRef),
+
+    #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
@@ -982,119 +1037,42 @@ impl Expr {
     }
 }
 
-impl Display for Expr {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        use Expr::*;
-        match self {
-            Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => write!(f, "{agg_expr}"),
-            BinaryOp { op, left, right } => {
-                let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
-                    Alias(e, _) => write!(f, "{e}"),
-                    BinaryOp { .. } => write!(f, "[{input}]"),
-                    _ => write!(f, "{input}"),
-                };
-
-                write_out_expr(f, left)?;
-                write!(f, " {op} ")?;
-                write_out_expr(f, right)?;
-                Ok(())
-            }
-            Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
-            Column(name) => write!(f, "col({name})"),
-            Not(expr) => write!(f, "not({expr})"),
-            IsNull(expr) => write!(f, "is_null({expr})"),
-            NotNull(expr) => write!(f, "not_null({expr})"),
-            FillNull(expr, fill_value) => write!(f, "fill_null({expr}, {fill_value})"),
-            IsIn(expr, items) => write!(f, "{expr} in {items}"),
-            Between(expr, lower, upper) => write!(f, "{expr} in [{lower},{upper}]"),
-            Literal(val) => write!(f, "lit({val})"),
-            Function { func, inputs } => function_display(f, func, inputs),
-            ScalarFunction(func) => write!(f, "{func}"),
-
-            IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => {
-                write!(f, "if [{predicate}] then [{if_true}] else [{if_false}]")
-            }
-        }
-    }
-}
-
-impl Display for AggExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use AggExpr::*;
-        match self {
-            Count(expr, mode) => write!(f, "count({expr}, {mode})"),
-            Sum(expr) => write!(f, "sum({expr})"),
-            ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(
-                f,
-                "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
-            ),
-            ApproxCountDistinct(expr) => write!(f, "approx_count_distinct({expr})"),
-            ApproxSketch(expr, sketch_type) => write!(f, "approx_sketch({expr}, sketch_type={sketch_type:?})"),
-            MergeSketch(expr, sketch_type) => write!(f, "merge_sketch({expr}, sketch_type={sketch_type:?})"),
-            Mean(expr) => write!(f, "mean({expr})"),
-            Min(expr) => write!(f, "min({expr})"),
-            Max(expr) => write!(f, "max({expr})"),
-            AnyValue(expr, ignore_nulls) => {
-                write!(f, "any_value({expr}, ignore_nulls={ignore_nulls})")
-            }
-            List(expr) => write!(f, "list({expr})"),
-            Concat(expr) => write!(f, "list({expr})"),
-            MapGroups { func, inputs } => function_display(f, func, inputs),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
+    #[display("==")]
     Eq,
+    #[display("!=")]
     NotEq,
+    #[display("<")]
     Lt,
+    #[display("<=")]
     LtEq,
+    #[display(">")]
     Gt,
+    #[display(">=")]
     GtEq,
+    #[display("+")]
     Plus,
+    #[display("-")]
     Minus,
+    #[display("*")]
     Multiply,
+    #[display("/")]
     TrueDivide,
+    #[display("//")]
     FloorDivide,
+    #[display("%")]
     Modulus,
+    #[display("&")]
     And,
+    #[display("|")]
     Or,
+    #[display("^")]
     Xor,
+    #[display("<<")]
     ShiftLeft,
+    #[display(">>")]
     ShiftRight,
-}
-
-impl Display for Operator {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use Operator::*;
-        let tkn = match self {
-            Eq => "==",
-            NotEq => "!=",
-            Lt => "<",
-            LtEq => "<=",
-            Gt => ">",
-            GtEq => ">=",
-            Plus => "+",
-            Minus => "-",
-            Multiply => "*",
-            TrueDivide => "/",
-            FloorDivide => "//",
-            Modulus => "%",
-            And => "&",
-            Or => "|",
-            Xor => "^",
-            ShiftLeft => "<<",
-            ShiftRight => ">>",
-        };
-        write!(f, "{tkn}")
-    }
 }
 
 impl Operator {
