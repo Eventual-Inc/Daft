@@ -262,6 +262,9 @@ class DataFrame:
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
         """
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -269,10 +272,6 @@ class DataFrame:
             for i in range(len(self)):
                 row = {key: value[i] for (key, value) in pydict.items()}
                 yield row
-
-        if results_buffer_size == "num_cpus":
-            results_buffer_size = multiprocessing.cpu_count()
-
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
