@@ -33,13 +33,14 @@ impl<'a> AsRef<DataType> for InferDataType<'a> {
 impl<'a> InferDataType<'a> {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
         // Whether a logical op (and, or, xor) is supported between the two types.
-        use DataType::*;
         let left = self.0;
         let other = other.0;
         match (left, other) {
             #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Boolean),
-            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(Boolean),
+            (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Boolean),
+            (DataType::Boolean, DataType::Boolean)
+            | (DataType::Boolean, DataType::Null)
+            | (DataType::Null, DataType::Boolean) => Ok(DataType::Boolean),
             (s, o) if s.is_integer() && o.is_integer() => {
                 let dtype = try_numeric_supertype(s, o)?;
                 if dtype.is_floating() {
@@ -72,32 +73,32 @@ impl<'a> InferDataType<'a> {
 
         let left = &self.0;
         let other = &other.0;
-        let evaluator = || {
-            use DataType::*;
-            match (left, other) {
-                (s, o) if s == o => Ok((Boolean, None, s.to_physical())),
-                (Utf8, o) | (o, Utf8) if o.is_numeric() => Err(DaftError::TypeError(format!(
-                    "Cannot perform comparison on Utf8 and numeric type.\ntypes: {}, {}",
+        let evaluator = || match (left, other) {
+            (s, o) if s == o => Ok((DataType::Boolean, None, s.to_physical())),
+            (DataType::Utf8, o) | (o, DataType::Utf8) if o.is_numeric() => {
+                Err(DaftError::TypeError(format!(
+                    "Cannot perform comparison on DataType::Utf8 and numeric type.\ntypes: {}, {}",
                     left, other
-                ))),
-                (s, o) if s.is_physical() && o.is_physical() => {
-                    Ok((Boolean, None, try_physical_supertype(s, o)?))
-                }
-                (Timestamp(..), Timestamp(..)) => {
-                    let intermediate_type = try_get_supertype(left, other)?;
-                    let pt = intermediate_type.to_physical();
-                    Ok((Boolean, Some(intermediate_type), pt))
-                }
-                (Timestamp(..), Date) | (Date, Timestamp(..)) => {
-                    let intermediate_type = Date;
-                    let pt = intermediate_type.to_physical();
-                    Ok((Boolean, Some(intermediate_type), pt))
-                }
-                _ => Err(DaftError::TypeError(format!(
-                    "Cannot perform comparison on types: {}, {}",
-                    left, other
-                ))),
+                )))
             }
+            (s, o) if s.is_physical() && o.is_physical() => {
+                Ok((DataType::Boolean, None, try_physical_supertype(s, o)?))
+            }
+            (DataType::Timestamp(..), DataType::Timestamp(..)) => {
+                let intermediate_type = try_get_supertype(left, other)?;
+                let pt = intermediate_type.to_physical();
+                Ok((DataType::Boolean, Some(intermediate_type), pt))
+            }
+            (DataType::Timestamp(..), DataType::Date)
+            | (DataType::Date, DataType::Timestamp(..)) => {
+                let intermediate_type = DataType::Date;
+                let pt = intermediate_type.to_physical();
+                Ok((DataType::Boolean, Some(intermediate_type), pt))
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot perform comparison on types: {}, {}",
+                left, other
+            ))),
         };
 
         evaluator().map_err(|err| {
@@ -120,30 +121,28 @@ impl<'a> Add for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn add(self, other: Self) -> Self::Output {
-        use DataType::*;
-
         try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) + InferDataType::from(r)})).or(
             match (self.0, other.0) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => Ok(Python),
-                (Timestamp(t_unit, tz), Duration(d_unit))
-                | (Duration(d_unit), Timestamp(t_unit, tz))
-                    if t_unit == d_unit => Ok(Timestamp(*t_unit, tz.clone())),
-                (ts @ Timestamp(..), du @ Duration(..))
-                | (du @ Duration(..), ts @ Timestamp(..)) => Err(DaftError::TypeError(
+                (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+                (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
+                | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz))
+                    if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
+                    (ts @ DataType::Timestamp(..), du @ DataType::Duration(..))
+                    | (du @ DataType::Duration(..), ts @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
-                (Date, Duration(..)) | (Duration(..), Date) => Ok(Date),
-                (Duration(d_unit_self), Duration(d_unit_other)) if d_unit_self == d_unit_other => {
-                    Ok(Duration(*d_unit_self))
+                (DataType::Date, DataType::Duration(..)) | (DataType::Duration(..), DataType::Date) => Ok(DataType::Date),
+                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
+                    Ok(DataType::Duration(*d_unit_self))
                 },
-                (du_self @ &Duration(..), du_other @ &Duration(..)) => Err(DaftError::TypeError(
+                (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
-                (Null, other) | (other, Null) => {
+                (DataType::Null, other) | (other, DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
-                        Binary | FixedSizeBinary(..) | Date => Err(DaftError::TypeError(
+                        DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
@@ -152,19 +151,19 @@ impl<'a> Add for InferDataType<'a> {
                         )),
                     }
                 }
-                (Utf8, other) | (other, Utf8) => {
+                (DataType::Utf8, other) | (other, DataType::Utf8) => {
                     match other {
-                        // Date condition is for backwards compatibility. TODO: remove
-                        Binary | FixedSizeBinary(..) | Date => Err(DaftError::TypeError(
+                        // DataType::Date condition is for backwards compatibility. TODO: remove
+                        DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
-                        other if other.is_physical() => Ok(Utf8),
+                        other if other.is_physical() => Ok(DataType::Utf8),
                         _ => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
                     }
                 }
-                (Boolean, other) | (other, Boolean)
+                (DataType::Boolean, other) | (other, DataType::Boolean)
                     if other.is_numeric() => Ok(other.clone()),
                 _ => Err(DaftError::TypeError(
                     format!("Cannot add types: {}, {}", self, other)
@@ -178,27 +177,26 @@ impl<'a> Sub for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn sub(self, other: Self) -> Self::Output {
-        use DataType::*;
         try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) - InferDataType::from(r)})).or(
             match (self.0, other.0) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => Ok(Python),
-                (Timestamp(t_unit, tz), Duration(d_unit))
-                    if t_unit == d_unit => Ok(Timestamp(*t_unit, tz.clone())),
-                (ts @ Timestamp(..), du @ Duration(..)) => Err(DaftError::TypeError(
+                (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+                (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
+                    if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
+                    (ts @ DataType::Timestamp(..), du @ DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
-                (Timestamp(t_unit_self, tz_self), Timestamp(t_unit_other, tz_other))
-                    if t_unit_self == t_unit_other && tz_self == tz_other => Ok(Duration(*t_unit_self)),
-                (ts @ Timestamp(..), ts_other @ Timestamp(..)) => Err(DaftError::TypeError(
+                    (DataType::Timestamp(t_unit_self, tz_self), DataType::Timestamp(t_unit_other, tz_other))
+                    if t_unit_self == t_unit_other && tz_self == tz_other => Ok(DataType::Duration(*t_unit_self)),
+                (ts @ DataType::Timestamp(..), ts_other @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision or timezone: {}, {}. Please explicitly cast to the precision or timezone you wish to add in.", ts, ts_other)
                 )),
-                (Date, Duration(..)) => Ok(Date),
-                (Date, Date) => Ok(Duration(crate::datatypes::TimeUnit::Seconds)),
-                (Duration(d_unit_self), Duration(d_unit_other)) if d_unit_self == d_unit_other => {
-                    Ok(Duration(*d_unit_self))
+                (DataType::Date, DataType::Duration(..)) => Ok(DataType::Date),
+                (DataType::Date, DataType::Date) => Ok(DataType::Duration(crate::datatypes::TimeUnit::Seconds)),
+                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
+                    Ok(DataType::Duration(*d_unit_self))
                 },
-                (du_self @ &Duration(..), du_other @ &Duration(..)) => Err(DaftError::TypeError(
+                (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
                 _ => Err(DaftError::TypeError(
@@ -213,11 +211,10 @@ impl<'a> Div for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn div(self, other: Self) -> Self::Output {
-        use DataType::*;
         match (&self.0, &other.0) {
             #[cfg(feature = "python")]
-            (Python, _) | (_, Python) => Ok(Python),
-            (s, o) if s.is_numeric() && o.is_numeric() => Ok(Float64),
+            (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+            (s, o) if s.is_numeric() && o.is_numeric() => Ok(DataType::Float64),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot divide types: {}, {}",
                 self, other
@@ -233,14 +230,13 @@ impl<'a> Mul for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn mul(self, other: Self) -> Self::Output {
-        use DataType::*;
         try_numeric_supertype(self.0, other.0)
             .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
                 InferDataType::from(l) * InferDataType::from(r)
             }))
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => Ok(Python),
+                (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
                 _ => Err(DaftError::TypeError(format!(
                     "Cannot multiply types: {}, {}",
                     self, other
@@ -253,14 +249,13 @@ impl<'a> Rem for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn rem(self, other: Self) -> Self::Output {
-        use DataType::*;
         try_numeric_supertype(self.0, other.0)
             .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
                 InferDataType::from(l) % InferDataType::from(r)
             }))
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => Ok(Python),
+                (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
                 _ => Err(DaftError::TypeError(format!(
                     "Cannot multiply types: {}, {}",
                     self, other
@@ -301,14 +296,20 @@ pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType
     // Given two physical data types,
     // get the physical data type that they can both be casted to.
 
-    use DataType::*;
     try_numeric_supertype(l, r).or(match (l, r) {
-        (Null, other) | (other, Null) if other.is_physical() => Ok(other.clone()),
-        (Boolean, other) | (other, Boolean) if other.is_numeric() => Ok(other.clone()),
+        (DataType::Null, other) | (other, DataType::Null) if other.is_physical() => {
+            Ok(other.clone())
+        }
+        (DataType::Boolean, other) | (other, DataType::Boolean) if other.is_numeric() => {
+            Ok(other.clone())
+        }
         #[cfg(feature = "python")]
-        (Python, _) | (_, Python) => Ok(Python),
-        (Utf8, o) | (o, Utf8) if o.is_physical() && !matches!(o, Binary | FixedSizeBinary(..)) => {
-            Ok(Utf8)
+        (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+        (DataType::Utf8, o) | (o, DataType::Utf8)
+            if o.is_physical()
+                && !matches!(o, DataType::Binary | DataType::FixedSizeBinary(..)) =>
+        {
+            Ok(DataType::Utf8)
         }
         _ => Err(DaftError::TypeError(format!(
             "Invalid arguments to try_physical_supertype: {}, {}",
@@ -323,73 +324,71 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
     // for the purpose of performing numeric operations.
 
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
-        use DataType::*;
-
         match (l, r) {
-            (Int8, Int8) => Some(Int8),
-            (Int8, Int16) => Some(Int16),
-            (Int8, Int32) => Some(Int32),
-            (Int8, Int64) => Some(Int64),
-            (Int8, UInt8) => Some(Int16),
-            (Int8, UInt16) => Some(Int32),
-            (Int8, UInt32) => Some(Int64),
-            (Int8, UInt64) => Some(Float64), // Follow numpy
-            (Int8, Float32) => Some(Float32),
-            (Int8, Float64) => Some(Float64),
+            (DataType::Int8, DataType::Int8) => Some(DataType::Int8),
+            (DataType::Int8, DataType::Int16) => Some(DataType::Int16),
+            (DataType::Int8, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Int8, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int8, DataType::UInt8) => Some(DataType::Int16),
+            (DataType::Int8, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int8, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int8, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int8, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Int8, DataType::Float64) => Some(DataType::Float64),
 
-            (Int16, Int16) => Some(Int16),
-            (Int16, Int32) => Some(Int32),
-            (Int16, Int64) => Some(Int64),
-            (Int16, UInt8) => Some(Int16),
-            (Int16, UInt16) => Some(Int32),
-            (Int16, UInt32) => Some(Int64),
-            (Int16, UInt64) => Some(Float64), // Follow numpy
-            (Int16, Float32) => Some(Float32),
-            (Int16, Float64) => Some(Float64),
+            (DataType::Int16, DataType::Int16) => Some(DataType::Int16),
+            (DataType::Int16, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Int16, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int16, DataType::UInt8) => Some(DataType::Int16),
+            (DataType::Int16, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int16, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
 
-            (Int32, Int32) => Some(Int32),
-            (Int32, Int64) => Some(Int64),
-            (Int32, UInt8) => Some(Int32),
-            (Int32, UInt16) => Some(Int32),
-            (Int32, UInt32) => Some(Int64),
-            (Int32, UInt64) => Some(Float64),  // Follow numpy
-            (Int32, Float32) => Some(Float64), // Follow numpy
-            (Int32, Float64) => Some(Float64),
+            (DataType::Int32, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Int32, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int32, DataType::UInt8) => Some(DataType::Int32),
+            (DataType::Int32, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int32, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int32, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
 
-            (Int64, Int64) => Some(Int64),
-            (Int64, UInt8) => Some(Int64),
-            (Int64, UInt16) => Some(Int64),
-            (Int64, UInt32) => Some(Int64),
-            (Int64, UInt64) => Some(Float64),  // Follow numpy
-            (Int64, Float32) => Some(Float64), // Follow numpy
-            (Int64, Float64) => Some(Float64),
+            (DataType::Int64, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt8) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt16) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
 
-            (UInt8, UInt8) => Some(UInt8),
-            (UInt8, UInt16) => Some(UInt16),
-            (UInt8, UInt32) => Some(UInt32),
-            (UInt8, UInt64) => Some(UInt64),
-            (UInt8, Float32) => Some(Float32),
-            (UInt8, Float64) => Some(Float64),
+            (DataType::UInt8, DataType::UInt8) => Some(DataType::UInt8),
+            (DataType::UInt8, DataType::UInt16) => Some(DataType::UInt16),
+            (DataType::UInt8, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::UInt8, DataType::UInt64) => Some(DataType::UInt64),
+            (DataType::UInt8, DataType::Float32) => Some(DataType::Float32),
+            (DataType::UInt8, DataType::Float64) => Some(DataType::Float64),
 
-            (UInt16, UInt16) => Some(UInt16),
-            (UInt16, UInt32) => Some(UInt32),
-            (UInt16, UInt64) => Some(UInt64),
-            (UInt16, Float32) => Some(Float32),
-            (UInt16, Float64) => Some(Float64),
+            (DataType::UInt16, DataType::UInt16) => Some(DataType::UInt16),
+            (DataType::UInt16, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::UInt16, DataType::UInt64) => Some(DataType::UInt64),
+            (DataType::UInt16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::UInt16, DataType::Float64) => Some(DataType::Float64),
 
-            (UInt32, UInt32) => Some(UInt32),
-            (UInt32, UInt64) => Some(UInt64),
-            (UInt32, Float32) => Some(Float64),
-            (UInt32, Float64) => Some(Float64),
+            (DataType::UInt32, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::UInt32, DataType::UInt64) => Some(DataType::UInt64),
+            (DataType::UInt32, DataType::Float32) => Some(DataType::Float64),
+            (DataType::UInt32, DataType::Float64) => Some(DataType::Float64),
 
-            (UInt64, UInt64) => Some(UInt64),
-            (UInt64, Float32) => Some(Float64),
-            (UInt64, Float64) => Some(Float64),
+            (DataType::UInt64, DataType::UInt64) => Some(DataType::UInt64),
+            (DataType::UInt64, DataType::Float32) => Some(DataType::Float64),
+            (DataType::UInt64, DataType::Float64) => Some(DataType::Float64),
 
-            (Float32, Float32) => Some(Float32),
-            (Float32, Float64) => Some(Float64),
+            (DataType::Float32, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Float32, DataType::Float64) => Some(DataType::Float64),
 
-            (Float64, Float64) => Some(Float64),
+            (DataType::Float64, DataType::Float64) => Some(DataType::Float64),
 
             _ => None,
         }
@@ -411,10 +410,11 @@ pub fn try_fixed_shape_numeric_datatype<F>(
 where
     F: Fn(&DataType, &DataType) -> DaftResult<DataType>,
 {
-    use DataType::*;
-
     match (l, r) {
-        (FixedShapeTensor(ldtype, lshape), FixedShapeTensor(rdtype, rshape)) => {
+        (
+            DataType::FixedShapeTensor(ldtype, lshape),
+            DataType::FixedShapeTensor(rdtype, rshape),
+        ) => {
             if lshape != rshape {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {} due to shape mismatch",
@@ -423,7 +423,10 @@ where
             } else if let Ok(result_type) = inner_f(ldtype.as_ref(), rdtype.as_ref())
                 && result_type.is_numeric()
             {
-                Ok(FixedShapeTensor(Box::new(result_type), lshape.clone()))
+                Ok(DataType::FixedShapeTensor(
+                    Box::new(result_type),
+                    lshape.clone(),
+                ))
             } else {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {}",
@@ -431,14 +434,14 @@ where
                 )))
             }
         }
-        (FixedSizeList(ldtype, lsize), FixedSizeList(rdtype, rsize)) => {
+        (DataType::FixedSizeList(ldtype, lsize), DataType::FixedSizeList(rdtype, rsize)) => {
             if lsize != rsize {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {} due to shape mismatch",
                     l, r
                 )))
             } else if let Ok(result_type) = inner_f(ldtype.as_ref(), rdtype.as_ref()) {
-                Ok(FixedSizeList(Box::new(result_type), *lsize))
+                Ok(DataType::FixedSizeList(Box::new(result_type), *lsize))
             } else {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {}",
@@ -446,7 +449,7 @@ where
                 )))
             }
         }
-        (Embedding(ldtype, lsize), Embedding(rdtype, rsize)) => {
+        (DataType::Embedding(ldtype, lsize), DataType::Embedding(rdtype, rsize)) => {
             if lsize != rsize {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {} due to shape mismatch",
@@ -455,7 +458,7 @@ where
             } else if let Ok(result_type) = inner_f(ldtype.as_ref(), rdtype.as_ref())
                 && result_type.is_numeric()
             {
-                Ok(Embedding(Box::new(result_type), *lsize))
+                Ok(DataType::Embedding(Box::new(result_type), *lsize))
             } else {
                 Err(DaftError::TypeError(format!(
                     "Cannot add types: {}, {}",
