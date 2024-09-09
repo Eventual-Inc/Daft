@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use daft_dsl::ExprRef;
 use itertools::Itertools;

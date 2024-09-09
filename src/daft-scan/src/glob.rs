@@ -1,7 +1,7 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;

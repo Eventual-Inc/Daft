@@ -17,7 +17,7 @@ use crate::{
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_schema::schema::{Schema, SchemaRef};

@@ -1,4 +1,4 @@
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use daft_core::datatypes::{Field, TimeUnit};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;

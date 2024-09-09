@@ -9,5 +9,5 @@ python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
 
 [package]
 edition = {workspace = true}
-name = "common-file-format"
+name = "common-file-formats"
 version = {workspace = true}

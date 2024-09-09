@@ -9,9 +9,6 @@ use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-pub mod python;
-
 use serde::{Deserialize, Serialize};
 
 /// Format of a file, e.g. Parquet, CSV, JSON.

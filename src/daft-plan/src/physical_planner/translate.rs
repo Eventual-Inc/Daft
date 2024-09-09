@@ -8,7 +8,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::{col, ApproxPercentileParams, SketchType};
 use daft_dsl::{is_partition_compatible, ExprRef};

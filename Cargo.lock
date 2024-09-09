@@ -1331,7 +1331,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-file-format"
+name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
@@ -1667,7 +1667,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
- "common-file-format",
+ "common-file-formats",
  "common-hashable-float-wrapper",
  "common-resource-request",
  "common-system-info",
@@ -1857,7 +1857,7 @@ dependencies = [
  "azure_storage_blobs",
  "bytes",
  "common-error",
- "common-file-format",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "futures",
@@ -2029,7 +2029,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
- "common-file-format",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -2058,7 +2058,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
- "common-file-format",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "daft-core",
@@ -2086,7 +2086,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
- "common-file-format",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "daft-core",

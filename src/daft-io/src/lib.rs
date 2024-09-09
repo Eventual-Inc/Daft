@@ -13,7 +13,7 @@ mod s3_like;
 mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
-use common_file_format::FileFormat;
+use common_file_formats::FileFormat;
 use futures::FutureExt;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
