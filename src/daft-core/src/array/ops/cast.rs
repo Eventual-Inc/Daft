@@ -69,10 +69,13 @@ where
     // Get the result of the Arrow Logical->Target cast.
     let result_arrow_array = {
         // First, get corresponding Arrow LogicalArray of source DataArray
-        use DataType::*;
         let source_arrow_array = match source_dtype {
             // Wrapped primitives
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+            DataType::Decimal128(..)
+            | DataType::Date
+            | DataType::Timestamp(..)
+            | DataType::Duration(..)
+            | DataType::Time(..) => {
                 with_match_daft_logical_primitive_types!(source_dtype, |$T| {
                     use arrow2::array::Array;
                     to_cast
@@ -111,11 +114,14 @@ where
     // If the target type is also Logical, get the Arrow Physical.
     let result_arrow_physical_array = {
         if dtype.is_logical() {
-            use DataType::*;
             let target_physical_type = dtype.to_physical().to_arrow()?;
             match dtype {
                 // Primitive wrapper types: change the arrow2 array's type field to primitive
-                Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+                DataType::Decimal128(..)
+                | DataType::Date
+                | DataType::Timestamp(..)
+                | DataType::Duration(..)
+                | DataType::Time(..) => {
                     with_match_daft_logical_primitive_types!(dtype, |$P| {
                         use arrow2::array::Array;
                         result_arrow_array

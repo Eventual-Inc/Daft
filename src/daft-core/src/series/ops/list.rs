@@ -8,10 +8,9 @@ use common_error::DaftResult;
 
 impl Series {
     pub fn explode(&self) -> DaftResult<Series> {
-        use DataType::*;
         match self.data_type() {
-            List(_) => self.list()?.explode(),
-            FixedSizeList(..) => self.fixed_size_list()?.explode(),
+            DataType::List(_) => self.list()?.explode(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(),
             dt => Err(DaftError::TypeError(format!(
                 "explode not implemented for {}",
                 dt
@@ -20,13 +19,13 @@ impl Series {
     }
 
     pub fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
-        use DataType::*;
-
         match self.data_type() {
-            List(_) => self.list()?.count(mode),
-            FixedSizeList(..) => self.fixed_size_list()?.count(mode),
-            Embedding(..) | FixedShapeImage(..) => self.as_physical()?.list_count(mode),
-            Image(..) => {
+            DataType::List(_) => self.list()?.count(mode),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.count(mode),
+            DataType::Embedding(..) | DataType::FixedShapeImage(..) => {
+                self.as_physical()?.list_count(mode)
+            }
+            DataType::Image(..) => {
                 let struct_array = self.as_physical()?;
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
