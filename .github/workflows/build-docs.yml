@@ -61,26 +61,13 @@ jobs:
     # Only publish to netlify on:
     # 1. If the previous doc building step didn't fail
     # 2. If this is a PR from the current repo (since it needs access to secrets)
-    # 3. If some of the documentation files changed or it has the `documentation` label
+    # 3. If it has the `documentation` label
     if: |
-      ${{ needs.docgen.result }} == 'success' &&
-      github.event.pull_request != null &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
+      success() &&
+      (github.event.pull_request != null) &&
+      (github.event.pull_request.head.repo.full_name == github.repository) &&
       contains(github.event.pull_request.labels.*.name, 'documentation')
     steps:
-    - name: Debug Conditions
-      run: |
-        echo "PR exists: ${{ github.event.pull_request != null }}"
-        echo "Repo match: ${{ github.event.pull_request.head.repo.full_name == github.repository }}"
-        echo "Labels: ${{ toJson(github.event.pull_request.labels) }}"
-        echo "Has documentation label: ${{ contains(github.event.pull_request.labels.*.name, 'documentation') }}"
-    - name: Conditional Step
-      if: |
-        ${{ needs.docgen.result }} == 'success' &&
-        github.event.pull_request != null &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(github.event.pull_request.labels.*.name, 'documentation')
-      run: echo "All conditions met"
     - name: Download built HTML docs
       uses: actions/download-artifact@v4
       with:
