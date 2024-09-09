@@ -97,9 +97,9 @@ fn limit_with_delete_rows(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn read_parquet_single<T: AsRef<str>>(
+async fn read_parquet_single(
     uri: &str,
-    columns: Option<&[T]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -113,11 +113,10 @@ async fn read_parquet_single<T: AsRef<str>>(
     chunk_size: Option<usize>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
+    let mut columns_to_read = columns.clone();
     let columns_to_return = columns;
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
-    let mut columns_to_read =
-        columns.map(|s| s.iter().map(|s| s.as_ref().to_string()).collect_vec());
     let requested_columns = columns_to_read.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
         num_rows_to_read = None;
@@ -247,7 +246,7 @@ async fn read_parquet_single<T: AsRef<str>>(
         // TODO ideally pipeline this with IO and before concatenating, rather than after
         table = table.filter(&[predicate])?;
         if let Some(oc) = columns_to_return {
-            table = table.get_columns(oc)?;
+            table = table.get_columns(&oc)?;
         }
         if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;
@@ -609,9 +608,9 @@ async fn read_parquet_single_into_arrow(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_parquet<T: AsRef<str>>(
+pub fn read_parquet(
     uri: &str,
-    columns: Option<&[T]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -737,7 +736,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
                 tokio::task::spawn(async move {
                     read_parquet_single(
                         &uri,
-                        owned_columns.as_deref(),
+                        owned_columns,
                         start_offset,
                         num_rows,
                         owned_row_group,
@@ -1054,7 +1053,7 @@ mod tests {
 
         let table = read_parquet(
             file,
-            None::<&[&str]>,
+            None,
             None,
             None,
             None,

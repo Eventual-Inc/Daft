@@ -40,7 +40,7 @@ pub mod pylib {
 
             let result = crate::read::read_parquet(
                 uri,
-                columns.as_deref(),
+                columns,
                 start_offset,
                 num_rows,
                 row_groups,
