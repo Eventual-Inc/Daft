@@ -331,11 +331,10 @@ impl PyDataType {
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                     // canonical tensor extension type.
-                    ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                    ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow)?
                 },
             ),
-            _ => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
-                .getattr(py, pyo3::intern!(py, "type")),
+            _ => ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow),
         }
     }
 
