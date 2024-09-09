@@ -152,6 +152,32 @@ macro_rules! with_match_comparable_daft_types {(
 })}
 
 #[macro_export]
+macro_rules! with_match_iterable_daft_types {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    #[allow(unused_imports)]
+    use $crate::datatypes::*;
+
+    match $key_type {
+        Boolean => __with_ty__! { BooleanType },
+        Int8 => __with_ty__! { Int8Type },
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+        Int128 => __with_ty__! { Int128Type },
+        UInt8 => __with_ty__! { UInt8Type },
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        _ => panic!("{:?} not implemented", $key_type)
+    }
+})}
+
+#[macro_export]
 macro_rules! with_match_hashable_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({

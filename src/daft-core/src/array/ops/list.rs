@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::datatypes::DataType;
 use crate::datatypes::{BooleanArray, Field, Int64Array, Utf8Array};
+use crate::with_match_iterable_daft_types;
 use crate::{
     array::{
         growable::{make_growable, Growable},
@@ -475,6 +476,31 @@ impl ListArray {
             self.validity().cloned(),
         ))
     }
+
+    pub fn list_contains(&self, values: Series) -> DaftResult<BooleanArray> {
+        assert_eq!(self.len(), values.len(), "Expected two lists with the same length, instead got self.len() = {} and values.len() = {}", self.len(), values.len());
+        assert_eq!(self.child_data_type(), values.data_type(), "Expected values to be a column of type <T> and self to be column of type List<T>, but instead got values: {} and self: {}", values.data_type(), self.child_data_type());
+        let founds = with_match_iterable_daft_types!(values.data_type(), |$T| {
+            let mut founds = vec![];
+            let values = values.downcast::<DataArray<$T>>().unwrap();
+            for (sub_series, value) in self.into_iter().zip(values.into_iter()).map(|(sub_series, value)| sub_series.zip(value)).flatten() {
+                let sub_array = sub_series
+                    .downcast::<DataArray<$T>>()
+                    .unwrap();
+                let mut found = false;
+                for sub_array_value in sub_array.into_iter().flatten() {
+                    if sub_array_value == value {
+                        found = true;
+                        break;
+                    }
+                }
+                founds.push(found);
+            }
+            founds
+        });
+        let boolean_array = (self.name(), founds.as_slice()).into();
+        Ok(boolean_array)
+    }
 }
 
 impl FixedSizeListArray {
@@ -700,6 +726,31 @@ impl FixedSizeListArray {
             child,
             self.validity().cloned(),
         ))
+    }
+
+    pub fn list_contains(&self, values: Series) -> DaftResult<BooleanArray> {
+        assert_eq!(self.len(), values.len(), "Expected two lists with the same length, instead got self.len() = {} and values.len() = {}", self.len(), values.len());
+        assert_eq!(self.child_data_type(), values.data_type(), "Expected values to be a column of type <T> and self to be column of type List<T>, but instead got values: {} and self: {}", values.data_type(), self.child_data_type());
+        let founds = with_match_iterable_daft_types!(values.data_type(), |$T| {
+            let mut founds = vec![];
+            let values = values.downcast::<DataArray<$T>>().unwrap();
+            for (sub_series, value) in self.into_iter().zip(values.into_iter()).map(|(sub_series, value)| sub_series.zip(value)).flatten() {
+                let sub_array = sub_series
+                    .downcast::<DataArray<$T>>()
+                    .unwrap();
+                let mut found = false;
+                for sub_array_value in sub_array.into_iter().flatten() {
+                    if sub_array_value == value {
+                        found = true;
+                        break;
+                    }
+                }
+                founds.push(found);
+            }
+            founds
+        });
+        let boolean_array = (self.name(), founds.as_slice()).into();
+        Ok(boolean_array)
     }
 }
 
