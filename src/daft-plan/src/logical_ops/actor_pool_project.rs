@@ -3,7 +3,6 @@ use std::sync::Arc;
 use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
-use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
     functions::{
         python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
@@ -11,6 +10,7 @@ use daft_dsl::{
     },
     resolve_exprs, Expr, ExprRef,
 };
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -30,7 +30,7 @@ pub struct ActorPoolProject {
 impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =
-            resolve_exprs(projection, input.schema().as_ref()).context(CreationSnafu)?;
+            resolve_exprs(projection, input.schema().as_ref(), true).context(CreationSnafu)?;
 
         let num_stateful_udf_exprs: usize = projection
             .iter()

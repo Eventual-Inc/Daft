@@ -5,6 +5,7 @@ common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", def
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
+common-version = {path = "src/common/version", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -164,6 +165,7 @@ snafu = {version = "0.7.4", features = ["futures"]}
 sqlparser = "0.49.0"
 sysinfo = "0.30.12"
 test-log = "0.2.16"
+thiserror = "1.0.63"
 tiktoken-rs = "0.5.9"
 tokio = {version = "1.37.0", features = [
   "net",
@@ -185,6 +187,10 @@ path = "src/arrow2"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
+
+[workspace.dependencies.derive_more]
+features = ["display"]
+version = "1.0.0"
 
 [workspace.dependencies.lazy_static]
 version = "1.4.0"

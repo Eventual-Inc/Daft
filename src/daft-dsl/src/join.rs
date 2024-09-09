@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    JoinType,
-};
+use daft_core::prelude::*;
 use indexmap::IndexSet;
 
 use crate::{Expr, ExprRef};

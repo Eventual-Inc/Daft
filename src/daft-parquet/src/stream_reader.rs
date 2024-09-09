@@ -7,11 +7,8 @@ use std::{
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
@@ -364,7 +361,7 @@ pub(crate) fn local_parquet_read_into_arrow(
                 rg,
                 schema.fields.clone(),
                 Some(chunk_size),
-                num_rows,
+                Some(rg_range.num_rows),
                 None,
             );
             let single_rg_column_iter = single_rg_column_iter?;

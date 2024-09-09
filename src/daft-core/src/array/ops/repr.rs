@@ -1,7 +1,9 @@
 use base64::Engine;
+use common_display::table_display::StrValue;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::DataType,
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -10,8 +12,9 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
         ImageFormat, NullArray, UInt64Array, Utf8Array,
     },
-    utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
-    with_match_daft_types, DataType, Series,
+    series::Series,
+    utils::display::{display_date32, display_decimal128, display_time64, display_timestamp},
+    with_match_daft_types,
 };
 use common_error::DaftResult;
 
@@ -324,7 +327,7 @@ impl StructArray {
                         .iter()
                         .zip(self.children.iter())
                         .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
-                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx)?)))
+                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {

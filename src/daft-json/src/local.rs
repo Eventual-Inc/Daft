@@ -1,11 +1,8 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;

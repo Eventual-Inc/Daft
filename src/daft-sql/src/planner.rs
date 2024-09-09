@@ -1,20 +1,19 @@
+use std::sync::Arc;
+
 use crate::{
     catalog::SQLCatalog,
     column_not_found_err,
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
-use daft_core::{
-    datatypes::{Field, TimeUnit},
-    DataType, JoinType,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::{
         numeric::{ceil, floor},
         utf8::{ilike, like},
     },
-    lit, null_lit, Expr, ExprRef, LiteralValue, Operator,
+    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 
@@ -254,7 +253,12 @@ impl SQLPlanner {
             rel.inner = rel.inner.aggregate(to_select, groupby_exprs)?;
         } else if !to_select.is_empty() {
             let rel = self.relation_mut();
-            rel.inner = rel.inner.select(to_select)?;
+            let has_aggs = to_select.iter().any(has_agg);
+            if has_aggs {
+                rel.inner = rel.inner.aggregate(to_select, vec![])?;
+            } else {
+                rel.inner = rel.inner.select(to_select)?;
+            }
         }
 
         Ok(())
@@ -510,26 +514,33 @@ impl SQLPlanner {
         }
     }
 
-    pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
-        use sqlparser::ast::Expr as SQLExpr;
-        match expr {
-            SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
-            SQLExpr::Value(Value::SingleQuotedString(s)) => Ok(lit(s.as_str())),
-            SQLExpr::Value(Value::Number(n, _)) => n
+    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
+        Ok(match value {
+            Value::SingleQuotedString(s) => LiteralValue::Utf8(s.clone()),
+            Value::Number(n, _) => n
                 .parse::<i64>()
-                .map(lit)
-                .or_else(|_| n.parse::<f64>().map(lit))
+                .map(LiteralValue::Int64)
+                .or_else(|_| n.parse::<f64>().map(LiteralValue::Float64))
                 .map_err(|_| {
                     PlannerError::invalid_operation(format!(
                         "could not parse number literal '{:?}'",
                         n
                     ))
-                }),
-            SQLExpr::Value(Value::Boolean(b)) => Ok(lit(*b)),
-            SQLExpr::Value(Value::Null) => Ok(null_lit()),
-            SQLExpr::Value(other) => {
-                unsupported_sql_err!("literal value '{other}' not yet supported")
+                })?,
+            Value::Boolean(b) => LiteralValue::Boolean(*b),
+            Value::Null => LiteralValue::Null,
+            _ => {
+                return Err(PlannerError::invalid_operation(
+                    "Only string, number, boolean and null literals are supported",
+                ))
             }
+        })
+    }
+    pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
+        use sqlparser::ast::Expr as SQLExpr;
+        match expr {
+            SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
+            SQLExpr::Value(v) => self.value_to_lit(v).map(Expr::Literal).map(Arc::new),
             SQLExpr::BinaryOp { left, op, right } => {
                 let left = self.plan_expr(left)?;
                 let right = self.plan_expr(right)?;
@@ -670,7 +681,34 @@ impl SQLPlanner {
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
-            SQLExpr::Tuple(_) => unsupported_sql_err!("TUPLE"),
+            // Similar to rust and python conventions, tuples always have a fixed size,
+            // so we convert them to a fixed size list.
+            SQLExpr::Tuple(exprs) => {
+                let values = exprs
+                    .iter()
+                    .map(|expr| {
+                        let expr = self.plan_expr(expr)?;
+                        // this should always unwrap
+                        // there is no way to have multiple references to the same expr at this point
+                        let expr = Arc::unwrap_or_clone(expr);
+                        match expr {
+                            Expr::Literal(lit) => Ok(lit),
+                            _ => unsupported_sql_err!("Tuple with non-literal"),
+                        }
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+                let s = literals_to_series(&values)?;
+                let s = FixedSizeListArray::new(
+                    Field::new("tuple", s.data_type().clone())
+                        .to_fixed_size_list_field(exprs.len())?,
+                    s,
+                    None,
+                )
+                .into_series();
+
+                Ok(lit(s))
+            }
             SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
             SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),

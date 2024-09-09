@@ -1,12 +1,9 @@
 mod agg_ops;
-mod binary_ops;
-mod dtype;
-mod field;
-mod image_format;
-mod image_mode;
+mod infer_datatype;
 mod matching;
-mod time_unit;
 
+pub use infer_datatype::InferDataType;
+pub mod prelude;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
 pub use agg_ops::{try_mean_supertype, try_sum_supertype};
@@ -14,18 +11,19 @@ use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
-pub use binary_ops::try_physical_supertype;
-pub use dtype::DataType;
-pub use field::Field;
-pub use field::FieldID;
-pub use field::FieldRef;
-pub use image_format::ImageFormat;
-pub use image_mode::ImageMode;
+pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-pub use time_unit::infer_timeunit_from_format_string;
-pub use time_unit::TimeUnit;
+
+pub use daft_schema::field::{Field, FieldID, FieldRef};
+
+pub use daft_schema::image_format::ImageFormat;
+pub use daft_schema::image_mode::ImageMode;
+pub use daft_schema::time_unit::{infer_timeunit_from_format_string, TimeUnit};
+
+// Import DataType enum
+pub use daft_schema::dtype::DataType;
 
 pub mod logical;
 
@@ -349,7 +347,6 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
-// pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;

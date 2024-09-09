@@ -1,26 +1,24 @@
-use crate::ExprRef;
 use common_error::DaftError;
-use daft_core::datatypes::DataType;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
-use crate::functions::FunctionExpr;
 use common_error::DaftResult;
+use daft_dsl::functions::{ScalarFunction, ScalarUDF};
+use daft_dsl::ExprRef;
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ImageCrop {}
 
-pub struct CropEvaluator {}
-
-impl FunctionEvaluator for CropEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "crop"
+#[typetag::serde]
+impl ScalarUDF for ImageCrop {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "image_crop"
     }
 
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        schema: &Schema,
-        _expr: &FunctionExpr,
-    ) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input, bbox] => {
                 let input_field = input.to_field(schema)?;
@@ -41,9 +39,12 @@ impl FunctionEvaluator for CropEvaluator {
                         ));
                     }
                     DataType::FixedSizeList(..) | DataType::List(..) => (),
-                    _ => {
+                    dtype => {
                         return Err(DaftError::TypeError(
-                            "bbox list field must be List with numeric child type".to_string(),
+                            format!(
+                            "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {}",
+                dtype
+                            )
                         ));
                     }
                 }
@@ -67,7 +68,7 @@ impl FunctionEvaluator for CropEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input, bbox] => input.image_crop(bbox),
             _ => Err(DaftError::ValueError(format!(
@@ -76,4 +77,20 @@ impl FunctionEvaluator for CropEvaluator {
             ))),
         }
     }
+}
+
+pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
+    ScalarFunction::new(ImageCrop {}, vec![input, bbox]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "image_crop")]
+pub fn py_crop(expr: PyExpr, bbox: PyExpr) -> PyResult<PyExpr> {
+    Ok(crop(expr.into(), bbox.into()).into())
 }

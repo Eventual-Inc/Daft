@@ -1,8 +1,10 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::DaftIsIn, datatypes::BooleanArray, with_match_comparable_daft_types, DataType,
-    IntoSeries, Series,
+    array::ops::DaftIsIn,
+    datatypes::{BooleanArray, DataType, InferDataType},
+    series::{IntoSeries, Series},
+    with_match_comparable_daft_types,
 };
 
 #[cfg(feature = "python")]
@@ -18,8 +20,8 @@ impl Series {
             return default(self.name(), self.len());
         }
 
-        let (output_type, intermediate, comp_type) =
-            self.data_type().membership_op(items.data_type())?;
+        let (output_type, intermediate, comp_type) = InferDataType::from(self.data_type())
+            .membership_op(&InferDataType::from(items.data_type()))?;
 
         let (lhs, rhs) = if let Some(ref it) = intermediate {
             (self.cast(it)?, items.cast(it)?)

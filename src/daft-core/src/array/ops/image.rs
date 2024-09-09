@@ -5,13 +5,10 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::{
-    logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
-    BinaryArray, DataType, Field, ImageFormat, ImageMode,
-};
-use crate::datatypes::{DaftArrayType, UInt16Array, UInt32Array, UInt8Array};
-use crate::{IntoSeries, Series};
+use crate::array::prelude::*;
+use crate::datatypes::prelude::*;
+
+use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -60,19 +57,17 @@ macro_rules! with_method_on_image_buffer {
     (
     $key_type:expr, $method: ident
 ) => {{
-        use DaftImageBuffer::*;
-
         match $key_type {
-            L(img) => img.$method(),
-            LA(img) => img.$method(),
-            RGB(img) => img.$method(),
-            RGBA(img) => img.$method(),
-            L16(img) => img.$method(),
-            LA16(img) => img.$method(),
-            RGB16(img) => img.$method(),
-            RGBA16(img) => img.$method(),
-            RGB32F(img) => img.$method(),
-            RGBA32F(img) => img.$method(),
+            DaftImageBuffer::L(img) => img.$method(),
+            DaftImageBuffer::LA(img) => img.$method(),
+            DaftImageBuffer::RGB(img) => img.$method(),
+            DaftImageBuffer::RGBA(img) => img.$method(),
+            DaftImageBuffer::L16(img) => img.$method(),
+            DaftImageBuffer::LA16(img) => img.$method(),
+            DaftImageBuffer::RGB16(img) => img.$method(),
+            DaftImageBuffer::RGBA16(img) => img.$method(),
+            DaftImageBuffer::RGB32F(img) => img.$method(),
+            DaftImageBuffer::RGBA32F(img) => img.$method(),
         }
     }};
 }
@@ -121,6 +116,75 @@ impl<W: Write + Seek> Seek for CountingWriter<W> {
     }
 }
 
+struct Wrap<T>(T);
+
+impl From<image::ImageFormat> for Wrap<ImageFormat> {
+    fn from(image_format: image::ImageFormat) -> Self {
+        Wrap(match image_format {
+            image::ImageFormat::Png => ImageFormat::PNG,
+            image::ImageFormat::Jpeg => ImageFormat::JPEG,
+            image::ImageFormat::Tiff => ImageFormat::TIFF,
+            image::ImageFormat::Gif => ImageFormat::GIF,
+            image::ImageFormat::Bmp => ImageFormat::BMP,
+            _ => unimplemented!("Image format {:?} is not supported", image_format),
+        })
+    }
+}
+
+impl From<Wrap<ImageFormat>> for image::ImageFormat {
+    fn from(image_format: Wrap<ImageFormat>) -> Self {
+        match image_format.0 {
+            ImageFormat::PNG => image::ImageFormat::Png,
+            ImageFormat::JPEG => image::ImageFormat::Jpeg,
+            ImageFormat::TIFF => image::ImageFormat::Tiff,
+            ImageFormat::GIF => image::ImageFormat::Gif,
+            ImageFormat::BMP => image::ImageFormat::Bmp,
+        }
+    }
+}
+
+impl From<Wrap<ImageMode>> for image::ColorType {
+    fn from(image_mode: Wrap<ImageMode>) -> image::ColorType {
+        use image::ColorType;
+        match image_mode.0 {
+            ImageMode::L => ColorType::L8,
+            ImageMode::LA => ColorType::La8,
+            ImageMode::RGB => ColorType::Rgb8,
+            ImageMode::RGBA => ColorType::Rgba8,
+            ImageMode::L16 => ColorType::L16,
+            ImageMode::LA16 => ColorType::La16,
+            ImageMode::RGB16 => ColorType::Rgb16,
+            ImageMode::RGBA16 => ColorType::Rgba16,
+            ImageMode::RGB32F => ColorType::Rgb32F,
+            ImageMode::RGBA32F => ColorType::Rgba32F,
+        }
+    }
+}
+
+impl TryFrom<image::ColorType> for Wrap<ImageMode> {
+    type Error = DaftError;
+
+    fn try_from(color: image::ColorType) -> DaftResult<Self> {
+        use image::ColorType;
+        Ok(Wrap(match color {
+            ColorType::L8 => Ok(ImageMode::L),
+            ColorType::La8 => Ok(ImageMode::LA),
+            ColorType::Rgb8 => Ok(ImageMode::RGB),
+            ColorType::Rgba8 => Ok(ImageMode::RGBA),
+            ColorType::L16 => Ok(ImageMode::L16),
+            ColorType::La16 => Ok(ImageMode::LA16),
+            ColorType::Rgb16 => Ok(ImageMode::RGB16),
+            ColorType::Rgba16 => Ok(ImageMode::RGBA16),
+            ColorType::Rgb32F => Ok(ImageMode::RGB32F),
+            ColorType::Rgba32F => Ok(ImageMode::RGBA32F),
+            _ => Err(DaftError::ValueError(format!(
+                "Color type {:?} is not supported.",
+                color
+            ))),
+        }?))
+    }
+}
+
 impl<'a> DaftImageBuffer<'a> {
     pub fn height(&self) -> u32 {
         with_method_on_image_buffer!(self, height)
@@ -131,34 +195,31 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn as_u8_slice(&'a self) -> &'a [u8] {
-        use DaftImageBuffer::*;
         match self {
-            L(img) => img.as_raw(),
-            LA(img) => img.as_raw(),
-            RGB(img) => img.as_raw(),
-            RGBA(img) => img.as_raw(),
+            DaftImageBuffer::L(img) => img.as_raw(),
+            DaftImageBuffer::LA(img) => img.as_raw(),
+            DaftImageBuffer::RGB(img) => img.as_raw(),
+            DaftImageBuffer::RGBA(img) => img.as_raw(),
             _ => unimplemented!("unimplemented {self:?}"),
         }
     }
 
     pub fn color(&self) -> ColorType {
-        self.mode().into()
+        Wrap(self.mode()).into()
     }
 
     pub fn mode(&self) -> ImageMode {
-        use DaftImageBuffer::*;
-
         match self {
-            L(..) => ImageMode::L,
-            LA(..) => ImageMode::LA,
-            RGB(..) => ImageMode::RGB,
-            RGBA(..) => ImageMode::RGBA,
-            L16(..) => ImageMode::L16,
-            LA16(..) => ImageMode::LA16,
-            RGB16(..) => ImageMode::RGB16,
-            RGBA16(..) => ImageMode::RGBA16,
-            RGB32F(..) => ImageMode::RGB32F,
-            RGBA32F(..) => ImageMode::RGBA32F,
+            DaftImageBuffer::L(..) => ImageMode::L,
+            DaftImageBuffer::LA(..) => ImageMode::LA,
+            DaftImageBuffer::RGB(..) => ImageMode::RGB,
+            DaftImageBuffer::RGBA(..) => ImageMode::RGBA,
+            DaftImageBuffer::L16(..) => ImageMode::L16,
+            DaftImageBuffer::LA16(..) => ImageMode::LA16,
+            DaftImageBuffer::RGB16(..) => ImageMode::RGB16,
+            DaftImageBuffer::RGBA16(..) => ImageMode::RGBA16,
+            DaftImageBuffer::RGB32F(..) => ImageMode::RGB32F,
+            DaftImageBuffer::RGBA32F(..) => ImageMode::RGBA32F,
         }
     }
 
@@ -178,7 +239,7 @@ impl<'a> DaftImageBuffer<'a> {
             self.width(),
             self.height(),
             self.color(),
-            image::ImageFormat::from(image_format),
+            image::ImageFormat::from(Wrap(image_format)),
         )
         .map_err(|e| {
             DaftError::ValueError(format!(
@@ -202,24 +263,23 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
-        use DaftImageBuffer::*;
         match self {
-            L(imgbuf) => {
+            DaftImageBuffer::L(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
                 DaftImageBuffer::L(image_buffer_vec_to_cow(result))
             }
-            LA(imgbuf) => {
+            DaftImageBuffer::LA(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
                 DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
             }
-            RGB(imgbuf) => {
+            DaftImageBuffer::RGB(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
                 DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
             }
-            RGBA(imgbuf) => {
+            DaftImageBuffer::RGBA(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
                 DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
@@ -568,11 +628,15 @@ impl ImageArray {
         inputs: &[Option<DaftImageBuffer<'_>>],
         image_mode: &Option<ImageMode>,
     ) -> DaftResult<Self> {
-        use DaftImageBuffer::*;
-        let is_all_u8 = inputs
-            .iter()
-            .filter_map(|b| b.as_ref())
-            .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
+        let is_all_u8 = inputs.iter().filter_map(|b| b.as_ref()).all(|b| {
+            matches!(
+                b,
+                DaftImageBuffer::L(..)
+                    | DaftImageBuffer::LA(..)
+                    | DaftImageBuffer::RGB(..)
+                    | DaftImageBuffer::RGBA(..)
+            )
+        });
         assert!(is_all_u8);
 
         let mut data_ref = Vec::with_capacity(inputs.len());
@@ -705,11 +769,15 @@ impl FixedShapeImageArray {
         height: u32,
         width: u32,
     ) -> DaftResult<Self> {
-        use DaftImageBuffer::*;
-        let is_all_u8 = inputs
-            .iter()
-            .filter_map(|b| b.as_ref())
-            .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
+        let is_all_u8 = inputs.iter().filter_map(|b| b.as_ref()).all(|b| {
+            matches!(
+                b,
+                DaftImageBuffer::L(..)
+                    | DaftImageBuffer::LA(..)
+                    | DaftImageBuffer::RGB(..)
+                    | DaftImageBuffer::RGBA(..)
+            )
+        });
         assert!(is_all_u8);
 
         let num_channels = image_mode.num_channels();
@@ -758,7 +826,7 @@ impl FixedShapeImageArray {
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
-        match self.data_type() {
+        match &self.data_type() {
             DataType::FixedShapeImage(mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }

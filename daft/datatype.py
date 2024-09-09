@@ -462,8 +462,8 @@ class DataType:
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
 
-    def to_arrow_dtype(self, cast_tensor_to_ray_type: builtins.bool = False) -> pa.DataType:
-        return self._dtype.to_arrow(cast_tensor_to_ray_type)
+    def to_arrow_dtype(self) -> pa.DataType:
+        return self._dtype.to_arrow()
 
     @classmethod
     def python(cls) -> DataType:

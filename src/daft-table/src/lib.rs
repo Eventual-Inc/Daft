@@ -2,20 +2,17 @@
 #![feature(let_chains)]
 
 use core::slice;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
 
+use common_display::table_display::{make_comfy_table, StrValue};
 use daft_core::array::ops::full::FullNull;
-use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::{DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
-use daft_core::schema::{Schema, SchemaRef};
-use daft_core::series::{IntoSeries, Series};
+use daft_core::prelude::*;
 
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{
@@ -753,14 +750,21 @@ impl Table {
     }
 
     pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+        let str_values = self
+            .columns
+            .iter()
+            .map(|s| s as &dyn StrValue)
+            .collect::<Vec<_>>();
+
         make_comfy_table(
             self.schema
                 .fields
                 .values()
-                .map(Cow::Borrowed)
+                .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            Some(self.columns.iter().collect::<Vec<_>>().as_slice()),
+            Some(str_values.as_slice()),
+            Some(self.len()),
             max_col_width,
         )
     }
@@ -792,9 +796,8 @@ impl<'a> IntoIterator for &'a Table {
 mod test {
     use crate::Table;
     use common_error::DaftResult;
-    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
-    use daft_core::schema::Schema;
-    use daft_core::series::IntoSeries;
+    use daft_core::prelude::*;
+
     use daft_dsl::col;
 
     #[test]

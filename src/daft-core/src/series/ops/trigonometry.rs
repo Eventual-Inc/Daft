@@ -1,8 +1,8 @@
 use crate::array::ops::trigonometry::TrigonometricFunction;
 use crate::array::ops::DaftAtan2;
 use crate::datatypes::DataType;
+use crate::series::IntoSeries;
 use crate::series::Series;
-use crate::IntoSeries;
 use common_error::DaftError;
 use common_error::DaftResult;
 

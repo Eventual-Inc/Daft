@@ -1,6 +1,6 @@
 use crate::ClusteringSpec;
 use common_display::tree::TreeDisplay;
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

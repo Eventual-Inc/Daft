@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, Series};
+use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 

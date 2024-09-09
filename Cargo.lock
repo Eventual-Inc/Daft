@@ -283,6 +283,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+ "thiserror",
  "tokio",
  "tokio-util",
  "zstd 0.12.4",
@@ -1290,6 +1291,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-arrow-ffi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "pyo3",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1303,6 +1312,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
+ "comfy-table 7.1.1",
  "indexmap 2.3.0",
  "pyo3",
  "terminal_size",
@@ -1317,6 +1327,7 @@ dependencies = [
  "pyo3",
  "regex",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1384,6 +1395,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
 ]
+
+[[package]]
+name = "common-version"
+version = "0.3.0-dev0"
 
 [[package]]
 name = "concurrent-queue"
@@ -1646,6 +1661,7 @@ dependencies = [
  "common-resource-request",
  "common-system-info",
  "common-tracing",
+ "common-version",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -1693,13 +1709,15 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 7.1.1",
- "common-daft-config",
+ "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
  "daft-minhash",
+ "daft-schema",
  "daft-sketch",
+ "derive_more",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
@@ -1715,7 +1733,6 @@ dependencies = [
  "log",
  "mur3",
  "ndarray",
- "num-derive",
  "num-traits",
  "numpy",
  "pyo3",
@@ -1779,6 +1796,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
+ "derive_more",
  "indexmap 2.3.0",
  "itertools 0.11.0",
  "log",
@@ -1955,6 +1973,7 @@ dependencies = [
  "async-stream",
  "bincode",
  "bytes",
+ "common-arrow-ffi",
  "common-error",
  "crossbeam-channel",
  "daft-core",
@@ -2007,6 +2026,7 @@ dependencies = [
  "daft-functions",
  "daft-io",
  "daft-scan",
+ "daft-schema",
  "daft-table",
  "indexmap 2.3.0",
  "itertools 0.11.0",
@@ -2034,6 +2054,7 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-parquet",
+ "daft-schema",
  "daft-stats",
  "daft-table",
  "futures",
@@ -2065,6 +2086,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-schema"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "common-py-serde",
+ "common-version",
+ "derive_more",
+ "html-escape",
+ "indexmap 2.3.0",
+ "num-derive",
+ "num-traits",
+ "pyo3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2084,6 +2125,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
  "daft-plan",
  "once_cell",
  "pyo3",
@@ -2111,6 +2153,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
+ "common-arrow-ffi",
+ "common-display",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2146,6 +2190,27 @@ checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
  "serde",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -3789,6 +3854,7 @@ dependencies = [
  "serde",
  "snap 1.1.1",
  "streaming-decompression",
+ "thiserror",
  "tokio",
  "xxhash-rust",
  "zstd 0.12.4",

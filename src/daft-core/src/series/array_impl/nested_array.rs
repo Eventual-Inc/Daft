@@ -8,7 +8,7 @@ use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::BooleanArray;
 use crate::datatypes::Field;
 use crate::series::{array_impl::binary_ops::SeriesBinaryOps, IntoSeries, Series, SeriesLike};
-use crate::{with_match_integer_daft_types, DataType};
+use crate::{datatypes::DataType, with_match_integer_daft_types};
 
 use super::ArrayWrapper;
 

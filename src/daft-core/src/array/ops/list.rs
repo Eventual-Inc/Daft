@@ -1,6 +1,7 @@
 use std::iter::repeat;
 use std::sync::Arc;
 
+use crate::datatypes::DataType;
 use crate::datatypes::{BooleanArray, Field, Int64Array, Utf8Array};
 use crate::with_match_iterable_daft_types;
 use crate::{
@@ -10,7 +11,6 @@ use crate::{
     },
     datatypes::UInt64Array,
 };
-use crate::{CountMode, DataType};
 
 use crate::series::{IntoSeries, Series};
 
@@ -18,6 +18,8 @@ use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+
+use crate::count_mode::CountMode;
 
 fn join_arrow_list_of_utf8s(
     list_element: Option<&dyn arrow2::array::Array>,

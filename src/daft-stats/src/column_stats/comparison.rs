@@ -1,10 +1,7 @@
 use std::ops::Not;
 
 use crate::DaftCoreComputeSnafu;
-use daft_core::{
-    array::ops::{DaftCompare, DaftLogical},
-    IntoSeries,
-};
+use daft_core::prelude::*;
 use snafu::ResultExt;
 
 use super::ColumnRangeStatistics;

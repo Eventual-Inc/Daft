@@ -5,8 +5,8 @@ use crate::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
+    datatypes::DataType,
     datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType},
-    DataType,
 };
 use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;

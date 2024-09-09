@@ -8,7 +8,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, NullArray, Utf8Array,
     },
-    Series,
+    series::Series,
 };
 
 use super::as_arrow::AsArrow;
@@ -174,8 +174,9 @@ mod tests {
 
     use crate::{
         array::FixedSizeListArray,
+        datatypes::DataType,
         datatypes::{Field, Int32Array},
-        DataType, IntoSeries,
+        series::IntoSeries,
     };
 
     #[test]

@@ -4,7 +4,7 @@ use arrow2::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::ByteRecord;
-use daft_core::schema::Schema;
+use daft_core::prelude::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
@@ -290,7 +290,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::{DaftError, DaftResult};
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 

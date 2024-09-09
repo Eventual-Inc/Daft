@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_dsl::{resolve_single_expr, ExprRef};
 use snafu::ResultExt;
 
@@ -19,7 +19,7 @@ pub struct Filter {
 impl Filter {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
         let (predicate, field) =
-            resolve_single_expr(predicate, &input.schema()).context(CreationSnafu)?;
+            resolve_single_expr(predicate, &input.schema(), false).context(CreationSnafu)?;
 
         if !matches!(field.dtype, DataType::Boolean) {
             return Err(DaftError::ValueError(format!(

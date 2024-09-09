@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -7,16 +8,12 @@ use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::array::ops::Utf8NormalizeOptions;
-use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
+use daft_core::python::{PyDataType, PyField, PySchema, PyTimeUnit};
 use serde::{Deserialize, Serialize};
 
 use crate::{functions, Expr, ExprRef, LiteralValue};
-use daft_core::{
-    count_mode::CountMode,
-    datatypes::{ImageFormat, ImageMode},
-    python::{datatype::PyDataType, field::PyField, schema::PySchema},
-};
+use daft_core::prelude::*;
 
 use pyo3::{
     exceptions::PyValueError,
@@ -230,6 +227,23 @@ pub fn stateful_udf(
     })
 }
 
+/// Extracts the `class PartialStatefulUDF` Python objects that are in the specified expression tree
+#[pyfunction]
+pub fn extract_partial_stateful_udf_py(expr: PyExpr) -> HashMap<String, Py<PyAny>> {
+    use crate::functions::python::extract_partial_stateful_udf_py;
+    extract_partial_stateful_udf_py(expr.expr)
+}
+
+/// Binds the StatefulPythonUDFs in a given expression to any corresponding initialized Python callables in the provided map
+#[pyfunction]
+pub fn bind_stateful_udfs(
+    expr: PyExpr,
+    initialized_funcs: HashMap<String, Py<PyAny>>,
+) -> PyResult<PyExpr> {
+    use crate::functions::python::bind_stateful_udfs;
+    Ok(bind_stateful_udfs(expr.expr, &initialized_funcs).map(PyExpr::from)?)
+}
+
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
@@ -242,9 +256,8 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 }
 
 #[pyfunction]
-pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
-    Ok((resolved_expr.into(), field.into()))
+pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
+    Ok(crate::check_column_name_validity(name, &schema.schema)?)
 }
 
 #[derive(FromPyObject)]
@@ -695,6 +708,11 @@ impl PyExpr {
         Ok(length(self.into()).into())
     }
 
+    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
+        use crate::functions::utf8::length_bytes;
+        Ok(length_bytes(self.into()).into())
+    }
+
     pub fn utf8_lower(&self) -> PyResult<Self> {
         use crate::functions::utf8::lower;
         Ok(lower(self.into()).into())
@@ -796,45 +814,6 @@ impl PyExpr {
         };
 
         Ok(normalize(self.into(), opts).into())
-    }
-
-    pub fn image_decode(
-        &self,
-        raise_error_on_failure: bool,
-        mode: Option<ImageMode>,
-    ) -> PyResult<Self> {
-        use crate::functions::image::decode;
-        Ok(decode(self.into(), raise_error_on_failure, mode).into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        use crate::functions::image::encode;
-        Ok(encode(self.into(), image_format).into())
-    }
-
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-        use crate::functions::image::resize;
-        Ok(resize(self.into(), w as u32, h as u32).into())
-    }
-
-    pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
-        use crate::functions::image::crop;
-        Ok(crop(self.into(), bbox.into()).into())
-    }
-
-    pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
-        use crate::functions::image::to_mode;
-        Ok(to_mode(self.into(), mode).into())
     }
 
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {

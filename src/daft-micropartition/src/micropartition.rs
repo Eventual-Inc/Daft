@@ -5,10 +5,7 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::datatypes::{Field, Int64Array, Utf8Array};
-use daft_core::schema::{Schema, SchemaRef};
-
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
@@ -1160,7 +1157,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1184,7 +1181,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;

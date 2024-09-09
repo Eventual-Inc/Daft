@@ -73,10 +73,7 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_core::{
-        datatypes::Field,
-        schema::{Schema, SchemaRef},
-    };
+    use daft_core::prelude::*;
 
     use crate::{
         partitioning::UnknownClusteringConfig,
@@ -130,10 +127,7 @@ mod tests {
     #[test]
     fn test_rule_batch_once() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -154,10 +148,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -178,10 +169,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -202,10 +190,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max_passes() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -226,10 +211,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_no_limit() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
