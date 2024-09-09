@@ -1336,8 +1336,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-py-serde",
+ "daft-schema",
  "pyo3",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1923,6 +1925,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-tracing",
  "daft-core",
  "daft-csv",
@@ -1953,6 +1956,7 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-file-formats",
  "daft-core",
  "daft-csv",
  "daft-dsl",

@@ -9,20 +9,19 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
     field::Field,
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-use file_format::FileFormatConfig;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
-pub mod file_format;
 mod glob;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
@@ -962,11 +961,11 @@ mod test {
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
+    use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
     use crate::{
-        file_format::{FileFormatConfig, ParquetSourceConfig},
         glob::GlobScanOperator,
         storage_config::{NativeStorageConfig, StorageConfig},
         DataSource, Pushdowns, ScanOperator, ScanTask,

@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 use parquet2::metadata::RowGroupList;
 
 use crate::{
-    file_format::{FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;

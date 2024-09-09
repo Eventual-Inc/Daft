@@ -37,16 +37,15 @@ use pyo3::prelude::*;
 pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use {
-    daft_scan::file_format::{
-        CsvSourceConfig, JsonSourceConfig, ParquetSourceConfig, PyFileFormatConfig,
+    common_file_formats::{
+        python::PyFileFormatConfig, CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig,
+        ParquetSourceConfig,
     },
     daft_scan::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig},
 };
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    use daft_scan::file_format::DatabaseSourceConfig;
-
     parent.add_class::<PyLogicalPlanBuilder>()?;
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<ParquetSourceConfig>()?;
