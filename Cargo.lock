@@ -1397,6 +1397,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-version"
+version = "0.3.0-dev0"
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1657,6 +1661,7 @@ dependencies = [
  "common-resource-request",
  "common-system-info",
  "common-tracing",
+ "common-version",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -2087,6 +2092,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-py-serde",
+ "common-version",
  "html-escape",
  "indexmap 2.3.0",
  "num-derive",

@@ -55,12 +55,12 @@ pub mod pylib {
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        daft_core::VERSION
+        common_version::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        daft_core::DAFT_BUILD_TYPE
+        common_version::DAFT_BUILD_TYPE
     }
 
     #[pyfunction]

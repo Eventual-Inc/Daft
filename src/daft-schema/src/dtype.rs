@@ -102,16 +102,16 @@ pub enum DataType {
 #[derive(Serialize, Deserialize)]
 struct DataTypePayload {
     datatype: DataType,
-    // daft_version: String,
-    // daft_build_type: String,
+    daft_version: String,
+    daft_build_type: String,
 }
 
 impl DataTypePayload {
     pub fn new(datatype: &DataType) -> Self {
         DataTypePayload {
             datatype: datatype.clone(),
-            // daft_version: crate::VERSION.into(),
-            // daft_build_type: crate::DAFT_BUILD_TYPE.into(),
+            daft_version: common_version::VERSION.into(),
+            daft_build_type: common_version::DAFT_BUILD_TYPE.into(),
         }
     }
 }

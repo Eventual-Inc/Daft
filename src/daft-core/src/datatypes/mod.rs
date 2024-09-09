@@ -1,8 +1,8 @@
 mod agg_ops;
-mod binary_ops;
+mod infer_datatype;
 mod matching;
 
-pub use binary_ops::InferDataType;
+pub use infer_datatype::InferDataType;
 pub mod prelude;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
@@ -11,7 +11,7 @@ use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
-pub use binary_ops::try_physical_supertype;
+pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
