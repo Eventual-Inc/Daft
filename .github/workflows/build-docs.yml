@@ -65,10 +65,7 @@ jobs:
       ${{ success() }} &&
       github.event.pull_request != null &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (
-        contains(github.event.pull_request.changed_files, 'docs/') ||
-        contains(github.event.pull_request.labels.*.name, 'documentation')
-      )
+      contains(github.event.pull_request.labels.*.name, 'documentation')
     steps:
     - name: Download built HTML docs
       uses: actions/download-artifact@v4
