@@ -17,7 +17,7 @@ use crate::{
         Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
-    utils::display_table::display_time64,
+    utils::display::display_time64,
     with_match_daft_logical_primitive_types,
 };
 
@@ -38,8 +38,8 @@ use indexmap::IndexMap;
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    crate::ffi,
     crate::with_match_numeric_daft_types,
+    common_arrow_ffi as ffi,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn},
@@ -519,7 +519,7 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<u64>,
 ) -> DaftResult<(usize, usize)> {
-    use crate::python::PyDataType;
+    use daft_schema::python::PyDataType;
     use std::num::Wrapping;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;

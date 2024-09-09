@@ -74,6 +74,12 @@ from daft.logical.schema import Schema
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
+_RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
+try:
+    from ray.data.extensions import ArrowTensorArray, ArrowTensorType
+except ImportError:
+    _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
+
 
 @ray.remote
 def _glob_path_into_file_infos(
@@ -95,7 +101,36 @@ def _glob_path_into_file_infos(
 @ray.remote
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
-        return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
+        daft_schema = partition.schema()
+        arrow_tbl = partition.to_arrow()
+
+        # Convert arrays to Ray Data's native ArrowTensorType arrays
+        new_arrs = {}
+        for idx, field in enumerate(arrow_tbl.schema):
+            if daft_schema[field.name].dtype._is_fixed_shape_tensor_type():
+                assert isinstance(field.type, pa.FixedShapeTensorType)
+                new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
+                arrow_arr = arrow_tbl[field.name].combine_chunks()
+                storage_arr = arrow_arr.storage
+                list_size = storage_arr.type.list_size
+                new_storage_arr = pa.ListArray.from_arrays(
+                    pa.array(
+                        list(range(0, (len(arrow_arr) + 1) * list_size, list_size)),
+                        pa.int32(),
+                    ),
+                    storage_arr.values,
+                )
+                new_arrs[idx] = (
+                    field.name,
+                    pa.ExtensionArray.from_storage(new_dtype, new_storage_arr),
+                )
+            elif daft_schema[field.name].dtype._is_tensor_type():
+                assert isinstance(field.type, pa.ExtensionType)
+                new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
+        for idx, (field_name, arr) in new_arrs.items():
+            arrow_tbl = arrow_tbl.set_column(idx, pa.field(field_name, arr.type), arr)
+
+        return arrow_tbl
     except pa.ArrowInvalid:
         return partition.to_pylist()
 

@@ -1291,6 +1291,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-arrow-ffi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "pyo3",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1304,6 +1312,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
+ "comfy-table 7.1.1",
  "indexmap 2.3.0",
  "pyo3",
  "terminal_size",
@@ -1386,6 +1395,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
 ]
+
+[[package]]
+name = "common-version"
+version = "0.3.0-dev0"
 
 [[package]]
 name = "concurrent-queue"
@@ -1648,6 +1661,7 @@ dependencies = [
  "common-resource-request",
  "common-system-info",
  "common-tracing",
+ "common-version",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -1695,12 +1709,13 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 7.1.1",
- "common-daft-config",
+ "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
  "daft-minhash",
+ "daft-schema",
  "daft-sketch",
  "derive_more",
  "fastrand 2.1.0",
@@ -1718,7 +1733,6 @@ dependencies = [
  "log",
  "mur3",
  "ndarray",
- "num-derive",
  "num-traits",
  "numpy",
  "pyo3",
@@ -1959,6 +1973,7 @@ dependencies = [
  "async-stream",
  "bincode",
  "bytes",
+ "common-arrow-ffi",
  "common-error",
  "crossbeam-channel",
  "daft-core",
@@ -2011,6 +2026,7 @@ dependencies = [
  "daft-functions",
  "daft-io",
  "daft-scan",
+ "daft-schema",
  "daft-table",
  "indexmap 2.3.0",
  "itertools 0.11.0",
@@ -2038,6 +2054,7 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-parquet",
+ "daft-schema",
  "daft-stats",
  "daft-table",
  "futures",
@@ -2066,6 +2083,26 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "daft-schema"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "common-py-serde",
+ "common-version",
+ "derive_more",
+ "html-escape",
+ "indexmap 2.3.0",
+ "num-derive",
+ "num-traits",
+ "pyo3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2116,6 +2153,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
+ "common-arrow-ffi",
+ "common-display",
  "common-error",
  "daft-core",
  "daft-dsl",

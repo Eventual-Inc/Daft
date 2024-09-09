@@ -2,20 +2,20 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::datatype::PyDataType;
-use crate::datatypes;
+use crate::field::Field;
 use common_py_serde::impl_bincode_py_state_serialization;
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyField {
-    pub field: datatypes::Field,
+    pub field: Field,
 }
 
 #[pymethods]
 impl PyField {
     #[staticmethod]
     pub fn create(name: &str, data_type: PyDataType) -> PyResult<Self> {
-        Ok(datatypes::Field::new(name, data_type.dtype).into())
+        Ok(Field::new(name, data_type.dtype).into())
     }
 
     pub fn name(&self) -> PyResult<String> {
@@ -33,13 +33,13 @@ impl PyField {
 
 impl_bincode_py_state_serialization!(PyField);
 
-impl From<datatypes::Field> for PyField {
-    fn from(field: datatypes::Field) -> Self {
+impl From<Field> for PyField {
+    fn from(field: Field) -> Self {
         PyField { field }
     }
 }
 
-impl From<PyField> for datatypes::Field {
+impl From<PyField> for Field {
     fn from(item: PyField) -> Self {
         item.field
     }

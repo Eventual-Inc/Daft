@@ -1,4 +1,4 @@
-use crate::datatypes::DataType;
+use crate::dtype::DataType;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
@@ -123,52 +123,6 @@ impl ImageMode {
     }
     pub fn get_dtype(&self) -> DataType {
         self.into()
-    }
-}
-
-impl From<ImageMode> for image::ColorType {
-    fn from(image_mode: ImageMode) -> image::ColorType {
-        use image::ColorType;
-        use ImageMode::*;
-
-        match image_mode {
-            L => ColorType::L8,
-            LA => ColorType::La8,
-            RGB => ColorType::Rgb8,
-            RGBA => ColorType::Rgba8,
-            L16 => ColorType::L16,
-            LA16 => ColorType::La16,
-            RGB16 => ColorType::Rgb16,
-            RGBA16 => ColorType::Rgba16,
-            RGB32F => ColorType::Rgb32F,
-            RGBA32F => ColorType::Rgba32F,
-        }
-    }
-}
-
-impl TryFrom<image::ColorType> for ImageMode {
-    type Error = DaftError;
-
-    fn try_from(color: image::ColorType) -> DaftResult<Self> {
-        use image::ColorType;
-        use ImageMode::*;
-
-        match color {
-            ColorType::L8 => Ok(L),
-            ColorType::La8 => Ok(LA),
-            ColorType::Rgb8 => Ok(RGB),
-            ColorType::Rgba8 => Ok(RGBA),
-            ColorType::L16 => Ok(L16),
-            ColorType::La16 => Ok(LA16),
-            ColorType::Rgb16 => Ok(RGB16),
-            ColorType::Rgba16 => Ok(RGBA16),
-            ColorType::Rgb32F => Ok(RGB32F),
-            ColorType::Rgba32F => Ok(RGBA32F),
-            _ => Err(DaftError::ValueError(format!(
-                "Color type {:?} is not supported.",
-                color
-            ))),
-        }
     }
 }
 

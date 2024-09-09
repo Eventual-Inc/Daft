@@ -1,19 +1,18 @@
 use std::{
-    borrow::Cow,
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
-use common_display::DisplayAs;
+use common_display::{
+    table_display::{make_comfy_table, make_schema_vertical_table},
+    DisplayAs,
+};
 use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    datatypes::Field,
-    utils::display_table::{make_comfy_table, make_schema_vertical_table},
-};
+use crate::field::Field;
 
 use common_error::{DaftError, DaftResult};
 
@@ -21,7 +20,10 @@ pub type SchemaRef = Arc<Schema>;
 
 #[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-#[display("{}\n", make_schema_vertical_table(fields.values().map(Cow::Borrowed).collect::<Vec<_>>().as_slice()))]
+#[display("{}\n", make_schema_vertical_table(
+    fields.keys().collect::<Vec<_>>().as_slice(),
+    fields.values().map(|field| field.dtype.to_string()).collect::<Vec<_>>().as_slice(),
+))]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
     pub fields: indexmap::IndexMap<String, Field>,
@@ -220,9 +222,10 @@ impl Schema {
         let table = make_comfy_table(
             self.fields
                 .values()
-                .map(Cow::Borrowed)
+                .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
+            None,
             None,
             None,
         );

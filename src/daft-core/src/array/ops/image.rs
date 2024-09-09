@@ -118,6 +118,79 @@ impl<W: Write + Seek> Seek for CountingWriter<W> {
     }
 }
 
+struct Wrap<T>(T);
+
+impl From<image::ImageFormat> for Wrap<ImageFormat> {
+    fn from(image_format: image::ImageFormat) -> Self {
+        Wrap(match image_format {
+            image::ImageFormat::Png => ImageFormat::PNG,
+            image::ImageFormat::Jpeg => ImageFormat::JPEG,
+            image::ImageFormat::Tiff => ImageFormat::TIFF,
+            image::ImageFormat::Gif => ImageFormat::GIF,
+            image::ImageFormat::Bmp => ImageFormat::BMP,
+            _ => unimplemented!("Image format {:?} is not supported", image_format),
+        })
+    }
+}
+
+impl From<Wrap<ImageFormat>> for image::ImageFormat {
+    fn from(image_format: Wrap<ImageFormat>) -> Self {
+        match image_format.0 {
+            ImageFormat::PNG => image::ImageFormat::Png,
+            ImageFormat::JPEG => image::ImageFormat::Jpeg,
+            ImageFormat::TIFF => image::ImageFormat::Tiff,
+            ImageFormat::GIF => image::ImageFormat::Gif,
+            ImageFormat::BMP => image::ImageFormat::Bmp,
+        }
+    }
+}
+
+impl From<Wrap<ImageMode>> for image::ColorType {
+    fn from(image_mode: Wrap<ImageMode>) -> image::ColorType {
+        use image::ColorType;
+        use ImageMode::*;
+
+        match image_mode.0 {
+            L => ColorType::L8,
+            LA => ColorType::La8,
+            RGB => ColorType::Rgb8,
+            RGBA => ColorType::Rgba8,
+            L16 => ColorType::L16,
+            LA16 => ColorType::La16,
+            RGB16 => ColorType::Rgb16,
+            RGBA16 => ColorType::Rgba16,
+            RGB32F => ColorType::Rgb32F,
+            RGBA32F => ColorType::Rgba32F,
+        }
+    }
+}
+
+impl TryFrom<image::ColorType> for Wrap<ImageMode> {
+    type Error = DaftError;
+
+    fn try_from(color: image::ColorType) -> DaftResult<Self> {
+        use image::ColorType;
+        use ImageMode::*;
+
+        Ok(Wrap(match color {
+            ColorType::L8 => Ok(L),
+            ColorType::La8 => Ok(LA),
+            ColorType::Rgb8 => Ok(RGB),
+            ColorType::Rgba8 => Ok(RGBA),
+            ColorType::L16 => Ok(L16),
+            ColorType::La16 => Ok(LA16),
+            ColorType::Rgb16 => Ok(RGB16),
+            ColorType::Rgba16 => Ok(RGBA16),
+            ColorType::Rgb32F => Ok(RGB32F),
+            ColorType::Rgba32F => Ok(RGBA32F),
+            _ => Err(DaftError::ValueError(format!(
+                "Color type {:?} is not supported.",
+                color
+            ))),
+        }?))
+    }
+}
+
 impl<'a> DaftImageBuffer<'a> {
     pub fn height(&self) -> u32 {
         with_method_on_image_buffer!(self, height)
@@ -139,7 +212,7 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn color(&self) -> ColorType {
-        self.mode().into()
+        Wrap(self.mode()).into()
     }
 
     pub fn mode(&self) -> ImageMode {
@@ -175,7 +248,7 @@ impl<'a> DaftImageBuffer<'a> {
             self.width(),
             self.height(),
             self.color(),
-            image::ImageFormat::from(image_format),
+            image::ImageFormat::from(Wrap(image_format)),
         )
         .map_err(|e| {
             DaftError::ValueError(format!(

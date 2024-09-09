@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use {
     common_daft_config::PyDaftExecutionConfig,
     common_io_config::IOConfig,
-    daft_core::python::schema::PySchema,
-    daft_core::schema::SchemaRef,
+    daft_core::prelude::SchemaRef,
+    daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     daft_io::FileFormat,

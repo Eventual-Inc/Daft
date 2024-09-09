@@ -2,6 +2,15 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::DaftResult;
 
+use crate::datatypes::logical::{
+    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
+    ImageArray, TensorArray, TimeArray, TimestampArray,
+};
+use crate::datatypes::InferDataType;
+use crate::datatypes::{
+    BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
+    Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+};
 use crate::{
     array::{
         ops::{DaftCompare, DaftLogical},
@@ -14,15 +23,6 @@ use crate::{
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
-};
-
-use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
-    ImageArray, TensorArray, TimeArray, TimestampArray,
-};
-use crate::datatypes::{
-    BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
 };
 
 use super::{ArrayWrapper, IntoSeries, Series};
@@ -122,7 +122,8 @@ macro_rules! binary_op_unimplemented {
 
 macro_rules! py_numeric_binary_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
-        let output_type = ($self.data_type().$op($rhs.data_type()))?;
+        let output_type =
+            InferDataType::from($self.data_type()).$op(InferDataType::from($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
         match &output_type {
@@ -149,7 +150,8 @@ macro_rules! py_numeric_binary_op {
 
 macro_rules! physical_logic_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
-        let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
+        let output_type = InferDataType::from($self.data_type())
+            .logical_op(&InferDataType::from($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
         match &output_type {
@@ -177,8 +179,8 @@ macro_rules! physical_logic_op {
 
 macro_rules! physical_compare_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
-        let (output_type, intermediate, comp_type) =
-            ($self.data_type().comparison_op($rhs.data_type()))?;
+        let (output_type, intermediate, comp_type) = InferDataType::from($self.data_type())
+            .comparison_op(&InferDataType::from($rhs.data_type()))?;
         let lhs = $self.into_series();
         let (lhs, rhs) = if let Some(ref it) = intermediate {
             (lhs.cast(it)?, $rhs.cast(it)?)
@@ -205,7 +207,8 @@ macro_rules! physical_compare_op {
 
 pub(crate) trait SeriesBinaryOps: SeriesLike {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
-        let output_type = (self.data_type().add(rhs.data_type()))?;
+        let output_type =
+            InferDataType::from(self.data_type()).add(InferDataType::from(rhs.data_type()))?;
         let lhs = self.into_series();
         use DataType::*;
         match &output_type {
@@ -230,7 +233,8 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         py_numeric_binary_op!(self, rhs, mul, "mul")
     }
     fn div(&self, rhs: &Series) -> DaftResult<Series> {
-        let output_type = (self.data_type().div(rhs.data_type()))?;
+        let output_type =
+            InferDataType::from(self.data_type()).div(InferDataType::from(rhs.data_type()))?;
         let lhs = self.into_series();
         use DataType::*;
         match &output_type {
@@ -302,7 +306,8 @@ impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<DateArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() + rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
             Duration(..) => {
                 let days = rhs.duration()?.cast_to_days()?;
@@ -314,7 +319,8 @@ impl SeriesBinaryOps for ArrayWrapper<DateArray> {
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() - rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
             Date => {
                 let physical_result = self.0.physical.sub(&rhs.date()?.physical)?;
@@ -333,7 +339,8 @@ impl SeriesBinaryOps for ArrayWrapper<TimeArray> {}
 impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() + rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         let lhs = self.0.clone().into_series();
         match rhs.data_type() {
             Timestamp(..) => {
@@ -355,7 +362,8 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
 
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() - rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
             Duration(..) => {
                 let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;
@@ -369,7 +377,8 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
 impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() + rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
             Duration(..) => {
                 let physical_result = self.0.physical.add(&rhs.duration()?.physical)?;
@@ -380,7 +389,8 @@ impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;
-        let output_type = (self.data_type() - rhs.data_type())?;
+        let output_type =
+            (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
             Duration(..) => {
                 let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;

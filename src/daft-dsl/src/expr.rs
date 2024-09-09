@@ -1,7 +1,7 @@
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_mean_supertype, try_sum_supertype},
+    datatypes::{try_mean_supertype, try_sum_supertype, InferDataType},
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -785,7 +785,8 @@ impl Expr {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
                 let (result_type, _intermediate, _comp_type) =
-                    left_field.dtype.membership_op(&right_field.dtype)?;
+                    InferDataType::from(&left_field.dtype)
+                        .membership_op(&InferDataType::from(&right_field.dtype))?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
             Between(value, lower, upper) => {
@@ -793,11 +794,14 @@ impl Expr {
                 let lower_field = lower.to_field(schema)?;
                 let upper_field = upper.to_field(schema)?;
                 let (lower_result_type, _intermediate, _comp_type) =
-                    value_field.dtype.membership_op(&lower_field.dtype)?;
+                    InferDataType::from(&value_field.dtype)
+                        .membership_op(&InferDataType::from(&lower_field.dtype))?;
                 let (upper_result_type, _intermediate, _comp_type) =
-                    value_field.dtype.membership_op(&upper_field.dtype)?;
+                    InferDataType::from(&value_field.dtype)
+                        .membership_op(&InferDataType::from(&upper_field.dtype))?;
                 let (result_type, _intermediate, _comp_type) =
-                    lower_result_type.membership_op(&upper_result_type)?;
+                    InferDataType::from(&lower_result_type)
+                        .membership_op(&InferDataType::from(&upper_result_type))?;
                 Ok(Field::new(value_field.name.as_str(), result_type))
             }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
@@ -811,7 +815,8 @@ impl Expr {
                 match op {
                     // Logical operations
                     Operator::And | Operator::Or | Operator::Xor => {
-                        let result_type = left_field.dtype.logical_op(&right_field.dtype)?;
+                        let result_type = InferDataType::from(&left_field.dtype)
+                            .logical_op(&InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 
@@ -823,37 +828,45 @@ impl Expr {
                     | Operator::LtEq
                     | Operator::GtEq => {
                         let (result_type, _intermediate, _comp_type) =
-                            left_field.dtype.comparison_op(&right_field.dtype)?;
+                            InferDataType::from(&left_field.dtype)
+                                .comparison_op(&InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 
                     // Arithmetic operations
                     Operator::Plus => {
-                        let result_type = (&left_field.dtype + &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            + InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Minus => {
-                        let result_type = (&left_field.dtype - &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            - InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Multiply => {
-                        let result_type = (&left_field.dtype * &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            * InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::TrueDivide => {
-                        let result_type = (&left_field.dtype / &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            / InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Modulus => {
-                        let result_type = (&left_field.dtype % &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            % InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::ShiftLeft => {
-                        let result_type = (&left_field.dtype << &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            << InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::ShiftRight => {
-                        let result_type = (&left_field.dtype >> &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            >> InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::FloorDivide => {

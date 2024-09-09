@@ -3,7 +3,7 @@ use std::fmt::Write;
 use arrow2::datatypes::DataType as ArrowType;
 use derive_more::Display;
 
-use crate::datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 use common_error::{DaftError, DaftResult};
 
@@ -167,8 +167,8 @@ impl DataTypePayload {
     pub fn new(datatype: &DataType) -> Self {
         DataTypePayload {
             datatype: datatype.clone(),
-            daft_version: crate::VERSION.into(),
-            daft_build_type: crate::DAFT_BUILD_TYPE.into(),
+            daft_version: common_version::VERSION.into(),
+            daft_build_type: common_version::DAFT_BUILD_TYPE.into(),
         }
     }
 }

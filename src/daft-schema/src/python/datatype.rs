@@ -1,7 +1,8 @@
-use crate::{
-    datatypes::{DataType, Field, ImageMode, TimeUnit},
-    ffi,
-};
+use crate::dtype::DataType;
+use crate::field::Field;
+use crate::image_mode::ImageMode;
+
+use common_arrow_ffi as ffi;
 
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{
@@ -11,6 +12,8 @@ use pyo3::{
     types::{PyDict, PyString},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::time_unit::TimeUnit;
 
 #[pyclass]
 #[derive(Clone)]
@@ -308,15 +311,10 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
-    pub fn to_arrow(
-        &self,
-        py: Python,
-        cast_tensor_type_for_ray: Option<bool>,
-    ) -> PyResult<PyObject> {
+    pub fn to_arrow(&self, py: Python) -> PyResult<PyObject> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
-        match (&self.dtype, cast_tensor_to_ray_type) {
-            (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
+        match &self.dtype {
+            DataType::FixedShapeTensor(dtype, shape) => Ok(
                 if py
                     .import(pyo3::intern!(py, "daft.utils"))?
                     .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
@@ -329,29 +327,17 @@ impl PyDataType {
                             Self {
                                 dtype: *dtype.clone(),
                             }
-                            .to_arrow(py, None)?,
+                            .to_arrow(py)?,
                             pyo3::types::PyTuple::new(py, shape.clone()),
                         ))?
                         .to_object(py)
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                     // canonical tensor extension type.
-                    ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                    ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow)?
                 },
             ),
-            (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
-                .import(pyo3::intern!(py, "ray.data.extensions"))?
-                .getattr(pyo3::intern!(py, "ArrowTensorType"))?
-                .call1((
-                    pyo3::types::PyTuple::new(py, shape.clone()),
-                    Self {
-                        dtype: *dtype.clone(),
-                    }
-                    .to_arrow(py, None)?,
-                ))?
-                .to_object(py)),
-            (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
-                .getattr(py, pyo3::intern!(py, "type")),
+            _ => ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow),
         }
     }
 

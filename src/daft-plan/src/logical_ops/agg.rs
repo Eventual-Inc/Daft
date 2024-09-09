@@ -3,8 +3,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
+use daft_schema::schema::{Schema, SchemaRef};
 
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
