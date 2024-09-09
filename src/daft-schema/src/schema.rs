@@ -1,19 +1,18 @@
 use std::{
-    borrow::Cow,
     collections::{hash_map::DefaultHasher, HashSet},
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
-use common_display::DisplayAs;
+use common_display::{
+    table_display::{make_comfy_table, make_schema_vertical_table},
+    DisplayAs,
+};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    datatypes::Field,
-    utils::display_table::{make_comfy_table, make_schema_vertical_table},
-};
+use crate::field::Field;
 
 use common_error::{DaftError, DaftResult};
 
@@ -219,9 +218,10 @@ impl Schema {
         let table = make_comfy_table(
             self.fields
                 .values()
-                .map(Cow::Borrowed)
+                .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
+            None,
             None,
             None,
         );
@@ -291,13 +291,17 @@ impl Default for Schema {
 impl Display for Schema {
     // Produces an ASCII table.
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = make_schema_vertical_table(
-            self.fields
-                .values()
-                .map(Cow::Borrowed)
-                .collect::<Vec<_>>()
-                .as_slice(),
-        );
+        let names = self
+            .fields
+            .values()
+            .map(|f| f.name.clone())
+            .collect::<Vec<_>>();
+        let dtypes = self
+            .fields
+            .values()
+            .map(|f| format!("{}", f.dtype))
+            .collect::<Vec<_>>();
+        let table = make_schema_vertical_table(&names, &dtypes);
         writeln!(f, "{table}")
     }
 }

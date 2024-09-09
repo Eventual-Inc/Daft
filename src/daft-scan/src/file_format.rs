@@ -9,7 +9,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
-    daft_core::python::{datatype::PyTimeUnit, field::PyField},
+    daft_schema::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, Python},
 };
 

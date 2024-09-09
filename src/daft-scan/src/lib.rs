@@ -9,11 +9,11 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::Field,
+use daft_dsl::ExprRef;
+use daft_schema::{
+    field::Field,
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
 use itertools::Itertools;
@@ -962,7 +962,7 @@ mod test {
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
-    use daft_core::{datatypes::TimeUnit, schema::Schema};
+    use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
     use crate::{

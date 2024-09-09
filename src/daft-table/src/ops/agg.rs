@@ -73,7 +73,7 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
-        use daft_core::{array::ops::IntoGroups, schema::Schema};
+        use daft_core::array::ops::IntoGroups;
         use daft_dsl::functions::python::PythonUDF;
 
         let udf = match func {

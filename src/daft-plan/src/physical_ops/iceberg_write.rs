@@ -1,4 +1,4 @@
-use daft_core::schema::SchemaRef;
+use daft_schema::schema::SchemaRef;
 
 use crate::{physical_plan::PhysicalPlanRef, sink_info::IcebergCatalogInfo};
 use serde::{Deserialize, Serialize};
