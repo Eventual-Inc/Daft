@@ -118,6 +118,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.agg_list
    Expression.agg_concat
    Expression.approx_percentiles
+   Expression.approx_count_distinct
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:

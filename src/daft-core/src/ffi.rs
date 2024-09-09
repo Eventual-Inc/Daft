@@ -69,7 +69,7 @@ pub fn field_to_py(
     Ok(field.to_object(py))
 }
 
-pub fn to_py_schema(
+pub fn dtype_to_py(
     dtype: &arrow2::datatypes::DataType,
     py: Python,
     pyarrow: &PyModule,
@@ -81,8 +81,9 @@ pub fn to_py_schema(
         pyo3::intern!(py, "_import_from_c"),
         (schema_ptr as Py_uintptr_t,),
     )?;
+    let dtype = field.getattr(pyo3::intern!(py, "type"))?.to_object(py);
 
-    Ok(field.to_object(py))
+    Ok(dtype.to_object(py))
 }
 
 fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {

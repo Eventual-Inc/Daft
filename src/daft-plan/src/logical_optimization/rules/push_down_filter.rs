@@ -20,8 +20,8 @@ use crate::{
     LogicalPlan,
 };
 
-use super::{ApplyOrder, OptimizerRule, Transformed};
-use common_treenode::DynTreeNode;
+use super::OptimizerRule;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
@@ -34,14 +34,20 @@ impl PushDownFilter {
 }
 
 impl OptimizerRule for PushDownFilter {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        plan.transform_down(|node| self.try_optimize_node(node))
+    }
+}
+
+impl PushDownFilter {
+    #[allow(clippy::only_used_in_recursion)]
+    fn try_optimize_node(
+        &self,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         let filter = match plan.as_ref() {
             LogicalPlan::Filter(filter) => filter,
-            _ => return Ok(Transformed::No(plan)),
+            _ => return Ok(Transformed::no(plan)),
         };
         let child_plan = filter.input.as_ref();
         let new_plan = match child_plan {
@@ -68,20 +74,20 @@ impl OptimizerRule for PushDownFilter {
                 let new_filter: Arc<LogicalPlan> =
                     LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
-                self.try_optimize(new_filter.clone())?
-                    .or(Transformed::Yes(new_filter))
-                    .unwrap()
+                self.try_optimize_node(new_filter.clone())?
+                    .or(Transformed::yes(new_filter))
+                    .data
                     .clone()
             }
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
-                    SourceInfo::InMemory(_) => return Ok(Transformed::No(plan)),
+                    SourceInfo::InMemory(_) => return Ok(Transformed::no(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::Physical(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>
                     {
-                        return Ok(Transformed::No(plan))
+                        return Ok(Transformed::no(plan))
                     }
 
                     // Pushdown filter into the Source node
@@ -126,7 +132,7 @@ impl OptimizerRule for PushDownFilter {
                             // column and a data column (or contain a UDF), then no pushdown into the scan is possible,
                             // so we short-circuit.
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
-                            return Ok(Transformed::No(plan));
+                            return Ok(Transformed::no(plan));
                         }
 
                         let data_filter = conjuct(data_only_filter);
@@ -157,9 +163,9 @@ impl OptimizerRule for PushDownFilter {
                                 conjuct(needing_filter_op).unwrap(),
                             )?
                             .into();
-                            return Ok(Transformed::Yes(filter_op.into()));
+                            return Ok(Transformed::yes(filter_op.into()));
                         } else {
-                            return Ok(Transformed::Yes(new_source.into()));
+                            return Ok(Transformed::yes(new_source.into()));
                         }
                     }
                     SourceInfo::PlaceHolder(..) => {
@@ -205,7 +211,7 @@ impl OptimizerRule for PushDownFilter {
                 }
                 if can_push.is_empty() {
                     // No predicate expressions can be pushed through projection.
-                    return Ok(Transformed::No(plan));
+                    return Ok(Transformed::no(plan));
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
@@ -335,12 +341,12 @@ impl OptimizerRule for PushDownFilter {
                         new_join
                     }
                 } else {
-                    return Ok(Transformed::No(plan));
+                    return Ok(Transformed::no(plan));
                 }
             }
-            _ => return Ok(Transformed::No(plan)),
+            _ => return Ok(Transformed::no(plan)),
         };
-        Ok(Transformed::Yes(new_plan))
+        Ok(Transformed::yes(new_plan))
     }
 }
 
