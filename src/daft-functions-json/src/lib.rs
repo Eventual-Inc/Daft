@@ -1,4 +1,4 @@
-pub mod expr;
+mod expr;
 
 use std::sync::Mutex;
 

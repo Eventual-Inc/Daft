@@ -1747,7 +1747,6 @@ dependencies = [
  "pyo3",
  "regex",
  "serde",
- "serde_json",
  "sketches-ddsketch",
  "unicode-normalization",
  "xxhash-rust",
@@ -1842,10 +1841,8 @@ name = "daft-functions-json"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-io-config",
  "daft-core",
  "daft-dsl",
- "daft-io",
  "itertools 0.11.0",
  "jaq-core",
  "jaq-interpret",
