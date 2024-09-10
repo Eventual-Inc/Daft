@@ -1680,6 +1680,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-json",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -1838,6 +1839,27 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
+]
+
+[[package]]
+name = "daft-functions-json"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-io-config",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "itertools 0.11.0",
+ "jaq-core",
+ "jaq-interpret",
+ "jaq-parse",
+ "jaq-std",
+ "lazy_static",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "typetag",
 ]
 
 [[package]]

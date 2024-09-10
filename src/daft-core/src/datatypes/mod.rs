@@ -362,3 +362,11 @@ impl<T: DaftNumericType> DataArray<T> {
         self.as_arrow().values().as_slice()
     }
 }
+
+impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
+        let arrow_arr = arrow2::array::Utf8Array::<i64>::from_iter(iter);
+        Self::from(("", Box::new(arrow_arr)))
+    }
+}
