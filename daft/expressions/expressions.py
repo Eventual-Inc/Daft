@@ -1477,7 +1477,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────╮
             │ x                             ┆ date       │
             │ ---                           ┆ ---        │
-            │ Timestamp[Microseconds, None] ┆ Date       │
+            │ Timestamp(Microseconds, None) ┆ Date       │
             ╞═══════════════════════════════╪════════════╡
             │ 2021-01-01 05:01:01           ┆ 2021-01-01 │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1512,7 +1512,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ day    │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1547,7 +1547,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ hour   │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 5      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1582,7 +1582,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ minute │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1617,7 +1617,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ second │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 00:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1652,7 +1652,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────────────╮
             │ x                             ┆ time               │
             │ ---                           ┆ ---                │
-            │ Timestamp[Microseconds, None] ┆ Time[Microseconds] │
+            │ Timestamp(Microseconds, None) ┆ Time(Microseconds) │
             ╞═══════════════════════════════╪════════════════════╡
             │ 2021-01-01 00:01:01           ┆ 00:01:01           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1685,7 +1685,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ datetime                      ┆ month  │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2024-07-03 00:00:00           ┆ 7      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1718,7 +1718,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬───────╮
             │ datetime                      ┆ year  │
             │ ---                           ┆ ---   │
-            │ Timestamp[Microseconds, None] ┆ Int32 │
+            │ Timestamp(Microseconds, None) ┆ Int32 │
             ╞═══════════════════════════════╪═══════╡
             │ 2024-07-03 00:00:00           ┆ 2024  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
@@ -1752,7 +1752,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬─────────────╮
             │ datetime                      ┆ day_of_week │
             │ ---                           ┆ ---         │
-            │ Timestamp[Microseconds, None] ┆ UInt32      │
+            │ Timestamp(Microseconds, None) ┆ UInt32      │
             ╞═══════════════════════════════╪═════════════╡
             │ 2024-07-03 00:00:00           ┆ 2           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1785,7 +1785,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬───────────────────────────────╮
             │ datetime                      ┆ truncated                     │
             │ ---                           ┆ ---                           │
-            │ Timestamp[Microseconds, None] ┆ Timestamp[Microseconds, None] │
+            │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
             ╞═══════════════════════════════╪═══════════════════════════════╡
             │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:00           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2721,7 +2721,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╭─────────────────────────┬───────────────────────────────╮
             │ x                       ┆ datetime                      │
             │ ---                     ┆ ---                           │
-            │ Utf8                    ┆ Timestamp[Milliseconds, None] │
+            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
             ╞═════════════════════════╪═══════════════════════════════╡
             │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2740,7 +2740,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────────────────────────────────────────╮
             │ x                             ┆ datetime                                       │
             │ ---                           ┆ ---                                            │
-            │ Utf8                          ┆ Timestamp[Milliseconds, Some("Asia/Shanghai")] │
+            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
             ╞═══════════════════════════════╪════════════════════════════════════════════════╡
             │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤

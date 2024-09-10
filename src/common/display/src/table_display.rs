@@ -20,9 +20,8 @@ fn create_table_cell(value: &str) -> comfy_table::Cell {
     cell
 }
 
-pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
-    names: &[S1],
-    dtypes: &[S2],
+pub fn make_schema_vertical_table(
+    fields: impl Iterator<Item = (String, String)>,
 ) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
@@ -38,9 +37,8 @@ pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
 
     let header = vec![create_table_cell("Column Name"), create_table_cell("Type")];
     table.set_header(header);
-    assert_eq!(names.len(), dtypes.len());
-    for (name, dtype) in names.iter().zip(dtypes.iter()) {
-        table.add_row(vec![name.to_string(), dtype.to_string()]);
+    for (name, dtype) in fields {
+        table.add_row(vec![name.clone(), dtype]);
     }
     table
 }

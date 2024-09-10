@@ -70,7 +70,7 @@ pub enum DataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    #[display("Timestamp[{_0}, {_1:?}]")]
+    #[display("Timestamp({_0}, {_1:?})")]
     Timestamp(TimeUnit, Option<String>),
 
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
@@ -79,7 +79,7 @@ pub enum DataType {
 
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     /// Only [`TimeUnit::Microsecond`] and [`TimeUnit::Nanosecond`] are supported on this variant.
-    #[display("Time[{_0}]")]
+    #[display("Time({_0})")]
     Time(TimeUnit),
 
     /// Measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
@@ -130,7 +130,7 @@ pub enum DataType {
     FixedShapeImage(ImageMode, u32, u32),
 
     /// A logical type for tensors with variable shapes.
-    #[display("Tensor[{_0}]")]
+    #[display("Tensor({_0})")]
     Tensor(Box<DataType>),
 
     /// A logical type for tensors with the same shape.
@@ -150,7 +150,7 @@ fn format_struct(fields: &[Field]) -> std::result::Result<String, std::fmt::Erro
             write!(&mut f, ", ")?;
         }
         if !(field.name.is_empty() && field.dtype.is_null()) {
-            write!(&mut f, "{}", field)?;
+            write!(&mut f, "{}: {}", field.name, field.dtype)?;
         }
     }
     Ok(f)
