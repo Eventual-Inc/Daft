@@ -381,10 +381,10 @@ impl crate::datatypes::PythonArray {
 
         let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
             // Find visualization hooks for this object's class
-            let pyany = val.into_ref(py);
+            let pyany = val.bind(py);
             let get_viz_hook = py
-                .import("daft.viz.html_viz_hooks")?
-                .getattr("get_viz_hook")?;
+                .import_bound(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
+                .getattr(pyo3::intern!(py, "get_viz_hook"))?;
             let hook = get_viz_hook.call1((pyany,))?;
 
             if hook.is_none() {

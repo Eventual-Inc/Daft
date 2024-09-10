@@ -99,7 +99,7 @@ fn limit_with_delete_rows(
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -113,10 +113,10 @@ async fn read_parquet_single(
     chunk_size: Option<usize>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
+    let mut columns_to_read = columns.clone();
     let columns_to_return = columns;
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
-    let mut columns_to_read = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
     let requested_columns = columns_to_read.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
         num_rows_to_read = None;
@@ -162,8 +162,8 @@ async fn read_parquet_single(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns_to_read.as_ref() {
-            builder.prune_columns(columns.as_slice())?
+        let builder = if let Some(columns) = &columns_to_read {
+            builder.prune_columns(columns)?
         } else {
             builder
         };
@@ -246,7 +246,7 @@ async fn read_parquet_single(
         // TODO ideally pipeline this with IO and before concatenating, rather than after
         table = table.filter(&[predicate])?;
         if let Some(oc) = columns_to_return {
-            table = table.get_columns(oc)?;
+            table = table.get_columns(&oc)?;
         }
         if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;
@@ -375,8 +375,8 @@ async fn stream_parquet_single(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns_to_read.as_ref() {
-            builder.prune_columns(columns.as_slice())?
+        let builder = if let Some(columns) = &columns_to_read {
+            builder.prune_columns(columns)?
         } else {
             builder
         };
@@ -462,7 +462,7 @@ async fn stream_parquet_single(
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single_into_arrow(
     uri: &str,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -478,7 +478,7 @@ async fn read_parquet_single_into_arrow(
         let (metadata, schema, all_arrays, num_rows_read) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
                 fixed_uri.as_ref(),
-                columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+                columns.clone(),
                 start_offset,
                 num_rows,
                 row_groups.clone(),
@@ -499,7 +499,7 @@ async fn read_parquet_single_into_arrow(
         .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
+        let builder = if let Some(columns) = &columns {
             builder.prune_columns(columns)?
         } else {
             builder
@@ -586,7 +586,7 @@ async fn read_parquet_single_into_arrow(
         }?;
     };
 
-    let expected_num_columns = if let Some(columns) = columns {
+    let expected_num_columns = if let Some(columns) = &columns {
         columns.len()
     } else {
         metadata_num_columns
@@ -610,7 +610,7 @@ async fn read_parquet_single_into_arrow(
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet(
     uri: &str,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -650,7 +650,7 @@ pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, u
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
@@ -690,9 +690,9 @@ pub fn read_parquet_into_pyarrow(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_parquet_bulk(
+pub fn read_parquet_bulk<T: AsRef<str>>(
     uris: &[&str],
-    columns: Option<&[&str]>,
+    columns: Option<&[T]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -709,7 +709,7 @@ pub fn read_parquet_bulk(
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
 
-    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
+    let columns = columns.map(|s| s.iter().map(|v| v.as_ref().to_string()).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
             return Err(common_error::DaftError::ValueError(format!(
@@ -723,7 +723,7 @@ pub fn read_parquet_bulk(
         .block_on_current_thread(async move {
             let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
-                let owned_columns = owned_columns.clone();
+                let owned_columns = columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
                 let owned_predicate = predicate.clone();
                 let metadata = metadata.as_ref().map(|mds| mds[i].clone());
@@ -734,12 +734,9 @@ pub fn read_parquet_bulk(
                 let owned_field_id_mapping = field_id_mapping.clone();
                 let delete_rows = delete_map.as_ref().and_then(|m| m.get(&uri).cloned());
                 tokio::task::spawn(async move {
-                    let columns = owned_columns
-                        .as_ref()
-                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
                     read_parquet_single(
                         &uri,
-                        columns.as_deref(),
+                        owned_columns,
                         start_offset,
                         num_rows,
                         owned_row_group,
@@ -817,9 +814,9 @@ pub async fn stream_parquet(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_parquet_into_pyarrow_bulk(
+pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
     uris: &[&str],
-    columns: Option<&[&str]>,
+    columns: Option<&[T]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -830,7 +827,7 @@ pub fn read_parquet_into_pyarrow_bulk(
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
-    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
+    let columns = columns.map(|s| s.iter().map(|v| v.as_ref().to_string()).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
             return Err(common_error::DaftError::ValueError(format!(
@@ -844,21 +841,18 @@ pub fn read_parquet_into_pyarrow_bulk(
         .block_on_current_thread(async move {
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
-                let owned_columns = owned_columns.clone();
+                let owned_columns = columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
 
                 tokio::task::spawn(async move {
-                    let columns = owned_columns
-                        .as_ref()
-                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
                     Ok((
                         i,
                         read_parquet_single_into_arrow(
                             &uri,
-                            columns.as_deref(),
+                            owned_columns,
                             start_offset,
                             num_rows,
                             owned_row_group,

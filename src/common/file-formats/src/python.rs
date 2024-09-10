@@ -84,7 +84,7 @@ impl From<Arc<FileFormatConfig>> for PyFileFormatConfig {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<FileFormat>()?;
     Ok(())
 }

@@ -42,12 +42,12 @@ pub fn to_mode(s: &PySeries, mode: &ImageMode) -> PyResult<PySeries> {
     Ok(s.into())
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    let module = PyModule::new(_py, "image")?;
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    let module = PyModule::new_bound(parent.py(), "image")?;
     module.add_wrapped(wrap_pyfunction!(decode))?;
     module.add_wrapped(wrap_pyfunction!(encode))?;
     module.add_wrapped(wrap_pyfunction!(resize))?;
     module.add_wrapped(wrap_pyfunction!(to_mode))?;
-    parent.add_submodule(module)?;
+    parent.add_submodule(&module)?;
     Ok(())
 }
