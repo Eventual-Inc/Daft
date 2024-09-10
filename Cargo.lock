@@ -1861,7 +1861,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
- "common-py-serde",
  "futures",
  "globset",
  "google-cloud-storage",
@@ -2079,7 +2078,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "serde",
- "serde_json",
  "snafu",
 ]
 
