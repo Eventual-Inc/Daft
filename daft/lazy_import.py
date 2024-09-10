@@ -25,16 +25,14 @@ class LazyImport:
     """
 
     def __init__(self, module_name: str):
-        self._import_attempted = False
         self._module_name = module_name
         self._module = None
 
     def module_available(self):
-        return self._load_module is not None
+        return self._load_module() is not None
 
     def _load_module(self):
-        if not self._import_attempted and self._module is None:
-            self._import_attempted = True
+        if self._module is None:
             try:
                 self._module = importlib.import_module(self._module_name)
             except ImportError:
