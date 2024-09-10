@@ -28,7 +28,6 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -797,6 +796,7 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
         from daft.io.object_store_options import io_config_to_storage_options
 
@@ -827,7 +827,7 @@ class DataFrame:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = urlparse(table_uri).scheme
+        scheme = get_protocol_from_path(table_uri)
         if scheme == "s3" or scheme == "s3a":
             if dynamo_table_name is not None:
                 storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
