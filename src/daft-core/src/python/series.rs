@@ -15,14 +15,15 @@ use crate::{
     },
     count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
-    ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
 
-use super::datatype::PyDataType;
+use common_arrow_ffi as ffi;
+
 use crate::array::ops::as_arrow::AsArrow;
 use crate::array::ops::trigonometry::TrigonometricFunction;
+use daft_schema::python::PyDataType;
 
 #[pyclass]
 #[derive(Clone)]

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::datatype::PyDataType;
 use super::field::PyField;
-use crate::datatypes;
+use crate::field::Field;
 use crate::schema;
 use common_py_serde::impl_bincode_py_state_serialization;
 
@@ -68,7 +68,7 @@ impl PySchema {
     ) -> PyResult<PySchema> {
         let fields = names_and_types
             .iter()
-            .map(|(name, pydtype)| datatypes::Field::new(name, pydtype.clone().into()))
+            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()))
             .collect();
         let schema = schema::Schema::new(fields)?;
         Ok(PySchema {

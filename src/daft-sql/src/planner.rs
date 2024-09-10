@@ -13,7 +13,7 @@ use daft_dsl::{
         numeric::{ceil, floor},
         utf8::{ilike, like},
     },
-    lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
+    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 
@@ -253,7 +253,12 @@ impl SQLPlanner {
             rel.inner = rel.inner.aggregate(to_select, groupby_exprs)?;
         } else if !to_select.is_empty() {
             let rel = self.relation_mut();
-            rel.inner = rel.inner.select(to_select)?;
+            let has_aggs = to_select.iter().any(has_agg);
+            if has_aggs {
+                rel.inner = rel.inner.aggregate(to_select, vec![])?;
+            } else {
+                rel.inner = rel.inner.select(to_select)?;
+            }
         }
 
         Ok(())

@@ -1,5 +1,5 @@
-use daft_core::datatypes::{Field, TimeUnit};
-use daft_io::FileFormat;
+use crate::FileFormat;
+use daft_schema::{field::Field, time_unit::TimeUnit};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::BTreeMap, sync::Arc};
@@ -9,23 +9,9 @@ use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
-    daft_core::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{pyclass, pyclass::CompareOp, pymethods, IntoPy, PyObject, PyResult, Python},
+    daft_schema::python::{datatype::PyTimeUnit, field::PyField},
+    pyo3::{pyclass, pymethods, PyObject, PyResult, Python},
 };
-
-impl From<&FileFormatConfig> for FileFormat {
-    fn from(file_format_config: &FileFormatConfig) -> Self {
-        match file_format_config {
-            FileFormatConfig::Parquet(_) => Self::Parquet,
-            FileFormatConfig::Csv(_) => Self::Csv,
-            FileFormatConfig::Json(_) => Self::Json,
-            #[cfg(feature = "python")]
-            FileFormatConfig::Database(_) => Self::Database,
-            #[cfg(feature = "python")]
-            FileFormatConfig::PythonFunction => Self::Python,
-        }
-    }
-}
 
 /// Configuration for parsing a particular file format.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -360,81 +346,3 @@ impl DatabaseSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(DatabaseSourceConfig);
-
-/// Configuration for parsing a particular file format.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(transparent)]
-#[cfg_attr(
-    feature = "python",
-    pyclass(module = "daft.daft", name = "FileFormatConfig")
-)]
-pub struct PyFileFormatConfig(Arc<FileFormatConfig>);
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl PyFileFormatConfig {
-    /// Create a Parquet file format config.
-    #[staticmethod]
-    fn from_parquet_config(config: ParquetSourceConfig) -> Self {
-        Self(Arc::new(FileFormatConfig::Parquet(config)))
-    }
-
-    /// Create a CSV file format config.
-    #[staticmethod]
-    fn from_csv_config(config: CsvSourceConfig) -> Self {
-        Self(Arc::new(FileFormatConfig::Csv(config)))
-    }
-
-    /// Create a JSON file format config.
-    #[staticmethod]
-    fn from_json_config(config: JsonSourceConfig) -> Self {
-        Self(Arc::new(FileFormatConfig::Json(config)))
-    }
-
-    /// Create a Database file format config.
-    #[staticmethod]
-    fn from_database_config(config: DatabaseSourceConfig) -> Self {
-        Self(Arc::new(FileFormatConfig::Database(config)))
-    }
-
-    /// Get the underlying data source config.
-    #[getter]
-    fn get_config(&self, py: Python) -> PyObject {
-        use FileFormatConfig::*;
-
-        match self.0.as_ref() {
-            Parquet(config) => config.clone().into_py(py),
-            Csv(config) => config.clone().into_py(py),
-            Json(config) => config.clone().into_py(py),
-            Database(config) => config.clone().into_py(py),
-            PythonFunction => py.None(),
-        }
-    }
-
-    /// Get the file format for this file format config.
-    fn file_format(&self) -> FileFormat {
-        self.0.as_ref().into()
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
-        match op {
-            CompareOp::Eq => self.0 == other.0,
-            CompareOp::Ne => !self.__richcmp__(other, CompareOp::Eq),
-            _ => unimplemented!("not implemented"),
-        }
-    }
-}
-
-impl_bincode_py_state_serialization!(PyFileFormatConfig);
-
-impl From<PyFileFormatConfig> for Arc<FileFormatConfig> {
-    fn from(file_format_config: PyFileFormatConfig) -> Self {
-        file_format_config.0
-    }
-}
-
-impl From<Arc<FileFormatConfig>> for PyFileFormatConfig {
-    fn from(file_format_config: Arc<FileFormatConfig>) -> Self {
-        Self(file_format_config)
-    }
-}

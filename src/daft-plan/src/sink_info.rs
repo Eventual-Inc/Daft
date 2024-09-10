@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
@@ -7,7 +8,6 @@ use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::PyObject;
 
-use crate::FileFormat;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]

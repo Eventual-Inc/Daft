@@ -175,18 +175,21 @@ pub fn hash(array: &dyn Array, seed: Option<&PrimitiveArray<u64>>) -> Result<Pri
         }
     }
 
-    use PhysicalType::*;
     Ok(match array.data_type().to_physical_type() {
-        Null => hash_null(array.as_any().downcast_ref().unwrap(), seed),
-        Boolean => hash_boolean(array.as_any().downcast_ref().unwrap(), seed),
-        Primitive(primitive) => with_match_hashing_primitive_type!(primitive, |$T| {
+        PhysicalType::Null => hash_null(array.as_any().downcast_ref().unwrap(), seed),
+        PhysicalType::Boolean => hash_boolean(array.as_any().downcast_ref().unwrap(), seed),
+        PhysicalType::Primitive(primitive) => with_match_hashing_primitive_type!(primitive, |$T| {
             hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed)
         }),
-        Binary => hash_binary::<i32>(array.as_any().downcast_ref().unwrap(), seed),
-        LargeBinary => hash_binary::<i64>(array.as_any().downcast_ref().unwrap(), seed),
-        FixedSizeBinary => hash_fixed_size_binary(array.as_any().downcast_ref().unwrap(), seed),
-        Utf8 => hash_utf8::<i32>(array.as_any().downcast_ref().unwrap(), seed),
-        LargeUtf8 => hash_utf8::<i64>(array.as_any().downcast_ref().unwrap(), seed),
+        PhysicalType::Binary => hash_binary::<i32>(array.as_any().downcast_ref().unwrap(), seed),
+        PhysicalType::LargeBinary => {
+            hash_binary::<i64>(array.as_any().downcast_ref().unwrap(), seed)
+        }
+        PhysicalType::FixedSizeBinary => {
+            hash_fixed_size_binary(array.as_any().downcast_ref().unwrap(), seed)
+        }
+        PhysicalType::Utf8 => hash_utf8::<i32>(array.as_any().downcast_ref().unwrap(), seed),
+        PhysicalType::LargeUtf8 => hash_utf8::<i64>(array.as_any().downcast_ref().unwrap(), seed),
         t => {
             return Err(Error::NotYetImplemented(format!(
                 "Hash not implemented for type {t:?}"

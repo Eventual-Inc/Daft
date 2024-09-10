@@ -1,5 +1,5 @@
 pub mod arrow;
-pub mod display_table;
+pub mod display;
 pub mod dyn_compare;
 pub mod identity_hash_set;
 pub mod supertype;

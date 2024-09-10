@@ -937,7 +937,7 @@ impl Utf8Array {
     pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {
         let len = self.len();
         let self_iter = self.as_arrow().iter();
-        let timeunit = crate::datatypes::utils::infer_timeunit_from_format_string(format);
+        let timeunit = daft_schema::time_unit::infer_timeunit_from_format_string(format);
 
         let arrow_result = self_iter
             .map(|val| match val {
