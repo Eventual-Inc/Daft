@@ -12,7 +12,7 @@ daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
-daft-io = {path = "src/daft-io", default-features = false}
+daft-io = {path = "src/daft-io", default-features = false, optional=true}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
@@ -56,6 +56,7 @@ python = [
   "common-display/python",
   "common-resource-request/python"
 ]
+enable_hdfs = ["daft-io/enable_hdfs"]
 
 [lib]
 crate-type = ["cdylib"]
