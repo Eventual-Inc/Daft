@@ -114,7 +114,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     sink.schema.clone(),
                     info.clone(),
                 )),
-                #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(_) => {
                     todo!("CatalogInfo not yet implemented")
                 }
