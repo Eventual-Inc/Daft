@@ -1,19 +1,19 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.io.catalog import DataCatalogTable
+from daft.lazy_import import LazyImport
 from daft.logical.builder import LogicalPlanBuilder
 
-_UNITY_CATALOG_AVAILABLE = True
-try:
+if TYPE_CHECKING:
     from daft.unity_catalog import UnityCatalogTable
-except ImportError:
-    _UNITY_CATALOG_AVAILABLE = False
+
+unity_catalog = LazyImport("daft.unity_catalog")
 
 
 @PublicAPI
@@ -60,7 +60,7 @@ def read_deltalake(
         table_uri = table
     elif isinstance(table, DataCatalogTable):
         table_uri = table.table_uri(io_config)
-    elif _UNITY_CATALOG_AVAILABLE and isinstance(table, UnityCatalogTable):
+    elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
         table_uri = table.table_uri
 
         # Override the storage_config with the one provided by Unity catalog

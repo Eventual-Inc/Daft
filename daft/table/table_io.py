@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import pyarrow as pa
 from pyarrow import csv as pacsv
-from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
@@ -38,6 +37,7 @@ from daft.filesystem import (
     canonicalize_protocol,
     get_protocol_from_path,
 )
+from daft.lazy_import import LazyImport
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     TableParseCSVOptions,
@@ -51,8 +51,12 @@ from daft.table import MicroPartition
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 if TYPE_CHECKING:
+    from pyarrow import dataset as pads
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+
+pads = LazyImport("pyarrow.dataset")
 
 
 @contextlib.contextmanager

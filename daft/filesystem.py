@@ -6,17 +6,20 @@ import os
 import pathlib
 import sys
 import urllib.parse
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import fsspec
-from fsspec.registry import get_filesystem_class
 from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
+from daft.lazy_import import LazyImport
 from daft.table import MicroPartition
 
+if TYPE_CHECKING:
+    import fsspec
+
 logger = logging.getLogger(__name__)
+fsspec = LazyImport("fsspec")
 
 _CACHED_FSES: dict[tuple[str, IOConfig | None], FileSystem] = {}
 
@@ -267,7 +270,7 @@ def _infer_filesystem(
     # HTTP: Use FSSpec as a fallback
     ###
     elif protocol in {"http", "https"}:
-        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
         fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(resolved_path)
@@ -277,7 +280,7 @@ def _infer_filesystem(
     # Azure: Use FSSpec as a fallback
     ###
     elif protocol in {"az", "abfs", "abfss"}:
-        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
 
         if io_config is not None:
             # TODO: look into support for other AzureConfig parameters

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
+from daft.lazy_import import LazyImport
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
+
+if TYPE_CHECKING:
+    import pandas as pd
+
 
 _NUMPY_AVAILABLE = True
 try:
@@ -15,13 +20,8 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+pd = LazyImport("pandas")
 
 from daft.datatype import _ensure_registered_super_ext_type
 
@@ -650,7 +650,7 @@ def item_to_series(name: str, item: Any) -> Series:
         series = item
     elif isinstance(item, (pa.Array, pa.ChunkedArray)):
         series = Series.from_arrow(item, name)
-    elif _PANDAS_AVAILABLE and isinstance(item, pd.Series):
+    elif pd.module_available() and isinstance(item, pd.Series):
         series = Series.from_pandas(item, name)
     else:
         raise ValueError(f"Creating a Series from data of type {type(item)} not implemented")
