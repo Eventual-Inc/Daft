@@ -62,6 +62,16 @@ fn image_decode_impl(
         _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
     }
 }
+
+/// Decodes a series of binary data into image arrays.
+///
+/// # Arguments
+/// * `s` - Input Series containing binary image data
+/// * `raise_error_on_failure` - If true, raises errors on decode failures
+/// * `mode` - Optional target ImageMode for decoded images
+///
+/// # Returns
+/// A DaftResult containing a Series of decoded images
 pub fn decode(
     s: &Series,
     raise_error_on_failure: bool,
@@ -77,6 +87,18 @@ pub fn decode(
     }
 }
 
+/// Encode a series of images into a series of bytes
+/// Encode a series of images into a series of bytes.
+///
+/// This function takes a Series containing image data and an ImageFormat,
+/// then encodes each image into the specified format.
+///
+/// # Arguments
+/// * `s` - The input Series containing image data
+/// * `image_format` - The desired output format for the encoded images
+///
+/// # Returns
+/// A DaftResult containing a new Series of encoded binary data
 pub fn encode(s: &Series, image_format: ImageFormat) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(..) => Ok(s
@@ -93,7 +115,15 @@ pub fn encode(s: &Series, image_format: ImageFormat) -> DaftResult<Series> {
         ))),
     }
 }
-
+/// Resizes images in a Series to the specified width and height.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+/// * `w` - Target width for resized images
+/// * `h` - Target height for resized images
+///
+/// # Returns
+/// A DaftResult containing a new Series with resized images
 pub fn resize(s: &Series, w: u32, h: u32) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(mode) => {
@@ -120,6 +150,14 @@ pub fn resize(s: &Series, w: u32, h: u32) -> DaftResult<Series> {
     }
 }
 
+/// Crops images in a Series based on provided bounding boxes.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+/// * `bbox` - Series of bounding boxes for cropping
+///
+/// # Returns
+/// A DaftResult containing a new Series with cropped images
 pub fn crop(s: &Series, bbox: &Series) -> DaftResult<Series> {
     let bbox_type = DataType::FixedSizeList(Box::new(DataType::UInt32), 4);
     let bbox = bbox.cast(&bbox_type)?;
@@ -140,7 +178,14 @@ pub fn crop(s: &Series, bbox: &Series) -> DaftResult<Series> {
         ))),
     }
 }
-
+/// Converts images in a Series to the specified mode.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+/// * `mode` - Target ImageMode for conversion
+///
+/// # Returns
+/// A DaftResult containing a new Series with converted images
 pub fn to_mode(s: &Series, mode: ImageMode) -> DaftResult<Series> {
     match &s.data_type() {
         DataType::Image(_) => s

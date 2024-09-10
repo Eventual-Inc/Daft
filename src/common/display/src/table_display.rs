@@ -2,6 +2,14 @@ pub use comfy_table;
 
 const BOLD_TABLE_HEADERS_IN_DISPLAY: &str = "DAFT_BOLD_TABLE_HEADERS";
 
+pub trait StrValue {
+    fn str_value(&self, idx: usize) -> String;
+}
+
+pub trait HTMLValue {
+    fn html_value(&self, idx: usize) -> String;
+}
+
 // this should be factored out to a common crate
 fn create_table_cell(value: &str) -> comfy_table::Cell {
     let mut attributes = vec![];
@@ -43,10 +51,6 @@ pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
         table.add_row(vec![name.to_string(), dtype.to_string()]);
     }
     table
-}
-
-pub trait StrValue {
-    fn str_value(&self, idx: usize) -> String;
 }
 
 pub fn make_comfy_table<S: AsRef<str>>(

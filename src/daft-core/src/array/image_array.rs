@@ -1,4 +1,3 @@
-use std::io::{Seek, SeekFrom, Write};
 use std::vec;
 
 use common_error::DaftResult;
@@ -28,50 +27,6 @@ impl BBox {
     }
 }
 
-type IOResult<T = (), E = std::io::Error> = std::result::Result<T, E>;
-
-/// A wrapper of a writer that tracks the number of bytes successfully written.
-pub struct CountingWriter<W> {
-    inner: W,
-    count: u64,
-}
-
-impl<W> CountingWriter<W> {
-    /// The number of bytes successful written so far.
-    pub fn count(&self) -> u64 {
-        self.count
-    }
-
-    /// Extracts the inner writer, discarding this wrapper.
-    pub fn into_inner(self) -> W {
-        self.inner
-    }
-}
-
-impl<W> From<W> for CountingWriter<W> {
-    fn from(inner: W) -> Self {
-        Self { inner, count: 0 }
-    }
-}
-
-impl<W: Write + std::fmt::Debug> Write for CountingWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> IOResult<usize> {
-        let written = self.inner.write(buf)?;
-        self.count += written as u64;
-        Ok(written)
-    }
-
-    fn flush(&mut self) -> IOResult {
-        self.inner.flush()
-    }
-}
-
-impl<W: Write + Seek> Seek for CountingWriter<W> {
-    fn seek(&mut self, pos: SeekFrom) -> IOResult<u64> {
-        self.inner.seek(pos)
-    }
-}
-
 pub struct ImageArraySidecarData {
     pub channels: Vec<u16>,
     pub heights: Vec<u32>,
@@ -81,6 +36,12 @@ pub struct ImageArraySidecarData {
 }
 
 impl ImageArray {
+    pub const IMAGE_DATA_IDX: usize = 0;
+    pub const IMAGE_CHANNEL_IDX: usize = 1;
+    pub const IMAGE_HEIGHT_IDX: usize = 2;
+    pub const IMAGE_WIDTH_IDX: usize = 3;
+    pub const IMAGE_MODE_IDX: usize = 4;
+
     pub fn image_mode(&self) -> &Option<ImageMode> {
         match self.data_type() {
             DataType::Image(mode) => mode,
@@ -89,32 +50,27 @@ impl ImageArray {
     }
 
     pub fn data_array(&self) -> &ListArray {
-        const IMAGE_DATA_IDX: usize = 0;
-        let array = self.physical.children.get(IMAGE_DATA_IDX).unwrap();
+        let array = self.physical.children.get(Self::IMAGE_DATA_IDX).unwrap();
         array.list().unwrap()
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
-        const IMAGE_CHANNEL_IDX: usize = 1;
-        let array = self.physical.children.get(IMAGE_CHANNEL_IDX).unwrap();
+        let array = self.physical.children.get(Self::IMAGE_CHANNEL_IDX).unwrap();
         array.u16().unwrap().as_arrow()
     }
 
     pub fn height_array(&self) -> &arrow2::array::UInt32Array {
-        const IMAGE_HEIGHT_IDX: usize = 2;
-        let array = self.physical.children.get(IMAGE_HEIGHT_IDX).unwrap();
+        let array = self.physical.children.get(Self::IMAGE_HEIGHT_IDX).unwrap();
         array.u32().unwrap().as_arrow()
     }
 
     pub fn width_array(&self) -> &arrow2::array::UInt32Array {
-        const IMAGE_WIDTH_IDX: usize = 3;
-        let array = self.physical.children.get(IMAGE_WIDTH_IDX).unwrap();
+        let array = self.physical.children.get(Self::IMAGE_WIDTH_IDX).unwrap();
         array.u32().unwrap().as_arrow()
     }
 
     pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
-        const IMAGE_MODE_IDX: usize = 4;
-        let array = self.physical.children.get(IMAGE_MODE_IDX).unwrap();
+        let array = self.physical.children.get(Self::IMAGE_MODE_IDX).unwrap();
         array.u8().unwrap().as_arrow()
     }
 

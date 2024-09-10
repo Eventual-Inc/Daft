@@ -41,7 +41,6 @@ pub fn to_mode(s: &PySeries, mode: &ImageMode) -> PyResult<PySeries> {
     let s = crate::series::to_mode(&s.series, *mode)?;
     Ok(s.into())
 }
-// let module = PyModule::new(py, "my_module")?;
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     let module = PyModule::new(_py, "image")?;
