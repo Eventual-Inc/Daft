@@ -5,6 +5,7 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
@@ -12,21 +13,20 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
-
-#[cfg(feature = "python")]
-use crate::PyIOSnafu;
-use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_stats::TableStatistics;
 use daft_stats::{PartitionSpec, TableMetadata};
+
+#[cfg(feature = "python")]
+use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
 
 #[derive(Debug)]
 pub(crate) enum TableState {
@@ -356,10 +356,7 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
-                    sql,
-                    conn,
-                }) => {
+                FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
                     let predicate = scan_task
                         .pushdowns
                         .filters
@@ -1165,7 +1162,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1189,7 +1186,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;

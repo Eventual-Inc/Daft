@@ -1,6 +1,5 @@
 use common_error::DaftError;
-use daft_core::datatypes::DataType;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
 use common_error::DaftResult;
 use daft_dsl::functions::{ScalarFunction, ScalarUDF};
@@ -71,7 +70,7 @@ impl ScalarUDF for ImageCrop {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input, bbox] => input.image_crop(bbox),
+            [input, bbox] => daft_image::series::crop(input, bbox),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()

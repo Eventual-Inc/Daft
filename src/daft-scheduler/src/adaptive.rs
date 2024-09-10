@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use daft_core::schema::Schema;
+use daft_core::prelude::Schema;
 
 use crate::PhysicalPlanScheduler;
 use daft_plan::InMemoryInfo;

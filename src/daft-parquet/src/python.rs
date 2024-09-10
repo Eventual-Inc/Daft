@@ -1,10 +1,9 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use daft_core::{
-        ffi::field_to_py,
-        python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
-    };
+    use common_arrow_ffi::{field_to_py, to_py_array};
+    use daft_core::python::PySeries;
+    use daft_core::python::{PySchema, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
@@ -12,7 +11,6 @@ pub mod pylib {
     use std::{collections::BTreeMap, sync::Arc};
 
     use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
-    use daft_core::ffi::to_py_array;
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet(
@@ -74,7 +72,7 @@ pub mod pylib {
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow.clone()).map(|pyarray| pyarray.unbind()))
+                    .map(|a| to_py_array(py, a, &pyarrow).map(|pyarray| pyarray.unbind()))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;

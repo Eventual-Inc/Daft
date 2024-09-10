@@ -4,7 +4,8 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{
         growable::make_growable,
-        ops::{from_arrow::FromArrow, full::FullNull, image::ImageArraySidecarData},
+        image_array::ImageArraySidecarData,
+        ops::{from_arrow::FromArrow, full::FullNull},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{
@@ -17,7 +18,7 @@ use crate::{
         Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
-    utils::display_table::display_time64,
+    utils::display::display_time64,
     with_match_daft_logical_primitive_types,
 };
 
@@ -38,8 +39,8 @@ use indexmap::IndexMap;
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    crate::ffi,
     crate::with_match_numeric_daft_types,
+    common_arrow_ffi as ffi,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn, PyUntypedArrayMethods},
@@ -68,10 +69,13 @@ where
     // Get the result of the Arrow Logical->Target cast.
     let result_arrow_array = {
         // First, get corresponding Arrow LogicalArray of source DataArray
-        use DataType::*;
         let source_arrow_array = match source_dtype {
             // Wrapped primitives
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+            DataType::Decimal128(..)
+            | DataType::Date
+            | DataType::Timestamp(..)
+            | DataType::Duration(..)
+            | DataType::Time(..) => {
                 with_match_daft_logical_primitive_types!(source_dtype, |$T| {
                     use arrow2::array::Array;
                     to_cast
@@ -110,11 +114,14 @@ where
     // If the target type is also Logical, get the Arrow Physical.
     let result_arrow_physical_array = {
         if dtype.is_logical() {
-            use DataType::*;
             let target_physical_type = dtype.to_physical().to_arrow()?;
             match dtype {
                 // Primitive wrapper types: change the arrow2 array's type field to primitive
-                Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+                DataType::Decimal128(..)
+                | DataType::Date
+                | DataType::Timestamp(..)
+                | DataType::Duration(..)
+                | DataType::Time(..) => {
                     with_match_daft_logical_primitive_types!(dtype, |$P| {
                         use arrow2::array::Array;
                         result_arrow_array
@@ -519,7 +526,7 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<u64>,
 ) -> DaftResult<(usize, usize)> {
-    use crate::python::PyDataType;
+    use daft_schema::python::PyDataType;
     use std::num::Wrapping;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(py, "dtype"))?;
@@ -1140,7 +1147,7 @@ impl EmbeddingArray {
                 // We create an ndarray view on the entire embeddings array
                 // buffer sans the validity mask, and then create a subndarray view
                 // for each embedding ndarray in the PythonArray.
-                let py_array = ffi::to_py_array(py, physical_arrow.with_validity(None), pyarrow)?
+                let py_array = ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                     .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                 let ndarrays = py_array
@@ -1189,7 +1196,7 @@ impl ImageArray {
                         ca.value(i) as usize,
                     );
                     let py_array = match element {
-                        Some(element) => ffi::to_py_array(py, element.to_arrow(), pyarrow.clone())?
+                        Some(element) => ffi::to_py_array(py, element.to_arrow(), &pyarrow)?
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?,
                         None => PyArray3::<u8>::zeros_bound(py, shape.into_dimension(), false)
@@ -1299,7 +1306,7 @@ impl FixedShapeImageArray {
                     // buffer sans the validity mask, and then create a subndarray view
                     // for each image ndarray in the PythonArray.
                     let py_array =
-                        ffi::to_py_array(py, physical_arrow.with_validity(None), pyarrow)?
+                        ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                     let ndarrays = py_array
@@ -1362,10 +1369,9 @@ impl TensorArray {
                     if let (Some(arrow_array), Some(shape_array)) = (arrow_array, shape_array) {
                         let shape_array = shape_array.u64().unwrap().as_arrow();
                         let shape = shape_array.values().to_vec();
-                        let py_array =
-                            ffi::to_py_array(py, arrow_array.to_arrow(), pyarrow.clone())?
-                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                                .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
+                        let py_array = ffi::to_py_array(py, arrow_array.to_arrow(), &pyarrow)?
+                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
+                            .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                         ndarrays.push(py_array.unbind());
                     } else {
                         ndarrays.push(py.None())
@@ -1543,7 +1549,7 @@ impl FixedShapeTensorArray {
                     // sans the validity mask, and then create a subndarray view for each ndarray
                     // element in the PythonArray.
                     let py_array =
-                        ffi::to_py_array(py, physical_arrow.with_validity(None), pyarrow)?
+                        ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (np_shape,))?;
                     let ndarrays = py_array
@@ -1847,7 +1853,7 @@ where
         let arrow_dtype = array.data_type().to_arrow()?;
         let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
-        let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), pyarrow)?
+        let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
             .call_method0(pyo3::intern!(py, "to_pylist"))?
             .extract()?;
         let values_array =

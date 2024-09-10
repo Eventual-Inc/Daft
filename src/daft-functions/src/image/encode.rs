@@ -1,8 +1,4 @@
-use daft_core::{
-    datatypes::{DataType, Field, ImageFormat},
-    schema::Schema,
-    series::Series,
-};
+use daft_core::prelude::*;
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
@@ -53,7 +49,7 @@ impl ScalarUDF for ImageEncode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_encode(self.image_format),
+            [input] => daft_image::series::encode(input, self.image_format),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

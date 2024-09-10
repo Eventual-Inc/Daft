@@ -1,8 +1,4 @@
-use daft_core::{
-    datatypes::{DataType, Field, ImageMode},
-    schema::Schema,
-    series::Series,
-};
+use daft_core::prelude::*;
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
@@ -53,7 +49,7 @@ impl ScalarUDF for ImageToMode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_to_mode(self.mode),
+            [input] => daft_image::series::to_mode(input, self.mode),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

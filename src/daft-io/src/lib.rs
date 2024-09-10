@@ -13,14 +13,13 @@ mod s3_like;
 mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
+use common_file_formats::FileFormat;
 use futures::FutureExt;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 use lazy_static::lazy_static;
-mod file_format;
 #[cfg(feature = "python")]
 pub mod python;
-pub use file_format::FileFormat;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::FileMetadata;

@@ -152,6 +152,7 @@ mod tests {
     #[case::orderby("select * from tbl1 order by i32 asc")]
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
+    #[case::globalagg("select max(i32) from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
@@ -314,6 +315,19 @@ mod tests {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
 
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_global_agg(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+        let sql = "select max(i32) from tbl1";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
+            .aggregate(vec![col("i32").max()], vec![])?
+            .build();
+
+        assert_eq!(plan, expected);
         Ok(())
     }
 }

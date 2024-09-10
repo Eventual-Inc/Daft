@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, Result};
+use derive_more::Display;
 use std::str::FromStr;
 
 #[cfg(feature = "python")]
@@ -9,7 +9,7 @@ use common_error::{DaftError, DaftResult};
 
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageFormat {
     PNG,
@@ -65,37 +65,5 @@ impl FromStr for ImageFormat {
                 ImageFormat::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl From<image::ImageFormat> for ImageFormat {
-    fn from(image_format: image::ImageFormat) -> Self {
-        match image_format {
-            image::ImageFormat::Png => ImageFormat::PNG,
-            image::ImageFormat::Jpeg => ImageFormat::JPEG,
-            image::ImageFormat::Tiff => ImageFormat::TIFF,
-            image::ImageFormat::Gif => ImageFormat::GIF,
-            image::ImageFormat::Bmp => ImageFormat::BMP,
-            _ => unimplemented!("Image format {:?} is not supported", image_format),
-        }
-    }
-}
-
-impl From<ImageFormat> for image::ImageFormat {
-    fn from(image_format: ImageFormat) -> Self {
-        match image_format {
-            ImageFormat::PNG => image::ImageFormat::Png,
-            ImageFormat::JPEG => image::ImageFormat::Jpeg,
-            ImageFormat::TIFF => image::ImageFormat::Tiff,
-            ImageFormat::GIF => image::ImageFormat::Gif,
-            ImageFormat::BMP => image::ImageFormat::Bmp,
-        }
-    }
-}
-
-impl Display for ImageFormat {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

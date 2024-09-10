@@ -55,12 +55,12 @@ pub mod pylib {
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        daft_core::VERSION
+        common_version::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        daft_core::DAFT_BUILD_TYPE
+        common_version::DAFT_BUILD_TYPE
     }
 
     #[pyfunction]
@@ -101,6 +101,7 @@ pub mod pylib {
         common_daft_config::register_modules(m)?;
         common_system_info::register_modules(m)?;
         common_resource_request::register_modules(m)?;
+        common_file_formats::python::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
@@ -116,10 +117,11 @@ pub mod pylib {
         daft_scheduler::register_modules(m)?;
         daft_sql::register_modules(m)?;
         daft_functions::register_modules(m)?;
-        m.add_function(wrap_pyfunction_bound!(version, m)?)?;
-        m.add_function(wrap_pyfunction_bound!(build_type, m)?)?;
-        m.add_function(wrap_pyfunction_bound!(refresh_logger, m)?)?;
-        m.add_function(wrap_pyfunction_bound!(get_max_log_level, m)?)?;
+        m.add_wrapped(wrap_pyfunction!(version))?;
+        m.add_wrapped(wrap_pyfunction!(build_type))?;
+        m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
+        m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
+        daft_image::python::register_modules(m)?;
         Ok(())
     }
 }

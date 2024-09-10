@@ -21,7 +21,6 @@ mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 pub use daft_core::join::{JoinStrategy, JoinType};
-use daft_io::FileFormat;
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
 pub use physical_plan::{PhysicalPlan, PhysicalPlanRef};
@@ -38,18 +37,16 @@ use pyo3::prelude::*;
 pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use {
-    daft_scan::file_format::{
-        CsvSourceConfig, JsonSourceConfig, ParquetSourceConfig, PyFileFormatConfig,
+    common_file_formats::{
+        python::PyFileFormatConfig, CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig,
+        ParquetSourceConfig,
     },
     daft_scan::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig},
 };
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use daft_scan::file_format::DatabaseSourceConfig;
-
     parent.add_class::<PyLogicalPlanBuilder>()?;
-    parent.add_class::<FileFormat>()?;
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<ParquetSourceConfig>()?;
     parent.add_class::<JsonSourceConfig>()?;

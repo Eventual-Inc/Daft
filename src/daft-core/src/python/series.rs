@@ -14,15 +14,16 @@ use crate::{
         DataArray,
     },
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
-    ffi,
+    datatypes::{DataType, Field, ImageMode, PythonType},
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
 
-use super::datatype::PyDataType;
+use common_arrow_ffi as ffi;
+
 use crate::array::ops::as_arrow::AsArrow;
 use crate::array::ops::trigonometry::TrigonometricFunction;
+use daft_schema::python::PyDataType;
 
 #[pyclass]
 #[derive(Clone)]
@@ -73,7 +74,7 @@ impl PySeries {
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
             let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
-            Ok(ffi::to_py_array(py, arrow_array, pyarrow)?.unbind())
+            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
         })
     }
 
@@ -671,40 +672,6 @@ impl PySeries {
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
         Ok(self.series.map_get(&key.series)?.into())
-    }
-
-    pub fn image_decode(
-        &self,
-        raise_error_on_failure: bool,
-        mode: Option<ImageMode>,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .image_decode(raise_error_on_failure, mode)?
-            .into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        Ok(self.series.image_encode(image_format)?.into())
-    }
-
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-
-        Ok(self.series.image_resize(w as u32, h as u32)?.into())
-    }
-
-    pub fn image_to_mode(&self, mode: &ImageMode) -> PyResult<Self> {
-        Ok(self.series.image_to_mode(*mode)?.into())
     }
 
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {

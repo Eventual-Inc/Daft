@@ -96,3 +96,20 @@ def test_fizzbuzz_sql():
 def test_sql_expr(actual, expected):
     actual = daft.sql_expr(actual)
     assert repr(actual) == repr(expected)
+
+
+def test_sql_global_agg():
+    df = daft.from_pydict({"n": [1, 2, 3]})
+    catalog = SQLCatalog({"test": df})
+    df = daft.sql("SELECT max(n) max_n, sum(n) sum_n FROM test", catalog=catalog)
+    assert df.collect().to_pydict() == {"max_n": [3], "sum_n": [6]}
+    # If there is agg and non-agg, it should fail
+    with pytest.raises(Exception, match="Expected aggregation"):
+        daft.sql("SELECT n,max(n) max_n FROM test", catalog=catalog)
+
+
+def test_sql_groupby_agg():
+    df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
+    catalog = SQLCatalog({"test": df})
+    df = daft.sql("SELECT sum(v) FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert df.collect().to_pydict() == {"n": [1, 2], "v": [3, 7]}

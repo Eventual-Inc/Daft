@@ -6,7 +6,7 @@ use pyo3::types::PyList;
 use crate::Table;
 use common_error::DaftResult;
 use daft_core::{
-    schema::SchemaRef,
+    prelude::SchemaRef,
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
@@ -31,7 +31,7 @@ pub fn record_batches_to_table(
         let columns = pycolumns
             .downcast::<PyList>()?
             .into_iter()
-            .map(|col| daft_core::ffi::array_to_rust(py, col))
+            .map(|col| common_arrow_ffi::array_to_rust(py, col))
             .collect::<PyResult<Vec<_>>>()?;
         if names.len() != columns.len() {
             return Err(PyValueError::new_err(format!("Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}", names.len(), columns.len())));
@@ -68,7 +68,7 @@ pub fn table_to_record_batch(
         let s = table.get_column_by_index(i)?;
         let arrow_array = s.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
-        let py_array = daft_core::ffi::to_py_array(py, arrow_array, pyarrow.clone())?;
+        let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;
         arrays.push(py_array);
         names.push(s.name().to_string());
     }

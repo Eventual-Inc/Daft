@@ -1,10 +1,11 @@
-use crate::datatypes::DataType;
+use crate::dtype::DataType;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
+
+use derive_more::Display;
 
 use common_error::{DaftError, DaftResult};
 
@@ -26,7 +27,9 @@ use common_error::{DaftError, DaftResult};
 /// | RGB32F  - 32-bit floating RGB
 /// | RGBA32F - 32-bit floating RGB + alpha
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive)]
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive,
+)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageMode {
     L = 1,
@@ -123,52 +126,6 @@ impl ImageMode {
     }
 }
 
-impl From<ImageMode> for image::ColorType {
-    fn from(image_mode: ImageMode) -> image::ColorType {
-        use image::ColorType;
-        use ImageMode::*;
-
-        match image_mode {
-            L => ColorType::L8,
-            LA => ColorType::La8,
-            RGB => ColorType::Rgb8,
-            RGBA => ColorType::Rgba8,
-            L16 => ColorType::L16,
-            LA16 => ColorType::La16,
-            RGB16 => ColorType::Rgb16,
-            RGBA16 => ColorType::Rgba16,
-            RGB32F => ColorType::Rgb32F,
-            RGBA32F => ColorType::Rgba32F,
-        }
-    }
-}
-
-impl TryFrom<image::ColorType> for ImageMode {
-    type Error = DaftError;
-
-    fn try_from(color: image::ColorType) -> DaftResult<Self> {
-        use image::ColorType;
-        use ImageMode::*;
-
-        match color {
-            ColorType::L8 => Ok(L),
-            ColorType::La8 => Ok(LA),
-            ColorType::Rgb8 => Ok(RGB),
-            ColorType::Rgba8 => Ok(RGBA),
-            ColorType::L16 => Ok(L16),
-            ColorType::La16 => Ok(LA16),
-            ColorType::Rgb16 => Ok(RGB16),
-            ColorType::Rgba16 => Ok(RGBA16),
-            ColorType::Rgb32F => Ok(RGB32F),
-            ColorType::Rgba32F => Ok(RGBA32F),
-            _ => Err(DaftError::ValueError(format!(
-                "Color type {:?} is not supported.",
-                color
-            ))),
-        }
-    }
-}
-
 impl FromStr for ImageMode {
     type Err = DaftError;
 
@@ -192,12 +149,5 @@ impl FromStr for ImageMode {
                 ImageMode::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl Display for ImageMode {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

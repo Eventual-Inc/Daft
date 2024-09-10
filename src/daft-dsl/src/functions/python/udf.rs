@@ -6,7 +6,7 @@ use pyo3::{
     Bound, PyAny, PyResult,
 };
 
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
 use crate::ExprRef;
 
@@ -63,7 +63,8 @@ fn run_udf(
     return_dtype: &DataType,
     batch_size: Option<usize>,
 ) -> DaftResult<Series> {
-    use daft_core::python::{PyDataType, PySeries};
+    use daft_core::python::PyDataType;
+    use daft_core::python::PySeries;
 
     // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
     let py_series_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?;

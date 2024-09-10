@@ -1,15 +1,18 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
+common-version = {path = "src/common/version", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
+daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
@@ -39,6 +42,7 @@ python = [
   "daft-dsl/python",
   "daft-local-execution/python",
   "daft-io/python",
+  "daft-image/python",
   "daft-json/python",
   "daft-micropartition/python",
   "daft-parquet/python",
@@ -112,6 +116,7 @@ members = [
   "src/daft-core",
   "src/daft-local-execution",
   "src/daft-io",
+  "src/daft-image",
   "src/daft-parquet",
   "src/daft-csv",
   "src/daft-json",
@@ -186,6 +191,10 @@ path = "src/arrow2"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
+
+[workspace.dependencies.derive_more]
+features = ["display"]
+version = "1.0.0"
 
 [workspace.dependencies.lazy_static]
 version = "1.4.0"

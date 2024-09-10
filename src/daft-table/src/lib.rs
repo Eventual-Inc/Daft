@@ -2,12 +2,11 @@
 #![feature(let_chains)]
 
 use core::slice;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
 
+use common_display::table_display::{make_comfy_table, StrValue};
 use daft_core::array::ops::full::FullNull;
-use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::{DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices};
@@ -24,6 +23,7 @@ pub mod ffi;
 mod growable;
 mod ops;
 mod probe_table;
+mod repr_html;
 
 pub use growable::GrowableTable;
 
@@ -33,6 +33,7 @@ pub use probe_table::{ProbeTable, ProbeTableBuilder};
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Table {
@@ -714,7 +715,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
             }
 
@@ -736,7 +737,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</td>");
             }
 
@@ -751,14 +752,21 @@ impl Table {
     }
 
     pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+        let str_values = self
+            .columns
+            .iter()
+            .map(|s| s as &dyn StrValue)
+            .collect::<Vec<_>>();
+
         make_comfy_table(
             self.schema
                 .fields
                 .values()
-                .map(Cow::Borrowed)
+                .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            Some(self.columns.iter().collect::<Vec<_>>().as_slice()),
+            Some(str_values.as_slice()),
+            Some(self.len()),
             max_col_width,
         )
     }

@@ -1,6 +1,5 @@
 use common_error::DaftError;
-use daft_core::datatypes::DataType;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
 use common_error::DaftResult;
 use daft_dsl::functions::{ScalarFunction, ScalarUDF};
@@ -51,7 +50,7 @@ impl ScalarUDF for ImageResize {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_resize(self.width, self.height),
+            [input] => daft_image::series::resize(input, self.width, self.height),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
