@@ -6,9 +6,10 @@ name: daft-docs
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, labeled]
+  workflow_run:
+    workflows: [PR Labeler]
+    types:
+    - completed
 
 jobs:
   docgen:
