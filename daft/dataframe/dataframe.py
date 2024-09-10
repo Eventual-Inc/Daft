@@ -761,6 +761,7 @@ class DataFrame:
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
+        allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -777,6 +778,7 @@ class DataFrame:
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
             dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -832,7 +834,12 @@ class DataFrame:
                 storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
             else:
                 storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+                if not allow_unsafe_rename:
+                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+        elif scheme == "file":
+            if allow_unsafe_rename:
+                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
         delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
