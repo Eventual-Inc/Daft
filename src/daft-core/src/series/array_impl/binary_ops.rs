@@ -206,81 +206,138 @@ macro_rules! physical_compare_op {
     }};
 }
 
+// pub(crate) trait SeriesBinaryOps: SeriesLike {
+//     fn add(&self, rhs: &Series) -> DaftResult<Series> {
+//         let output_type =
+//             InferDataType::from(self.data_type()).add(InferDataType::from(rhs.data_type()))?;
+//         let lhs = self.into_series();
+//         match &output_type {
+//             #[cfg(feature = "python")]
+//             DataType::Python => Ok(py_binary_op!(lhs, rhs, "add")),
+//             DataType::Utf8 => {
+//                 cast_downcast_op_into_series!(lhs, rhs, &DataType::Utf8, Utf8Array, add)
+//             }
+//             output_type if output_type.is_numeric() => {
+//                 with_match_numeric_daft_types!(output_type, |$T| {
+//                     cast_downcast_op_into_series!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)
+//                 })
+//             }
+//             output_type if output_type.is_fixed_size_numeric() => {
+//                 fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, add)
+//             }
+//             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
+//         }
+//     }
+//     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
+//         py_numeric_binary_op!(self, rhs, sub, "sub")
+//     }
+//     fn mul(&self, rhs: &Series) -> DaftResult<Series> {
+//         py_numeric_binary_op!(self, rhs, mul, "mul")
+//     }
+//     fn div(&self, rhs: &Series) -> DaftResult<Series> {
+//         let output_type =
+//             InferDataType::from(self.data_type()).div(InferDataType::from(rhs.data_type()))?;
+//         let lhs = self.into_series();
+//         match &output_type {
+//             #[cfg(feature = "python")]
+//             DataType::Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
+//             DataType::Float64 => {
+//                 cast_downcast_op_into_series!(lhs, rhs, &DataType::Float64, Float64Array, div)
+//             }
+//             output_type if output_type.is_fixed_size_numeric() => {
+//                 fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, div)
+//             }
+//             _ => binary_op_unimplemented!(lhs, "/", rhs, output_type),
+//         }
+//     }
+//     fn rem(&self, rhs: &Series) -> DaftResult<Series> {
+//         py_numeric_binary_op!(self, rhs, rem, "mod")
+//     }
+//     fn and(&self, rhs: &Series) -> DaftResult<Series> {
+//         physical_logic_op!(self, rhs, and, "and_")
+//     }
+//     fn or(&self, rhs: &Series) -> DaftResult<Series> {
+//         physical_logic_op!(self, rhs, or, "or_")
+//     }
+//     fn xor(&self, rhs: &Series) -> DaftResult<Series> {
+//         physical_logic_op!(self, rhs, xor, "xor")
+//     }
+//     fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, equal, "eq")
+//     }
+//     fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, not_equal, "ne")
+//     }
+//     fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, lt, "lt")
+//     }
+//     fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, lte, "le")
+//     }
+//     fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, gt, "gt")
+//     }
+//     fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+//         physical_compare_op!(self, rhs, gte, "ge")
+//     }
+// }
+
+
+macro_rules! binary_op_not_implemented {
+    ($self:expr, $rhs:expr, $op:ident) => {{
+        let left_dtype = $self.data_type();
+        let right_dtype = $rhs.data_type();
+        let op_name = stringify!($op);
+        return Err(common_error::DaftError::ComputeError(format!("Binary Op: {op_name} not implemented for {left_dtype}, {right_dtype}")));
+    }};
+}
+
+
 pub(crate) trait SeriesBinaryOps: SeriesLike {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
-        let output_type =
-            InferDataType::from(self.data_type()).add(InferDataType::from(rhs.data_type()))?;
-        let lhs = self.into_series();
-        match &output_type {
-            #[cfg(feature = "python")]
-            DataType::Python => Ok(py_binary_op!(lhs, rhs, "add")),
-            DataType::Utf8 => {
-                cast_downcast_op_into_series!(lhs, rhs, &DataType::Utf8, Utf8Array, add)
-            }
-            output_type if output_type.is_numeric() => {
-                with_match_numeric_daft_types!(output_type, |$T| {
-                    cast_downcast_op_into_series!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)
-                })
-            }
-            output_type if output_type.is_fixed_size_numeric() => {
-                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, add)
-            }
-            _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
-        }
+        binary_op_not_implemented!(self, rhs, add);
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-        py_numeric_binary_op!(self, rhs, sub, "sub")
+        binary_op_not_implemented!(self, rhs, sub);
     }
     fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-        py_numeric_binary_op!(self, rhs, mul, "mul")
+        binary_op_not_implemented!(self, rhs, mul);
     }
     fn div(&self, rhs: &Series) -> DaftResult<Series> {
-        let output_type =
-            InferDataType::from(self.data_type()).div(InferDataType::from(rhs.data_type()))?;
-        let lhs = self.into_series();
-        match &output_type {
-            #[cfg(feature = "python")]
-            DataType::Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
-            DataType::Float64 => {
-                cast_downcast_op_into_series!(lhs, rhs, &DataType::Float64, Float64Array, div)
-            }
-            output_type if output_type.is_fixed_size_numeric() => {
-                fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, div)
-            }
-            _ => binary_op_unimplemented!(lhs, "/", rhs, output_type),
-        }
+        binary_op_not_implemented!(self, rhs, div);
     }
     fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-        py_numeric_binary_op!(self, rhs, rem, "mod")
+        binary_op_not_implemented!(self, rhs, rem);
     }
     fn and(&self, rhs: &Series) -> DaftResult<Series> {
-        physical_logic_op!(self, rhs, and, "and_")
+        binary_op_not_implemented!(self, rhs, and);
     }
     fn or(&self, rhs: &Series) -> DaftResult<Series> {
-        physical_logic_op!(self, rhs, or, "or_")
+        binary_op_not_implemented!(self, rhs, or);
     }
     fn xor(&self, rhs: &Series) -> DaftResult<Series> {
-        physical_logic_op!(self, rhs, xor, "xor")
+        binary_op_not_implemented!(self, rhs, xor);
     }
     fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, equal, "eq")
+        binary_op_not_implemented!(self, rhs, equal);
     }
     fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, not_equal, "ne")
+        binary_op_not_implemented!(self, rhs, not_equal);
     }
     fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, lt, "lt")
+        binary_op_not_implemented!(self, rhs, lt);
     }
     fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, lte, "le")
+        binary_op_not_implemented!(self, rhs, lte);
     }
     fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, gt, "gt")
+        binary_op_not_implemented!(self, rhs, gt);
     }
     fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        physical_compare_op!(self, rhs, gte, "ge")
+        binary_op_not_implemented!(self, rhs, gte);
     }
 }
+
 
 #[cfg(feature = "python")]
 impl SeriesBinaryOps for ArrayWrapper<PythonArray> {}
@@ -406,3 +463,6 @@ impl SeriesBinaryOps for ArrayWrapper<ImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<TensorArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeTensorArray> {}
+
+
+
