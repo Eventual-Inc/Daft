@@ -918,7 +918,7 @@ impl HTTPConfig {
     }
 }
 
-pub fn register_modules(parent: Bound<PyModule>) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;

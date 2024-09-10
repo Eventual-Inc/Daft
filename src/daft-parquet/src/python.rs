@@ -66,20 +66,20 @@ pub mod pylib {
         schema: arrow2::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
-        pyarrow: Bound<PyModule>,
+        pyarrow: &Bound<PyModule>,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, &pyarrow).map(|pyarray| pyarray.unbind()))
+                    .map(|a| to_py_array(py, a, pyarrow).map(|pyarray| pyarray.unbind()))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, &pyarrow))
+            .map(|f| field_to_py(py, f, pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
@@ -123,7 +123,7 @@ pub mod pylib {
         })?;
         let (schema, all_arrays, num_rows) = read_parquet_result;
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
-        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, pyarrow)
+        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
@@ -213,13 +213,7 @@ pub mod pylib {
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays, num_rows)| {
-                convert_pyarrow_parquet_read_result_into_py(
-                    py,
-                    s,
-                    all_arrays,
-                    num_rows,
-                    pyarrow.clone(),
-                )
+                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows, &pyarrow)
             })
             .collect::<PyResult<Vec<_>>>()
     }

@@ -69,9 +69,9 @@ mod py {
     }
 
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-        common_io_config::python::register_modules(parent.clone())?;
-        parent.add_function(wrap_pyfunction_bound!(io_glob, parent.clone())?)?;
-        parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent.clone())?)?;
+        common_io_config::python::register_modules(parent)?;
+        parent.add_function(wrap_pyfunction_bound!(io_glob, parent)?)?;
+        parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent)?)?;
         Ok(())
     }
 }
