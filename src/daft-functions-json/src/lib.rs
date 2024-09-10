@@ -54,6 +54,7 @@ fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
     let inputs = RcIter::new(core::iter::empty());
 
     let self_arrow = arr.as_arrow();
+    let name = arr.name().to_string();
 
     let values = self_arrow
         .iter()
@@ -78,7 +79,10 @@ fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
             })
         })
         .collect::<DaftResult<Utf8Array>>()?;
-    values.with_validity(self_arrow.validity().cloned())
+
+    values
+        .rename(&name)
+        .with_validity(self_arrow.validity().cloned())
 }
 
 pub fn json_query_series(s: &Series, query: &str) -> DaftResult<Series> {
