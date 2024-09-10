@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_file_formats::FileFormatConfig;
 use daft_scan::{
-    file_format::FileFormatConfig, storage_config::NativeStorageConfig,
-    storage_config::StorageConfig, AnonymousScanOperator, Pushdowns, ScanOperator,
+    storage_config::NativeStorageConfig, storage_config::StorageConfig, AnonymousScanOperator,
+    Pushdowns, ScanOperator,
 };
 use daft_schema::{field::Field, schema::Schema};
 

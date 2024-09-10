@@ -1,19 +1,17 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
+use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use daft_csv::CsvParseOptions;
-use daft_io::{
-    parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
-};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_schema::schema::SchemaRef;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
-    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
+    ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {

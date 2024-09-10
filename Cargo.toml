@@ -1,6 +1,7 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
