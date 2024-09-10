@@ -7,6 +7,8 @@ use daft_core::{
     prelude::{AsArrow, DataType, Utf8Array},
     series::Series,
 };
+use daft_dsl::{functions::ScalarFunction, ExprRef};
+use expr::JsonQuery;
 use itertools::Itertools;
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
 use lazy_static::lazy_static;
@@ -79,17 +81,7 @@ fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
     values.with_validity(self_arrow.validity().cloned())
 }
 
-/// Executes a JSON query on a UTF-8 string array.
-///
-/// # Arguments
-///
-/// * `arr` - The input UTF-8 array containing JSON strings.
-/// * `query` - The JSON query string to execute.
-///
-/// # Returns
-///
-/// A `DaftResult` containing the resulting UTF-8 array after applying the query.
-pub fn json_query(s: &Series, query: &str) -> DaftResult<Series> {
+pub fn json_query_series(s: &Series, query: &str) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Utf8 => {
             let arr = s.utf8()?;
@@ -102,16 +94,37 @@ pub fn json_query(s: &Series, query: &str) -> DaftResult<Series> {
     }
 }
 
+/// Executes a JSON query on a UTF-8 string array.
+///
+/// # Arguments
+///
+/// * `arr` - The input UTF-8 array containing JSON strings.
+/// * `query` - The JSON query string to execute.
+///
+/// # Returns
+///
+/// A `DaftResult` containing the resulting UTF-8 array after applying the query.
+pub fn json_query(input: ExprRef, query: &str) -> ExprRef {
+    ScalarFunction::new(
+        JsonQuery {
+            query: query.to_string(),
+        },
+        vec![input],
+    )
+    .into()
+}
+
 #[cfg(feature = "python")]
 use {
     daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
+    pyo3::{prelude::*, pyfunction, PyResult},
 };
+
 #[cfg(feature = "python")]
 #[pyfunction]
 #[pyo3(name = "json_query")]
-pub fn py_json_query(expr: PyExpr, query: &str) -> PyResult<Self> {
-    Ok(json_query(self.into(), query).into())
+pub fn py_json_query(expr: PyExpr, query: &str) -> PyResult<PyExpr> {
+    Ok(json_query(expr.into(), query).into())
 }
 
 #[cfg(feature = "python")]

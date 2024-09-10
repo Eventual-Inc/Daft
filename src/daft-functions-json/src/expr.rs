@@ -5,7 +5,7 @@ use daft_dsl::{functions::ScalarUDF, ExprRef};
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
-use crate::json_query;
+use crate::json_query_series;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct JsonQuery {
@@ -23,7 +23,7 @@ impl ScalarUDF for JsonQuery {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => json_query(input, &self.query),
+            [input] => json_query_series(input, &self.query),
 
             _ => Err(DaftError::TypeError(
                 "Json query expects a single argument".to_string(),

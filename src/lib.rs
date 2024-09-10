@@ -117,6 +117,7 @@ pub mod pylib {
         daft_scheduler::register_modules(py, m)?;
         daft_sql::register_modules(py, m)?;
         daft_functions::register_modules(py, m)?;
+        daft_functions_json::register_modules(py, m)?;
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
