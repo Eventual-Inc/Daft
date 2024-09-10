@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
+arrow2 = {workspace = true}
 async-compat = {workspace = true}
 async-compression = {workspace = true}
 async-stream = {workspace = true}

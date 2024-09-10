@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
+arrow2 = {workspace = true}
 atoi_simd = "0.15.5"
 chrono = {workspace = true}
 csv-async = "1.2.6"
