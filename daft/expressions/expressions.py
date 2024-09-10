@@ -762,7 +762,7 @@ class Expression:
         """
         Calculates the approximate number of non-`NULL` unique values in the expression.
 
-        Approximation is performed using the [`HyperLogLog`](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+        Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
 
         Example:
             A global calculation of approximate distinct values in a non-NULL column:
@@ -1132,7 +1132,7 @@ class Expression:
         """
         Hashes the values in the Expression.
 
-        Uses the `XXH3_64bits` non-cryptographic hash function to hash the values in the expression.
+        Uses the `XXH3_64bits <https://xxhash.com/>`_ non-cryptographic hash function to hash the values in the expression.
 
         .. NOTE::
             Null values will produce a hash value instead of being propagated as null.
