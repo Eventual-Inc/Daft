@@ -745,7 +745,13 @@ def write_deltalake(
     fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
 
     arrow_table = mp.to_arrow()
-    arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
+    if parse(deltalake.__version__) < parse("0.19.0"):
+        arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes=large_dtypes)
+    else:
+        from deltalake.schema import ArrowSchemaConversionMode
+
+        schema_conversion_mode = ArrowSchemaConversionMode.LARGE if large_dtypes else ArrowSchemaConversionMode.NORMAL
+        arrow_batch = convert_pyarrow_table(arrow_table, schema_conversion_mode=schema_conversion_mode)
 
     execution_config = get_context().daft_execution_config
 
