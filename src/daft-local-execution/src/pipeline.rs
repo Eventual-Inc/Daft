@@ -166,7 +166,7 @@ pub fn physical_plan_to_pipeline(
                 vec![],
             );
             let second_stage_node =
-                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+                BlockingSinkNode::new(second_stage_agg_sink.arced(), post_first_agg_node).boxed();
 
             let final_stage_project = ProjectOperator::new(final_exprs);
 
@@ -202,7 +202,7 @@ pub fn physical_plan_to_pipeline(
                 group_by.clone(),
             );
             let second_stage_node =
-                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+                BlockingSinkNode::new(second_stage_agg_sink.arced(), post_first_agg_node).boxed();
 
             let final_stage_project = ProjectOperator::new(final_exprs);
 
@@ -216,7 +216,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
+            BlockingSinkNode::new(sort_sink.arced(), child_node).boxed()
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
@@ -282,8 +282,8 @@ pub fn physical_plan_to_pipeline(
                     .collect::<Vec<_>>();
 
                 // we should move to a builder pattern
-                let build_sink = HashJoinBuildSink::new(key_schema.clone(), left_on)?;
-                let build_node = BlockingSinkNode::new(build_sink.boxed(), left_node).boxed();
+                let build_sink = HashJoinBuildSink::new(key_schema.clone(), left_on);
+                let build_node = BlockingSinkNode::new(build_sink.arced(), left_node).boxed();
 
                 let probe_op =
                     HashJoinProbeOperator::new(right_on, pruned_right_side_columns, *join_type);
@@ -297,8 +297,21 @@ pub fn physical_plan_to_pipeline(
             })?;
             probe_node.boxed()
         }
-        _ => {
-            unimplemented!("Physical plan not supported: {}", physical_plan.name());
+        LocalPhysicalPlan::PhysicalWrite(daft_physical_plan::PhysicalWrite {
+            input,
+            file_info,
+            schema,
+            ..
+        }) => {
+            let sink = BlockingSinkNode::new(
+                crate::sinks::physical_write::PhysicalWriteSink::new(
+                    file_info.clone(),
+                    schema.clone(),
+                )
+                .arced(),
+                physical_plan_to_pipeline(input, psets)?,
+            );
+            sink.boxed()
         }
     };
 

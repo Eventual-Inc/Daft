@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::InMemoryInfo;
+use daft_plan::{InMemoryInfo, OutputFileInfo};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -190,6 +190,20 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn physical_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        file_info: OutputFileInfo,
+    ) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+            input,
+            schema,
+            file_info,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
@@ -293,7 +307,12 @@ pub struct Concat {
 
 #[derive(Debug)]
 
-pub struct PhysicalWrite {}
+pub struct PhysicalWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub file_info: OutputFileInfo,
+    pub plan_stats: PlanStats,
+}
 #[derive(Debug)]
 
 pub struct PlanStats {}
