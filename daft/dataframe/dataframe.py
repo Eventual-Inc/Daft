@@ -2536,6 +2536,13 @@ class DataFrame:
     def to_pylist(self) -> List[Any]:
         """Converts the current Dataframe into a python list.
 
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
         Returns:
             List[dict[str, Any]]: List of python dict objects.
         """
