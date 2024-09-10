@@ -9,15 +9,6 @@ from daft.daft import CountMode, ImageFormat, ImageMode, PySeries
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-try:
-    from ray.data.extensions import (
-        ArrowTensorType,
-        ArrowVariableShapedTensorType,
-    )
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
 _NUMPY_AVAILABLE = True
 try:
     import numpy as np
@@ -63,18 +54,7 @@ class Series:
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
-            if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
-                storage_series = Series.from_arrow(array.storage, name=name)
-                series = storage_series.cast(
-                    DataType.fixed_size_list(
-                        DataType.from_arrow_type(array.type.scalar_type),
-                        int(np.prod(array.type.shape)),
-                    )
-                )
-                return series.cast(DataType.from_arrow_type(array.type))
-            elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
-                return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
-            elif isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
+            if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
             else:

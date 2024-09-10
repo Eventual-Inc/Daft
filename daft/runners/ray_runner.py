@@ -80,6 +80,30 @@ try:
 except ImportError:
     _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
 
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+_TENSOR_EXTENSION_TYPES = []
+try:
+    import ray
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
+else:
+    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+    try:
+        # Variable-shaped tensor column support was added in Ray 2.1.0.
+        if _RAY_VERSION >= (2, 2, 0):
+            from ray.data.extensions import (
+                ArrowTensorType,
+                ArrowVariableShapedTensorType,
+            )
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
+        else:
+            from ray.data.extensions import ArrowTensorType
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
+    except ImportError:
+        _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
 
 @ray.remote
 def _glob_path_into_file_infos(
@@ -259,6 +283,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait(list(deduped_object_refs))
 
 
+def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.lib.DataType) -> DataType:
+    if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
+        scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_type.scalar_type)
+        shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
+        return DataType.tensor(scalar_dtype, shape)
+    return DataType.from_arrow_type(arrow_type)
+
+
 class RayRunnerIO(runner_io.RunnerIO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -300,7 +332,10 @@ class RayRunnerIO(runner_io.RunnerIO):
                 arrow_schema = pa.schema({name: t for name, t in zip(arrow_schema.names, arrow_schema.types)})
 
         daft_schema = Schema._from_field_name_and_types(
-            [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
+            [
+                (arrow_field.name, _from_arrow_type_with_ray_data_extensions(arrow_field.type))
+                for arrow_field in arrow_schema
+            ]
         )
         block_refs = ds.get_internal_block_refs()
 
