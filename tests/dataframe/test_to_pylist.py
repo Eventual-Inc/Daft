@@ -35,3 +35,8 @@ def test_to_pylist_with_float() -> None:
 def test_to_pylist_with_float_None() -> None:
     df = daft.from_pydict({"a": [1.1, None, 2.2], "b": [3.3, 4.4, None]})
     assert df.to_pylist() == [{"a": 1.1, "b": 3.3}, {"a": None, "b": 4.4}, {"a": 2.2, "b": None}]
+
+
+def test_to_pylist_with_empty() -> None:
+    df = daft.from_pydict({"a": [], "b": []})
+    assert df.to_pylist() == []
