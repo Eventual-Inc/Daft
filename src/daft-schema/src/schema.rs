@@ -21,7 +21,7 @@ pub type SchemaRef = Arc<Schema>;
 #[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 #[display("{}\n", make_schema_vertical_table(
-    fields.iter().map(|(name, dtype)| (name.clone(), dtype.to_string()))
+    fields.iter().map(|(name, field)| (name.clone(), field.dtype.to_string()))
 ))]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
