@@ -24,7 +24,6 @@ impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
         DataArray::<T>::try_from((field.clone(), arrow_arr))
     }
 }
-// impl FromArrow÷
 
 impl<L: DaftLogicalType> FromArrow for LogicalArray<L>
 where
