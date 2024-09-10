@@ -24,10 +24,6 @@ impl Series {
         self.inner.take(idx)
     }
 
-    pub fn html_value(&self, idx: usize) -> String {
-        self.inner.html_value(idx)
-    }
-
     pub fn to_str_values(&self) -> DaftResult<Self> {
         let iter =
             IndexRange::new(0i64, self.len() as i64).map(|i| Some(self.str_value(i as usize)));

@@ -1,6 +1,7 @@
 mod fixed_size_list_array;
 pub mod from;
 pub mod growable;
+pub mod image_array;
 pub mod iterator;
 mod list_array;
 pub mod ops;

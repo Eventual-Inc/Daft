@@ -31,6 +31,7 @@ Generic
    Expression.is_null
    Expression.not_null
    Expression.fill_null
+   Expression.hash
    Expression.apply
 
 .. _api-numeric-expression-operations:

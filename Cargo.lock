@@ -1681,6 +1681,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-image",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -1718,7 +1719,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow2",
- "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -1736,7 +1736,6 @@ dependencies = [
  "fnv",
  "html-escape",
  "hyperloglog",
- "image",
  "indexmap 2.3.0",
  "itertools 0.11.0",
  "jaq-core",
@@ -1830,6 +1829,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "daft-io",
  "futures",
  "pyo3",
@@ -1860,6 +1860,20 @@ dependencies = [
  "serde",
  "serde_json",
  "typetag",
+]
+
+[[package]]
+name = "daft-image"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "base64 0.22.1",
+ "common-error",
+ "daft-core",
+ "image",
+ "log",
+ "num-traits",
+ "pyo3",
 ]
 
 [[package]]
@@ -2195,6 +2209,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "html-escape",
  "num-traits",
  "pyo3",
