@@ -1,19 +1,17 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::SchemaRef;
+use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use daft_csv::CsvParseOptions;
-use daft_io::{
-    parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
-};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_schema::schema::SchemaRef;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
-    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
+    ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -272,9 +270,28 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
+        let condensed_glob_paths = if self.glob_paths.len() <= 7 {
+            self.glob_paths.join(", ")
+        } else {
+            let first_three: Vec<String> = self.glob_paths.iter().take(3).cloned().collect();
+            let last_three: Vec<String> = self
+                .glob_paths
+                .iter()
+                .skip(self.glob_paths.len() - 3)
+                .cloned()
+                .collect();
+
+            let mut result = first_three.join(", ");
+            result.push_str(", ...");
+            result.push_str(", ");
+            result.push_str(&last_three.join(", "));
+
+            result
+        };
+
         let mut lines = vec![
             "GlobScanOperator".to_string(),
-            format!("Glob paths = [{}]", self.glob_paths.join(", ")),
+            format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());

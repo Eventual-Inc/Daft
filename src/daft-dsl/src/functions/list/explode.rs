@@ -1,7 +1,7 @@
 use crate::functions::FunctionExpr;
 use crate::ExprRef;
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
 
 use super::super::FunctionEvaluator;
 

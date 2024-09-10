@@ -1,10 +1,11 @@
-use crate::datatypes::DataType;
+use crate::dtype::DataType;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter, Result};
 use std::str::FromStr;
+
+use derive_more::Display;
 
 use common_error::{DaftError, DaftResult};
 
@@ -26,7 +27,9 @@ use common_error::{DaftError, DaftResult};
 /// | RGB32F  - 32-bit floating RGB
 /// | RGBA32F - 32-bit floating RGB + alpha
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive)]
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive,
+)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageMode {
     L = 1,
@@ -146,12 +149,5 @@ impl FromStr for ImageMode {
                 ImageMode::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl Display for ImageMode {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

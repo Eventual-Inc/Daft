@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::pipeline::PipelineResultType;
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 

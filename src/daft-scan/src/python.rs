@@ -40,10 +40,12 @@ impl PartialEq for PythonTablesFactoryArgs {
 
 pub mod pylib {
     use common_error::DaftResult;
+    use common_file_formats::python::PyFileFormatConfig;
+    use common_file_formats::FileFormatConfig;
     use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_core::python::field::PyField;
-    use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
+    use daft_schema::python::field::PyField;
+    use daft_schema::schema::SchemaRef;
 
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
@@ -56,13 +58,12 @@ pub mod pylib {
     use pyo3::types::PyList;
     use std::sync::Arc;
 
-    use daft_core::python::schema::PySchema;
+    use daft_schema::python::schema::PySchema;
 
     use pyo3::pyclass;
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
-    use crate::file_format::FileFormatConfig;
     use crate::storage_config::PythonStorageConfig;
     use crate::DataSource;
     use crate::PartitionField;
@@ -71,7 +72,6 @@ pub mod pylib {
     use crate::ScanOperatorRef;
     use crate::ScanTask;
 
-    use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
     use common_daft_config::PyDaftExecutionConfig;
@@ -220,7 +220,7 @@ pub mod pylib {
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
             &self.partitioning_keys
         }
-        fn schema(&self) -> daft_core::schema::SchemaRef {
+        fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
         }
         fn can_absorb_filter(&self) -> bool {

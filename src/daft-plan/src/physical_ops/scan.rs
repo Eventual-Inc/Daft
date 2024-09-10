@@ -1,5 +1,6 @@
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use daft_scan::{file_format::FileFormatConfig, ScanTask};
+use common_file_formats::FileFormatConfig;
+use daft_scan::ScanTask;
 use std::sync::Arc;
 
 use crate::ClusteringSpec;

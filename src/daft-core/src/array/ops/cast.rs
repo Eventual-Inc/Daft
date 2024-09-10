@@ -18,7 +18,7 @@ use crate::{
         Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
-    utils::display_table::display_time64,
+    utils::display::display_time64,
     with_match_daft_logical_primitive_types,
 };
 
@@ -39,8 +39,8 @@ use indexmap::IndexMap;
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    crate::ffi,
     crate::with_match_numeric_daft_types,
+    common_arrow_ffi as ffi,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn},
@@ -70,10 +70,13 @@ where
     // Get the result of the Arrow Logical->Target cast.
     let result_arrow_array = {
         // First, get corresponding Arrow LogicalArray of source DataArray
-        use DataType::*;
         let source_arrow_array = match source_dtype {
             // Wrapped primitives
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+            DataType::Decimal128(..)
+            | DataType::Date
+            | DataType::Timestamp(..)
+            | DataType::Duration(..)
+            | DataType::Time(..) => {
                 with_match_daft_logical_primitive_types!(source_dtype, |$T| {
                     use arrow2::array::Array;
                     to_cast
@@ -112,11 +115,14 @@ where
     // If the target type is also Logical, get the Arrow Physical.
     let result_arrow_physical_array = {
         if dtype.is_logical() {
-            use DataType::*;
             let target_physical_type = dtype.to_physical().to_arrow()?;
             match dtype {
                 // Primitive wrapper types: change the arrow2 array's type field to primitive
-                Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+                DataType::Decimal128(..)
+                | DataType::Date
+                | DataType::Timestamp(..)
+                | DataType::Duration(..)
+                | DataType::Time(..) => {
                     with_match_daft_logical_primitive_types!(dtype, |$P| {
                         use arrow2::array::Array;
                         result_arrow_array
@@ -520,7 +526,7 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<u64>,
 ) -> DaftResult<(usize, usize)> {
-    use crate::python::PyDataType;
+    use daft_schema::python::PyDataType;
     use std::num::Wrapping;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;

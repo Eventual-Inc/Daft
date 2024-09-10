@@ -55,12 +55,12 @@ pub mod pylib {
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        daft_core::VERSION
+        common_version::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        daft_core::DAFT_BUILD_TYPE
+        common_version::DAFT_BUILD_TYPE
     }
 
     #[pyfunction]
@@ -101,6 +101,7 @@ pub mod pylib {
         common_daft_config::register_modules(py, m)?;
         common_system_info::register_modules(py, m)?;
         common_resource_request::register_modules(py, m)?;
+        common_file_formats::python::register_modules(py, m)?;
         daft_core::register_modules(py, m)?;
         daft_core::python::register_modules(py, m)?;
         daft_local_execution::register_modules(py, m)?;

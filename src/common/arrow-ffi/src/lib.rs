@@ -2,11 +2,14 @@ use std::io::Cursor;
 
 use arrow2::{array::Array, datatypes::Field, ffi};
 
+#[cfg(feature = "python")]
 use pyo3::ffi::Py_uintptr_t;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 pub type ArrayRef = Box<dyn Array>;
 
+#[cfg(feature = "python")]
 pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
     let array = Box::new(ffi::ArrowArray::empty());
@@ -28,7 +31,7 @@ pub fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
         Ok(array)
     }
 }
-
+#[cfg(feature = "python")]
 pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new(
         "",
@@ -53,6 +56,7 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
     Ok(array.to_object(py))
 }
 
+#[cfg(feature = "python")]
 pub fn field_to_py(
     field: &arrow2::datatypes::Field,
     py: Python,
@@ -69,7 +73,8 @@ pub fn field_to_py(
     Ok(field.to_object(py))
 }
 
-pub fn to_py_schema(
+#[cfg(feature = "python")]
+pub fn dtype_to_py(
     dtype: &arrow2::datatypes::DataType,
     py: Python,
     pyarrow: &PyModule,
@@ -81,8 +86,9 @@ pub fn to_py_schema(
         pyo3::intern!(py, "_import_from_c"),
         (schema_ptr as Py_uintptr_t,),
     )?;
+    let dtype = field.getattr(pyo3::intern!(py, "type"))?.to_object(py);
 
-    Ok(field.to_object(py))
+    Ok(dtype.to_object(py))
 }
 
 fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
