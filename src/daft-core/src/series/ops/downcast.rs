@@ -6,6 +6,7 @@ use crate::datatypes::*;
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
+use logical::{EmbeddingArray, FixedShapeTensorArray, TensorArray};
 
 use self::logical::{DurationArray, ImageArray, MapArray};
 
@@ -137,6 +138,18 @@ impl Series {
 
     #[cfg(feature = "python")]
     pub fn python(&self) -> DaftResult<&PythonArray> {
+        self.downcast()
+    }
+
+    pub fn embedding(&self) -> DaftResult<&EmbeddingArray> {
+        self.downcast()
+    }
+
+    pub fn tensor(&self) -> DaftResult<&TensorArray> {
+        self.downcast()
+    }
+
+    pub fn fixed_shape_tensor(&self) -> DaftResult<&FixedShapeTensorArray> {
         self.downcast()
     }
 }

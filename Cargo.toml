@@ -12,6 +12,7 @@ daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
+daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
@@ -41,6 +42,7 @@ python = [
   "daft-dsl/python",
   "daft-local-execution/python",
   "daft-io/python",
+  "daft-image/python",
   "daft-json/python",
   "daft-micropartition/python",
   "daft-parquet/python",
@@ -114,6 +116,7 @@ members = [
   "src/daft-core",
   "src/daft-local-execution",
   "src/daft-io",
+  "src/daft-image",
   "src/daft-parquet",
   "src/daft-csv",
   "src/daft-json",
