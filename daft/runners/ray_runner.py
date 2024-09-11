@@ -179,6 +179,9 @@ def _series_from_arrow_with_ray_data_extensions(
     array: pa.Array | pa.ChunkedArray, name: str = "arrow_series"
 ) -> Series:
     if isinstance(array, pa.Array):
+        # TODO(desmond): This might be dead code since `ArrayTensorType`s are `numpy.ndarray` under
+        # the hood and are not instances of `pyarrow.Array`. Should follow up and check if this code
+        # can be removed.
         array = ensure_array(array)
         if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
             storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
