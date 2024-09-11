@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[cfg(feature = "python")]
-use crate::utils::python_fn::py_between_op_utilfn;
+use crate::series::utils::python_fn::py_between_op_utilfn;
 
 impl Series {
     pub fn between(&self, lower: &Series, upper: &Series) -> DaftResult<Series> {

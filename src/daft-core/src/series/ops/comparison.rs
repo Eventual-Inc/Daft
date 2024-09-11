@@ -10,7 +10,7 @@ use common_error::DaftResult;
 use daft_schema::dtype::DataType;
 
 #[cfg(feature = "python")]
-use crate::utils::python_fn::run_python_binary_bool_operator;
+use crate::series::utils::python_fn::run_python_binary_bool_operator;
 
 macro_rules! impl_compare_method {
     ($fname:ident, $pyoperator:expr) => {

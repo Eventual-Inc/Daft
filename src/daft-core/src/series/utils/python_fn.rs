@@ -60,7 +60,6 @@ fn python_binary_op_with_utilfn(
     Ok(result_series)
 }
 
-#[cfg(feature = "python")]
 pub(crate) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
     use crate::datatypes::DataType;
     use crate::python::PySeries;

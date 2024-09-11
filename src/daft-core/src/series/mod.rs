@@ -3,6 +3,7 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
+mod utils;
 use derive_more::Display;
 use std::sync::Arc;
 

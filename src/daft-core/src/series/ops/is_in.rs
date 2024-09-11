@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[cfg(feature = "python")]
-use crate::utils::python_fn::py_membership_op_utilfn;
+use crate::series::utils::python_fn::py_membership_op_utilfn;
 
 fn default(name: &str, size: usize) -> DaftResult<Series> {
     Ok(BooleanArray::from((name, vec![false; size].as_slice())).into_series())
