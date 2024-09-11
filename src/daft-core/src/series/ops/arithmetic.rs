@@ -8,14 +8,14 @@ macro_rules! impl_arithmetic_for_series {
     ($trait:ident, $op:ident) => {
         impl $trait for &Series {
             type Output = DaftResult<Series>;
-            fn $op(self, rhs: Self) -> Self::Output {
+            fn $op(self, _rhs: Self) -> Self::Output {
                 todo!(stringify!($op))
             }
         }
 
         impl $trait for Series {
             type Output = DaftResult<Series>;
-            fn $op(self, rhs: Self) -> Self::Output {
+            fn $op(self, _rhs: Self) -> Self::Output {
                 todo!(stringify!($op))
             }
         }
