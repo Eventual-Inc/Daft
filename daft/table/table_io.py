@@ -11,9 +11,7 @@ from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
 import pyarrow as pa
-from pyarrow import csv as pacsv
 from pyarrow import json as pajson
-from pyarrow import parquet as papq
 
 from daft.context import get_context
 from daft.daft import (
@@ -56,7 +54,9 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
 
+pacsv = LazyImport("pyarrow.csv")
 pads = LazyImport("pyarrow.dataset")
+papq = LazyImport("pyarrow.parquet")
 
 
 @contextlib.contextmanager

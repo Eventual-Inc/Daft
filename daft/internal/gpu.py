@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import subprocess
-import xml.etree.ElementTree as ET
+
+from daft.lazy_import import LazyImport
+
+ET = LazyImport("xml.etree.ElementTree")
 
 
 def cuda_device_count():
