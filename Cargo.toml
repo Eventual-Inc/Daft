@@ -80,6 +80,8 @@ parquet2 = {path = "src/parquet2"}
 debug = true
 
 [profile.dev]
+debug = "line-tables-only"
+opt-level = 1
 overflow-checks = false
 
 [profile.dev-bench]
