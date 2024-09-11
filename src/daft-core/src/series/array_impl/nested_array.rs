@@ -148,10 +148,6 @@ macro_rules! impl_series_like_for_nested_arrays {
                 self.0.str_value(idx)
             }
 
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
-            }
-
             fn add(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::add(self, rhs)
             }

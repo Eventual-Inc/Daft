@@ -15,7 +15,6 @@ arrow2 = {workspace = true, features = [
   "compute_substring",
   "io_ipc"
 ]}
-base64 = "0.22.0"
 bincode = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
@@ -51,14 +50,9 @@ serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
 unicode-normalization = "0.1.23"
 
-[dependencies.image]
-default-features = false
-features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.24.7"
-
 [dependencies.numpy]
 optional = true
-version = "0.19"
+version = "0.21.0"
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3"]

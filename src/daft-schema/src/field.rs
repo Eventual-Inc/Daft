@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
 #[derive(Clone, Display, Debug, Eq, Deserialize, Serialize)]
-#[display("{name}: {dtype}")]
+#[display("{name}#{dtype}")]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,

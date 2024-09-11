@@ -762,7 +762,7 @@ class Expression:
         """
         Calculates the approximate number of non-`NULL` unique values in the expression.
 
-        Approximation is performed using the [`HyperLogLog`](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+        Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
 
         Example:
             A global calculation of approximate distinct values in a non-NULL column:
@@ -1129,7 +1129,17 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def hash(self, seed: Any | None = None) -> Expression:
-        """Hashes the values in the Expression"""
+        """
+        Hashes the values in the Expression.
+
+        Uses the `XXH3_64bits <https://xxhash.com/>`_ non-cryptographic hash function to hash the values in the expression.
+
+        .. NOTE::
+            Null values will produce a hash value instead of being propagated as null.
+
+        Args:
+            seed (optional): Seed used for generating the hash. Defaults to 0.
+        """
         if seed is None:
             expr = native.hash(self._expr)
         else:
@@ -1467,7 +1477,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────╮
             │ x                             ┆ date       │
             │ ---                           ┆ ---        │
-            │ Timestamp[Microseconds, None] ┆ Date       │
+            │ Timestamp(Microseconds, None) ┆ Date       │
             ╞═══════════════════════════════╪════════════╡
             │ 2021-01-01 05:01:01           ┆ 2021-01-01 │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1502,7 +1512,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ day    │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1537,7 +1547,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ hour   │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 5      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1572,7 +1582,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ minute │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 05:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1607,7 +1617,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ x                             ┆ second │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2021-01-01 00:01:01           ┆ 1      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1642,7 +1652,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────────────╮
             │ x                             ┆ time               │
             │ ---                           ┆ ---                │
-            │ Timestamp[Microseconds, None] ┆ Time[Microseconds] │
+            │ Timestamp(Microseconds, None) ┆ Time(Microseconds) │
             ╞═══════════════════════════════╪════════════════════╡
             │ 2021-01-01 00:01:01           ┆ 00:01:01           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1675,7 +1685,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────╮
             │ datetime                      ┆ month  │
             │ ---                           ┆ ---    │
-            │ Timestamp[Microseconds, None] ┆ UInt32 │
+            │ Timestamp(Microseconds, None) ┆ UInt32 │
             ╞═══════════════════════════════╪════════╡
             │ 2024-07-03 00:00:00           ┆ 7      │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1708,7 +1718,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬───────╮
             │ datetime                      ┆ year  │
             │ ---                           ┆ ---   │
-            │ Timestamp[Microseconds, None] ┆ Int32 │
+            │ Timestamp(Microseconds, None) ┆ Int32 │
             ╞═══════════════════════════════╪═══════╡
             │ 2024-07-03 00:00:00           ┆ 2024  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
@@ -1742,7 +1752,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬─────────────╮
             │ datetime                      ┆ day_of_week │
             │ ---                           ┆ ---         │
-            │ Timestamp[Microseconds, None] ┆ UInt32      │
+            │ Timestamp(Microseconds, None) ┆ UInt32      │
             ╞═══════════════════════════════╪═════════════╡
             │ 2024-07-03 00:00:00           ┆ 2           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1775,7 +1785,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬───────────────────────────────╮
             │ datetime                      ┆ truncated                     │
             │ ---                           ┆ ---                           │
-            │ Timestamp[Microseconds, None] ┆ Timestamp[Microseconds, None] │
+            │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
             ╞═══════════════════════════════╪═══════════════════════════════╡
             │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:00           │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2711,7 +2721,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╭─────────────────────────┬───────────────────────────────╮
             │ x                       ┆ datetime                      │
             │ ---                     ┆ ---                           │
-            │ Utf8                    ┆ Timestamp[Milliseconds, None] │
+            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
             ╞═════════════════════════╪═══════════════════════════════╡
             │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2730,7 +2740,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╭───────────────────────────────┬────────────────────────────────────────────────╮
             │ x                             ┆ datetime                                       │
             │ ---                           ┆ ---                                            │
-            │ Utf8                          ┆ Timestamp[Milliseconds, Some("Asia/Shanghai")] │
+            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
             ╞═══════════════════════════════╪════════════════════════════════════════════════╡
             │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤

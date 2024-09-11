@@ -16,20 +16,38 @@ use pyo3::prelude::*;
 use snafu::Snafu;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     // keep in sorted order
-    parent.add_wrapped(wrap_pyfunction!(count_matches::python::utf8_count_matches))?;
-    parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine_distance))?;
-    parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
-    parent.add_wrapped(wrap_pyfunction!(list_sort::python::list_sort))?;
-    parent.add_wrapped(wrap_pyfunction!(minhash::python::minhash))?;
-    parent.add_wrapped(wrap_pyfunction!(numeric::cbrt::python::cbrt))?;
-    parent.add_wrapped(wrap_pyfunction!(to_struct::python::to_struct))?;
-    parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_decode))?;
-    parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
-    parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
-    parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
-    image::register_modules(_py, parent)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        count_matches::python::utf8_count_matches,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        distance::cosine::python::cosine_distance,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(hash::python::hash, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        list_sort::python::list_sort,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(minhash::python::minhash, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(numeric::cbrt::python::cbrt, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        to_struct::python::to_struct,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        tokenize::python::tokenize_decode,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        tokenize::python::tokenize_encode,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(uri::python::url_download, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(uri::python::url_upload, parent)?)?;
+    image::register_modules(parent)?;
     Ok(())
 }
 

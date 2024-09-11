@@ -12,6 +12,7 @@ daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
+daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
@@ -41,6 +42,7 @@ python = [
   "daft-dsl/python",
   "daft-local-execution/python",
   "daft-io/python",
+  "daft-image/python",
   "daft-json/python",
   "daft-micropartition/python",
   "daft-parquet/python",
@@ -114,6 +116,7 @@ members = [
   "src/daft-core",
   "src/daft-local-execution",
   "src/daft-io",
+  "src/daft-image",
   "src/daft-parquet",
   "src/daft-csv",
   "src/daft-json",
@@ -206,11 +209,11 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py38"]
-version = "0.19.2"
+features = ["extension-module", "multiple-pymethods", "abi3-py38", "indexmap"]
+version = "0.21.0"
 
 [workspace.dependencies.pyo3-log]
-version = "0.8.3"
+version = "0.11.0"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]

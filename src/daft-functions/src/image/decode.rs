@@ -64,7 +64,7 @@ impl ScalarUDF for ImageDecode {
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         let raise_error_on_failure = self.raise_on_error;
         match inputs {
-            [input] => input.image_decode(raise_error_on_failure, self.mode),
+            [input] => daft_image::series::decode(input, raise_error_on_failure, self.mode),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

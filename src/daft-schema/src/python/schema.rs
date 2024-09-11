@@ -22,8 +22,8 @@ impl PySchema {
         Ok(self.schema.get_field(name)?.clone().into())
     }
 
-    pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+    pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let pyarrow_fields = self
             .schema
             .fields

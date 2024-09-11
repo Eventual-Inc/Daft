@@ -14,7 +14,7 @@ use crate::{
         DataArray,
     },
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
+    datatypes::{DataType, Field, ImageMode, PythonType},
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
@@ -34,8 +34,8 @@ pub struct PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn from_arrow(name: &str, pyarrow_array: &PyAny) -> PyResult<Self> {
-        let arrow_array = ffi::array_to_rust(pyarrow_array)?;
+    pub fn from_arrow(py: Python, name: &str, pyarrow_array: Bound<PyAny>) -> PyResult<Self> {
+        let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
@@ -43,7 +43,7 @@ impl PySeries {
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: &PyAny, pyobj: &str) -> PyResult<Self> {
+    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, pyobj: &str) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
         let py = pylist.py();
         let dtype = match pyobj {
@@ -66,15 +66,15 @@ impl PySeries {
     pub fn to_pylist(&self) -> PyResult<PyObject> {
         let pseudo_arrow_array = self.series.python()?.as_arrow();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
-        Python::with_gil(|py| Ok(PyList::new(py, pyobj_vec).into()))
+        Python::with_gil(|py| Ok(PyList::new_bound(py, pyobj_vec).into()))
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-            ffi::to_py_array(arrow_array, py, pyarrow)
+            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
         })
     }
 
@@ -674,40 +674,6 @@ impl PySeries {
         Ok(self.series.map_get(&key.series)?.into())
     }
 
-    pub fn image_decode(
-        &self,
-        raise_error_on_failure: bool,
-        mode: Option<ImageMode>,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .image_decode(raise_error_on_failure, mode)?
-            .into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        Ok(self.series.image_encode(image_format)?.into())
-    }
-
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-
-        Ok(self.series.image_resize(w as u32, h as u32)?.into())
-    }
-
-    pub fn image_to_mode(&self, mode: &ImageMode) -> PyResult<Self> {
-        Ok(self.series.image_to_mode(*mode)?.into())
-    }
-
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series
@@ -729,12 +695,12 @@ impl PySeries {
 
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
         let values = bincode::serialize(&self.series).unwrap();
-        Ok(PyBytes::new(py, &values).to_object(py))
+        Ok(PyBytes::new_bound(py, &values).into())
     }
 
     #[staticmethod]
-    pub fn _debug_bincode_deserialize(bytes: &PyBytes) -> PyResult<Self> {
-        let values = bincode::deserialize::<Series>(bytes.as_bytes()).unwrap();
+    pub fn _debug_bincode_deserialize(bytes: &[u8]) -> PyResult<Self> {
+        let values = bincode::deserialize::<Series>(bytes).unwrap();
         Ok(Self { series: values })
     }
 
@@ -761,23 +727,23 @@ fn infer_daft_dtype_for_sequence(
     _name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
-        .import(pyo3::intern!(py, "PIL.Image"))
+        .import_bound(pyo3::intern!(py, "PIL.Image"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
     let np_ndarray_type = py
-        .import(pyo3::intern!(py, "numpy"))
+        .import_bound(pyo3::intern!(py, "numpy"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
     let np_generic_type = py
-        .import(pyo3::intern!(py, "numpy"))
+        .import_bound(pyo3::intern!(py, "numpy"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
     let from_numpy_dtype = {
-        py.import(pyo3::intern!(py, "daft.datatype"))?
+        py.import_bound(pyo3::intern!(py, "daft.datatype"))?
             .getattr(pyo3::intern!(py, "DataType"))?
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
     let mut dtype: Option<DataType> = None;
     for obj in vec_pyobj.iter() {
-        let obj = obj.as_ref(py);
-        if let Ok(pil_image_type) = py_pil_image_type
+        let obj = obj.bind(py);
+        if let Ok(pil_image_type) = &py_pil_image_type
             && obj.is_instance(pil_image_type)?
         {
             let mode_str = obj
@@ -803,8 +769,8 @@ fn infer_daft_dtype_for_sequence(
                     break;
                 }
             }
-        } else if let Ok(np_ndarray_type) = np_ndarray_type
-            && let Ok(np_generic_type) = np_generic_type
+        } else if let Ok(np_ndarray_type) = &np_ndarray_type
+            && let Ok(np_generic_type) = &np_generic_type
             && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
         {
             let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
