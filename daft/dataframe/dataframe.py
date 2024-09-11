@@ -796,6 +796,7 @@ class DataFrame:
 
         from daft import from_pydict
         from daft.io import DataCatalogTable
+        from daft.io._delta_lake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
@@ -835,19 +836,14 @@ class DataFrame:
                 warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        if parse(deltalake.__version__) < parse("0.19.0"):
-            delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
-        else:
-            from deltalake.schema import ArrowSchemaConversionMode
 
-            delta_schema = _convert_pa_schema_to_delta(
-                pyarrow_schema, schema_conversion_mode=ArrowSchemaConversionMode.LARGE
-            )
+        large_dtypes = True
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
@@ -872,7 +868,7 @@ class DataFrame:
             table_uri,
             mode,
             version,
-            large_dtypes=True,
+            large_dtypes,
             io_config=io_config,
         )
         write_df = DataFrame(builder)
