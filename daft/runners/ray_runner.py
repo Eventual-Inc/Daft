@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
+from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
 from daft.expressions import ExpressionsProjection
@@ -177,30 +178,29 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
 def _series_from_arrow_with_ray_data_extensions(
     array: pa.Array | pa.ChunkedArray, name: str = "arrow_series"
 ) -> Series:
-    if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
-        storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
-        series = storage_series.cast(
-            DataType.fixed_size_list(
-                _from_arrow_type_with_ray_data_extensions(array.type.scalar_type),
-                int(np.prod(array.type.shape)),
+    if isinstance(array, pa.Array):
+        array = ensure_array(array)
+        if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
+            storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
+            series = storage_series.cast(
+                DataType.fixed_size_list(
+                    _from_arrow_type_with_ray_data_extensions(array.type.scalar_type),
+                    int(np.prod(array.type.shape)),
+                )
             )
-        )
-        return series.cast(DataType.from_arrow_type(array.type))
-    elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
-        return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
-    else:
-        return Series.from_arrow(array, name)
+            return series.cast(DataType.from_arrow_type(array.type))
+        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
+            return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+    return Series.from_arrow(array, name)
 
 
 def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -> MicroPartition:
     assert isinstance(arrow_table, pa.Table)
-    non_native_fields = [
-        arrow_field.name
-        for arrow_field in arrow_table.schema
-        if (dt := _from_arrow_type_with_ray_data_extensions(arrow_field)) == DataType.python()
-        or dt._is_tensor_type()
-        or dt._is_fixed_shape_tensor_type()
-    ]
+    non_native_fields = []
+    for arrow_field in arrow_table.schema:
+        dt = _from_arrow_type_with_ray_data_extensions(arrow_field.type)
+        if dt == DataType.python() or dt._is_tensor_type() or dt._is_fixed_shape_tensor_type():
+            non_native_fields.append(arrow_field.name)
     if non_native_fields:
         # If there are any contained Arrow types that are not natively supported, convert each
         # series while checking for ray data extension types.
