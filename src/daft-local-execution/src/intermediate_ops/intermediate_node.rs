@@ -3,39 +3,20 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, PipelineChannel, Receiver, Sender},
+    channel::{create_channel, make_ordering_aware_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, NUM_CPUS,
+    runtime_stats::{CountingReceiver, RuntimeStatsContext},
+    ExecutionRuntimeHandle, JoinSnafu,
 };
 
-use super::buffer::OperatorBuffer;
-
-pub trait IntermediateOperatorState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
-pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
-}
-
-pub trait IntermediateOperator: Send + Sync {
-    fn execute(
-        &self,
-        idx: usize,
-        input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
-    ) -> DaftResult<IntermediateOperatorResult>;
-    fn name(&self) -> &'static str;
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        None
-    }
-}
+use super::{
+    buffer::OperatorBuffer, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOperatorState,
+};
 
 pub(crate) struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
@@ -69,61 +50,53 @@ impl IntermediateNode {
     }
 
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
-    pub async fn run_worker(
+    async fn run_worker(
         op: Arc<dyn IntermediateOperator>,
-        mut receiver: Receiver<(usize, PipelineResultType)>,
-        sender: CountingSender,
+        mut input_receiver: Receiver<(usize, PipelineResultType)>,
+        output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
-    ) -> DaftResult<()> {
+    ) -> DaftResult<Box<dyn IntermediateOperatorState>> {
         let span = info_span!("IntermediateOp::execute");
         let mut state = op.make_state();
-        while let Some((idx, morsel)) = receiver.recv().await {
+        while let Some((idx, morsel)) = input_receiver.recv().await {
             loop {
                 let result =
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        let _ = sender.send(mp.into()).await;
+                        let _ = output_sender.send(mp).await;
                         break;
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        let _ = sender.send(mp.into()).await;
+                        let _ = output_sender.send(mp).await;
                     }
                 }
             }
         }
-        Ok(())
+        Ok(state)
     }
 
-    pub fn spawn_workers(
-        &self,
-        num_workers: usize,
-        destination_channel: &mut PipelineChannel,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> Vec<Sender<(usize, PipelineResultType)>> {
-        let mut worker_senders = Vec::with_capacity(num_workers);
-        for _ in 0..num_workers {
-            let (worker_sender, worker_receiver) = create_channel(1);
-            let destination_sender =
-                destination_channel.get_next_sender_with_stats(&self.runtime_stats);
-            runtime_handle.spawn(
-                Self::run_worker(
-                    self.intermediate_op.clone(),
-                    worker_receiver,
-                    destination_sender,
-                    self.runtime_stats.clone(),
-                ),
-                self.intermediate_op.name(),
-            );
-            worker_senders.push(worker_sender);
+    fn spawn_workers(
+        op: Arc<dyn IntermediateOperator>,
+        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
+        output_senders: Vec<Sender<Arc<MicroPartition>>>,
+        worker_set: &mut tokio::task::JoinSet<DaftResult<Box<dyn IntermediateOperatorState>>>,
+        stats: Arc<RuntimeStatsContext>,
+    ) {
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
+            worker_set.spawn(Self::run_worker(
+                op.clone(),
+                input_receiver,
+                output_sender,
+                stats.clone(),
+            ));
         }
-        worker_senders
     }
 
-    pub async fn send_to_workers(
+    async fn forward_input_to_workers(
         receivers: Vec<CountingReceiver>,
         worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
         morsel_size: usize,
@@ -201,18 +174,49 @@ impl PipelineNode for IntermediateNode {
         for child in self.children.iter_mut() {
             let child_result_channel = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
-                .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));
+                .push(child_result_channel.get_receiver_with_stats(self.runtime_stats.clone()));
         }
-        let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
 
-        let worker_senders =
-            self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
+        let destination_channel = PipelineChannel::new();
+        let destination_sender =
+            destination_channel.get_sender_with_stats(self.runtime_stats.clone());
+
+        let op = self.intermediate_op.clone();
+        let stats = self.runtime_stats.clone();
+        let morsel_size = runtime_handle.default_morsel_size();
         runtime_handle.spawn(
-            Self::send_to_workers(
-                child_result_receivers,
-                worker_senders,
-                runtime_handle.default_morsel_size(),
-            ),
+            async move {
+                let num_workers = op.max_concurrency();
+                let (input_senders, input_receivers) =
+                    (0..num_workers).map(|_| create_channel(1)).unzip();
+                let (output_senders, mut output_receiver) =
+                    make_ordering_aware_channel(num_workers, maintain_order);
+                let mut worker_set = tokio::task::JoinSet::new();
+                Self::spawn_workers(
+                    op.clone(),
+                    input_receivers,
+                    output_senders,
+                    &mut worker_set,
+                    stats.clone(),
+                );
+                Self::forward_input_to_workers(child_result_receivers, input_senders, morsel_size)
+                    .await?;
+
+                while let Some(morsel) = output_receiver.recv().await {
+                    let _ = destination_sender.send(morsel.into()).await;
+                }
+
+                let mut finished_states = Vec::with_capacity(num_workers);
+                while let Some(result) = worker_set.join_next().await {
+                    let state = result.context(JoinSnafu)??;
+                    finished_states.push(state);
+                }
+
+                if let Some(finalized_result) = op.finalize(finished_states)? {
+                    let _ = destination_sender.send(finalized_result.into()).await;
+                }
+                Ok(())
+            },
             self.intermediate_op.name(),
         );
         Ok(destination_channel)

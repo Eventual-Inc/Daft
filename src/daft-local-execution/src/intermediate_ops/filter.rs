@@ -6,9 +6,7 @@ use tracing::instrument;
 
 use crate::pipeline::PipelineResultType;
 
-use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
-};
+use super::{IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState};
 
 pub struct FilterOperator {
     predicate: ExprRef,
@@ -26,7 +24,7 @@ impl IntermediateOperator for FilterOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().filter(&[self.predicate.clone()])?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(

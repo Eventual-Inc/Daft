@@ -4,7 +4,7 @@ use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
         aggregate::AggregateOperator, filter::FilterOperator,
-        hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
+        hash_join_probe::HashJoinProbeOperator, intermediate_node::IntermediateNode,
         project::ProjectOperator,
     },
     sinks::{
@@ -239,9 +239,7 @@ pub fn physical_plan_to_pipeline(
                 JoinType::Left | JoinType::Anti | JoinType::Semi => {
                     (right_on, left_on, right, left, false)
                 }
-                JoinType::Outer => {
-                    unimplemented!("Outer join not supported yet");
-                }
+                JoinType::Outer => (left_on, right_on, left, right, true),
             };
 
             let build_schema = build_child.schema();

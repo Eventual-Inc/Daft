@@ -6,17 +6,15 @@ use tracing::instrument;
 
 use crate::pipeline::PipelineResultType;
 
-use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
-};
+use super::{IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState};
 
-pub struct AggregateOperator {
+pub(crate) struct AggregateOperator {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
 }
 
 impl AggregateOperator {
-    pub fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>) -> Self {
+    pub(crate) fn new(agg_exprs: Vec<ExprRef>, group_by: Vec<ExprRef>) -> Self {
         Self {
             agg_exprs,
             group_by,
@@ -30,7 +28,7 @@ impl IntermediateOperator for AggregateOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().agg(&self.agg_exprs, &self.group_by)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(

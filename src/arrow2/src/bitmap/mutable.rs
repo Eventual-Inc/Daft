@@ -325,6 +325,25 @@ impl MutableBitmap {
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
+
+    pub fn or(&self, other: &MutableBitmap) -> MutableBitmap {
+        assert_eq!(
+            self.length, other.length,
+            "Bitmaps must have the same length"
+        );
+
+        let new_buffer: Vec<u8> = self
+            .buffer
+            .iter()
+            .zip(other.buffer.iter())
+            .map(|(&a, &b)| a | b) // Apply bitwise OR on each pair of bytes
+            .collect();
+
+        MutableBitmap {
+            buffer: new_buffer,
+            length: self.length,
+        }
+    }
 }
 
 impl From<MutableBitmap> for Bitmap {

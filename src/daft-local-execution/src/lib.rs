@@ -11,19 +11,22 @@ use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::futures::TryFutureExt;
 use snafu::Snafu;
+
+pub(crate) type TaskSet<T> = tokio::task::JoinSet<T>;
+
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
 pub struct ExecutionRuntimeHandle {
-    worker_set: tokio::task::JoinSet<crate::Result<()>>,
+    task_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
-            worker_set: tokio::task::JoinSet::new(),
+            task_set: tokio::task::JoinSet::new(),
             default_morsel_size,
         }
     }
@@ -33,16 +36,16 @@ impl ExecutionRuntimeHandle {
         node_name: &str,
     ) {
         let node_name = node_name.to_string();
-        self.worker_set
+        self.task_set
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
     pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, tokio::task::JoinError>> {
-        self.worker_set.join_next().await
+        self.task_set.join_next().await
     }
 
     pub async fn shutdown(&mut self) {
-        self.worker_set.shutdown().await;
+        self.task_set.shutdown().await;
     }
 
     pub fn default_morsel_size(&self) -> usize {

@@ -78,17 +78,18 @@ impl PipelineNode for BlockingSinkNode {
 
     fn start(
         &mut self,
-        maintain_order: bool,
+        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
-        let child = self.child.as_mut();
-        let mut child_results_receiver = child
+        let mut child_results_receiver = self
+            .child
+            .as_mut()
             .start(false, runtime_handle)?
-            .get_receiver_with_stats(&self.runtime_stats);
+            .get_receiver_with_stats(self.runtime_stats.clone());
 
-        let mut destination_channel = PipelineChannel::new(1, maintain_order);
+        let destination_channel = PipelineChannel::new();
         let destination_sender =
-            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+            destination_channel.get_sender_with_stats(self.runtime_stats.clone());
         let op = self.op.clone();
         let rt_context = self.runtime_stats.clone();
         runtime_handle.spawn(

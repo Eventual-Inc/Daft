@@ -76,18 +76,19 @@ impl PipelineNode for SourceNode {
             self.source
                 .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
 
-        let mut channel = PipelineChannel::new(1, maintain_order);
-        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
+        let destination_channel = PipelineChannel::new();
+        let destination_sender =
+            destination_channel.get_sender_with_stats(self.runtime_stats.clone());
         runtime_handle.spawn(
             async move {
                 while let Some(part) = source_stream.next().await {
-                    let _ = counting_sender.send(part.into()).await;
+                    let _ = destination_sender.send(part.into()).await;
                 }
                 Ok(())
             },
             self.name(),
         );
-        Ok(channel)
+        Ok(destination_channel)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
