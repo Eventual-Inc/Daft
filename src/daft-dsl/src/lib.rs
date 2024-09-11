@@ -27,22 +27,28 @@ pub use resolve_expr::{
 };
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyExpr>()?;
 
-    parent.add_wrapped(wrap_pyfunction!(python::col))?;
-    parent.add_wrapped(wrap_pyfunction!(python::lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::date_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::time_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::timestamp_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::decimal_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::series_lit))?;
-    parent.add_wrapped(wrap_pyfunction!(python::stateless_udf))?;
-    parent.add_wrapped(wrap_pyfunction!(python::stateful_udf))?;
-    parent.add_wrapped(wrap_pyfunction!(python::extract_partial_stateful_udf_py))?;
-    parent.add_wrapped(wrap_pyfunction!(python::bind_stateful_udfs))?;
-    parent.add_wrapped(wrap_pyfunction!(python::eq))?;
-    parent.add_wrapped(wrap_pyfunction!(python::check_column_name_validity))?;
+    parent.add_function(wrap_pyfunction_bound!(python::col, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::date_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::time_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::timestamp_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::decimal_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::series_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::stateless_udf, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::stateful_udf, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        python::extract_partial_stateful_udf_py,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::bind_stateful_udfs, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::eq, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        python::check_column_name_validity,
+        parent
+    )?)?;
 
     Ok(())
 }

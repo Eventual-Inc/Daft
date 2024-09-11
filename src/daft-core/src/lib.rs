@@ -18,7 +18,7 @@ use pyo3::prelude::*;
 pub mod prelude;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<count_mode::CountMode>()?;
     parent.add_class::<join::JoinType>()?;
     parent.add_class::<join::JoinStrategy>()?;

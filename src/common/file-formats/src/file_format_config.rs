@@ -10,7 +10,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{pyclass, pymethods, PyObject, PyResult, Python},
+    pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyResult, Python},
 };
 
 /// Configuration for parsing a particular file format.
@@ -303,7 +303,7 @@ pub struct DatabaseSourceConfig {
 impl PartialEq for DatabaseSourceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.sql == other.sql
-            && Python::with_gil(|py| self.conn.as_ref(py).eq(other.conn.as_ref(py)).unwrap())
+            && Python::with_gil(|py| self.conn.bind(py).eq(other.conn.bind(py)).unwrap())
     }
 }
 
@@ -314,7 +314,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.conn.as_ref(py).hash());
+        let py_obj_hash = Python::with_gil(|py| self.conn.bind(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
             Err(_) => serde_json::to_vec(self).unwrap().hash(state),

@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
-use pyo3::{PyObject, Python};
+use pyo3::{types::PyAnyMethods, PyObject, Python};
 use serde::{Deserialize, Serialize};
 
 // This is a Rust wrapper on top of a Python PartialStatelessUDF or PartialStatefulUDF to make it serde-able and hashable
@@ -19,7 +19,7 @@ pub struct PyObjectWrapper(
 
 impl PartialEq for PyObjectWrapper {
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
+        Python::with_gil(|py| self.0.bind(py).eq(other.0.bind(py)).unwrap())
     }
 }
 
@@ -27,7 +27,7 @@ impl Eq for PyObjectWrapper {}
 
 impl Hash for PyObjectWrapper {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let py_obj_hash = Python::with_gil(|py| self.0.as_ref(py).hash());
+        let py_obj_hash = Python::with_gil(|py| self.0.bind(py).hash());
         match py_obj_hash {
             // If Python object is hashable, hash the Python-side hash.
             Ok(py_obj_hash) => py_obj_hash.hash(state),

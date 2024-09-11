@@ -1017,10 +1017,8 @@ mod test {
             sources.push(format!("../../tests/assets/parquet-data/mvp.parquet"));
         }
 
-        let glob_paths: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
-
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
-            &glob_paths,
+            sources,
             Arc::new(file_format_config),
             Arc::new(StorageConfig::Native(Arc::new(
                 NativeStorageConfig::new_internal(false, None),

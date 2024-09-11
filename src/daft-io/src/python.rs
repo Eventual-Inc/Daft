@@ -5,10 +5,7 @@ mod py {
     use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
     use common_error::DaftResult;
     use futures::TryStreamExt;
-    use pyo3::{
-        prelude::*,
-        types::{PyDict, PyList},
-    };
+    use pyo3::{prelude::*, types::PyDict};
 
     #[pyfunction]
     fn io_glob(
@@ -19,7 +16,7 @@ mod py {
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
-    ) -> PyResult<&PyList> {
+    ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
         let io_stats_handle = io_stats.clone();
@@ -49,16 +46,15 @@ mod py {
                 Ok(files)
             })
         });
-        let lsr = lsr?;
         let mut to_rtn = vec![];
-        for file in lsr {
-            let dict = PyDict::new(py);
+        for file in lsr? {
+            let dict = PyDict::new_bound(py);
             dict.set_item("type", format!("{:?}", file.filetype))?;
             dict.set_item("path", file.filepath)?;
             dict.set_item("size", file.size)?;
             to_rtn.push(dict);
         }
-        Ok(PyList::new(py, to_rtn))
+        Ok(to_rtn)
     }
 
     /// Creates an S3Config from the current environment, auto-discovering variables such as
@@ -72,10 +68,10 @@ mod py {
         Ok(common_io_config::python::S3Config { config: s3_config? })
     }
 
-    pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
-        common_io_config::python::register_modules(py, parent)?;
-        parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
-        parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
+    pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+        common_io_config::python::register_modules(parent)?;
+        parent.add_function(wrap_pyfunction_bound!(io_glob, parent)?)?;
+        parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent)?)?;
         Ok(())
     }
 }
