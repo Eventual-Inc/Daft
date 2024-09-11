@@ -1,4 +1,4 @@
-use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
+use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -21,8 +21,8 @@ impl PythonTablesFactoryArgs {
         Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
     }
 
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
-        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
+        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
     }
 }
 
@@ -40,6 +40,8 @@ impl PartialEq for PythonTablesFactoryArgs {
 
 pub mod pylib {
     use common_error::DaftResult;
+    use common_file_formats::python::PyFileFormatConfig;
+    use common_file_formats::FileFormatConfig;
     use common_py_serde::impl_bincode_py_state_serialization;
     use daft_dsl::python::PyExpr;
     use daft_schema::python::field::PyField;
@@ -62,7 +64,6 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
-    use crate::file_format::FileFormatConfig;
     use crate::storage_config::PythonStorageConfig;
     use crate::DataSource;
     use crate::PartitionField;
@@ -71,7 +72,6 @@ pub mod pylib {
     use crate::ScanOperatorRef;
     use crate::ScanTask;
 
-    use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
     use common_daft_config::PyDaftExecutionConfig;
@@ -114,7 +114,7 @@ pub mod pylib {
         #[staticmethod]
         pub fn glob_scan(
             py: Python,
-            glob_path: Vec<&str>,
+            glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             infer_schema: bool,
@@ -122,7 +122,7 @@ pub mod pylib {
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path.as_slice(),
+                    glob_path,
                     file_format_config.into(),
                     storage_config.into(),
                     infer_schema,
@@ -249,7 +249,7 @@ pub mod pylib {
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_object(py, &pyiter)?;
+                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -402,7 +402,7 @@ pub mod pylib {
             py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<&PyAny>,
+            func_args: Vec<Bound<PyAny>>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -580,7 +580,7 @@ pub mod pylib {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;

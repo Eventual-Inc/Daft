@@ -8,7 +8,7 @@ use crate::image_mode::ImageMode;
 pub use datatype::PyDataType;
 pub use datatype::PyTimeUnit;
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<datatype::PyDataType>()?;
     parent.add_class::<datatype::PyTimeUnit>()?;
     parent.add_class::<schema::PySchema>()?;

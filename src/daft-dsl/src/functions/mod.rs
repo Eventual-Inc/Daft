@@ -10,10 +10,11 @@ pub mod struct_;
 pub mod temporal;
 pub mod utf8;
 
+use std::fmt::Write;
 use std::fmt::{Display, Formatter, Result};
 use std::hash::Hash;
 
-use crate::ExprRef;
+use crate::{Expr, ExprRef, Operator};
 
 use self::float::FloatExpr;
 use self::json::JsonExpr;
@@ -116,6 +117,39 @@ pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[ExprRe
     }
     write!(f, ")")?;
     Ok(())
+}
+
+pub fn function_display_without_formatter(
+    func: &FunctionExpr,
+    inputs: &[ExprRef],
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    write!(&mut f, "{}(", func)?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(&mut f, ", ")?;
+        }
+        write!(&mut f, "{input}")?;
+    }
+    write!(&mut f, ")")?;
+    Ok(f)
+}
+
+pub fn binary_op_display_without_formatter(
+    op: &Operator,
+    left: &ExprRef,
+    right: &ExprRef,
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    let write_out_expr = |f: &mut String, input: &Expr| match input {
+        Expr::Alias(e, _) => write!(f, "{e}"),
+        Expr::BinaryOp { .. } => write!(f, "[{input}]"),
+        _ => write!(f, "{input}"),
+    };
+    write_out_expr(&mut f, left)?;
+    write!(&mut f, " {op} ")?;
+    write_out_expr(&mut f, right)?;
+    Ok(f)
 }
 
 pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Schema) -> FieldID {

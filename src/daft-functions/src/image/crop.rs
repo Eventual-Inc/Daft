@@ -70,7 +70,7 @@ impl ScalarUDF for ImageCrop {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input, bbox] => input.image_crop(bbox),
+            [input, bbox] => daft_image::series::crop(input, bbox),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()

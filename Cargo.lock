@@ -1302,8 +1302,8 @@ dependencies = [
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
- "bincode",
  "common-io-config",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
@@ -1313,7 +1313,7 @@ name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
  "comfy-table 7.1.1",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "pyo3",
  "terminal_size",
  "textwrap",
@@ -1328,6 +1328,18 @@ dependencies = [
  "regex",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "common-file-formats"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-py-serde",
+ "daft-schema",
+ "pyo3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1657,6 +1669,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file-formats",
  "common-hashable-float-wrapper",
  "common-resource-request",
  "common-system-info",
@@ -1667,6 +1680,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-image",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -1704,7 +1718,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow2",
- "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -1717,12 +1730,12 @@ dependencies = [
  "daft-minhash",
  "daft-schema",
  "daft-sketch",
+ "derive_more",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
  "hyperloglog",
- "image",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "jaq-core",
  "jaq-interpret",
@@ -1795,7 +1808,8 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
- "indexmap 2.3.0",
+ "derive_more",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pyo3",
@@ -1814,6 +1828,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "daft-io",
  "futures",
  "pyo3",
@@ -1823,6 +1838,20 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
+]
+
+[[package]]
+name = "daft-image"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "base64 0.22.1",
+ "common-error",
+ "daft-core",
+ "image",
+ "log",
+ "num-traits",
+ "pyo3",
 ]
 
 [[package]]
@@ -1844,8 +1873,8 @@ dependencies = [
  "azure_storage_blobs",
  "bytes",
  "common-error",
+ "common-file-formats",
  "common-io-config",
- "common-py-serde",
  "futures",
  "globset",
  "google-cloud-storage",
@@ -1886,7 +1915,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "memchr",
  "memmap2",
  "num-traits",
@@ -1909,6 +1938,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-tracing",
  "daft-core",
  "daft-csv",
@@ -1922,7 +1952,7 @@ dependencies = [
  "daft-scan",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "lazy_static",
  "log",
  "num-format",
@@ -1940,6 +1970,7 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-file-formats",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1981,7 +2012,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "parquet2",
@@ -2016,6 +2047,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -2023,11 +2055,10 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-io",
  "daft-scan",
  "daft-schema",
  "daft-table",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pretty_assertions",
@@ -2045,6 +2076,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "daft-core",
@@ -2061,7 +2093,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "serde",
- "serde_json",
  "snafu",
 ]
 
@@ -2072,11 +2103,11 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "daft-core",
  "daft-dsl",
- "daft-io",
  "daft-plan",
  "daft-scan",
  "pyo3",
@@ -2094,8 +2125,9 @@ dependencies = [
  "common-error",
  "common-py-serde",
  "common-version",
+ "derive_more",
  "html-escape",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "num-derive",
  "num-traits",
  "pyo3",
@@ -2140,7 +2172,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "serde",
  "snafu",
 ]
@@ -2156,7 +2188,9 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "html-escape",
+ "indexmap 2.5.0",
  "num-traits",
  "pyo3",
  "rand 0.8.5",
@@ -2188,6 +2222,27 @@ checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
  "serde",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -2699,7 +2754,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2981,9 +3036,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.3.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
+checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
@@ -2992,9 +3047,9 @@ dependencies = [
 
 [[package]]
 name = "indoc"
-version = "1.0.9"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa799dd5ed20a7e349f3b4639aa80d74549c81716d9ec4f994c9b5815598306"
+checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
 
 [[package]]
 name = "infer"
@@ -3079,7 +3134,7 @@ dependencies = [
  "ahash",
  "dyn-clone",
  "hifijson",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "jaq-syn",
  "once_cell",
  "serde_json",
@@ -3632,9 +3687,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.19.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "437213adf41bbccf4aeae535fbfcdad0f6fed241e1ae182ebe97fa1f3ce19389"
+checksum = "ec170733ca37175f5d75a5bea5911d6ff45d2cd52849ce98b685394e4f2f37f4"
 dependencies = [
  "libc",
  "ndarray",
@@ -3822,7 +3877,7 @@ dependencies = [
  "criterion",
  "flate2",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "lz4",
  "lz4_flex",
  "parquet-format-safe",
@@ -4014,6 +4069,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "portable-atomic"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da544ee218f0d287a911e9c99a39a8c9bc8fcad3cb8db5959940044ecfc67265"
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4111,16 +4172,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e681a6cfdc4adcc93b4d3cf993749a4552018ee0a9b65fc0ccfad74352c72a38"
+checksum = "a5e00b96a521718e08e03b1a622f01c8a8deb50719335de3f60b3b3950f069d8"
 dependencies = [
  "cfg-if",
+ "indexmap 2.5.0",
  "indoc",
  "inventory",
  "libc",
  "memoffset",
  "parking_lot",
+ "portable-atomic",
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
@@ -4129,9 +4192,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "076c73d0bc438f7a4ef6fdd0c3bb4732149136abd952b110ac93e4edb13a6ba5"
+checksum = "7883df5835fafdad87c0d888b266c8ec0f4c9ca48a5bed6bbb592e8dedee1b50"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -4139,9 +4202,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e53cee42e77ebe256066ba8aa77eff722b3bb91f3419177cf4cd0f304d3284d9"
+checksum = "01be5843dc60b916ab4dad1dca6d20b9b4e6ddc8e15f50c47fe6d85f1fb97403"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -4149,9 +4212,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-log"
-version = "0.8.4"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c09c2b349b6538d8a73d436ca606dab6ce0aaab4dad9e6b7bdd57a4f556c3bc3"
+checksum = "3ac84e6eec1159bc2a575c9ae6723baa6ee9d45873e9bebad1e3ad7e8d28a443"
 dependencies = [
  "arc-swap",
  "log",
@@ -4160,25 +4223,27 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfeb4c99597e136528c6dd7d5e3de5434d1ceaf487436a3f03b2d56b6fc9efd1"
+checksum = "77b34069fc0682e11b31dbd10321cbf94808394c56fd996796ce45217dfac53c"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.74",
 ]
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "947dc12175c254889edc0c02e399476c2f652b4b9ebd123aa655c224de259536"
+checksum = "08260721f32db5e1a5beae69a55553f56b99bd0e1c3e6e0a5e8851a9d0f5a85c"
 dependencies = [
+ "heck 0.4.1",
  "proc-macro2",
+ "pyo3-build-config",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.74",
 ]
 
 [[package]]
@@ -4728,7 +4793,7 @@ version = "1.0.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66ad62847a56b3dba58cc891acd13884b9c61138d330c0d7b6181713d4fce38d"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itoa",
  "memchr",
  "ryu",
@@ -5646,9 +5711,9 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 
 [[package]]
 name = "unindent"
-version = "0.1.11"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1766d682d402817b5ac4490b3c3002d91dfa0d22812f341609f97b08757359c"
+checksum = "c7de7d73e1754487cb58364ee906a499937a0dfabd86bcb980fa99ec8c8fa2ce"
 
 [[package]]
 name = "untrusted"

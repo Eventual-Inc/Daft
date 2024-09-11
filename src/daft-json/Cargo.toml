@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_json"]}
+arrow2 = {workspace = true}
 chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}

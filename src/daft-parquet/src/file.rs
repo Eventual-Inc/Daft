@@ -223,8 +223,8 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        self.selected_columns = Some(HashSet::from_iter(columns.iter().map(|s| s.to_string())));
+    pub fn prune_columns(mut self, columns: &[String]) -> super::Result<Self> {
+        self.selected_columns = Some(HashSet::from_iter(columns.iter().cloned()));
         Ok(self)
     }
 

@@ -5,12 +5,8 @@ use crate::image_mode::ImageMode;
 use common_arrow_ffi as ffi;
 
 use common_py_serde::impl_bincode_py_state_serialization;
-use pyo3::{
-    class::basic::CompareOp,
-    exceptions::PyValueError,
-    prelude::*,
-    types::{PyDict, PyString},
-};
+use indexmap::IndexMap;
+use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::time_unit::TimeUnit;
@@ -225,19 +221,14 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn r#struct(fields: &PyDict) -> PyResult<Self> {
-        Ok(DataType::Struct(
+    pub fn r#struct(fields: IndexMap<String, PyDataType>) -> Self {
+        DataType::Struct(
             fields
-                .iter()
-                .map(|(name, dtype)| {
-                    Ok(Field::new(
-                        name.downcast::<PyString>()?.to_str()?,
-                        dtype.extract::<PyDataType>()?.dtype,
-                    ))
-                })
-                .collect::<PyResult<Vec<Field>>>()?,
+                .into_iter()
+                .map(|(name, dtype)| Field::new(name, dtype.dtype))
+                .collect::<Vec<Field>>(),
         )
-        .into())
+        .into()
     }
 
     #[staticmethod]
@@ -311,12 +302,12 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
-    pub fn to_arrow(&self, py: Python) -> PyResult<PyObject> {
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+    pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
-            DataType::FixedShapeTensor(dtype, shape) => Ok(
+            DataType::FixedShapeTensor(dtype, shape) => {
                 if py
-                    .import(pyo3::intern!(py, "daft.utils"))?
+                    .import_bound(pyo3::intern!(py, "daft.utils"))?
                     .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
                     .call0()?
                     .extract()?
@@ -328,16 +319,15 @@ impl PyDataType {
                                 dtype: *dtype.clone(),
                             }
                             .to_arrow(py)?,
-                            pyo3::types::PyTuple::new(py, shape.clone()),
-                        ))?
-                        .to_object(py)
+                            pyo3::types::PyTuple::new_bound(py, shape.clone()),
+                        ))
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                     // canonical tensor extension type.
-                    ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow)?
-                },
-            ),
-            _ => ffi::dtype_to_py(&self.dtype.to_arrow()?, py, pyarrow),
+                    ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow)
+                }
+            }
+            _ => ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow),
         }
     }
 
@@ -385,7 +375,7 @@ impl PyDataType {
         Ok(self.dtype.is_temporal())
     }
 
-    pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
+    pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>() {
             let other = other.extract::<PyDataType>()?;
             Ok(self.dtype == other.dtype)

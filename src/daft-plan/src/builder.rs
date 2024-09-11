@@ -17,12 +17,12 @@ use crate::{
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_schema::schema::{Schema, SchemaRef};
 
 use daft_dsl::{col, ExprRef};
-use daft_io::FileFormat;
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 
 #[cfg(feature = "python")]
@@ -526,7 +526,7 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
@@ -534,7 +534,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            cache_entry.to_object(cache_entry.py()),
+            cache_entry,
             schema.into(),
             num_partitions,
             size_bytes,

@@ -125,10 +125,9 @@ macro_rules! py_numeric_binary_op {
         let output_type =
             InferDataType::from($self.data_type()).$op(InferDataType::from($rhs.data_type()))?;
         let lhs = $self.into_series();
-        use DataType::*;
         match &output_type {
             #[cfg(feature = "python")]
-            Python => Ok(py_binary_op!(lhs, $rhs, $pyop)),
+            DataType::Python => Ok(py_binary_op!(lhs, $rhs, $pyop)),
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     cast_downcast_op_into_series!(
@@ -153,13 +152,16 @@ macro_rules! physical_logic_op {
         let output_type = InferDataType::from($self.data_type())
             .logical_op(&InferDataType::from($rhs.data_type()))?;
         let lhs = $self.into_series();
-        use DataType::*;
         match &output_type {
             #[cfg(feature = "python")]
-            Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
+            DataType::Boolean => match (&lhs.data_type(), &$rhs.data_type()) {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => Ok(py_binary_op_bool!(lhs, $rhs, $pyop)),
-                _ => cast_downcast_op_into_series!(lhs, $rhs, &Boolean, BooleanArray, $op),
+                (DataType::Python, _) | (_, DataType::Python) => {
+                    Ok(py_binary_op_bool!(lhs, $rhs, $pyop))
+                }
+                _ => {
+                    cast_downcast_op_into_series!(lhs, $rhs, &DataType::Boolean, BooleanArray, $op)
+                }
             },
             output_type if output_type.is_integer() => {
                 with_match_integer_daft_types!(output_type, |$T| {
@@ -188,11 +190,10 @@ macro_rules! physical_compare_op {
             (lhs, $rhs.clone())
         };
 
-        use DataType::*;
-        if let Boolean = output_type {
+        if let DataType::Boolean = output_type {
             match comp_type {
                 #[cfg(feature = "python")]
-                Python => py_binary_op_bool!(lhs, rhs, $pyop)
+                DataType::Python => py_binary_op_bool!(lhs, rhs, $pyop)
                     .downcast::<BooleanArray>()
                     .cloned(),
                 _ => with_match_comparable_daft_types!(comp_type, |$T| {
@@ -210,11 +211,12 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         let output_type =
             InferDataType::from(self.data_type()).add(InferDataType::from(rhs.data_type()))?;
         let lhs = self.into_series();
-        use DataType::*;
         match &output_type {
             #[cfg(feature = "python")]
-            Python => Ok(py_binary_op!(lhs, rhs, "add")),
-            Utf8 => cast_downcast_op_into_series!(lhs, rhs, &Utf8, Utf8Array, add),
+            DataType::Python => Ok(py_binary_op!(lhs, rhs, "add")),
+            DataType::Utf8 => {
+                cast_downcast_op_into_series!(lhs, rhs, &DataType::Utf8, Utf8Array, add)
+            }
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     cast_downcast_op_into_series!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)
@@ -236,11 +238,12 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         let output_type =
             InferDataType::from(self.data_type()).div(InferDataType::from(rhs.data_type()))?;
         let lhs = self.into_series();
-        use DataType::*;
         match &output_type {
             #[cfg(feature = "python")]
-            Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
-            Float64 => cast_downcast_op_into_series!(lhs, rhs, &Float64, Float64Array, div),
+            DataType::Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
+            DataType::Float64 => {
+                cast_downcast_op_into_series!(lhs, rhs, &DataType::Float64, Float64Array, div)
+            }
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_sized_numeric_binary_op!(&lhs, rhs, output_type, div)
             }
@@ -305,11 +308,10 @@ impl SeriesBinaryOps for ArrayWrapper<ExtensionArray> {}
 impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<DateArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let days = rhs.duration()?.cast_to_days()?;
                 let physical_result = self.0.physical.add(&days)?;
                 physical_result.cast(&output_type)
@@ -318,15 +320,14 @@ impl SeriesBinaryOps for ArrayWrapper<DateArray> {
         }
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
-            Date => {
+            DataType::Date => {
                 let physical_result = self.0.physical.sub(&rhs.date()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let days = rhs.duration()?.cast_to_days()?;
                 let physical_result = self.0.physical.sub(&days)?;
                 physical_result.cast(&output_type)
@@ -338,20 +339,19 @@ impl SeriesBinaryOps for ArrayWrapper<DateArray> {
 impl SeriesBinaryOps for ArrayWrapper<TimeArray> {}
 impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         let lhs = self.0.clone().into_series();
         match rhs.data_type() {
-            Timestamp(..) => {
+            DataType::Timestamp(..) => {
                 let physical_result = self.0.physical.add(&rhs.timestamp()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let physical_result = self.0.physical.add(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            Date => {
+            DataType::Date => {
                 let days = self.0.cast_to_days()?;
                 let physical_result = days.add(&rhs.date()?.physical)?;
                 physical_result.cast(&output_type)
@@ -361,11 +361,10 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     }
 
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
@@ -376,11 +375,10 @@ impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
 
 impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) + InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let physical_result = self.0.physical.add(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
@@ -388,15 +386,14 @@ impl SeriesBinaryOps for ArrayWrapper<TimestampArray> {
         }
     }
     fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-        use DataType::*;
         let output_type =
             (InferDataType::from(self.data_type()) - InferDataType::from(rhs.data_type()))?;
         match rhs.data_type() {
-            Duration(..) => {
+            DataType::Duration(..) => {
                 let physical_result = self.0.physical.sub(&rhs.duration()?.physical)?;
                 physical_result.cast(&output_type)
             }
-            Timestamp(..) => {
+            DataType::Timestamp(..) => {
                 let physical_result = self.0.physical.sub(&rhs.timestamp()?.physical)?;
                 physical_result.cast(&output_type)
             }
