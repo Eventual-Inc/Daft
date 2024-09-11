@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 pub mod count_matches;
 pub mod distance;
+pub mod float;
 pub mod hash;
 pub mod image;
 pub mod list_sort;
