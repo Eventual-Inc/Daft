@@ -6,8 +6,8 @@ import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.lazy_import import LazyImport
 from daft.datatype import DataType
+from daft.lazy_import import LazyImport
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
