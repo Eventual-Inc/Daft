@@ -93,16 +93,26 @@ def test_fizzbuzz_sql():
         ("to_date(date_col, 'YYYY-MM-DD')", daft.col("date_col").str.to_date("YYYY-MM-DD")),
     ],
 )
-def test_sql_expr(actual, expected):
+def test_sql_expr_anon(actual, expected):
     actual = daft.sql_expr(actual)
     # Non plain-column-select expressions will be aliased with the representation
     expected = expected.alias(repr(expected))
     assert repr(actual) == repr(expected)
 
 
-def test_sql_expr_plain_col():
-    # Plain-column-select expressions are NOT aliased (in dataframe they will retain their original name)
-    assert repr(daft.sql_expr("n")) == "col(n)"
+@pytest.mark.parametrize(
+    "actual,expected",
+    [
+        # Plain-column-select expressions are NOT aliased (in dataframe they
+        # will retain their original name)
+        ("n", daft.col("n")),
+        ("abs(n) AS abs_n", daft.col("n").abs().alias("abs_n")),
+        ("n + 1 AS n_plus_1", (daft.col("n") + 1).alias("n_plus_1")),
+    ],
+)
+def test_sql_expr_plain_or_aliased(actual, expected):
+    actual = daft.sql_expr(actual)
+    assert repr(actual) == repr(expected)
 
 
 def test_sql_global_agg():
