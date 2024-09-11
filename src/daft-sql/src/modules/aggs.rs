@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_dsl::{AggExpr, Expr, ExprRef, LiteralValue};
-use sqlparser::ast::FunctionArg;
+use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
+use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use crate::{
     ensure,
@@ -34,6 +34,33 @@ impl SQLModule for SQLModuleAggs {
 
 impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        // Special pre-processing for COUNT(*)
+        if let AggExpr::Count(_, _) = self {
+            match inputs {
+                [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match planner.relation_opt() {
+                    Some(rel) => {
+                        let schema = rel.schema();
+                        let expr = col(schema.fields[0].name.clone())
+                            .count(daft_core::count_mode::CountMode::Valid);
+                        return Ok(expr);
+                    }
+                    None => unsupported_sql_err!("Wildcard is not supported in this context"),
+                },
+                [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
+                    match planner.relation_opt() {
+                        Some(rel) if name.to_string() == rel.name => {
+                            let schema = rel.schema();
+                            let expr = col(schema.fields[0].name.clone())
+                                .count(daft_core::count_mode::CountMode::Valid);
+                            return Ok(expr);
+                        }
+                        _ => unsupported_sql_err!("Wildcard is not supported in this context"),
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let inputs = self.args_to_expr_unnamed(inputs, planner)?;
         to_expr(self, inputs.as_slice())
     }

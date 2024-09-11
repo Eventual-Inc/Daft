@@ -113,3 +113,21 @@ def test_sql_groupby_agg():
     catalog = SQLCatalog({"test": df})
     df = daft.sql("SELECT sum(v) FROM test GROUP BY n ORDER BY n", catalog=catalog)
     assert df.collect().to_pydict() == {"n": [1, 2], "v": [3, 7]}
+
+
+def test_sql_count_star():
+    df = daft.from_pydict(
+        {
+            "a": ['{"a": 1}', '{"a": 2}', '{"a": 3}'],
+            "b": [4, 3, 2],
+        }
+    )
+    catalog = SQLCatalog({"df": df})
+    df2 = daft.sql("SELECT count(*) FROM df", catalog)
+    actual = df2.collect().to_pydict()
+    expected = daft.from_pydict({"a": [3]}).collect().to_pydict()
+    assert actual == expected
+    df2 = daft.sql("SELECT count(b) FROM df", catalog)
+    actual = df2.collect().to_pydict()
+    expected = daft.from_pydict({"b": [3]}).collect().to_pydict()
+    assert actual == expected
