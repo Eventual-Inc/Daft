@@ -1,3 +1,4 @@
+use std::borrow::{Borrow, Cow};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::DaftResult;
@@ -283,6 +284,14 @@ macro_rules! physical_compare_op {
 // }
 
 
+fn match_types_for_series<'a>(lhs: &'a Series, rhs: &'a Series) -> DaftResult<(Cow<'a, Series>, Cow<'a, Series>)> {
+    match (lhs.data_type(), rhs.data_type()) {
+        (l, r) if l == r => Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
+         _ => todo!("match_types_for_series")
+    }
+}
+
+
 macro_rules! binary_op_not_implemented {
     ($self:expr, $rhs:expr, $op:ident) => {{
         let left_dtype = $self.data_type();
@@ -291,7 +300,6 @@ macro_rules! binary_op_not_implemented {
         return Err(common_error::DaftError::ComputeError(format!("Binary Op: {op_name} not implemented for {left_dtype}, {right_dtype}")));
     }};
 }
-
 
 pub(crate) trait SeriesBinaryOps: SeriesLike {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
