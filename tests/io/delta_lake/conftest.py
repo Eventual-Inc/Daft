@@ -441,5 +441,6 @@ def deltalake_table(
         table,
         partition_by="part_idx" if partition_generator(0) is not None else None,
         storage_options=storage_options,
+        engine="pyarrow",
     )
     return path, catalog_table, io_config, parts
