@@ -202,7 +202,8 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
         or dt._is_fixed_shape_tensor_type()
     ]
     if non_native_fields:
-        # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict() path.
+        # If there are any contained Arrow types that are not natively supported, convert each
+        # series while checking for ray data extension types.
         logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
         series_dict = dict()
         for name, column in zip(arrow_table.column_names, arrow_table.columns):
