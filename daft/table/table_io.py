@@ -698,7 +698,7 @@ def write_deltalake(
     from packaging.version import parse
     from pyarrow.fs import PyFileSystem
 
-    from daft.io._delta_lake import large_dtypes_kwargs
+    from daft.io._deltalake import large_dtypes_kwargs
     from daft.io.object_store_options import io_config_to_storage_options
     from daft.utils import ARROW_VERSION
 

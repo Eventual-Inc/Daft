@@ -796,7 +796,7 @@ class DataFrame:
 
         from daft import from_pydict
         from daft.io import DataCatalogTable
-        from daft.io._delta_lake import large_dtypes_kwargs
+        from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
