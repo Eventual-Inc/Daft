@@ -698,6 +698,7 @@ def write_deltalake(
     from packaging.version import parse
     from pyarrow.fs import PyFileSystem
 
+    from daft.io._deltalake import large_dtypes_kwargs
     from daft.io.object_store_options import io_config_to_storage_options
     from daft.utils import ARROW_VERSION
 
@@ -745,7 +746,7 @@ def write_deltalake(
     fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
 
     arrow_table = mp.to_arrow()
-    arrow_batch = convert_pyarrow_table(arrow_table, large_dtypes)
+    arrow_batch = convert_pyarrow_table(arrow_table, **large_dtypes_kwargs(large_dtypes))
 
     execution_config = get_context().daft_execution_config
 

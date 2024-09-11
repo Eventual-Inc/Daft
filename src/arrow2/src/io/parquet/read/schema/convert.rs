@@ -300,11 +300,17 @@ fn to_group_type(
 ) -> Option<DataType> {
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
-        if (field_info.name == "key_value" || field_info.name == "map") && fields.len() == 2 {
+        if (field_info.name == "key_value"
+            || field_info.name == "map"
+            || field_info.name == "entries")
+            && fields.len() == 2
+        {
             // For map types, the middle level, named key_value, is a repeated group with "key_value" as the name
             // and two fields, "key" and "value". The "key" field is the key type and the "value" field is the value type.
             // For backward compatibility, the "key_value" group may be named "map" instead of "key_value".
             // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
+            // For compatibility with arrow-rs, the "key_value" group may also be named "entries" instead of "key_value".
+            // https://github.com/apache/arrow-rs/blob/704f90bbf541896387bed030e12a39be308047e8/arrow-array/src/builder/map_builder.rs#L81
             to_struct(fields, options)
         } else {
             Some(DataType::List(Box::new(Field::new(
