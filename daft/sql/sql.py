@@ -27,6 +27,9 @@ class SQLCatalog:
 
     def __str__(self) -> str:
         return str(self._catalog)
+    
+    def register_table(self, name: str, df: DataFrame):
+        self._catalog.register_table(name, df._get_current_builder()._builder)
 
 
 @PublicAPI
