@@ -20,6 +20,7 @@ from daft.runners.partitioning import (
 from daft.table import MicroPartition, table_io
 
 if TYPE_CHECKING:
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -387,7 +388,7 @@ class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    spec_id: int
+    partition_spec: IcebergPartitionSpec
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -415,7 +416,7 @@ class WriteIceberg(SingleOutputInstruction):
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            spec_id=self.spec_id,
+            partition_spec=self.partition_spec,
             io_config=self.io_config,
         )
 

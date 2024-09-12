@@ -647,12 +647,12 @@ class DataFrame:
             DataFrame: The operations that occurred with this write.
         """
 
-        if len(table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned Iceberg tables")
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")

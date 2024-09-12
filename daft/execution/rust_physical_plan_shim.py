@@ -20,6 +20,7 @@ from daft.runners.partitioning import PartitionT
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -314,6 +315,12 @@ def broadcast_join(
     )
 
 
+def _partition_cols_to_projection(partition_cols: list[PyExpr] | None) -> ExpressionsProjection | None:
+    if partition_cols is not None:
+        return ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
+    return None
+
+
 def write_file(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     file_format: FileFormat,
@@ -323,17 +330,13 @@ def write_file(
     partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    if partition_cols is not None:
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
-    else:
-        expr_projection = None
     return physical_plan.file_write(
         input,
         file_format,
         Schema._from_pyschema(schema),
         root_dir,
         compression,
-        expr_projection,
+        _partition_cols_to_projection(partition_cols),
         io_config,
     )
 
@@ -343,7 +346,7 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    spec_id: int,
+    partition_spec: IcebergPartitionSpec,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -351,7 +354,7 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        spec_id=spec_id,
+        partition_spec=partition_spec,
         io_config=io_config,
     )
 

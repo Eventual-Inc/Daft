@@ -133,6 +133,11 @@ impl PartitionIterator {
     }
 }
 
+#[cfg(feature = "python")]
+fn exprs_to_pyexprs(exprs: &[ExprRef]) -> Vec<PyExpr> {
+    exprs.iter().map(|e| e.clone().into()).collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn tabular_write(
@@ -145,11 +150,6 @@ fn tabular_write(
     partition_cols: &Option<Vec<ExprRef>>,
     io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
-    let part_cols = partition_cols.as_ref().map(|cols| {
-        cols.iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<PyExpr>>()
-    });
     let py_iter = py
         .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_file"))?
@@ -159,7 +159,7 @@ fn tabular_write(
             PySchema::from(schema.clone()),
             root_dir,
             compression.clone(),
-            part_cols,
+            partition_cols.as_ref().map(|cols| exprs_to_pyexprs(cols)),
             io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
@@ -184,7 +184,7 @@ fn iceberg_write(
             &iceberg_info.table_location,
             &iceberg_info.iceberg_schema,
             &iceberg_info.iceberg_properties,
-            iceberg_info.spec_id,
+            &iceberg_info.partition_spec,
             iceberg_info
                 .io_config
                 .as_ref()

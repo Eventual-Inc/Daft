@@ -51,6 +51,7 @@ from daft.table import MicroPartition
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 if TYPE_CHECKING:
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -554,7 +555,7 @@ def write_iceberg(
     base_path: str,
     schema: IcebergSchema,
     properties: IcebergTableProperties,
-    spec_id: int | None,
+    partition_spec: IcebergPartitionSpec,
     io_config: IOConfig | None = None,
 ):
     import pyiceberg
@@ -566,7 +567,8 @@ def write_iceberg(
     )
     from pyiceberg.manifest import DataFile, DataFileContent
     from pyiceberg.manifest import FileFormat as IcebergFileFormat
-    from pyiceberg.typedef import Record
+
+    from daft.iceberg.iceberg_write import micropartition_to_arrow_tables
 
     [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
     if isinstance(base_path, pathlib.Path):
@@ -577,58 +579,6 @@ def write_iceberg(
     protocol = get_protocol_from_path(path_str)
     canonicalized_protocol = canonicalize_protocol(protocol)
 
-    data_files = []
-
-    def file_visitor(written_file, protocol=protocol):
-        file_path = f"{protocol}://{written_file.path}"
-        size = written_file.size
-        metadata = written_file.metadata
-
-        kwargs = {
-            "content": DataFileContent.DATA,
-            "file_path": file_path,
-            "file_format": IcebergFileFormat.PARQUET,
-            "partition": Record(),
-            "file_size_in_bytes": size,
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # "sort_order_id": task.sort_order_id,
-            "sort_order_id": None,
-            # Just copy these from the table for now
-            "spec_id": spec_id,
-            "equality_ids": None,
-            "key_metadata": None,
-        }
-
-        if parse(pyiceberg.__version__) >= parse("0.7.0"):
-            from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
-
-            statistics = data_file_statistics_from_parquet_metadata(
-                parquet_metadata=metadata,
-                stats_columns=compute_statistics_plan(schema, properties),
-                parquet_column_mapping=parquet_path_to_id_mapping(schema),
-            )
-
-            data_file = DataFile(
-                **{
-                    **kwargs,
-                    **statistics.to_serialized_dict(),
-                }
-            )
-        else:
-            from pyiceberg.io.pyarrow import fill_parquet_file_metadata
-
-            data_file = DataFile(**kwargs)
-
-            fill_parquet_file_metadata(
-                data_file=data_file,
-                parquet_metadata=metadata,
-                stats_columns=compute_statistics_plan(schema, properties),
-                parquet_column_mapping=parquet_path_to_id_mapping(schema),
-            )
-
-        data_files.append(data_file)
-
     is_local_fs = canonicalized_protocol == "file"
 
     execution_config = get_context().daft_execution_config
@@ -638,41 +588,88 @@ def write_iceberg(
     target_file_size = 512 * 1024 * 1024
     TARGET_ROW_GROUP_SIZE = 128 * 1024 * 1024
 
-    arrow_table = mp.to_arrow()
-
-    file_schema = schema_to_pyarrow(schema)
-
-    # This ensures that we populate field_id for iceberg as well as fill in null values where needed
-    # This might break for nested fields with large_strings
-    # we should test that behavior
-    arrow_table = coerce_pyarrow_table_to_schema(arrow_table, file_schema)
-
-    size_bytes = arrow_table.nbytes
-
-    target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
-    num_rows = len(arrow_table)
-
-    rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
-
-    target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
-    rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
-
     format = pads.ParquetFileFormat()
 
     opts = format.make_write_options(compression="zstd", use_compliant_nested_type=False)
 
-    _write_tabular_arrow_table(
-        arrow_table=arrow_table,
-        schema=file_schema,
-        full_path=resolved_path,
-        format=format,
-        opts=opts,
-        fs=fs,
-        rows_per_file=rows_per_file,
-        rows_per_row_group=rows_per_row_group,
-        create_dir=is_local_fs,
-        file_visitor=file_visitor,
-    )
+    file_schema = schema_to_pyarrow(schema)
+
+    data_files = []
+
+    for arrow_table, path, partition in micropartition_to_arrow_tables(mp, resolved_path, schema, partition_spec):
+
+        def file_visitor(written_file, protocol=protocol):
+            file_path = f"{protocol}://{written_file.path}"
+            size = written_file.size
+            metadata = written_file.metadata
+
+            kwargs = {
+                "content": DataFileContent.DATA,
+                "file_path": file_path,
+                "file_format": IcebergFileFormat.PARQUET,
+                "partition": partition,
+                "file_size_in_bytes": size,
+                # After this has been fixed:
+                # https://github.com/apache/iceberg-python/issues/271
+                # "sort_order_id": task.sort_order_id,
+                "sort_order_id": None,
+                # Just copy these from the table for now
+                "spec_id": partition_spec.spec_id,
+                "equality_ids": None,
+                "key_metadata": None,
+            }
+
+            if parse(pyiceberg.__version__) >= parse("0.7.0"):
+                from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
+
+                statistics = data_file_statistics_from_parquet_metadata(
+                    parquet_metadata=metadata,
+                    stats_columns=compute_statistics_plan(schema, properties),
+                    parquet_column_mapping=parquet_path_to_id_mapping(schema),
+                )
+
+                data_file = DataFile(
+                    **{
+                        **kwargs,
+                        **statistics.to_serialized_dict(),
+                    }
+                )
+            else:
+                from pyiceberg.io.pyarrow import fill_parquet_file_metadata
+
+                data_file = DataFile(**kwargs)
+
+                fill_parquet_file_metadata(
+                    data_file=data_file,
+                    parquet_metadata=metadata,
+                    stats_columns=compute_statistics_plan(schema, properties),
+                    parquet_column_mapping=parquet_path_to_id_mapping(schema),
+                )
+
+            data_files.append(data_file)
+
+        size_bytes = arrow_table.nbytes
+
+        target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+        num_rows = len(arrow_table)
+
+        rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+
+        target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
+        rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
+
+        _write_tabular_arrow_table(
+            arrow_table=arrow_table,
+            schema=file_schema,
+            full_path=path,
+            format=format,
+            opts=opts,
+            fs=fs,
+            rows_per_file=rows_per_file,
+            rows_per_row_group=rows_per_row_group,
+            create_dir=is_local_fs,
+            file_visitor=file_visitor,
+        )
 
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
