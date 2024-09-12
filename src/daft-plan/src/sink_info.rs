@@ -2,16 +2,74 @@ use std::hash::Hash;
 
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 
 #[cfg(feature = "python")]
-use pyo3::PyObject;
+use {
+    daft_core::python::PySchema, daft_dsl::python::PyExpr, pyo3::pyclass, pyo3::pymethods,
+    pyo3::PyObject, pyo3::PyResult,
+};
 
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+
+#[derive(Clone)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub enum PySinkType {
+    InMemory,
+    FileWrite,
+    CatalogWrite,
+}
+
+#[derive(Clone)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub struct PySinkInfo {
+    pub sink_type: PySinkType,
+    pub file_schema: Option<SchemaRef>,
+    pub file_info: Option<OutputFileInfo>,
+    // pub catalog_info: Option<CatalogInfo>,
+}
+
+impl PySinkInfo {
+    pub fn from_output_file_info(file_info: OutputFileInfo, schema: SchemaRef) -> Self {
+        Self {
+            sink_type: PySinkType::FileWrite,
+            file_info: Some(file_info),
+            file_schema: Some(schema),
+        }
+    }
+
+    pub fn from_in_memory() -> Self {
+        Self {
+            sink_type: PySinkType::InMemory,
+            file_info: None,
+            file_schema: None,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PySinkInfo {
+    #[getter]
+    pub fn get_sink_type(&self) -> PySinkType {
+        self.sink_type.clone()
+    }
+
+    #[getter]
+    pub fn get_file_info(&self) -> Option<OutputFileInfo> {
+        self.file_info.clone()
+    }
+
+    #[getter]
+    pub fn get_file_schema(&self) -> Option<PySchema> {
+        self.file_schema.clone().map(|schema| schema.into())
+    }
+}
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -22,12 +80,41 @@ pub enum SinkInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct OutputFileInfo {
     pub root_dir: String,
     pub file_format: FileFormat,
     pub partition_cols: Option<Vec<ExprRef>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl OutputFileInfo {
+    #[getter]
+    pub fn get_root_dir(&self) -> PyResult<String> {
+        Ok(self.root_dir.clone())
+    }
+    #[getter]
+    pub fn get_file_format(&self) -> PyResult<FileFormat> {
+        Ok(self.file_format)
+    }
+    #[getter]
+    pub fn get_partition_cols(&self) -> PyResult<Option<Vec<PyExpr>>> {
+        Ok(self
+            .partition_cols
+            .clone()
+            .map(|cols| cols.into_iter().map(|e| e.into()).collect()))
+    }
+    #[getter]
+    pub fn get_compression(&self) -> PyResult<Option<String>> {
+        Ok(self.compression.clone())
+    }
+    #[getter]
+    pub fn get_io_config(&self) -> PyResult<Option<common_io_config::python::IOConfig>> {
+        Ok(self.io_config.clone().map(|io_config| io_config.into()))
+    }
 }
 
 #[cfg(feature = "python")]

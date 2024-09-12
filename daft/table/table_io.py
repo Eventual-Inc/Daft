@@ -7,7 +7,7 @@ import random
 import time
 from collections.abc import Callable, Generator
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Union
+from typing import IO, TYPE_CHECKING, Any, Iterable, Union
 from uuid import uuid4
 
 import pyarrow as pa
@@ -487,8 +487,8 @@ def write_tabular(
             visited_paths.append(written_file.path)
             partition_idx.append(i)
 
-        _write_tabular_arrow_table(
-            arrow_table=arrow_table,
+        _write_tabular_arrow(
+            arrow_data=arrow_table,
             schema=arrow_table.schema,
             full_path=full_path,
             format=format,
@@ -510,6 +510,69 @@ def write_tabular(
         partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())
         for c_name in partition_values.column_names():
             data_dict[c_name] = partition_values.get_column(c_name).take(partition_idx_series)
+    return MicroPartition.from_pydict(data_dict)
+
+
+def write_tabular_from_iter(
+    arrow_iter: Iterable[pa.RecordBatch],
+    file_format: FileFormat,
+    path: str | pathlib.Path,
+    schema: Schema,
+    compression: str | None = None,
+    io_config: IOConfig | None = None,
+) -> MicroPartition:
+    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+    if isinstance(path, pathlib.Path):
+        path_str = str(path)
+    else:
+        path_str = path
+
+    protocol = get_protocol_from_path(path_str)
+    canonicalized_protocol = canonicalize_protocol(protocol)
+    is_local_fs = canonicalized_protocol == "file"
+
+    estimated_row_size = schema.estimate_row_size_bytes()
+    execution_config = get_context().daft_execution_config
+    TARGET_ROW_GROUP_SIZE = execution_config.parquet_target_row_group_size
+    if file_format == FileFormat.Parquet:
+        format = pads.ParquetFileFormat()
+        inflation_factor = execution_config.parquet_inflation_factor
+        target_file_size = execution_config.parquet_target_filesize
+        opts = format.make_write_options(compression=compression, use_compliant_nested_type=False)
+    elif file_format == FileFormat.Csv:
+        format = pads.CsvFileFormat()
+        opts = None
+        assert compression is None
+        inflation_factor = execution_config.csv_inflation_factor
+        target_file_size = execution_config.csv_target_filesize
+    else:
+        raise ValueError(f"Unsupported file format {file_format}")
+
+    rows_per_file = max(math.ceil(target_file_size * inflation_factor / max(estimated_row_size, 1)), 1)
+    rows_per_row_group = min(
+        math.ceil(TARGET_ROW_GROUP_SIZE * inflation_factor / max(estimated_row_size, 1)), rows_per_file
+    )
+
+    visited_paths = []
+
+    def file_visitor(written_file):
+        visited_paths.append(written_file.path)
+
+    _write_tabular_arrow(
+        arrow_data=arrow_iter,
+        schema=schema.to_pyarrow_schema(),
+        full_path=resolved_path,
+        format=format,
+        opts=opts,
+        fs=fs,
+        rows_per_file=rows_per_file,
+        rows_per_row_group=rows_per_row_group,
+        create_dir=is_local_fs,
+        file_visitor=file_visitor,
+    )
+
+    data_dict: dict[str, Any] = {"path": Series.from_pylist(visited_paths, name="path").cast(DataType.string())}
+
     return MicroPartition.from_pydict(data_dict)
 
 
@@ -661,8 +724,8 @@ def write_iceberg(
 
     opts = format.make_write_options(compression="zstd", use_compliant_nested_type=False)
 
-    _write_tabular_arrow_table(
-        arrow_table=arrow_table,
+    _write_tabular_arrow(
+        arrow_data=arrow_table,
         schema=file_schema,
         full_path=resolved_path,
         format=format,
@@ -767,8 +830,8 @@ def write_deltalake(
 
     opts = format.make_write_options(use_compliant_nested_type=False)
 
-    _write_tabular_arrow_table(
-        arrow_table=arrow_batch,
+    _write_tabular_arrow(
+        arrow_data=arrow_batch,
         schema=None,
         full_path="/",
         format=format,
@@ -836,8 +899,8 @@ def _generate_basename_template(ext: str, version: int | None = None) -> str:
         return f"{uuid4()}-{{i}}.{ext}"
 
 
-def _write_tabular_arrow_table(
-    arrow_table: pa.Table,
+def _write_tabular_arrow(
+    arrow_data: pa.Table | Iterable[pa.RecordBatch],
     schema: pa.Schema | None,
     full_path: str,
     format: pads.FileFormat,
@@ -854,6 +917,9 @@ def _write_tabular_arrow_table(
     from daft.utils import ARROW_VERSION
 
     if ARROW_VERSION >= (7, 0, 0):
+        print("rows_per_file", rows_per_file)
+        print("rows_per_row_group", rows_per_row_group)
+
         kwargs["max_rows_per_file"] = rows_per_file
         kwargs["min_rows_per_group"] = rows_per_row_group
         kwargs["max_rows_per_group"] = rows_per_row_group
@@ -865,7 +931,7 @@ def _write_tabular_arrow_table(
 
     def write_dataset():
         pads.write_dataset(
-            arrow_table,
+            arrow_data,
             schema=schema,
             base_dir=full_path,
             basename_template=basename_template,

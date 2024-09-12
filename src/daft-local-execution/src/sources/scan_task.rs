@@ -38,9 +38,16 @@ impl ScanTaskSource {
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
+        let schema = scan_task.materialized_schema().clone();
         let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
+        let mut is_empty = true;
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
+            is_empty = false;
+        }
+        if is_empty {
+            let mp = Arc::new(MicroPartition::empty(Some(schema)));
+            let _ = sender.send(mp).await;
         }
         Ok(())
     }

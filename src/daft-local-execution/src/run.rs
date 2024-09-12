@@ -2,7 +2,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
+use daft_physical_plan::LocalPhysicalPlan;
 use std::{
     collections::HashMap,
     fs::File,
@@ -18,7 +18,7 @@ use std::{
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_micropartition::python::PyMicroPartition,
-    daft_plan::PyLogicalPlanBuilder,
+    daft_physical_plan::python::PyLocalPhysicalPlan,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -55,13 +55,12 @@ pub struct NativeExecutor {
 #[pymethods]
 impl NativeExecutor {
     #[staticmethod]
-    pub fn from_logical_plan_builder(
-        logical_plan_builder: &PyLogicalPlanBuilder,
+    pub fn from_local_physical_plan(
+        local_physical_plan: &PyLocalPhysicalPlan,
         py: Python,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
-            let logical_plan = logical_plan_builder.builder.build();
-            let local_physical_plan = translate(&logical_plan)?;
+            let local_physical_plan = local_physical_plan.inner.clone();
             Ok(Self {
                 local_physical_plan,
             })
@@ -88,7 +87,7 @@ impl NativeExecutor {
             })
             .collect();
         let out = py.allow_threads(|| {
-            run_local(
+            execute_physical_plan(
                 &self.local_physical_plan,
                 native_psets,
                 cfg.config,
@@ -114,7 +113,7 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
-pub fn run_local(
+pub fn execute_physical_plan(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,

@@ -25,8 +25,8 @@ use daft_core::prelude::{Schema, SchemaRef};
 use daft_dsl::Expr;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    FileWrite, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
+    Sort, UnGroupedAggregate,
 };
 use daft_plan::populate_aggregation_stages;
 use daft_table::{ProbeTable, Table};
@@ -297,21 +297,9 @@ pub fn physical_plan_to_pipeline(
             })?;
             probe_node.boxed()
         }
-        LocalPhysicalPlan::PhysicalWrite(daft_physical_plan::PhysicalWrite {
-            input,
-            file_info,
-            schema,
-            ..
-        }) => {
-            let sink = BlockingSinkNode::new(
-                crate::sinks::physical_write::PhysicalWriteSink::new(
-                    file_info.clone(),
-                    schema.clone(),
-                )
-                .arced(),
-                physical_plan_to_pipeline(input, psets)?,
-            );
-            sink.boxed()
+        LocalPhysicalPlan::FileWrite(FileWrite { input, .. }) => {
+            // File writes are be implemented on the python side
+            physical_plan_to_pipeline(input, psets)?
         }
     };
 

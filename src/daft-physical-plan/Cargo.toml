@@ -6,10 +6,11 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
 strum = {version = "0.26", features = ["derive"]}
 
 [features]
-python = ["daft-plan/python"]
+python = ["dep:pyo3", "daft-plan/python"]
 
 [package]
 edition = {workspace = true}

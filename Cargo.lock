@@ -1687,6 +1687,7 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
+ "daft-physical-plan",
  "daft-plan",
  "daft-scan",
  "daft-scheduler",
@@ -2035,6 +2036,7 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "log",
+ "pyo3",
  "strum 0.26.3",
 ]
 

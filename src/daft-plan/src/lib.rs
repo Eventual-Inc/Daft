@@ -34,7 +34,9 @@ pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+pub use sink_info::{
+    DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo, PySinkInfo, PySinkType,
+};
 #[cfg(feature = "python")]
 use {
     common_file_formats::{
@@ -57,6 +59,8 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyStorageConfig>()?;
     parent.add_class::<NativeStorageConfig>()?;
     parent.add_class::<PythonStorageConfig>()?;
-
+    parent.add_class::<OutputFileInfo>()?;
+    parent.add_class::<PySinkInfo>()?;
+    parent.add_class::<PySinkType>()?;
     Ok(())
 }

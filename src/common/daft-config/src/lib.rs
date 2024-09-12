@@ -54,7 +54,6 @@ pub struct DaftExecutionConfig {
     pub shuffle_aggregation_default_partitions: usize,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
-    pub enable_native_executor: bool,
     pub default_morsel_size: usize,
 }
 
@@ -77,7 +76,6 @@ impl Default for DaftExecutionConfig {
             shuffle_aggregation_default_partitions: 200,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
-            enable_native_executor: false,
             default_morsel_size: 128 * 1024,
         }
     }
@@ -91,12 +89,6 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_aqe = true;
-        }
-        let exec_env_var_name = "DAFT_ENABLE_NATIVE_EXECUTOR";
-        if let Ok(val) = std::env::var(exec_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_native_executor = true;
         }
         cfg
     }

@@ -444,6 +444,17 @@ class FileInfos:
 
     def __len__(self) -> int: ...
 
+class OutputFileInfo:
+    """
+    Metadata for a single output file.
+    """
+
+    root_dir: str
+    file_format: FileFormat
+    partition_cols: list[PyExpr] | None
+    compression: str | None
+    io_config: IOConfig | None
+
 class HTTPConfig:
     """
     I/O configuration for accessing HTTP systems
@@ -1609,6 +1620,29 @@ class AdaptivePhysicalPlanScheduler:
         num_rows: int,
     ) -> None: ...
 
+class PySinkType(Enum):
+    InMemory = "InMemory"
+    FileWrite = "FileWrite"
+    CatalogWrite = "CatalogWrite"
+
+class PySinkInfo:
+    @property
+    def sink_type(self) -> PySinkType: ...
+    @property
+    def file_info(self) -> OutputFileInfo | None: ...
+    @property
+    def file_schema(self) -> PySchema: ...
+
+class PyLocalPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(
+        logical_plan_builder: LogicalPlanBuilder,
+    ) -> PyLocalPhysicalPlan: ...
+    @property
+    def sink_info(self) -> PySinkInfo: ...
+    @property
+    def schema(self) -> PySchema: ...
+
 class LogicalPlanBuilder:
     """
     A logical plan builder, which simplifies constructing logical plans via
@@ -1717,8 +1751,8 @@ class LogicalPlanBuilder:
 
 class NativeExecutor:
     @staticmethod
-    def from_logical_plan_builder(
-        logical_plan_builder: LogicalPlanBuilder,
+    def from_local_physical_plan(
+        local_physical_plan: PyLocalPhysicalPlan,
     ) -> NativeExecutor: ...
     def run(
         self, psets: dict[str, list[PartitionT]], cfg: PyDaftExecutionConfig, results_buffer_size: int | None
@@ -1745,7 +1779,6 @@ class PyDaftExecutionConfig:
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
-        enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -1778,8 +1811,6 @@ class PyDaftExecutionConfig:
     def read_sql_partition_size_bytes(self) -> int: ...
     @property
     def enable_aqe(self) -> bool: ...
-    @property
-    def enable_native_executor(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
 

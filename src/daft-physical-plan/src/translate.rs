@@ -109,11 +109,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             use daft_plan::SinkInfo;
             let input = translate(&sink.input)?;
             match sink.sink_info.as_ref() {
-                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
+                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::file_write(
                     input,
                     sink.schema.clone(),
                     info.clone(),
                 )),
+                #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(_) => {
                     todo!("CatalogInfo not yet implemented")
                 }

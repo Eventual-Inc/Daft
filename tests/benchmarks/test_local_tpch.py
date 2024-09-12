@@ -104,9 +104,9 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
 
     def f():
         if engine == "native":
-            ctx = daft.context.execution_config_ctx(enable_native_executor=True)
+            ctx = daft.context.set_runner_native()
         elif engine == "python":
-            ctx = daft.context.execution_config_ctx(enable_native_executor=False)
+            ctx = daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
 

@@ -34,7 +34,7 @@ pub enum LocalPhysicalPlan {
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
-    PhysicalWrite(PhysicalWrite),
+    FileWrite(FileWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
     // #[cfg(feature = "python")]
@@ -190,14 +190,16 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn physical_write(
+    pub(crate) fn file_write(
         input: LocalPhysicalPlanRef,
         schema: SchemaRef,
         file_info: OutputFileInfo,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+        let input_schema = input.schema().clone();
+        LocalPhysicalPlan::FileWrite(FileWrite {
             input,
-            schema,
+            data_schema: input_schema,
+            file_schema: schema,
             file_info,
             plan_stats: PlanStats {},
         })
@@ -215,6 +217,7 @@ impl LocalPhysicalPlan {
             | LocalPhysicalPlan::Sort(Sort { schema, .. })
             | LocalPhysicalPlan::HashJoin(HashJoin { schema, .. })
             | LocalPhysicalPlan::Concat(Concat { schema, .. }) => schema,
+            LocalPhysicalPlan::FileWrite(FileWrite { data_schema, .. }) => data_schema,
             LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
         }
@@ -307,9 +310,10 @@ pub struct Concat {
 
 #[derive(Debug)]
 
-pub struct PhysicalWrite {
+pub struct FileWrite {
     pub input: LocalPhysicalPlanRef,
-    pub schema: SchemaRef,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo,
     pub plan_stats: PlanStats,
 }
