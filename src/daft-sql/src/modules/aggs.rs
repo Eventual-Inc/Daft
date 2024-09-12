@@ -66,12 +66,12 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                 _ => unsupported_sql_err!("Wildcard is not supported in this context"),
             }
         }
-        _ => {
-            // SQL default COUNT ignores nulls.
-            ensure!(inputs.len() == 1, "count takes exactly one argument");
-            let input = planner.plan_function_arg(&inputs[0])?;
+        [expr] => {
+            // SQL default COUNT ignores nulls
+            let input = planner.plan_function_arg(expr)?;
             input.count(daft_core::count_mode::CountMode::Valid)
         }
+        _ => unsupported_sql_err!("COUNT takes exactly one argument"),
     })
 }
 
