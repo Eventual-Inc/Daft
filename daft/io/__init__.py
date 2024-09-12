@@ -11,7 +11,7 @@ from daft.daft import (
     S3Credentials,
 )
 from daft.io._csv import read_csv
-from daft.io._delta_lake import read_deltalake
+from daft.io._deltalake import read_deltalake
 from daft.io._hudi import read_hudi
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
