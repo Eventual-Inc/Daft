@@ -6,7 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
+use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use daft_table::{ProbeTable, ProbeTableBuilder, Table};
 
 enum ProbeTableState {
@@ -49,18 +49,7 @@ impl ProbeTableState {
             panic!("add_tables can only be used during the Building Phase")
         }
     }
-}
-
-impl BlockingSinkState for ProbeTableState {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn finalize(&mut self) {
+    fn finalize(&mut self) -> DaftResult<()> {
         if let Self::Building {
             probe_table_builder,
             tables,
@@ -74,6 +63,7 @@ impl BlockingSinkState for ProbeTableState {
                 probe_table: Arc::new(pt),
                 tables: Arc::new(tables.clone()),
             };
+            Ok(())
         } else {
             panic!("finalize can only be used during the Building Phase")
         }
@@ -81,20 +71,18 @@ impl BlockingSinkState for ProbeTableState {
 }
 
 pub(crate) struct HashJoinBuildSink {
-    key_schema: SchemaRef,
-    projection: Vec<ExprRef>,
+    probe_table_state: ProbeTableState,
 }
 
 impl HashJoinBuildSink {
-    pub(crate) fn new(key_schema: SchemaRef, projection: Vec<ExprRef>) -> Self {
-        Self {
-            key_schema,
-            projection,
-        }
+    pub(crate) fn new(key_schema: SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+        Ok(Self {
+            probe_table_state: ProbeTableState::new(&key_schema, projection)?,
+        })
     }
 
-    pub(crate) fn arced(self) -> Arc<dyn BlockingSink> {
-        Arc::new(self)
+    pub(crate) fn boxed(self) -> Box<dyn BlockingSink> {
+        Box::new(self)
     }
 }
 
@@ -103,47 +91,21 @@ impl BlockingSink for HashJoinBuildSink {
         "HashJoinBuildSink"
     }
 
-    fn sink(
-        &self,
-        input: &Arc<MicroPartition>,
-        state: &mut dyn BlockingSinkState,
-    ) -> DaftResult<BlockingSinkStatus> {
-        let probe_table_state = state
-            .as_any_mut()
-            .downcast_mut::<ProbeTableState>()
-            .unwrap();
-        probe_table_state.add_tables(input)?;
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
+        self.probe_table_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
 
-    fn finalize(
-        &self,
-        states: &[&dyn BlockingSinkState],
-    ) -> DaftResult<Option<PipelineResultType>> {
-        assert_eq!(states.len(), 1);
-        let probe_table_state = states[0]
-            .as_any()
-            .downcast_ref::<ProbeTableState>()
-            .unwrap();
+    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
+        self.probe_table_state.finalize()?;
         if let ProbeTableState::Done {
             probe_table,
             tables,
-        } = &probe_table_state
+        } = &self.probe_table_state
         {
             Ok(Some((probe_table.clone(), tables.clone()).into()))
         } else {
             panic!("finalize should only be called after the probe table is built")
         }
-    }
-
-    fn max_parallelism(&self) -> usize {
-        1
-    }
-
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(ProbeTableState::new(
-            &self.key_schema,
-            self.projection.clone(),
-        )?))
     }
 }

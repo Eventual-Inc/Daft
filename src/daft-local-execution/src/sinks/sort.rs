@@ -5,30 +5,18 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
+use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use crate::pipeline::PipelineResultType;
 pub struct SortSink {
     sort_by: Vec<ExprRef>,
     descending: Vec<bool>,
+    state: SortState,
 }
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
-    Done(Vec<Arc<MicroPartition>>),
-}
-
-impl BlockingSinkState for SortState {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn finalize(&mut self) {
-        if let SortState::Building(parts) = self {
-            *self = SortState::Done(std::mem::take(parts));
-        }
-    }
+    #[allow(dead_code)]
+    Done(Arc<MicroPartition>),
 }
 
 impl SortSink {
@@ -36,22 +24,18 @@ impl SortSink {
         Self {
             sort_by,
             descending,
+            state: SortState::Building(vec![]),
         }
     }
-    pub fn arced(self) -> Arc<dyn BlockingSink> {
-        Arc::new(self)
+    pub fn boxed(self) -> Box<dyn BlockingSink> {
+        Box::new(self)
     }
 }
 
 impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
-    fn sink(
-        &self,
-        input: &Arc<MicroPartition>,
-        state: &mut dyn BlockingSinkState,
-    ) -> DaftResult<BlockingSinkStatus> {
-        let sort_state = state.as_any_mut().downcast_mut::<SortState>().unwrap();
-        if let SortState::Building(parts) = sort_state {
+    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
+        if let SortState::Building(parts) = &mut self.state {
             parts.push(input.clone());
         } else {
             panic!("SortSink should be in Building state");
@@ -60,33 +44,22 @@ impl BlockingSink for SortSink {
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn finalize(
-        &self,
-        states: &[&dyn BlockingSinkState],
-    ) -> DaftResult<Option<PipelineResultType>> {
-        let parts = states
-            .iter()
-            .flat_map(|state| {
-                let sort_state = state.as_any().downcast_ref::<SortState>().unwrap();
-                if let SortState::Done(parts) = sort_state {
-                    parts
-                } else {
-                    panic!("sortState should be in Done state");
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let concated =
-            MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-        let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
-        Ok(Some(sorted.into()))
+    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
+        if let SortState::Building(parts) = &mut self.state {
+            assert!(
+                !parts.is_empty(),
+                "We can not finalize SortSink with no data"
+            );
+            let concated =
+                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
+            self.state = SortState::Done(sorted.clone());
+            Ok(Some(sorted.into()))
+        } else {
+            panic!("SortSink should be in Building state");
+        }
     }
-
     fn name(&self) -> &'static str {
-        "SortSink"
-    }
-
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(SortState::Building(vec![])))
+        "SortResult"
     }
 }
