@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pyiceberg.typedef import Record
 
 
-def _coerce_pyarrow_table_to_schema(pa_table: pa.Table, schema: IcebergSchema) -> pa.Table:
+def _coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "IcebergSchema") -> "pa.Table":
     """Coerces a PyArrow table to the supplied schema
 
     1. For each field in `pa_table`, cast it to the field in `input_schema` if one with a matching name
@@ -27,7 +27,7 @@ def _coerce_pyarrow_table_to_schema(pa_table: pa.Table, schema: IcebergSchema) -
 
     Args:
         pa_table (pa.Table): Table to coerce
-        input_schema (pa.Schema): Schema to coerce to
+        schema (IcebergSchema): PyIceberg schema to coerce to
 
     Returns:
         pa.Table: Table with schema == `input_schema`
@@ -58,8 +58,8 @@ def _coerce_pyarrow_table_to_schema(pa_table: pa.Table, schema: IcebergSchema) -
 
 
 def _determine_partitions(
-    spec: IcebergPartitionSpec, schema: IcebergSchema, table: MicroPartition
-) -> List[_TablePartition]:
+    spec: "IcebergPartitionSpec", schema: "IcebergSchema", arrow_table: "pa.Table"
+) -> List["_TablePartition"]:
     """Based on https://github.com/apache/iceberg-python/blob/d8d509ff1bc33040b9f6c90c28ee47ac7437945d/pyiceberg/io/pyarrow.py#L2669"""
 
     import pyarrow as pa
@@ -72,7 +72,7 @@ def _determine_partitions(
         (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
     ]
 
-    def partition_transform(series: Series, transform: Transform) -> Optional[pa.Array]:
+    def partition_transform(array: pa.Array, transform: Transform) -> Optional[pa.Array]:
         from pyiceberg.transforms import (
             BucketTransform,
             DayTransform,
@@ -82,6 +82,8 @@ def _determine_partitions(
             TruncateTransform,
             YearTransform,
         )
+
+        series = Series.from_arrow(array)
 
         transformed = None
         if isinstance(transform, IdentityTransform):
@@ -107,12 +109,10 @@ def _determine_partitions(
 
     partition_values_table = pa.table(
         {
-            str(partition.field_id): partition_transform(table.get_column(field.name), partition.transform)
+            str(partition.field_id): partition_transform(arrow_table[field.name], partition.transform)
             for partition, field in partition_columns
         }
     )
-
-    arrow_table = table.to_arrow()
 
     # Sort by partitions
     sort_indices = pa.compute.sort_indices(
@@ -146,8 +146,8 @@ def _determine_partitions(
 
 
 def micropartition_to_arrow_tables(
-    table: MicroPartition, path: str, schema: IcebergSchema, partition_spec: IcebergPartitionSpec
-) -> List[Tuple[pa.Table, str, Record]]:
+    table: MicroPartition, path: str, schema: "IcebergSchema", partition_spec: "IcebergPartitionSpec"
+) -> List[Tuple["pa.Table", str, "Record"]]:
     """
     Converts a MicroPartition to a list of Arrow tables with paths, partitioning the data if necessary.
 
@@ -162,17 +162,17 @@ def micropartition_to_arrow_tables(
     """
     from pyiceberg.typedef import Record
 
-    if partition_spec.is_unpartitioned():
-        arrow_table = table.to_arrow()
-        arrow_table = _coerce_pyarrow_table_to_schema(arrow_table, schema)
+    arrow_table = table.to_arrow()
+    arrow_table = _coerce_pyarrow_table_to_schema(arrow_table, schema)
 
+    if partition_spec.is_unpartitioned():
         return [(arrow_table, path, Record())]
     else:
-        partitions = _determine_partitions(partition_spec, schema, table)
+        partitions = _determine_partitions(partition_spec, schema, arrow_table)
 
         return [
             (
-                _coerce_pyarrow_table_to_schema(partition.arrow_table_partition, schema),
+                partition.arrow_table_partition,
                 f"{path}/{partition.partition_key.to_path()}",
                 partition.partition_key.partition,
             )
