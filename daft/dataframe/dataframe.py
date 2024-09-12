@@ -23,7 +23,6 @@ from typing import (
     Literal,
     Mapping,
     Optional,
-    Set,
     Tuple,
     TypeVar,
     Union,
@@ -441,7 +440,7 @@ class DataFrame:
                 headers = row.keys()
             else:
                 if headers != row.keys():
-                    raise ValueError(f"Data dictionaries have different schema.")
+                    raise ValueError("Data dictionaries have different schema.")
         return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
 
     @classmethod
