@@ -20,7 +20,6 @@ jobs:
     timeout-minutes: 15
     env:
       package-name: getdaft
-      python-version: '3.8'
     strategy:
       fail-fast: false
       matrix:
