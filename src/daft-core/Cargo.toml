@@ -34,10 +34,6 @@ html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
-jaq-core = {workspace = true}
-jaq-interpret = {workspace = true}
-jaq-parse = {workspace = true}
-jaq-std = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"
@@ -46,7 +42,6 @@ num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde = {workspace = true}
-serde_json = {workspace = true}
 sketches-ddsketch = {workspace = true}
 unicode-normalization = "0.1.23"
 
