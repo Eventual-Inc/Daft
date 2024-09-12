@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_dsl::{AggExpr, Expr, ExprRef, LiteralValue};
-use sqlparser::ast::FunctionArg;
+use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
+use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use crate::{
     ensure,
@@ -34,20 +34,50 @@ impl SQLModule for SQLModuleAggs {
 
 impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
-        to_expr(self, inputs.as_slice())
+        // COUNT(*) needs a bit of extra handling, so we process that outside of `to_expr`
+        if let AggExpr::Count(_, _) = self {
+            handle_count(inputs, planner)
+        } else {
+            let inputs = self.args_to_expr_unnamed(inputs, planner)?;
+            to_expr(self, inputs.as_slice())
+        }
     }
+}
+
+fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+    Ok(match inputs {
+        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match planner.relation_opt() {
+            Some(rel) => {
+                let schema = rel.schema();
+                col(schema.fields[0].name.clone())
+                    .count(daft_core::count_mode::CountMode::All)
+                    .alias("count")
+            }
+            None => unsupported_sql_err!("Wildcard is not supported in this context"),
+        },
+        [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
+            match planner.relation_opt() {
+                Some(rel) if name.to_string() == rel.name => {
+                    let schema = rel.schema();
+                    col(schema.fields[0].name.clone())
+                        .count(daft_core::count_mode::CountMode::All)
+                        .alias("count")
+                }
+                _ => unsupported_sql_err!("Wildcard is not supported in this context"),
+            }
+        }
+        [expr] => {
+            // SQL default COUNT ignores nulls
+            let input = planner.plan_function_arg(expr)?;
+            input.count(daft_core::count_mode::CountMode::Valid)
+        }
+        _ => unsupported_sql_err!("COUNT takes exactly one argument"),
+    })
 }
 
 pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
-        AggExpr::Count(_, _) => {
-            // SQL default COUNT ignores nulls.
-            ensure!(args.len() == 1, "count takes exactly one argument");
-            Ok(args[0]
-                .clone()
-                .count(daft_core::count_mode::CountMode::Valid))
-        }
+        AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())

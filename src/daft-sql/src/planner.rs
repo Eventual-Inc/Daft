@@ -31,13 +31,16 @@ use sqlparser::{
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
 pub(crate) struct Relation {
-    inner: LogicalPlanBuilder,
-    name: String,
+    pub(crate) inner: LogicalPlanBuilder,
+    pub(crate) name: String,
 }
 
 impl Relation {
     pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
         Relation { inner, name }
+    }
+    pub(crate) fn schema(&self) -> SchemaRef {
+        self.inner.schema()
     }
 }
 
@@ -68,6 +71,10 @@ impl SQLPlanner {
     /// Some methods such as `plan_expr` do not require the relation to be set.
     fn relation_mut(&mut self) -> &mut Relation {
         self.current_relation.as_mut().expect("relation not set")
+    }
+
+    pub(crate) fn relation_opt(&self) -> Option<&Relation> {
+        self.current_relation.as_ref()
     }
 
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
