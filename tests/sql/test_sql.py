@@ -118,8 +118,8 @@ def test_sql_groupby_agg():
 def test_sql_count_star():
     df = daft.from_pydict(
         {
-            "a": ['{"a": 1}', '{"a": 2}', '{"a": 3}'],
-            "b": [4, 3, 2],
+            "a": ["a", "b", None, "c"],
+            "b": [4, 3, 2, None],
         }
     )
     catalog = SQLCatalog({"df": df})
