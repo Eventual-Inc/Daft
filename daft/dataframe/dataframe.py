@@ -2549,7 +2549,8 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pylist()
+
+        return list(self.iter_rows())
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
