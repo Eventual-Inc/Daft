@@ -13,13 +13,12 @@ use crate::{
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray,
             LogicalArrayImpl, MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, Float32Array,
-        Float64Array, ImageMode, Int16Array, Int32Array, Int64Array, Int8Array, TimeUnit,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
+        Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display_table::display_time64,
-    with_match_daft_logical_primitive_types,
+    with_match_daft_logical_primitive_types, with_match_numeric_daft_types,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -40,7 +39,6 @@ use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
     crate::ffi,
-    crate::with_match_numeric_daft_types,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyArray3, PyReadonlyArrayDyn},
@@ -1414,11 +1412,7 @@ impl TensorArray {
                 let data_iterator = self.data_array().into_iter();
                 let validity = self.data_array().validity();
                 let shape_and_data_iter = shape_iterator.zip(data_iterator);
-                let zero_series = Int64Array::from((
-                    "item",
-                    Box::new(arrow2::array::Int64Array::from_iter([Some(0)].iter())),
-                ))
-                .into_series();
+                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 let mut offsets = Vec::<usize>::new();
@@ -1609,37 +1603,6 @@ impl TensorArray {
     }
 }
 
-macro_rules! implement_cast_for_dense_with_inner_dtype {
-    ($dtype:ty, $array_type:ty, $n_values:ident, $non_zero_indices_array:ident, $non_zero_values_array:ident, $offsets:ident) => {{
-        let mut values = vec![0 as $dtype; $n_values];
-        let validity = $non_zero_values_array.validity();
-        for (i, indices) in $non_zero_indices_array.into_iter().enumerate() {
-            let is_valid = validity.map_or(true, |v| v.get_bit(i));
-            if !is_valid {
-                continue;
-            }
-            for j in 0..indices.unwrap().len() {
-                let index = $non_zero_indices_array
-                    .get(i)
-                    .unwrap()
-                    .u64()
-                    .unwrap()
-                    .as_arrow()
-                    .value(j) as usize;
-                let list_start_offset = $offsets.start_end(i).0;
-                values[list_start_offset + index] = $non_zero_values_array
-                    .get(i)
-                    .unwrap()
-                    .downcast::<$array_type>()
-                    .unwrap()
-                    .as_arrow()
-                    .value(j);
-            }
-        }
-        Box::new(arrow2::array::PrimitiveArray::from_vec(values))
-    }};
-}
-
 fn cast_sparse_to_dense_for_inner_dtype(
     inner_dtype: &DataType,
     n_values: usize,
@@ -1647,92 +1610,27 @@ fn cast_sparse_to_dense_for_inner_dtype(
     non_zero_values_array: &ListArray,
     offsets: &Offsets<i64>,
 ) -> DaftResult<Box<dyn arrow2::array::Array>> {
-    let item: Box<dyn arrow2::array::Array> = match inner_dtype {
-        DataType::Int8 => implement_cast_for_dense_with_inner_dtype!(
-            i8,
-            Int8Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::UInt8 => implement_cast_for_dense_with_inner_dtype!(
-            u8,
-            UInt8Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::Int16 => implement_cast_for_dense_with_inner_dtype!(
-            i16,
-            Int16Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::UInt16 => implement_cast_for_dense_with_inner_dtype!(
-            u16,
-            UInt16Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::Int32 => implement_cast_for_dense_with_inner_dtype!(
-            i32,
-            Int32Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::UInt32 => implement_cast_for_dense_with_inner_dtype!(
-            u32,
-            UInt32Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::Int64 => implement_cast_for_dense_with_inner_dtype!(
-            i64,
-            Int64Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::UInt64 => implement_cast_for_dense_with_inner_dtype!(
-            u64,
-            UInt64Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::Float32 => implement_cast_for_dense_with_inner_dtype!(
-            f32,
-            Float32Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        DataType::Float64 => implement_cast_for_dense_with_inner_dtype!(
-            f64,
-            Float64Array,
-            n_values,
-            non_zero_indices_array,
-            non_zero_values_array,
-            offsets
-        ),
-        _ => panic!(
-            "Wrong dtype when casting from SparseTensor to Tensor: {}",
-            inner_dtype
-        ),
-    };
+    let item: Box<dyn arrow2::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
+            let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
+            let validity = non_zero_values_array.validity();
+            for i in 0..non_zero_values_array.len() {
+                let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                if !is_valid {
+                    continue;
+                }
+                let index_series: Series = non_zero_indices_array.get(i).unwrap();
+                let index_array = index_series.u64().unwrap().as_arrow();
+                let values_series: Series = non_zero_values_array.get(i).unwrap();
+                let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
+                .unwrap()
+                .as_arrow();
+                for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                    let list_start_offset = offsets.start_end(i).0;
+                    values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
+                }
+            }
+            Box::new(arrow2::array::PrimitiveArray::from_vec(values))
+    });
     Ok(item)
 }
 
@@ -1993,11 +1891,7 @@ impl FixedShapeTensorArray {
             ) => {
                 let physical_arr = &self.physical;
                 let validity = self.physical.validity();
-                let zero_series = Int64Array::from((
-                    "item",
-                    Box::new(arrow2::array::Int64Array::from_iter([Some(0)].iter())),
-                ))
-                .into_series();
+                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 let mut offsets = Vec::<usize>::new();
