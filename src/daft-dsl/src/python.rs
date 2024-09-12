@@ -872,11 +872,6 @@ impl PyExpr {
         use crate::functions::partitioning::iceberg_truncate;
         Ok(iceberg_truncate(self.into(), w).into())
     }
-
-    pub fn json_query(&self, _query: &str) -> PyResult<Self> {
-        use crate::functions::json::query;
-        Ok(query(self.into(), _query).into())
-    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
