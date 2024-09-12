@@ -125,9 +125,9 @@ def test_sql_count_star():
     catalog = SQLCatalog({"df": df})
     df2 = daft.sql("SELECT count(*) FROM df", catalog)
     actual = df2.collect().to_pydict()
-    expected = daft.from_pydict({"a": [3]}).collect().to_pydict()
+    expected = df.count().collect().to_pydict()
     assert actual == expected
     df2 = daft.sql("SELECT count(b) FROM df", catalog)
     actual = df2.collect().to_pydict()
-    expected = daft.from_pydict({"b": [3]}).collect().to_pydict()
+    expected = df.agg(daft.col("b").count()).collect().to_pydict()
     assert actual == expected
