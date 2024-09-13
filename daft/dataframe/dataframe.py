@@ -2546,10 +2546,6 @@ class DataFrame:
         Returns:
             List[dict[str, Any]]: List of python dict objects.
         """
-        self.collect()
-        result = self._result
-        assert result is not None
-
         return list(self.iter_rows())
 
     @DataframePublicAPI
