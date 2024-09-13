@@ -120,7 +120,6 @@ class NativeRunner(Runner[MicroPartition]):
                     for part in executor.run(psets_mp, daft_execution_config, results_buffer_size):
                         yield from MicroPartition._from_pymicropartition(part).to_arrow().to_batches()
 
-                # print type of arrow_iter
                 write_result = write_tabular_from_iter(
                     to_arrow_iter(executor, psets_mp, daft_execution_config, results_buffer_size),
                     file_info.file_format,
@@ -129,7 +128,6 @@ class NativeRunner(Runner[MicroPartition]):
                     file_info.compression,
                     file_info.io_config,
                 )
-                print(write_result)
 
             yield from [NativeMaterializedResult(write_result)]
 
