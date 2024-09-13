@@ -156,16 +156,14 @@ impl SQLPlanner {
 
         if !groupby_exprs.is_empty() {
             let rel = self.relation_mut();
-            rel.inner = rel
-                .inner
-                .aggregate(to_select.clone(), groupby_exprs.clone())?;
+            rel.inner = rel.inner.aggregate(to_select, groupby_exprs.clone())?;
         } else if !to_select.is_empty() {
             let rel = self.relation_mut();
             let has_aggs = to_select.iter().any(has_agg);
             if has_aggs {
-                rel.inner = rel.inner.aggregate(to_select.clone(), vec![])?;
+                rel.inner = rel.inner.aggregate(to_select, vec![])?;
             } else {
-                rel.inner = rel.inner.select(to_select.clone())?;
+                rel.inner = rel.inner.select(to_select)?;
             }
         }
 
