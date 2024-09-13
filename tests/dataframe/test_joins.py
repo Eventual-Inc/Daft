@@ -1075,6 +1075,7 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     )
 
 
+# the partition size should be the min(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
 @pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
 def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitions):
     if shuffle_join_default_partitions is None:
@@ -1083,25 +1084,28 @@ def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitio
         min_partitions = shuffle_join_default_partitions
 
     with daft.execution_config_ctx(shuffle_join_default_partitions=shuffle_join_default_partitions):
-        for partition_size in [1, min_partitions, min_partitions + 1]:
+        right_partition_size = 50
+        for left_partition_size in [1, min_partitions, min_partitions + 1]:
             df_left = daft.from_pydict(
                 {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
             )
-            df_left = df_left.into_partitions(partition_size)
+            df_left = df_left.into_partitions(left_partition_size)
 
-            df_right = daft.from_pydict({"group": [i for i in range(50)], "value": [i for i in range(50)]})
+            df_right = daft.from_pydict(
+                {"group": [i for i in range(right_partition_size)], "value": [i for i in range(right_partition_size)]}
+            )
 
-            df_right = df_right.into_partitions(50)
+            df_right = df_right.into_partitions(right_partition_size)
 
-            actual = df_left.join(df_right, on="group", how="left", strategy="hash").collect()
+            actual = df_left.join(df_right, on="group", how="inner", strategy="hash").collect()
+            n_partitions = actual.num_partitions()
+            expected_n_partitions = min(min_partitions, max(left_partition_size, right_partition_size))
+            assert n_partitions == expected_n_partitions
 
-            assert actual.num_partitions() == min(min_partitions, partition_size)
 
-
-# sort_merge and broadcast will always retain the number of partitions of the largest input
+# for sort_merge, the result partitions should always be max(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
 @pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
-@pytest.mark.parametrize("strategy", ["sort_merge", "broadcast"])
-def test_join_result_partitions_for_broadcast_and_sortmerge(shuffle_join_default_partitions, strategy):
+def test_join_result_partitions_for_sortmerge(shuffle_join_default_partitions):
     if shuffle_join_default_partitions is None:
         min_partitions = get_context().daft_execution_config.shuffle_join_default_partitions
     else:
@@ -1118,6 +1122,6 @@ def test_join_result_partitions_for_broadcast_and_sortmerge(shuffle_join_default
 
             df_right = df_right.into_partitions(50)
 
-            actual = df_left.join(df_right, on="group", how="left", strategy=strategy).collect()
+            actual = df_left.join(df_right, on="group", how="inner", strategy="sort_merge").collect()
 
-            assert actual.num_partitions() == 50
+            assert actual.num_partitions() == max(partition_size, 50)

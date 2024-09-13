@@ -436,6 +436,9 @@ pub(super) fn translate_single_logical_node(
                 left_clustering_spec.num_partitions(),
                 right_clustering_spec.num_partitions(),
             );
+            println!("1. num_partitions: {}", num_partitions);
+            let num_partitions = min(num_partitions, cfg.shuffle_join_default_partitions);
+            println!("2. num_partitions: {}", num_partitions);
 
             let is_left_hash_partitioned =
                 matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
