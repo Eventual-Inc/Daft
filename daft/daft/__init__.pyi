@@ -446,7 +446,7 @@ class FileInfos:
 
 class OutputFileInfo:
     """
-    Metadata for a single output file.
+    Parameters for writing to files.
     """
 
     root_dir: str

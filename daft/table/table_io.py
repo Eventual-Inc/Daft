@@ -917,9 +917,6 @@ def _write_tabular_arrow(
     from daft.utils import ARROW_VERSION
 
     if ARROW_VERSION >= (7, 0, 0):
-        print("rows_per_file", rows_per_file)
-        print("rows_per_row_group", rows_per_row_group)
-
         kwargs["max_rows_per_file"] = rows_per_file
         kwargs["min_rows_per_group"] = rows_per_row_group
         kwargs["max_rows_per_group"] = rows_per_row_group

@@ -497,7 +497,7 @@ impl S3Config {
     }
 
     /// AWS Verify SSL
-
+    #[getter]
     pub fn verify_ssl(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.verify_ssl))
     }
