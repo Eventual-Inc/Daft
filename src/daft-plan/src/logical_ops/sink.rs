@@ -8,10 +8,7 @@ use daft_dsl::{resolve_exprs, ExprRef};
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
 
 #[cfg(feature = "python")]
-use crate::{
-    sink_info::{CatalogInfo, CatalogType},
-    IcebergCatalogInfo,
-};
+use crate::sink_info::CatalogType;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -54,27 +51,7 @@ impl Sink {
                 io_config: io_config.clone(),
             })),
             #[cfg(feature = "python")]
-            SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
-                CatalogType::Iceberg(IcebergCatalogInfo {
-                    table_name,
-                    table_location,
-                    partition_spec,
-                    iceberg_schema,
-                    iceberg_properties,
-                    io_config,
-                }) => Arc::new(SinkInfo::CatalogInfo(CatalogInfo {
-                    catalog: CatalogType::Iceberg(IcebergCatalogInfo {
-                        table_name: table_name.clone(),
-                        table_location: table_location.clone(),
-                        partition_spec: partition_spec.clone(),
-                        iceberg_schema: iceberg_schema.clone(),
-                        iceberg_properties: iceberg_properties.clone(),
-                        io_config: io_config.clone(),
-                    }),
-                    catalog_columns: catalog_info.catalog_columns.clone(),
-                })),
-                CatalogType::DeltaLake(_) | CatalogType::Lance(_) => sink_info,
-            },
+            SinkInfo::CatalogInfo(_) => sink_info,
         };
 
         let fields = match sink_info.as_ref() {
