@@ -111,8 +111,20 @@ def test_sql_global_agg():
 def test_sql_groupby_agg():
     df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
     catalog = SQLCatalog({"test": df})
-    df = daft.sql("SELECT sum(v) FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert df.collect().to_pydict() == {"n": [1, 2], "v": [3, 7]}
+    actual = daft.sql("SELECT sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert actual.collect().to_pydict() == {"sum": [3, 7]}
+
+    # test with grouping column
+    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert actual.collect().to_pydict() == {"n": [1, 2], "sum": [3, 7]}
+
+    # test with multiple columns
+    actual = daft.sql("SELECT max(v) as max, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert actual.collect().to_pydict() == {"max": [2, 4], "sum": [3, 7]}
+
+    # test with aliased grouping key
+    actual = daft.sql("SELECT n as n_alias, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert actual.collect().to_pydict() == {"n_alias": [1, 2], "sum": [3, 7]}
 
 
 def test_sql_count_star():
