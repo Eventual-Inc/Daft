@@ -315,12 +315,6 @@ def broadcast_join(
     )
 
 
-def _partition_cols_to_projection(partition_cols: list[PyExpr] | None) -> ExpressionsProjection | None:
-    if partition_cols is not None:
-        return ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
-    return None
-
-
 def write_file(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     file_format: FileFormat,
@@ -330,13 +324,17 @@ def write_file(
     partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    if partition_cols is not None:
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
+    else:
+        expr_projection = None
     return physical_plan.file_write(
         input,
         file_format,
         Schema._from_pyschema(schema),
         root_dir,
         compression,
-        _partition_cols_to_projection(partition_cols),
+        expr_projection,
         io_config,
     )
 
