@@ -1747,6 +1747,7 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
+        shuffle_join_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
@@ -1778,6 +1779,8 @@ class PyDaftExecutionConfig:
     def csv_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
+    @property
+    def shuffle_join_default_partitions(self) -> int: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
     @property

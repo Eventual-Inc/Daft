@@ -645,7 +645,7 @@ pub(super) fn translate_single_logical_node(
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             left_physical,
-                            num_partitions,
+                            min(num_partitions, cfg.shuffle_join_default_partitions),
                             left_on.clone(),
                         ));
                         left_physical =
@@ -656,7 +656,7 @@ pub(super) fn translate_single_logical_node(
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             right_physical,
-                            num_partitions,
+                            min(num_partitions, cfg.shuffle_join_default_partitions),
                             right_on.clone(),
                         ));
                         right_physical =

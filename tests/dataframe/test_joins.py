@@ -3,7 +3,9 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
@@ -1071,3 +1073,51 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
         pa.Table.from_pydict(expected), "a"
     )
+
+
+@pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
+def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitions):
+    if shuffle_join_default_partitions is None:
+        min_partitions = get_context().daft_execution_config.shuffle_join_default_partitions
+    else:
+        min_partitions = shuffle_join_default_partitions
+
+    with daft.execution_config_ctx(shuffle_join_default_partitions=shuffle_join_default_partitions):
+        for partition_size in [1, min_partitions, min_partitions + 1]:
+            df_left = daft.from_pydict(
+                {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
+            )
+            df_left = df_left.into_partitions(partition_size)
+
+            df_right = daft.from_pydict({"group": [i for i in range(50)], "value": [i for i in range(50)]})
+
+            df_right = df_right.into_partitions(50)
+
+            actual = df_left.join(df_right, on="group", how="left", strategy="hash").collect()
+
+            assert actual.num_partitions() == min(min_partitions, partition_size)
+
+
+# sort_merge and broadcast will always retain the number of partitions of the largest input
+@pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
+@pytest.mark.parametrize("strategy", ["sort_merge", "broadcast"])
+def test_join_result_partitions_for_broadcast_and_sortmerge(shuffle_join_default_partitions, strategy):
+    if shuffle_join_default_partitions is None:
+        min_partitions = get_context().daft_execution_config.shuffle_join_default_partitions
+    else:
+        min_partitions = shuffle_join_default_partitions
+
+    with daft.execution_config_ctx(shuffle_join_default_partitions=shuffle_join_default_partitions):
+        for partition_size in [1, min_partitions, min_partitions + 1]:
+            df_left = daft.from_pydict(
+                {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
+            )
+            df_left = df_left.into_partitions(partition_size)
+
+            df_right = daft.from_pydict({"group": [i for i in range(50)], "value": [i for i in range(50)]})
+
+            df_right = df_right.into_partitions(50)
+
+            actual = df_left.join(df_right, on="group", how="left", strategy=strategy).collect()
+
+            assert actual.num_partitions() == 50
