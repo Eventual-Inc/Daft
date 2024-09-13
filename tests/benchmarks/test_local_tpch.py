@@ -52,6 +52,17 @@ def gen_tpch(request):
     ), sqlite_path
 
 
+def set_engine(engine: str):
+    """Context manager that wraps set_runner_native or set_runner_py"""
+    daft.context.reset_context()
+    if engine == "native":
+        daft.context.set_runner_native()
+    elif engine == "python":
+        daft.context.set_runner_py()
+    else:
+        raise ValueError(f"{engine} unsupported")
+
+
 @pytest.fixture(scope="module", params=SOURCE_TYPES)  # TODO: Enable CSV after improving the CSV reader
 def get_df(gen_tpch, request):
     (csv_files_location, parquet_files_location, in_memory_tables, num_parts), _ = gen_tpch
@@ -94,26 +105,19 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py"},
-    reason="requires PyRunner to be in use",
+    daft.context.get_context().runner_config.name == "ray",
+    reason="Do not run local TPCH benchmarks with Ray runner",
 )
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
 def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
     get_df, num_parts = get_df
+    set_engine(engine)
 
     def f():
-        if engine == "native":
-            ctx = daft.context.set_runner_native()
-        elif engine == "python":
-            ctx = daft.context.set_runner_py()
-        else:
-            raise ValueError(f"{engine} unsupported")
-
-        with ctx:
-            question = getattr(answers, f"q{q}")
-            daft_df = question(get_df)
-            return daft_df.to_arrow()
+        question = getattr(answers, f"q{q}")
+        daft_df = question(get_df)
+        return daft_df.to_arrow()
 
     benchmark_group = f"q{q}-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()

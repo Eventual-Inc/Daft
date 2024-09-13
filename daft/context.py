@@ -197,6 +197,12 @@ def get_context() -> DaftContext:
     return _DaftContext
 
 
+def reset_context() -> DaftContext:
+    global _DaftContext
+    _DaftContext = DaftContext()
+    return _DaftContext
+
+
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
