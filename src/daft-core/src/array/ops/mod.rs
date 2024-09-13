@@ -30,7 +30,6 @@ mod hll_merge;
 mod hll_sketch;
 mod if_else;
 mod is_in;
-mod json;
 mod len;
 mod list;
 mod list_agg;

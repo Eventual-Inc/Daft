@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -76,3 +76,16 @@ def read_deltalake(
     handle = ScanOperatorHandle.from_python_scan_operator(delta_lake_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)
+
+
+def large_dtypes_kwargs(large_dtypes: bool) -> Dict[str, Any]:
+    import deltalake
+    from packaging.version import parse
+
+    if parse(deltalake.__version__) < parse("0.19.0"):
+        return {"large_dtypes": large_dtypes}
+    else:
+        from deltalake.schema import ArrowSchemaConversionMode
+
+        schema_conversion_mode = ArrowSchemaConversionMode.LARGE if large_dtypes else ArrowSchemaConversionMode.NORMAL
+        return {"schema_conversion_mode": schema_conversion_mode}

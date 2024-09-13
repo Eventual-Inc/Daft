@@ -1,5 +1,4 @@
 pub mod float;
-pub mod json;
 pub mod list;
 pub mod map;
 pub mod numeric;
@@ -17,7 +16,6 @@ use std::hash::Hash;
 use crate::{Expr, ExprRef, Operator};
 
 use self::float::FloatExpr;
-use self::json::JsonExpr;
 use self::list::ListExpr;
 use self::map::MapExpr;
 use self::numeric::NumericExpr;
@@ -46,7 +44,6 @@ pub enum FunctionExpr {
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
-    Json(JsonExpr),
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
 }
@@ -75,7 +72,6 @@ impl FunctionExpr {
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
-            Json(expr) => expr.get_evaluator(),
             Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }

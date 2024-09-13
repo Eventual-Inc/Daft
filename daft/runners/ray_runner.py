@@ -11,11 +11,15 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
+from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
+from daft.daft import PyTable as _PyTable
 from daft.expressions import ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
+from daft.series import Series, item_to_series
+from daft.table import Table
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,42 @@ try:
 except ImportError:
     _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
 
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+_TENSOR_EXTENSION_TYPES = []
+try:
+    import ray
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
+else:
+    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+    try:
+        # Variable-shaped tensor column support was added in Ray 2.1.0.
+        if _RAY_VERSION >= (2, 2, 0):
+            from ray.data.extensions import (
+                ArrowTensorType,
+                ArrowVariableShapedTensorType,
+            )
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
+        else:
+            from ray.data.extensions import ArrowTensorType
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
+    except ImportError:
+        _RAY_DATA_EXTENSIONS_AVAILABLE = False
+
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
+_PANDAS_AVAILABLE = True
+try:
+    import pandas as pd
+except ImportError:
+    _PANDAS_AVAILABLE = False
+
 
 @ray.remote
 def _glob_path_into_file_infos(
@@ -135,11 +175,56 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
         return partition.to_pylist()
 
 
+def _series_from_arrow_with_ray_data_extensions(
+    array: pa.Array | pa.ChunkedArray, name: str = "arrow_series"
+) -> Series:
+    if isinstance(array, pa.Array):
+        # TODO(desmond): This might be dead code since `ArrayTensorType`s are `numpy.ndarray` under
+        # the hood and are not instances of `pyarrow.Array`. Should follow up and check if this code
+        # can be removed.
+        array = ensure_array(array)
+        if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
+            storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
+            series = storage_series.cast(
+                DataType.fixed_size_list(
+                    _from_arrow_type_with_ray_data_extensions(array.type.scalar_type),
+                    int(np.prod(array.type.shape)),
+                )
+            )
+            return series.cast(DataType.from_arrow_type(array.type))
+        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
+            return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+    return Series.from_arrow(array, name)
+
+
+def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -> MicroPartition:
+    assert isinstance(arrow_table, pa.Table)
+    non_native_fields = []
+    for arrow_field in arrow_table.schema:
+        dt = _from_arrow_type_with_ray_data_extensions(arrow_field.type)
+        if dt == DataType.python() or dt._is_tensor_type() or dt._is_fixed_shape_tensor_type():
+            non_native_fields.append(arrow_field.name)
+    if non_native_fields:
+        # If there are any contained Arrow types that are not natively supported, convert each
+        # series while checking for ray data extension types.
+        logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
+        series_dict = dict()
+        for name, column in zip(arrow_table.column_names, arrow_table.columns):
+            series = (
+                _series_from_arrow_with_ray_data_extensions(column, name)
+                if isinstance(column, (pa.Array, pa.ChunkedArray))
+                else item_to_series(name, column)
+            )
+            series_dict[name] = series._series
+        return MicroPartition._from_tables([Table._from_pytable(_PyTable.from_pylist_series(series_dict))])
+    return MicroPartition.from_arrow(arrow_table)
+
+
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(
     ray_dataset_block: pa.MicroPartition, daft_schema: Schema
 ) -> MicroPartition:
-    return MicroPartition.from_arrow(ray_dataset_block)
+    return _micropartition_from_arrow_with_ray_data_extensions(ray_dataset_block)
 
 
 @ray.remote(num_returns=2)
@@ -259,6 +344,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait(list(deduped_object_refs))
 
 
+def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.lib.DataType) -> DataType:
+    if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
+        scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_type.scalar_type)
+        shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
+        return DataType.tensor(scalar_dtype, shape)
+    return DataType.from_arrow_type(arrow_type)
+
+
 class RayRunnerIO(runner_io.RunnerIO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -300,7 +393,10 @@ class RayRunnerIO(runner_io.RunnerIO):
                 arrow_schema = pa.schema({name: t for name, t in zip(arrow_schema.names, arrow_schema.types)})
 
         daft_schema = Schema._from_field_name_and_types(
-            [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
+            [
+                (arrow_field.name, _from_arrow_type_with_ray_data_extensions(arrow_field.type))
+                for arrow_field in arrow_schema
+            ]
         )
         block_refs = ds.get_internal_block_refs()
 

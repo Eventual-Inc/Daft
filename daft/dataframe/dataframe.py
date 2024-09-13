@@ -28,7 +28,6 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -761,6 +760,7 @@ class DataFrame:
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
+        allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -777,6 +777,7 @@ class DataFrame:
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
             dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -795,7 +796,9 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
+        from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
@@ -825,22 +828,29 @@ class DataFrame:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = urlparse(table_uri).scheme
+        scheme = get_protocol_from_path(table_uri)
         if scheme == "s3" or scheme == "s3a":
             if dynamo_table_name is not None:
                 storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
                 storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
             else:
                 storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+                if not allow_unsafe_rename:
+                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+        elif scheme == "file":
+            if allow_unsafe_rename:
+                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+
+        large_dtypes = True
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
@@ -865,7 +875,7 @@ class DataFrame:
             table_uri,
             mode,
             version,
-            large_dtypes=True,
+            large_dtypes,
             io_config=io_config,
         )
         write_df = DataFrame(builder)
