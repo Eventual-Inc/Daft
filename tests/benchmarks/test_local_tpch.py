@@ -37,7 +37,7 @@ def gen_tpch(request):
     in_memory_tables = {}
     for tbl_name in data_generation.SCHEMA.keys():
         arrow_table = daft.read_parquet(f"{parquet_files_location}/{tbl_name}/*").to_arrow()
-        in_memory_tables[tbl_name] = daft.from_arrow(arrow_table)
+        in_memory_tables[tbl_name] = arrow_table
 
     sqlite_path = data_generation.gen_sqlite_db(
         csv_filepath=csv_files_location,
@@ -94,7 +94,7 @@ def get_df(gen_tpch, request):
             fp = f"{parquet_files_location}/{tbl_name}/*"
             df = daft.read_parquet(fp)
         elif source_type == "in-memory":
-            df = in_memory_tables[tbl_name]
+            df = daft.from_arrow(in_memory_tables[tbl_name])
 
         return df
 
