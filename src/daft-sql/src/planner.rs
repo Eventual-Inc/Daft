@@ -211,7 +211,7 @@ impl SQLPlanner {
                 .iter()
                 .map(|n| col(n.as_str()))
                 .chain(groupby_selection)
-                .collect::<Vec<_>>();
+                .collect();
 
             rel.inner = rel.inner.select(selection_colums)?;
         }
