@@ -180,6 +180,19 @@ impl SQLPlanner {
         // Properly apply or remove the groupby columns from the selection
         // This needs to be done after the orderby
         // otherwise, the orderby will not be able to reference the grouping columns
+        //
+        // ex: SELECT sum(a) as sum_a, max(a) as max_a, b as c FROM table GROUP BY b
+        //
+        // The groupby columns are [b]
+        // the evaluation of sum(a) and max(a) are already handled by the earlier aggregate,
+        // so our projection is [sum_a, max_a, (b as c)]
+        // leaving us to handle (b as c)
+        //
+        // we filter for the columns in the schema that are not in the groupby keys,
+        // [sum_a, max_a, b] -> [sum_a, max_a]
+        //
+        // Then we add the groupby columns back in with the correct expressions
+        // this gives us the final projection: [sum_a, max_a, (b as c)]
         if !groupby_exprs.is_empty() {
             let rel = self.relation_mut();
             let schema = rel.inner.schema();
@@ -188,20 +201,6 @@ impl SQLPlanner {
                 .iter()
                 .map(|e| Ok(e.to_field(&schema)?.name))
                 .collect::<DaftResult<Vec<_>>>()?;
-
-            // since groupby columns can be expressions
-            // we need to first exclude the groupby columns from the schema to get the selection columns
-            // then add the groupby columns back in with the user provided expressions
-            //
-            // ex: SELECT sum(a) as sum, max(a) as max, b as c FROM table GROUP BY b
-            //
-            // so we get all of the columns in the schema that are not in the groupby keys,
-            // [a, b, (b as c)] -> [a]
-            //
-            // Then we add the groupby columns back in with the correct expressions
-            // this gives us the final projection:
-            //
-            // [a] -> [a, (b as c)]
 
             let selection_colums = schema
                 .exclude(groupby_keys.as_ref())?
