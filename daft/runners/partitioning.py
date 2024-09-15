@@ -213,11 +213,6 @@ class PartitionSet(Generic[PartitionT]):
         merged_partition = self._get_merged_micropartition()
         return merged_partition.to_pydict()
 
-    def to_pylist(self) -> list[dict[str, Any]]:
-        """Retrieves all the data in a PartitionSet as a Python list. Values are the raw data from each Block."""
-        merged_partition = self._get_merged_micropartition()
-        return merged_partition.to_pylist()
-
     def to_pandas(
         self,
         schema: Schema | None = None,
