@@ -2535,7 +2535,12 @@ class DataFrame:
     @DataframePublicAPI
     def to_pylist(self) -> List[Any]:
         """Converts the current Dataframe into a python list.
+        .. WARNING::
 
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
         Example:
             >>> import daft
             >>> from daft import col
