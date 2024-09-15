@@ -11,30 +11,6 @@ from daft.daft import ImageMode, PyDataType, PyTimeUnit
 if TYPE_CHECKING:
     import numpy as np
 
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-_TENSOR_EXTENSION_TYPES = []
-try:
-    import ray
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
-else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
-    try:
-        # Variable-shaped tensor column support was added in Ray 2.1.0.
-        if _RAY_VERSION >= (2, 2, 0):
-            from ray.data.extensions import (
-                ArrowTensorType,
-                ArrowVariableShapedTensorType,
-            )
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
-        else:
-            from ray.data.extensions import ArrowTensorType
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
-    except ImportError:
-        _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
 
 class TimeUnit:
     _timeunit: PyTimeUnit
@@ -436,10 +412,6 @@ class DataType:
                 key_type=cls.from_arrow_type(arrow_type.key_type),
                 value_type=cls.from_arrow_type(arrow_type.item_type),
             )
-        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-            scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
-            shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
-            return cls.tensor(scalar_dtype, shape)
         elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
@@ -486,8 +458,8 @@ class DataType:
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
 
-    def to_arrow_dtype(self, cast_tensor_to_ray_type: builtins.bool = False) -> pa.DataType:
-        return self._dtype.to_arrow(cast_tensor_to_ray_type)
+    def to_arrow_dtype(self) -> pa.DataType:
+        return self._dtype.to_arrow()
 
     @classmethod
     def python(cls) -> DataType:

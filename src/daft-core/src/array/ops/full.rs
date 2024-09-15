@@ -11,7 +11,7 @@ use crate::{
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
-    Series,
+    series::Series,
 };
 
 pub trait FullNull {
@@ -200,8 +200,7 @@ mod tests {
 
     use crate::{
         array::{ops::full::FullNull, FixedSizeListArray, StructArray},
-        datatypes::Field,
-        DataType,
+        datatypes::{DataType, Field},
     };
 
     #[test]

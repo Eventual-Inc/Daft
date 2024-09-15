@@ -2,9 +2,6 @@
 use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
-/// Environment variables for Daft to use when formatting displays.
-pub const BOLD_TABLE_HEADERS_IN_DISPLAY: &str = "DAFT_BOLD_TABLE_HEADERS";
-
 /// Configurations for Daft to use during the building of a Dataframe's plan.
 ///
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
@@ -118,7 +115,7 @@ pub use python::PyDaftPlanningConfig;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyDaftExecutionConfig>()?;
     parent.add_class::<python::PyDaftPlanningConfig>()?;
 

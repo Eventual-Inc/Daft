@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 
-use daft_core::{
-    array::growable::make_growable, utils::supertype::try_get_supertype, JoinType, Series,
-};
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
@@ -15,6 +13,7 @@ use crate::Table;
 
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 
+use daft_core::array::growable::make_growable;
 mod hash_join;
 mod merge_join;
 

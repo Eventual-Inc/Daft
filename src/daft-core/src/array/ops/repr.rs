@@ -1,7 +1,8 @@
-use base64::Engine;
+use common_display::table_display::StrValue;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::DataType,
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -9,14 +10,13 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
-        ImageFormat, NullArray, UInt64Array, Utf8Array,
+        NullArray, UInt64Array, Utf8Array,
     },
-    utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
-    with_match_daft_types, DataType, Series,
+    series::Series,
+    utils::display::{display_date32, display_decimal128, display_time64, display_timestamp},
+    with_match_daft_types,
 };
 use common_error::DaftResult;
-
-use super::image::AsImageObj;
 
 // Default implementation of str_value: format the value with the given format string.
 macro_rules! impl_array_str_value {
@@ -366,7 +366,7 @@ impl StructArray {
                         .iter()
                         .zip(self.children.iter())
                         .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
-                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx)?)))
+                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {
@@ -423,10 +423,10 @@ impl crate::datatypes::PythonArray {
 
         let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
             // Find visualization hooks for this object's class
-            let pyany = val.into_ref(py);
+            let pyany = val.bind(py);
             let get_viz_hook = py
-                .import("daft.viz.html_viz_hooks")?
-                .getattr("get_viz_hook")?;
+                .import_bound(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
+                .getattr(pyo3::intern!(py, "get_viz_hook"))?;
             let hook = get_viz_hook.call1((pyany,))?;
 
             if hook.is_none() {
@@ -455,52 +455,6 @@ where
         html_escape::encode_text(&str_value)
             .into_owned()
             .replace('\n', "<br />")
-    }
-}
-
-impl ImageArray {
-    pub fn html_value(&self, idx: usize) -> String {
-        let maybe_image = self.as_image_obj(idx);
-        let str_val = self.str_value(idx).unwrap();
-
-        match maybe_image {
-            None => "None".to_string(),
-            Some(image) => {
-                let thumb = image.fit_to(128, 128);
-                let mut bytes: Vec<u8> = vec![];
-                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
-                drop(writer);
-                format!(
-                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                    str_val,
-                )
-            }
-        }
-    }
-}
-
-impl FixedShapeImageArray {
-    pub fn html_value(&self, idx: usize) -> String {
-        let maybe_image = self.as_image_obj(idx);
-        let str_val = self.str_value(idx).unwrap();
-
-        match maybe_image {
-            None => "None".to_string(),
-            Some(image) => {
-                let thumb = image.fit_to(128, 128);
-                let mut bytes: Vec<u8> = vec![];
-                let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-                thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
-                drop(writer);
-                format!(
-                    "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                    base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                    str_val,
-                )
-            }
-        }
     }
 }
 

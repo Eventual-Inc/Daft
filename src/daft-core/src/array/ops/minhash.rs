@@ -6,8 +6,9 @@ use daft_minhash::load_simd;
 
 use crate::{
     array::FixedSizeListArray,
+    datatypes::DataType,
     datatypes::{Field, Utf8Array},
-    DataType, Series,
+    series::Series,
 };
 
 use super::{as_arrow::AsArrow, DaftMinHash};

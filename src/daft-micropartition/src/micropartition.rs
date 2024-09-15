@@ -5,31 +5,28 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::datatypes::{Field, Int64Array, Utf8Array};
-use daft_core::schema::{Schema, SchemaRef};
-
-use daft_core::DataType;
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
-
-#[cfg(feature = "python")]
-use crate::PyIOSnafu;
-use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_stats::TableStatistics;
 use daft_stats::{PartitionSpec, TableMetadata};
+
+#[cfg(feature = "python")]
+use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
 
 #[derive(Debug)]
 pub(crate) enum TableState {
@@ -359,10 +356,7 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
-                    sql,
-                    conn,
-                }) => {
+                FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
                     let predicate = scan_task
                         .pushdowns
                         .filters
@@ -388,7 +382,7 @@ fn materialize_scan_task(
                     })?
                 }
                 FileFormatConfig::PythonFunction => {
-                    use pyo3::ToPyObject;
+                    use pyo3::{types::PyAnyMethods, PyObject};
 
                     let table_iterators = scan_task.sources.iter().map(|source| {
                         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -400,8 +394,13 @@ fn materialize_scan_task(
                                 ..
                             } => {
                                 Python::with_gil(|py| {
-                                    let func = py.import(pyo3::types::PyString::new(py, module)).unwrap_or_else(|_| panic!("Cannot import factory function from module {module}")).getattr(pyo3::types::PyString::new(py, func_name)).unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                                    Ok(func.call(func_args.to_pytuple(py), None).with_context(|_| PyIOSnafu)?.downcast::<pyo3::types::PyIterator>().expect("Function must return an iterator of tables")).map(|it| it.to_object(py))
+                                    let func = py.import_bound(module.as_str())
+                                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
+                                        .getattr(func_name.as_str())
+                                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                                    func.call(func_args.to_pytuple(py), None)
+                                        .with_context(|_| PyIOSnafu)
+                                        .map(Into::<PyObject>::into)
                                 })
                             },
                             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
@@ -423,8 +422,9 @@ fn materialize_scan_task(
                             // Grab the GIL to call next() on the iterator, and then release it once we have the Table
                             let table = match Python::with_gil(|py| {
                                 iterator
-                                    .downcast::<pyo3::types::PyIterator>(py)
-                                    .unwrap()
+                                    .downcast_bound::<pyo3::types::PyIterator>(py)
+                                    .expect("Function must return an iterator of tables")
+                                    .clone()
                                     .next()
                                     .map(|result| {
                                         result
@@ -1013,11 +1013,11 @@ fn _read_delete_files(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn _read_parquet_into_loaded_micropartition(
+fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     uris: &[&str],
-    columns: Option<&[&str]>,
+    columns: Option<&[T]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     iceberg_delete_files: Option<Vec<&str>>,
@@ -1045,7 +1045,9 @@ fn _read_parquet_into_loaded_micropartition(
         })
         .transpose()?;
 
-    let file_column_names = _get_file_column_names(columns, partition_spec);
+    let columns = columns.map(|cols| cols.iter().map(|c| c.as_ref()).collect::<Vec<&str>>());
+
+    let file_column_names = _get_file_column_names(columns.as_deref(), partition_spec);
     let all_tables = read_parquet_bulk(
         uris,
         file_column_names.as_deref(),
@@ -1076,7 +1078,7 @@ fn _read_parquet_into_loaded_micropartition(
         }
     };
 
-    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
+    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns.as_deref())?;
 
     let fill_map = partition_spec.map(|pspec| pspec.to_fill_map());
     let all_tables = all_tables
@@ -1094,9 +1096,9 @@ fn _read_parquet_into_loaded_micropartition(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_parquet_into_micropartition(
+pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
     uris: &[&str],
-    columns: Option<&[&str]>,
+    columns: Option<&[T]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     iceberg_delete_files: Option<Vec<&str>>,
@@ -1160,7 +1162,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1184,7 +1186,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1291,8 +1293,13 @@ pub(crate) fn read_parquet_into_micropartition(
             Pushdowns::new(
                 None,
                 None,
-                columns
-                    .map(|cols| Arc::new(cols.iter().map(|v| v.to_string()).collect::<Vec<_>>())),
+                columns.map(|cols| {
+                    Arc::new(
+                        cols.iter()
+                            .map(|v| v.as_ref().to_string())
+                            .collect::<Vec<_>>(),
+                    )
+                }),
                 num_rows,
             ),
         );

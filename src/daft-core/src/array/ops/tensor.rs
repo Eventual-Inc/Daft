@@ -18,11 +18,7 @@ impl TensorArray {
 mod tests {
     use std::vec;
 
-    use crate::{
-        array::{ListArray, StructArray},
-        datatypes::{logical::TensorArray, DataType, Field, Int64Array, UInt64Array},
-        IntoSeries,
-    };
+    use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
     use common_error::DaftResult;
 
     #[test]

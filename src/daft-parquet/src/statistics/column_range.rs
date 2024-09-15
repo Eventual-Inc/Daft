@@ -1,11 +1,6 @@
 use arrow2::array::PrimitiveArray;
-use daft_core::{
-    datatypes::{
-        logical::{DateArray, Decimal128Array, TimestampArray},
-        BinaryArray, BooleanArray, Int128Array, Int32Array, Int64Array, Utf8Array,
-    },
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
+
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
     schema::types::{PhysicalType, PrimitiveConvertedType, TimeUnit},

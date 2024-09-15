@@ -1,6 +1,4 @@
-use daft_core::{
-    datatypes::Field, schema::Schema, series::Series, utils::supertype::try_get_supertype,
-};
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 
 use crate::ExprRef;
 

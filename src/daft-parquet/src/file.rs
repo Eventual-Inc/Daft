@@ -5,9 +5,8 @@ use std::{
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::{
-    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series,
-};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
@@ -224,8 +223,8 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        self.selected_columns = Some(HashSet::from_iter(columns.iter().map(|s| s.to_string())));
+    pub fn prune_columns(mut self, columns: &[String]) -> super::Result<Self> {
+        self.selected_columns = Some(HashSet::from_iter(columns.iter().cloned()));
         Ok(self)
     }
 
@@ -401,7 +400,7 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-        let daft_schema = Arc::new(daft_core::schema::Schema::try_from(
+        let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
         )?);
 
@@ -721,7 +720,7 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
+        let daft_schema = daft_core::prelude::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new_with_size(
             daft_schema,

@@ -1,9 +1,5 @@
-use crate::datatypes::logical::{
-    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
-    SparseTensorArray, TensorArray, TimeArray, TimestampArray,
-};
-use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
+use crate::array::prelude::*;
+use crate::datatypes::prelude::*;
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -11,7 +7,6 @@ use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;
-use crate::DataType;
 use std::sync::Arc;
 
 impl<L> IntoSeries for LogicalArray<L>
@@ -130,10 +125,6 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.str_value(idx)
             }
 
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
-            }
-
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self
@@ -232,9 +223,9 @@ impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
+impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TensorArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
-impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);

@@ -5,9 +5,9 @@ use serde::ser::SerializeMap;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
     },
-    DataType, IntoSeries, Series,
+    series::{IntoSeries, Series},
 };
 
 #[cfg(feature = "python")]

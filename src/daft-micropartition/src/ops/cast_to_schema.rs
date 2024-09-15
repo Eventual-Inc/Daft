@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use daft_core::prelude::SchemaRef;
 use daft_scan::ScanTask;
 
 use crate::micropartition::{MicroPartition, TableState};

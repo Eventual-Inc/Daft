@@ -4,7 +4,7 @@ use crate::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::DaftArrowBackedType,
-    IntoSeries,
+    series::IntoSeries,
 };
 use common_error::DaftResult;
 
@@ -69,7 +69,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
-        let pylist: Py<PyList> = Python::with_gil(|py| PyList::new(py, pyobj_vec).into());
+        let pylist: Py<PyList> = Python::with_gil(|py| PyList::new_bound(py, pyobj_vec).into());
 
         let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(vec![pylist.into()]);
         Self::new(self.field().clone().into(), Box::new(arrow_array))
@@ -86,7 +86,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
             for group in groups {
                 let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
                 let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
-                result_pylists.push(PyList::new(py, group_pyobjs).into());
+                result_pylists.push(PyList::new_bound(py, group_pyobjs).into());
             }
             Ok(())
         })?;

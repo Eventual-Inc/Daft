@@ -5,7 +5,6 @@ import itertools
 import numpy as np
 import pyarrow as pa
 import pytest
-from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
 from daft.context import get_context
@@ -136,27 +135,6 @@ def test_series_concat_struct_array(chunks) -> None:
             assert concated_list[counter]["a"] == i + j
             assert concated_list[counter]["b"] == float(i * j)
             counter += 1
-
-
-@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
-def test_series_concat_tensor_array_ray(chunks) -> None:
-    element_shape = (2, 2)
-    num_elements_per_tensor = np.prod(element_shape)
-    chunk_size = 3
-    chunk_shape = (chunk_size,) + element_shape
-    chunks = [
-        np.arange(
-            i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor, dtype=np.int64
-        ).reshape(chunk_shape)
-        for i in range(chunks)
-    ]
-    series = [Series.from_arrow(ArrowTensorArray.from_numpy(chunk)) for chunk in chunks]
-
-    concated = Series.concat(series)
-
-    assert concated.datatype() == DataType.tensor(DataType.int64(), element_shape)
-    expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
-    np.testing.assert_equal(concated.to_pylist(), expected)
 
 
 @pytest.mark.skipif(

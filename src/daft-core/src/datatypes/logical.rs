@@ -176,6 +176,7 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+
 pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}

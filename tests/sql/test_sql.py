@@ -96,3 +96,38 @@ def test_fizzbuzz_sql():
 def test_sql_expr(actual, expected):
     actual = daft.sql_expr(actual)
     assert repr(actual) == repr(expected)
+
+
+def test_sql_global_agg():
+    df = daft.from_pydict({"n": [1, 2, 3]})
+    catalog = SQLCatalog({"test": df})
+    df = daft.sql("SELECT max(n) max_n, sum(n) sum_n FROM test", catalog=catalog)
+    assert df.collect().to_pydict() == {"max_n": [3], "sum_n": [6]}
+    # If there is agg and non-agg, it should fail
+    with pytest.raises(Exception, match="Expected aggregation"):
+        daft.sql("SELECT n,max(n) max_n FROM test", catalog=catalog)
+
+
+def test_sql_groupby_agg():
+    df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
+    catalog = SQLCatalog({"test": df})
+    df = daft.sql("SELECT sum(v) FROM test GROUP BY n ORDER BY n", catalog=catalog)
+    assert df.collect().to_pydict() == {"n": [1, 2], "v": [3, 7]}
+
+
+def test_sql_count_star():
+    df = daft.from_pydict(
+        {
+            "a": ["a", "b", None, "c"],
+            "b": [4, 3, 2, None],
+        }
+    )
+    catalog = SQLCatalog({"df": df})
+    df2 = daft.sql("SELECT count(*) FROM df", catalog)
+    actual = df2.collect().to_pydict()
+    expected = df.count().collect().to_pydict()
+    assert actual == expected
+    df2 = daft.sql("SELECT count(b) FROM df", catalog)
+    actual = df2.collect().to_pydict()
+    expected = df.agg(daft.col("b").count()).collect().to_pydict()
+    assert actual == expected

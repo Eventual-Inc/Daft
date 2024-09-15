@@ -3,16 +3,7 @@ use std::{
     iter::{self, Repeat, Take},
 };
 
-use crate::{
-    array::{DataArray, ListArray},
-    datatypes::{
-        infer_timeunit_from_format_string,
-        logical::{DateArray, TimestampArray},
-        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int32Array,
-        Int64Array, TimeUnit, UInt64Array, Utf8Array,
-    },
-    DataType, Series,
-};
+use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
@@ -618,6 +609,19 @@ impl Utf8Array {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
+    pub fn length_bytes(&self) -> DaftResult<UInt64Array> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                Some(v.len() as u64)
+            })
+            .collect::<arrow2::array::UInt64Array>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
+    }
+
     pub fn lower(&self) -> DaftResult<Utf8Array> {
         self.unary_broadcasted_op(|val| val.to_lowercase().into())
     }
@@ -804,7 +808,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match nchars.len() {
+        let result: Utf8Array = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -868,7 +872,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match nchars.len() {
+        let result: Utf8Array = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -933,7 +937,7 @@ impl Utf8Array {
     pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {
         let len = self.len();
         let self_iter = self.as_arrow().iter();
-        let timeunit = infer_timeunit_from_format_string(format);
+        let timeunit = daft_schema::time_unit::infer_timeunit_from_format_string(format);
 
         let arrow_result = self_iter
             .map(|val| match val {
@@ -1009,7 +1013,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match n.len() {
+        let result: Utf8Array = match n.len() {
             1 => {
                 let n = n.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -1256,7 +1260,7 @@ impl Utf8Array {
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let padchar_iter = create_broadcasted_str_iter(padchar, expected_size);
-        let result = match length.len() {
+        let result: Utf8Array = match length.len() {
             1 => {
                 let len = length.get(0).unwrap();
                 let len: usize = NumCast::from(len).ok_or_else(|| {

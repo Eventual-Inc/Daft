@@ -9,20 +9,19 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::Field,
+use common_file_formats::FileFormatConfig;
+use daft_dsl::ExprRef;
+use daft_schema::{
+    field::Field,
     schema::{Schema, SchemaRef},
 };
-use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-use file_format::FileFormatConfig;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
-pub mod file_format;
 mod glob;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
@@ -962,13 +961,14 @@ mod test {
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
-    use daft_core::{datatypes::TimeUnit, schema::Schema};
+    use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+    use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
     use crate::{
-        file_format::{FileFormatConfig, ParquetSourceConfig},
+        glob::GlobScanOperator,
         storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, Pushdowns, ScanTask,
+        DataSource, Pushdowns, ScanOperator, ScanTask,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
@@ -1001,6 +1001,42 @@ mod test {
             ))),
             Pushdowns::default(),
         )
+    }
+
+    fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
+        let file_format_config: FileFormatConfig = FileFormatConfig::Parquet(ParquetSourceConfig {
+            coerce_int96_timestamp_unit: TimeUnit::Seconds,
+            field_id_mapping: None,
+            row_groups: None,
+            chunk_size: None,
+        });
+
+        let mut sources: Vec<String> = Vec::new();
+
+        for _ in 0..num_sources {
+            sources.push(format!("../../tests/assets/parquet-data/mvp.parquet"));
+        }
+
+        let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
+            sources,
+            Arc::new(file_format_config),
+            Arc::new(StorageConfig::Native(Arc::new(
+                NativeStorageConfig::new_internal(false, None),
+            ))),
+            false,
+            Some(Arc::new(Schema::empty())),
+        )
+        .unwrap();
+
+        glob_scan_operator
+    }
+
+    #[test]
+    fn test_glob_display_condenses() -> DaftResult<()> {
+        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8);
+        let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
+        assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
+        Ok(())
     }
 
     #[test]

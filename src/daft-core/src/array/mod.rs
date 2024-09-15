@@ -1,6 +1,7 @@
 mod fixed_size_list_array;
 pub mod from;
 pub mod growable;
+pub mod image_array;
 pub mod iterator;
 mod list_array;
 pub mod ops;
@@ -14,7 +15,7 @@ pub use list_array::ListArray;
 pub use struct_array::StructArray;
 mod boolean;
 mod from_iter;
-
+pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};

@@ -1,7 +1,7 @@
 use crate::{
     array::ops::as_arrow::AsArrow,
+    datatypes::DataType,
     datatypes::{FixedSizeBinaryArray, UInt64Array},
-    DataType,
 };
 use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 

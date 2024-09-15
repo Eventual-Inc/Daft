@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use daft_core::schema::Schema;
+use daft_core::prelude::Schema;
 
 use crate::PhysicalPlanScheduler;
 use daft_plan::InMemoryInfo;
@@ -32,7 +32,7 @@ impl AdaptivePhysicalPlanScheduler {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
@@ -59,13 +59,12 @@ impl AdaptivePhysicalPlanScheduler {
         &mut self,
         source_id: usize,
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
-        let cache_entry = cache_entry.into();
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan

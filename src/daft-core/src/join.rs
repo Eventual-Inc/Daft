@@ -1,17 +1,15 @@
-use std::{
-    fmt::{Display, Formatter, Result},
-    str::FromStr,
-};
+use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
+use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, pyclass, pymethods, PyObject, PyResult, Python};
 
 use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum JoinType {
     Inner,
@@ -42,9 +40,14 @@ impl_bincode_py_state_serialization!(JoinType);
 
 impl JoinType {
     pub fn iterator() -> std::slice::Iter<'static, JoinType> {
-        use JoinType::*;
-
-        static JOIN_TYPES: [JoinType; 6] = [Inner, Left, Right, Outer, Anti, Semi];
+        static JOIN_TYPES: [JoinType; 6] = [
+            JoinType::Inner,
+            JoinType::Left,
+            JoinType::Right,
+            JoinType::Outer,
+            JoinType::Anti,
+            JoinType::Semi,
+        ];
         JOIN_TYPES.iter()
     }
 }
@@ -53,15 +56,13 @@ impl FromStr for JoinType {
     type Err = DaftError;
 
     fn from_str(join_type: &str) -> DaftResult<Self> {
-        use JoinType::*;
-
         match join_type {
-            "inner" => Ok(Inner),
-            "left" => Ok(Left),
-            "right" => Ok(Right),
-            "outer" => Ok(Outer),
-            "anti" => Ok(Anti),
-            "semi" => Ok(Semi),
+            "inner" => Ok(JoinType::Inner),
+            "left" => Ok(JoinType::Left),
+            "right" => Ok(JoinType::Right),
+            "outer" => Ok(JoinType::Outer),
+            "anti" => Ok(JoinType::Anti),
+            "semi" => Ok(JoinType::Semi),
             _ => Err(DaftError::TypeError(format!(
                 "Join type {} is not supported; only the following types are supported: {:?}",
                 join_type,
@@ -71,14 +72,7 @@ impl FromStr for JoinType {
     }
 }
 
-impl Display for JoinType {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum JoinStrategy {
     Hash,
@@ -106,9 +100,11 @@ impl_bincode_py_state_serialization!(JoinStrategy);
 
 impl JoinStrategy {
     pub fn iterator() -> std::slice::Iter<'static, JoinStrategy> {
-        use JoinStrategy::*;
-
-        static JOIN_STRATEGIES: [JoinStrategy; 3] = [Hash, SortMerge, Broadcast];
+        static JOIN_STRATEGIES: [JoinStrategy; 3] = [
+            JoinStrategy::Hash,
+            JoinStrategy::SortMerge,
+            JoinStrategy::Broadcast,
+        ];
         JOIN_STRATEGIES.iter()
     }
 }
@@ -117,24 +113,15 @@ impl FromStr for JoinStrategy {
     type Err = DaftError;
 
     fn from_str(join_strategy: &str) -> DaftResult<Self> {
-        use JoinStrategy::*;
-
         match join_strategy {
-            "hash" => Ok(Hash),
-            "sort_merge" => Ok(SortMerge),
-            "broadcast" => Ok(Broadcast),
+            "hash" => Ok(JoinStrategy::Hash),
+            "sort_merge" => Ok(JoinStrategy::SortMerge),
+            "broadcast" => Ok(JoinStrategy::Broadcast),
             _ => Err(DaftError::TypeError(format!(
                 "Join strategy {} is not supported; only the following strategies are supported: {:?}",
                 join_strategy,
                 JoinStrategy::iterator().as_slice()
             ))),
         }
-    }
-}
-
-impl Display for JoinStrategy {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        // Leverage Debug trait implementation, which will already return the enum variant as a string.
-        write!(f, "{:?}", self)
     }
 }

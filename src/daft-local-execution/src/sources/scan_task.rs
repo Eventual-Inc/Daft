@@ -1,14 +1,11 @@
 use common_error::DaftResult;
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_scan::{
-    file_format::{FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, ScanTask,
-};
+use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
 use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
