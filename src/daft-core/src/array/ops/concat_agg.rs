@@ -1,6 +1,9 @@
-use crate::array::{
-    growable::{make_growable, Growable},
-    ListArray,
+use crate::{
+    array::{
+        growable::{make_growable, Growable},
+        DataArray, ListArray,
+    },
+    prelude::Utf8Type,
 };
 use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
 use common_error::DaftResult;
@@ -143,6 +146,43 @@ impl DaftConcatAggable for ListArray {
             new_offsets.into(),
             new_validities,
         ))
+    }
+}
+
+impl DaftConcatAggable for DataArray<Utf8Type> {
+    type Output = DaftResult<Self>;
+
+    fn concat(&self) -> Self::Output {
+        let mut concat_result = String::new();
+
+        for idx in 0..self.len() {
+            if self.get(idx).is_some() {
+                let x = self.get(idx).unwrap().to_string();
+                concat_result.push_str(&x);
+            }
+        }
+        let result_box = Box::new(arrow2::array::Utf8Array::<i64>::from_slice([concat_result]));
+
+        DataArray::new(self.field().clone().into(), result_box)
+    }
+
+    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        let mut result_data = vec![];
+        for group in groups {
+            let mut group_res = String::new();
+            for idx in group {
+                let ind: usize = idx.to_usize();
+                if self.get(ind).is_some() {
+                    let x = self.get(ind).unwrap().to_string();
+                    group_res.push_str(&x);
+                }
+            }
+            result_data.push(group_res);
+        }
+
+        let result_box = Box::new(arrow2::array::Utf8Array::<i64>::from_slice(result_data));
+
+        DataArray::new(self.field().clone().into(), result_box)
     }
 }
 

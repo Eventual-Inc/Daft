@@ -874,3 +874,33 @@ def test_groupby_struct(dtype) -> None:
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
+
+
+def test_agg_concat_on_string() -> None:
+    df3 = from_pydict({"a": ["the", " quick", " brown", " fox"]})
+    res = df3.agg(col("a").agg_concat()).to_pydict()
+    assert res["a"] == ["the quick brown fox"]
+
+
+def test_agg_concat_on_string_groupby() -> None:
+    df3 = from_pydict({"a": ["the", " quick", " brown", " fox"], "b": [1, 2, 1, 2]})
+    res = df3.groupby("b").agg_concat("a").to_pydict()
+    expected = ["the brown", " quick fox"]
+    for txt in expected:
+        assert txt in res["a"]
+
+
+def test_agg_concat_on_string_null() -> None:
+    df3 = from_pydict({"a": ["the", " quick", None, " fox"]})
+    res = df3.agg(col("a").agg_concat()).to_pydict()
+    expected = ["the quick fox"]
+    for txt in expected:
+        assert txt in res["a"]
+
+
+def test_agg_concat_on_string_groupby_null() -> None:
+    df3 = from_pydict({"a": ["the", " quick", None, " fox"], "b": [1, 2, 1, 2]})
+    res = df3.groupby("b").agg_concat("a").to_pydict()
+    expected = ["the", " quick fox"]
+    for txt in expected:
+        assert txt in res["a"]
