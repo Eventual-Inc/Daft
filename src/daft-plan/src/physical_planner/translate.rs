@@ -639,10 +639,18 @@ pub(super) fn translate_single_logical_node(
                         }
                         (_, _, a, b) => max(a, b),
                     };
-
+                    println!("Joining on {} partitions", num_partitions);
+                    println!(
+                        "Left: {} partitions, Right: {} partitions",
+                        num_left_partitions, num_right_partitions
+                    );
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
+                        println!(
+                            "Splitting left side of join into {} partitions",
+                            num_partitions
+                        );
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             left_physical,
                             num_partitions,
@@ -654,6 +662,10 @@ pub(super) fn translate_single_logical_node(
                     if num_right_partitions != num_partitions
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
+                        println!(
+                            "Splitting right side of join into {} partitions",
+                            num_partitions
+                        );
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             right_physical,
                             num_partitions,

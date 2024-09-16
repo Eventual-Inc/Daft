@@ -51,81 +51,6 @@ use {
     std::iter,
 };
 
-fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
-where
-    T: DaftArrowBackedType,
-{
-    // Cast from DataArray to the target DataType
-    // by using Arrow's casting mechanisms.
-
-    if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
-        return Err(DaftError::TypeError(format!(
-            "Can not cast {:?} to type: {:?}: not convertible to Arrow",
-            to_cast.data_type(),
-            dtype
-        )));
-    }
-    let target_physical_type = dtype.to_physical();
-    let target_arrow_type = dtype.to_arrow()?;
-    let target_arrow_physical_type = target_physical_type.to_arrow()?;
-    let self_physical_type = to_cast.data_type().to_physical();
-    let self_arrow_type = to_cast.data_type().to_arrow()?;
-    let self_physical_arrow_type = self_physical_type.to_arrow()?;
-
-    let result_array = if target_arrow_physical_type == target_arrow_type {
-        if !can_cast_types(&self_arrow_type, &target_arrow_type) {
-            return Err(DaftError::TypeError(format!(
-                "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
-                to_cast.data_type(),
-                dtype,
-                self_arrow_type,
-                target_arrow_type,
-            )));
-        }
-        cast(
-            to_cast.data(),
-            &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
-        // Cast from logical Arrow2 type to logical Arrow2 type.
-        cast(
-            to_cast.data(),
-            &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
-        // Cast from physical Arrow2 type to physical Arrow2 type.
-        cast(
-            to_cast.data(),
-            &target_arrow_physical_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else {
-        return Err(DaftError::TypeError(format!(
-            "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
-            to_cast.data_type(),
-            dtype,
-            self_arrow_type,
-            target_arrow_type,
-            self_physical_arrow_type,
-            target_arrow_physical_type,
-        )));
-    };
-
-    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
-    Series::from_arrow(new_field, result_array)
-}
-
 impl<T> DataArray<T>
 where
     T: DaftArrowBackedType,
@@ -154,7 +79,77 @@ where
                 })?;
                 Ok(new_pyseries.into())
             }
-            _ => arrow_cast(self, dtype),
+            _ => {
+                // Cast from DataArray to the target DataType
+                // by using Arrow's casting mechanisms.
+
+                if !dtype.is_arrow() || !self.data_type().is_arrow() {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast {:?} to type: {:?}: not convertible to Arrow",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                let target_physical_type = dtype.to_physical();
+                let target_arrow_type = dtype.to_arrow()?;
+                let target_arrow_physical_type = target_physical_type.to_arrow()?;
+                let self_physical_type = self.data_type().to_physical();
+                let self_arrow_type = self.data_type().to_arrow()?;
+                let self_physical_arrow_type = self_physical_type.to_arrow()?;
+
+                let result_array = if target_arrow_physical_type == target_arrow_type {
+                    if !can_cast_types(&self_arrow_type, &target_arrow_type) {
+                        return Err(DaftError::TypeError(format!(
+                            "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
+                            self.data_type(),
+                            dtype,
+                            self_arrow_type,
+                            target_arrow_type,
+                        )));
+                    }
+                    cast(
+                        self.data(),
+                        &target_arrow_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
+                    // Cast from logical Arrow2 type to logical Arrow2 type.
+                    cast(
+                        self.data(),
+                        &target_arrow_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
+                    // Cast from physical Arrow2 type to physical Arrow2 type.
+                    cast(
+                        self.data(),
+                        &target_arrow_physical_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else {
+                    return Err(DaftError::TypeError(format!(
+                        "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
+                        self.data_type(),
+                        dtype,
+                        self_arrow_type,
+                        target_arrow_type,
+                        self_physical_arrow_type,
+                        target_arrow_physical_type,
+                    )));
+                };
+
+                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                Series::from_arrow(new_field, result_array)
+            }
         }
     }
 }
@@ -247,44 +242,28 @@ impl TimestampArray {
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
-            DataType::Timestamp(tu, tz) => {
-                let (self_tu, self_tz) = match self.data_type() {
-                    DataType::Timestamp(tu, tz) => (tu, tz),
+            DataType::Timestamp(tu, _) => {
+                let self_tu = match self.data_type() {
+                    DataType::Timestamp(tu, _) => tu,
                     _ => panic!("Wrong dtype for TimestampArray: {}", self.data_type()),
                 };
-                match self_tu.cmp(tu) {
-                    std::cmp::Ordering::Equal => {
-                        if self_tz == tz {
-                            Ok(self.clone().into_series())
-                        } else {
-                            Ok(TimestampArray::new(
-                                Field::new(self.name(), dtype.clone()),
-                                self.physical.clone(),
-                            )
-                            .into_series())
-                        }
-                    }
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?;
-                        let res =
-                            TimestampArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series();
-                        Ok(res)
+                        self.physical
+                            .mul(&Int64Array::from(("factor", vec![factor])))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?;
-                        let res =
-                            TimestampArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series();
-                        Ok(res)
+                        self.physical
+                            .div(&Int64Array::from(("factor", vec![factor])))?
                     }
-                }
+                };
+                Ok(
+                    TimestampArray::new(Field::new(self.name(), dtype.clone()), physical)
+                        .into_series(),
+                )
             }
             DataType::Date => Ok(self.date()?.into_series()),
             DataType::Time(tu) => Ok(self.time(tu)?.into_series()),
@@ -345,29 +324,20 @@ impl TimeArray {
                     DataType::Time(tu) => tu,
                     _ => panic!("Wrong dtype for TimeArray: {}", self.data_type()),
                 };
-                match self_tu.cmp(tu) {
-                    std::cmp::Ordering::Equal => Ok(self.clone().into_series()),
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?;
-                        Ok(
-                            TimeArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series(),
-                        )
+                        self.physical
+                            .mul(&Int64Array::from(("factor", vec![factor])))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
-                        let physical = self
-                            .physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?;
-                        Ok(
-                            TimeArray::new(Field::new(self.name(), dtype.clone()), physical)
-                                .into_series(),
-                        )
+                        self.physical
+                            .div(&Int64Array::from(("factor", vec![factor])))?
                     }
-                }
+                };
+                Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
             DataType::Utf8 => {
                 let time_array = self.as_arrow();
@@ -402,8 +372,7 @@ impl DurationArray {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            DataType::Float32 => self.physical.cast(&DataType::Float32),
-            DataType::Float64 => self.physical.cast(&DataType::Float64),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
