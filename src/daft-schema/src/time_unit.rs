@@ -24,6 +24,15 @@ impl TimeUnit {
             TimeUnit::Seconds => ArrowTimeUnit::Second,
         }
     }
+
+    pub fn to_scale_factor(&self) -> i64 {
+        match self {
+            TimeUnit::Seconds => 1,
+            TimeUnit::Milliseconds => 1000,
+            TimeUnit::Microseconds => 1_000_000,
+            TimeUnit::Nanoseconds => 1_000_000_000,
+        }
+    }
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {

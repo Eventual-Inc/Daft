@@ -1,4 +1,8 @@
-use std::{iter::repeat, ops::Div, sync::Arc};
+use std::{
+    iter::repeat,
+    ops::{Div, Mul},
+    sync::Arc,
+};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -11,15 +15,14 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, MapArray,
-            TensorArray, TimeArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
+            TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
-        Int32Array, Int64Array, TimeUnit, UInt64Array, Utf8Array,
+        Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
-    with_match_daft_logical_primitive_types,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -47,184 +50,6 @@ use {
     pyo3::prelude::*,
     std::iter,
 };
-
-fn arrow_logical_cast<T>(
-    to_cast: &LogicalArrayImpl<T, DataArray<T::PhysicalType>>,
-    dtype: &DataType,
-) -> DaftResult<Series>
-where
-    T: DaftLogicalType,
-    T::PhysicalType: DaftArrowBackedType,
-{
-    // Cast from LogicalArray to the target DataType
-    // using Arrow's casting mechanisms.
-
-    // Note that Arrow Logical->Logical direct casts (what this method exposes)
-    // have different behaviour than Arrow Logical->Physical->Logical casts.
-
-    let source_dtype = to_cast.data_type();
-    let source_arrow_type = source_dtype.to_arrow()?;
-    let target_arrow_type = dtype.to_arrow()?;
-
-    // Get the result of the Arrow Logical->Target cast.
-    let result_arrow_array = {
-        // First, get corresponding Arrow LogicalArray of source DataArray
-        let source_arrow_array = match source_dtype {
-            // Wrapped primitives
-            DataType::Decimal128(..)
-            | DataType::Date
-            | DataType::Timestamp(..)
-            | DataType::Duration(..)
-            | DataType::Time(..) => {
-                with_match_daft_logical_primitive_types!(source_dtype, |$T| {
-                    use arrow2::array::Array;
-                    to_cast
-                        .physical
-                        .data()
-                        .as_any()
-                        .downcast_ref::<arrow2::array::PrimitiveArray<$T>>()
-                        .unwrap()
-                        .clone()
-                        .to(source_arrow_type)
-                        .to_boxed()
-                })
-            }
-            _ => cast(
-                to_cast.physical.data(),
-                &source_arrow_type,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?,
-        };
-
-        // Then, cast source Arrow LogicalArray to target Arrow LogicalArray.
-
-        cast(
-            source_arrow_array.as_ref(),
-            &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    };
-
-    // If the target type is also Logical, get the Arrow Physical.
-    let result_arrow_physical_array = {
-        if dtype.is_logical() {
-            let target_physical_type = dtype.to_physical().to_arrow()?;
-            match dtype {
-                // Primitive wrapper types: change the arrow2 array's type field to primitive
-                DataType::Decimal128(..)
-                | DataType::Date
-                | DataType::Timestamp(..)
-                | DataType::Duration(..)
-                | DataType::Time(..) => {
-                    with_match_daft_logical_primitive_types!(dtype, |$P| {
-                        use arrow2::array::Array;
-                        result_arrow_array
-                            .as_any()
-                            .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
-                            .unwrap()
-                            .clone()
-                            .to(target_physical_type)
-                            .to_boxed()
-                    })
-                }
-                _ => cast(
-                    result_arrow_array.as_ref(),
-                    &target_physical_type,
-                    CastOptions {
-                        wrapped: true,
-                        partial: false,
-                    },
-                )?,
-            }
-        } else {
-            result_arrow_array
-        }
-    };
-
-    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
-    Series::from_arrow(new_field, result_arrow_physical_array)
-}
-
-fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
-where
-    T: DaftArrowBackedType,
-{
-    // Cast from DataArray to the target DataType
-    // by using Arrow's casting mechanisms.
-
-    if !dtype.is_arrow() || !to_cast.data_type().is_arrow() {
-        return Err(DaftError::TypeError(format!(
-            "Can not cast {:?} to type: {:?}: not convertible to Arrow",
-            to_cast.data_type(),
-            dtype
-        )));
-    }
-    let target_physical_type = dtype.to_physical();
-    let target_arrow_type = dtype.to_arrow()?;
-    let target_arrow_physical_type = target_physical_type.to_arrow()?;
-    let self_physical_type = to_cast.data_type().to_physical();
-    let self_arrow_type = to_cast.data_type().to_arrow()?;
-    let self_physical_arrow_type = self_physical_type.to_arrow()?;
-
-    let result_array = if target_arrow_physical_type == target_arrow_type {
-        if !can_cast_types(&self_arrow_type, &target_arrow_type) {
-            return Err(DaftError::TypeError(format!(
-                "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
-                to_cast.data_type(),
-                dtype,
-                self_arrow_type,
-                target_arrow_type,
-            )));
-        }
-        cast(
-            to_cast.data(),
-            &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
-        // Cast from logical Arrow2 type to logical Arrow2 type.
-        cast(
-            to_cast.data(),
-            &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
-        // Cast from physical Arrow2 type to physical Arrow2 type.
-        cast(
-            to_cast.data(),
-            &target_arrow_physical_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?
-    } else {
-        return Err(DaftError::TypeError(format!(
-            "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
-            to_cast.data_type(),
-            dtype,
-            self_arrow_type,
-            target_arrow_type,
-            self_physical_arrow_type,
-            target_arrow_physical_type,
-        )));
-    };
-
-    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
-    Series::from_arrow(new_field, result_array)
-}
 
 impl<T> DataArray<T>
 where
@@ -254,20 +79,93 @@ where
                 })?;
                 Ok(new_pyseries.into())
             }
-            _ => arrow_cast(self, dtype),
+            _ => {
+                // Cast from DataArray to the target DataType
+                // by using Arrow's casting mechanisms.
+
+                if !dtype.is_arrow() || !self.data_type().is_arrow() {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast {:?} to type: {:?}: not convertible to Arrow",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                let target_physical_type = dtype.to_physical();
+                let target_arrow_type = dtype.to_arrow()?;
+                let target_arrow_physical_type = target_physical_type.to_arrow()?;
+                let self_physical_type = self.data_type().to_physical();
+                let self_arrow_type = self.data_type().to_arrow()?;
+                let self_physical_arrow_type = self_physical_type.to_arrow()?;
+
+                let result_array = if target_arrow_physical_type == target_arrow_type {
+                    if !can_cast_types(&self_arrow_type, &target_arrow_type) {
+                        return Err(DaftError::TypeError(format!(
+                            "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
+                            self.data_type(),
+                            dtype,
+                            self_arrow_type,
+                            target_arrow_type,
+                        )));
+                    }
+                    cast(
+                        self.data(),
+                        &target_arrow_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
+                    // Cast from logical Arrow2 type to logical Arrow2 type.
+                    cast(
+                        self.data(),
+                        &target_arrow_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
+                    // Cast from physical Arrow2 type to physical Arrow2 type.
+                    cast(
+                        self.data(),
+                        &target_arrow_physical_type,
+                        CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )?
+                } else {
+                    return Err(DaftError::TypeError(format!(
+                        "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
+                        self.data_type(),
+                        dtype,
+                        self_arrow_type,
+                        target_arrow_type,
+                        self_physical_arrow_type,
+                        target_arrow_physical_type,
+                    )));
+                };
+
+                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                Series::from_arrow(new_field, result_array)
+            }
         }
     }
 }
 
 impl DateArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        let date_array = self
-            .as_arrow()
-            .clone()
-            .to(arrow2::datatypes::DataType::Date32);
         match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
             DataType::Date => Ok(self.clone().into_series()),
             DataType::Utf8 => {
+                let date_array = self
+                    .as_arrow()
+                    .clone()
+                    .to(arrow2::datatypes::DataType::Date32);
                 // TODO: we should move this into our own strftime kernel
                 let year_array = compute::temporal::year(&date_array)?;
                 let month_array = compute::temporal::month(&date_array)?;
@@ -283,9 +181,6 @@ impl DateArray {
                     .collect();
                 Ok(Utf8Array::from((self.name(), Box::new(date_str))).into_series())
             }
-            DataType::Int32 => Ok(self.physical.clone().into_series()),
-            DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
-            DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
             DataType::Timestamp(tu, _) => {
                 let days_to_unit: i64 = match tu {
                     TimeUnit::Nanoseconds => 24 * 3_600_000_000_000,
@@ -298,6 +193,7 @@ impl DateArray {
                 let unit_since_epoch = ((&self.physical.clone().into_series()) * &units_per_day)?;
                 unit_since_epoch.cast(dtype)
             }
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => Err(DaftError::TypeError(format!(
@@ -343,7 +239,32 @@ pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz)
 impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Timestamp(tu, _) => {
+                let self_tu = match self.data_type() {
+                    DataType::Timestamp(tu, _) => tu,
+                    _ => panic!("Wrong dtype for TimestampArray: {}", self.data_type()),
+                };
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
+                    std::cmp::Ordering::Greater => {
+                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
+                        self.physical
+                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                    }
+                    std::cmp::Ordering::Less => {
+                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
+                        self.physical
+                            .div(&Int64Array::from(("factor", vec![factor])))?
+                    }
+                };
+                Ok(
+                    TimestampArray::new(Field::new(self.name(), dtype.clone()), physical)
+                        .into_series(),
+                )
+            }
             DataType::Date => Ok(self.date()?.into_series()),
             DataType::Time(tu) => Ok(self.time(tu)?.into_series()),
             DataType::Utf8 => {
@@ -381,11 +302,13 @@ impl TimestampArray {
 
                 Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
             }
-            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
-            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
-            _ => arrow_cast(&self.physical, dtype),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Timestamp to {}",
+                dtype
+            ))),
         }
     }
 }
@@ -393,7 +316,29 @@ impl TimestampArray {
 impl TimeArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::Time(..) => arrow_logical_cast(self, dtype),
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Time(tu) => {
+                let self_tu = match self.data_type() {
+                    DataType::Time(tu) => tu,
+                    _ => panic!("Wrong dtype for TimeArray: {}", self.data_type()),
+                };
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
+                    std::cmp::Ordering::Greater => {
+                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
+                        self.physical
+                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                    }
+                    std::cmp::Ordering::Less => {
+                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
+                        self.physical
+                            .div(&Int64Array::from(("factor", vec![factor])))?
+                    }
+                };
+                Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
+            }
             DataType::Utf8 => {
                 let time_array = self.as_arrow();
                 let time_str: arrow2::array::Utf8Array<i64> = time_array
@@ -409,12 +354,13 @@ impl TimeArray {
                     .collect();
                 Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
             }
-            DataType::Int64 => Ok(self.physical.clone().into_series()),
-            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
-            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
-            _ => arrow_cast(&self.physical, dtype),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Time to {}",
+                dtype
+            ))),
         }
     }
 }
@@ -422,12 +368,18 @@ impl TimeArray {
 impl DurationArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::Duration(..) => arrow_logical_cast(self, dtype),
-            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
-            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
+            DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
-            _ => arrow_cast(&self.physical, dtype),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Duration to {}",
+                dtype
+            ))),
         }
     }
 
@@ -471,7 +423,31 @@ impl Decimal128Array {
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             DataType::Int128 => Ok(self.physical.clone().into_series()),
-            _ => arrow_logical_cast(self, dtype),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
+            DataType::Decimal128(_, _) => {
+                // Use the arrow2 Decimal128 casting logic.
+                let target_arrow_type = dtype.to_arrow()?;
+                let arrow_decimal_array = self
+                    .as_arrow()
+                    .clone()
+                    .to(self.data_type().to_arrow()?)
+                    .to_boxed();
+                let casted_arrow_array = cast(
+                    arrow_decimal_array.as_ref(),
+                    &target_arrow_type,
+                    CastOptions {
+                        wrapped: true,
+                        partial: false,
+                    },
+                )?;
+
+                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                Series::from_arrow(new_field, casted_arrow_array)
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Decimal128 to {}",
+                dtype
+            ))),
         }
     }
 }
