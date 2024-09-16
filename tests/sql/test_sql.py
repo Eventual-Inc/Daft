@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import daft
+from daft.exceptions import DaftCoreException
 from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
 
@@ -149,3 +150,32 @@ def test_sql_count_star():
     actual = df2.collect().to_pydict()
     expected = df.agg(daft.col("b").count()).collect().to_pydict()
     assert actual == expected
+
+
+GLOBAL_DF = daft.from_pydict({"n": [1, 2, 3]})
+
+
+def test_sql_function_sees_caller_tables():
+    # sees the globals
+    df = daft.sql("SELECT * FROM GLOBAL_DF")
+    assert df.collect().to_pydict() == GLOBAL_DF.collect().to_pydict()
+    # sees the locals
+    df_copy = daft.sql("SELECT * FROM df")
+    assert df.collect().to_pydict() == df_copy.collect().to_pydict()
+
+
+def test_sql_function_locals_shadow_globals():
+    GLOBAL_DF = None  # noqa: F841
+    with pytest.raises(Exception, match="Table not found"):
+        daft.sql("SELECT * FROM GLOBAL_DF")
+
+
+def test_sql_function_catalog_is_final():
+    with pytest.raises(Exception, match="Table not found"):
+        daft.sql("SELECT * FROM GLOBAL_DF", catalog=SQLCatalog({}))
+
+
+def test_sql_function_raises_when_cant_get_frame(monkeypatch):
+    monkeypatch.setattr("inspect.currentframe", lambda: None)
+    with pytest.raises(DaftCoreException, match="Cannot get caller environment"):
+        daft.sql("SELECT * FROM df")
