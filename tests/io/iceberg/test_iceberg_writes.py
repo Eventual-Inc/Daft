@@ -156,7 +156,6 @@ def test_missing_columns_write(simple_local_table):
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
     read_back = daft.read_iceberg(simple_local_table)
-    print("as_dict", as_dict)
     assert read_back.to_pydict() == {"x": [None] * 5}
 
 
@@ -239,15 +238,16 @@ def complex_table() -> tuple[pa.Table, Schema]:
     return table, schema
 
 
-@pytest.fixture(
-    params=[
+@pytest.mark.parametrize(
+    "partition_spec",
+    [
         pytest.param(UNPARTITIONED_PARTITION_SPEC, id="unpartitioned"),
         pytest.param(
             PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="a")),
             id="int_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="a")),
+            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="a")),
             id="int_bucket_partitioned",
         ),
         pytest.param(
@@ -263,7 +263,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
             id="string_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=BucketTransform(4), name="c")),
+            PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=BucketTransform(2), name="c")),
             id="string_bucket_partitioned",
         ),
         pytest.param(
@@ -275,7 +275,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
             id="binary_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=BucketTransform(4), name="d")),
+            PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=BucketTransform(2), name="d")),
             id="binary_bucket_partitioned",
         ),
         pytest.param(
@@ -291,7 +291,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
             id="datetime_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=BucketTransform(4), name="f")),
+            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=BucketTransform(2), name="f")),
             id="datetime_bucket_partitioned",
         ),
         pytest.param(
@@ -315,7 +315,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
             id="date_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=BucketTransform(4), name="g")),
+            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=BucketTransform(2), name="g")),
             id="date_bucket_partitioned",
         ),
         pytest.param(
@@ -335,25 +335,30 @@ def complex_table() -> tuple[pa.Table, Schema]:
             id="decimal_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=BucketTransform(4), name="h")),
+            PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=BucketTransform(2), name="h")),
             id="decimal_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=TruncateTransform(2), name="h")),
             id="decimal_truncate_partitioned",
         ),
-    ]
+        pytest.param(
+            PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="a"),
+                PartitionField(source_id=3, field_id=1000, transform=TruncateTransform(2), name="c"),
+            ),
+            id="double_partitioned",
+        ),
+    ],
 )
-def partition_spec(request) -> PartitionSpec:
-    return request.param
-
-
 def test_complex_table_write_read(local_catalog, complex_table, partition_spec):
     pa_table, schema = complex_table
     table = local_catalog.create_table("default.test", schema, partition_spec=partition_spec)
     df = daft.from_arrow(pa_table)
     result = df.write_iceberg(table)
     as_dict = result.to_pydict()
+    if "partitioning" in as_dict:
+        print("as_dict[partitioning]", as_dict["partitioning"])
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 3, as_dict["rows"]
     read_back = daft.read_iceberg(table)

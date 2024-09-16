@@ -6,8 +6,9 @@ import pathlib
 import random
 import time
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Union
+from typing import IO, TYPE_CHECKING, Any, Iterator, Union
 from uuid import uuid4
 
 import pyarrow as pa
@@ -30,7 +31,6 @@ from daft.daft import (
     PythonStorageConfig,
     StorageConfig,
 )
-from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
 from daft.expressions.expressions import Expression
 from daft.filesystem import (
@@ -399,33 +399,24 @@ def read_csv(
     return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
 
 
-def write_tabular(
+@dataclass
+class _TableWriteData:
+    table: MicroPartition
+    path: str
+    partition_values: dict[str, Any]
+
+
+def _table_to_partitions(
     table: MicroPartition,
-    file_format: FileFormat,
-    path: str | pathlib.Path,
-    schema: Schema,
-    partition_cols: ExpressionsProjection | None = None,
-    compression: str | None = None,
-    io_config: IOConfig | None = None,
+    path: str,
+    partition_keys: ExpressionsProjection | None,
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
-) -> MicroPartition:
-    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    if isinstance(path, pathlib.Path):
-        path_str = str(path)
+) -> Iterator[_TableWriteData]:
+    if partition_keys is None or len(partition_keys) == 0:
+        yield _TableWriteData(table, path, {})
     else:
-        path_str = path
-
-    protocol = get_protocol_from_path(path_str)
-    canonicalized_protocol = canonicalize_protocol(protocol)
-
-    is_local_fs = canonicalized_protocol == "file"
-
-    tables_to_write: list[MicroPartition]
-    part_keys_postfix_per_table: list[str | None]
-    partition_values = None
-    if partition_cols and len(partition_cols) > 0:
         default_part = Series.from_pylist([partition_null_fallback])
-        split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
+        split_tables, partition_values = table.partition_by_value(partition_keys=partition_keys)
         assert len(split_tables) == len(partition_values)
         pkey_names = partition_values.column_names()
 
@@ -437,17 +428,32 @@ def write_tabular(
             null_filled = column.is_null().if_else(default_part, string_names)
             values_string_values.append(null_filled.to_pylist())
 
-        part_keys_postfix_per_table = []
-        for i in range(len(partition_values)):
+        partition_values_list = partition_values.to_pylist()
+        for i, (tab, values) in enumerate(zip(split_tables, partition_values_list)):
             postfix = "/".join(f"{pkey}={values[i]}" for pkey, values in zip(pkey_names, values_string_values))
-            part_keys_postfix_per_table.append(postfix)
-        tables_to_write = split_tables
-    else:
-        tables_to_write = [table]
-        part_keys_postfix_per_table = [None]
+            partition_path = f"{path}/{postfix}"
+            yield _TableWriteData(tab, partition_path, values)
 
-    visited_paths = []
-    partition_idx = []
+
+def write_tabular(
+    table: MicroPartition,
+    file_format: FileFormat,
+    path: str | pathlib.Path,
+    schema: Schema,
+    partition_cols: ExpressionsProjection | None = None,
+    compression: str | None = None,
+    io_config: IOConfig | None = None,
+) -> MicroPartition:
+    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+    if isinstance(path, pathlib.Path):
+        path_str = str(path)
+    else:
+        path_str = path
+
+    protocol = get_protocol_from_path(path_str)
+    canonicalized_protocol = canonicalize_protocol(protocol)
+
+    is_local_fs = canonicalized_protocol == "file"
 
     execution_config = get_context().daft_execution_config
 
@@ -467,12 +473,26 @@ def write_tabular(
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
-    for i, (tab, pf) in enumerate(zip(tables_to_write, part_keys_postfix_per_table)):
-        full_path = resolved_path
-        if pf is not None and len(pf) > 0:
-            full_path = f"{full_path}/{pf}"
+    # I kept this from our original code, but idk why it's the first column name -kevin
+    path_key = schema.column_names()[0]
 
-        arrow_table = tab.to_arrow()
+    # TODO: when we have a MicroPartition.from_pylist, use a list here instead
+    data_dict: dict[str, list[Any]] = {path_key: []}
+
+    if partition_cols is not None:
+        data_dict.update({expr.name(): [] for expr in partition_cols})
+
+    @dataclass
+    class FileVisitor:
+        partition_values: dict[str, Any]
+
+        def __call__(self, written_file):
+            data_dict[path_key].append(written_file.path)
+            for c in self.partition_values:
+                data_dict[c].append(self.partition_values[c])
+
+    for write_data in _table_to_partitions(table, resolved_path, partition_cols):
+        arrow_table = write_data.table.to_arrow()
 
         size_bytes = arrow_table.nbytes
 
@@ -484,38 +504,24 @@ def write_tabular(
         target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
         rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
 
-        def file_visitor(written_file, i=i):
-            visited_paths.append(written_file.path)
-            partition_idx.append(i)
-
         _write_tabular_arrow_table(
             arrow_table=arrow_table,
             schema=arrow_table.schema,
-            full_path=full_path,
+            full_path=write_data.path,
             format=format,
             opts=opts,
             fs=fs,
             rows_per_file=rows_per_file,
             rows_per_row_group=rows_per_row_group,
             create_dir=is_local_fs,
-            file_visitor=file_visitor,
+            file_visitor=FileVisitor(write_data.partition_values),
         )
 
-    data_dict: dict[str, Any] = {
-        schema.column_names()[0]: Series.from_pylist(visited_paths, name=schema.column_names()[0]).cast(
-            DataType.string()
-        )
-    }
-
-    if partition_values is not None:
-        partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())
-        for c_name in partition_values.column_names():
-            data_dict[c_name] = partition_values.get_column(c_name).take(partition_idx_series)
     return MicroPartition.from_pydict(data_dict)
 
 
 def write_iceberg(
-    mp: MicroPartition,
+    table: MicroPartition,
     base_path: str,
     schema: IcebergSchema,
     properties: IcebergTableProperties,
@@ -531,8 +537,14 @@ def write_iceberg(
     )
     from pyiceberg.manifest import DataFile, DataFileContent
     from pyiceberg.manifest import FileFormat as IcebergFileFormat
+    from pyiceberg.typedef import Record as IcebergRecord
 
-    from daft.iceberg.iceberg_write import micropartition_to_arrow_tables
+    from daft.iceberg.iceberg_write import (
+        add_missing_columns,
+        coerce_pyarrow_table_to_schema,
+        partition_field_to_expr,
+        to_partition_representation,
+    )
 
     [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
     if isinstance(base_path, pathlib.Path):
@@ -558,11 +570,15 @@ def write_iceberg(
 
     file_schema = schema_to_pyarrow(schema)
 
+    partition_keys = ExpressionsProjection([partition_field_to_expr(field, schema) for field in partition_spec.fields])
+
     data_files = []
 
-    for arrow_table, path, partition in micropartition_to_arrow_tables(mp, resolved_path, schema, partition_spec):
+    @dataclass
+    class FileVisitor:
+        partition_record: IcebergRecord
 
-        def file_visitor(written_file, protocol=protocol):
+        def __call__(self, written_file):
             file_path = f"{protocol}://{written_file.path}"
             size = written_file.size
             metadata = written_file.metadata
@@ -571,7 +587,7 @@ def write_iceberg(
                 "content": DataFileContent.DATA,
                 "file_path": file_path,
                 "file_format": IcebergFileFormat.PARQUET,
-                "partition": partition,
+                "partition": self.partition_record,
                 "file_size_in_bytes": size,
                 # After this has been fixed:
                 # https://github.com/apache/iceberg-python/issues/271
@@ -612,6 +628,12 @@ def write_iceberg(
 
             data_files.append(data_file)
 
+    table = add_missing_columns(table, file_schema)
+    for write_data in _table_to_partitions(table, resolved_path, partition_keys):
+        arrow_table = write_data.table.to_arrow()
+
+        arrow_table = coerce_pyarrow_table_to_schema(arrow_table, file_schema)
+
         size_bytes = arrow_table.nbytes
 
         target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
@@ -622,17 +644,22 @@ def write_iceberg(
         target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
         rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
 
+        encoded_partition_values = {
+            key: to_partition_representation(value) for key, value in write_data.partition_values.items()
+        }
+        partition_record = IcebergRecord(**encoded_partition_values)
+
         _write_tabular_arrow_table(
             arrow_table=arrow_table,
             schema=file_schema,
-            full_path=path,
+            full_path=write_data.path,
             format=format,
             opts=opts,
             fs=fs,
             rows_per_file=rows_per_file,
             rows_per_row_group=rows_per_row_group,
             create_dir=is_local_fs,
-            file_visitor=file_visitor,
+            file_visitor=FileVisitor(partition_record),
         )
 
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})

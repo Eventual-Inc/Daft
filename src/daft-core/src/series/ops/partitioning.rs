@@ -1,6 +1,7 @@
 use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::logical::TimestampArray;
 use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
+use crate::prelude::*;
 use crate::series::array_impl::IntoSeries;
 use crate::with_match_integer_daft_types;
 use crate::{datatypes::DataType, series::Series};
@@ -25,9 +26,7 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value
-            .rename(format!("{}_years", self.name()))
-            .cast(&DataType::Int32)
+        value.cast(&DataType::Int32)
     }
 
     pub fn partitioning_months(&self) -> DaftResult<Self> {
@@ -50,32 +49,34 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value
-            .rename(format!("{}_months", self.name()))
-            .cast(&DataType::Int32)
+        value.cast(&DataType::Int32)
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
-        let result = match self.data_type() {
-            DataType::Date => Ok(self.clone()),
-            DataType::Timestamp(_, None) => {
+        match self.data_type() {
+            DataType::Date => {
+                let date_array = self.downcast::<DateArray>()?;
+                Ok(date_array.physical.clone().into_series())
+            }
+            DataType::Timestamp(unit, _) => {
                 let ts_array = self.downcast::<TimestampArray>()?;
-                Ok(ts_array.date()?.into_series())
+                let physical = &ts_array.physical.cast(&DataType::Float64)?;
+                let unit_to_days: f64 = match unit {
+                    TimeUnit::Nanoseconds => 86_400_000_000_000.0,
+                    TimeUnit::Microseconds => 86_400_000_000.0,
+                    TimeUnit::Milliseconds => 86_400_000.0,
+                    TimeUnit::Seconds => 86_400.0,
+                };
+                // TODO: use floor division once it is implemented
+                let divider = Float64Array::from(("divider", vec![unit_to_days])).into_series();
+                let days = (physical / &divider)?.floor()?;
+                days.cast(&DataType::Int32)
             }
-
-            DataType::Timestamp(tu, Some(_)) => {
-                let array = self.cast(&DataType::Timestamp(*tu, None))?;
-                let ts_array = array.downcast::<TimestampArray>()?;
-                Ok(ts_array.date()?.into_series())
-            }
-
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_days() operation on temporal types, got {}",
                 self.data_type()
             ))),
-        }?;
-
-        Ok(result.rename(format!("{}_days", self.name())))
+        }
     }
 
     pub fn partitioning_hours(&self) -> DaftResult<Self> {
@@ -98,9 +99,7 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value
-            .rename(format!("{}_hours", self.name()))
-            .cast(&DataType::Int32)
+        value.cast(&DataType::Int32)
     }
 
     pub fn partitioning_iceberg_bucket(&self, n: i32) -> DaftResult<Self> {
@@ -111,12 +110,12 @@ impl Series {
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
-        Ok(Int32Array::from((format!("{}_bucket", self.name()).as_str(), array)).into_series())
+        Ok(Int32Array::from((self.name(), array)).into_series())
     }
 
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         assert!(w > 0, "Expected w to be positive, got {w}");
-        let trunc = match self.data_type() {
+        match self.data_type() {
             i if i.is_integer() => {
                 with_match_integer_daft_types!(i, |$T| {
                     let downcasted = self.downcast::<<$T as DaftDataType>::ArrayType>()?;
@@ -130,8 +129,6 @@ impl Series {
                 "Can only run partitioning_iceberg_truncate() operation on integers, decimal, string, and binary, got {}",
                 self.data_type()
             ))),
-        }?;
-
-        Ok(trunc.rename(format!("{}_truncate", self.name())))
+        }
     }
 }

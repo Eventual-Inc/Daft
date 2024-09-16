@@ -23,10 +23,9 @@ macro_rules! impl_func_evaluator_for_partitioning {
             ) -> DaftResult<Field> {
                 match inputs {
                     [input] => match input.to_field(schema) {
-                        Ok(field) if field.dtype.is_temporal() => Ok(Field::new(
-                            format!("{}_{}", field.name, stringify!($op)),
-                            $result_type,
-                        )),
+                        Ok(field) if field.dtype.is_temporal() => {
+                            Ok(Field::new(field.name, $result_type))
+                        }
                         Ok(field) => Err(DaftError::TypeError(format!(
                             "Expected input to {} to be temporal, got {}",
                             stringify!($op),
@@ -55,10 +54,10 @@ macro_rules! impl_func_evaluator_for_partitioning {
     };
 }
 use crate::functions::FunctionExpr;
-use DataType::{Date, Int32};
+use DataType::Int32;
 impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
 impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
-impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);
+impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Int32);
 impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours, Int32);
 
 pub(super) struct IcebergBucketEvaluator {}
@@ -76,14 +75,8 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
                     | DataType::Date
                     | DataType::Timestamp(..)
                     | DataType::Utf8
-                    | DataType::Binary => Ok(Field::new(
-                        format!("{}_bucket", field.name),
-                        DataType::Int32,
-                    )),
-                    v if v.is_integer() => Ok(Field::new(
-                        format!("{}_bucket", field.name),
-                        DataType::Int32,
-                    )),
+                    | DataType::Binary => Ok(Field::new(field.name, DataType::Int32)),
+                    v if v.is_integer() => Ok(Field::new(field.name, DataType::Int32)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to iceberg bucketing to be murmur3 hashable, got {}",
                         field.dtype
@@ -126,10 +119,10 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {
                     DataType::Decimal128(_, _)
-                    | DataType::Utf8 => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
-                    v if v.is_integer() => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
+                    | DataType::Utf8 | DataType::Binary => Ok(Field::new(field.name, field.dtype)),
+                    v if v.is_integer() => Ok(Field::new(field.name, field.dtype)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected input to IcebergTruncate to be an Integer, Utf8 or Decimal, got {}",
+                        "Expected input to IcebergTruncate to be an Integer, Utf8, Decimal, or Binary, got {}",
                         field.dtype
                     ))),
                 },

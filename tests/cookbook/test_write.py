@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
@@ -87,19 +87,18 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "exp,key,answer",
+    "exp,answer",
     [
         (
-            daft.col("date").partitioning.days(),
-            "date_days",
-            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
+            daft.col("date").partitioning.days().alias("date_days"),
+            [19723, 19754, 19783, 19814, 19844],
         ),
-        (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
-        (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
-        (daft.col("date").partitioning.years(), "date_years", [54]),
+        (daft.col("date").partitioning.hours().alias("date_hours"), [473352, 474096, 474792, 475536, 476256]),
+        (daft.col("date").partitioning.months().alias("date_months"), [648, 649, 650, 651, 652]),
+        (daft.col("date").partitioning.years().alias("date_years"), [54]),
     ],
 )
-def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path):
+def test_parquet_write_with_iceberg_date_partitioning(exp, answer, tmp_path):
     data = {
         "id": [1, 2, 3, 4, 5],
         "date": [
@@ -110,6 +109,7 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
             datetime(2024, 5, 1),
         ],
     }
+    key = exp.name()
     df = daft.from_pydict(data)
     date_files = df.write_parquet(tmp_path, partition_cols=[exp]).sort(by=key)
     output_dict = date_files.to_pydict()
@@ -120,13 +120,13 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
 
 
 @pytest.mark.parametrize(
-    "exp,key,answer",
+    "exp,answer",
     [
-        (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_truncate", [0, 10, 20, 40]),
+        (daft.col("id").partitioning.iceberg_bucket(10).alias("id_bucket"), [0, 3, 5, 6, 8]),
+        (daft.col("id").partitioning.iceberg_truncate(10).alias("id_truncate"), [0, 10, 20, 40]),
     ],
 )
-def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):
+def test_parquet_write_with_iceberg_bucket_and_trunc(exp, answer, tmp_path):
     data = {
         "id": [1, 12, 23, 24, 45],
         "date": [
@@ -137,6 +137,7 @@ def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path)
             datetime(2024, 5, 1),
         ],
     }
+    key = exp.name()
     df = daft.from_pydict(data)
     date_files = df.write_parquet(tmp_path, partition_cols=[exp]).sort(by=key)
     output_dict = date_files.to_pydict()
