@@ -4,7 +4,9 @@ use arrow2::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::ByteRecord;
+use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
+use daft_decoding::inference::infer;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
@@ -15,8 +17,6 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{schema::merge_schema, CsvParseOptions};
-use daft_compression::CompressionCodec;
-use daft_decoding::inference::infer;
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
@@ -294,9 +294,8 @@ mod tests {
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 
-    use crate::CsvParseOptions;
-
     use super::read_csv_schema;
+    use crate::CsvParseOptions;
 
     #[rstest]
     fn test_csv_schema_local(

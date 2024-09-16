@@ -1,11 +1,12 @@
-use super::as_arrow::AsArrow;
-use super::from_arrow::FromArrow;
-use super::DaftApproxSketchAggable;
-use crate::array::ops::GroupIndices;
-use crate::{array::StructArray, datatypes::*};
 use arrow2::array::Array;
 use common_error::DaftResult;
 use sketches_ddsketch::{Config, DDSketch};
+
+use super::{as_arrow::AsArrow, from_arrow::FromArrow, DaftApproxSketchAggable};
+use crate::{
+    array::{ops::GroupIndices, StructArray},
+    datatypes::*,
+};
 
 impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     type Output = DaftResult<StructArray>;

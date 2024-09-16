@@ -1,3 +1,6 @@
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -6,9 +9,6 @@ use crate::{
     datatypes::DaftArrowBackedType,
     series::IntoSeries,
 };
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 
 impl<T> DaftListAggable for DataArray<T>
 where
@@ -63,9 +63,9 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<crate::datatypes::PythonArray>;
 
     fn list(&self) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
@@ -76,9 +76,9 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     }
 
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
 

@@ -4,11 +4,10 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::Schema;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
+use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
-
-use daft_stats::{ColumnRangeStatistics, TableStatistics};
 
 fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs

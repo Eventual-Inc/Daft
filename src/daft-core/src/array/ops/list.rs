@@ -1,24 +1,18 @@
-use std::iter::repeat;
-use std::sync::Arc;
-
-use crate::datatypes::DataType;
-use crate::datatypes::{BooleanArray, Field, Int64Array, Utf8Array};
-use crate::{
-    array::{
-        growable::{make_growable, Growable},
-        FixedSizeListArray, ListArray,
-    },
-    datatypes::UInt64Array,
-};
-
-use crate::series::{IntoSeries, Series};
+use std::{iter::repeat, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
-
-use crate::count_mode::CountMode;
+use crate::{
+    array::{
+        growable::{make_growable, Growable},
+        FixedSizeListArray, ListArray,
+    },
+    count_mode::CountMode,
+    datatypes::{BooleanArray, DataType, Field, Int64Array, UInt64Array, Utf8Array},
+    series::{IntoSeries, Series},
+};
 
 fn join_arrow_list_of_utf8s(
     list_element: Option<&dyn arrow2::array::Array>,

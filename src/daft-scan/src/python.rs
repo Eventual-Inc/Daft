@@ -1,7 +1,6 @@
+use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
-
-use common_py_serde::{deserialize_py_object, serialize_py_object};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -39,44 +38,33 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use common_error::DaftResult;
-    use common_file_formats::python::PyFileFormatConfig;
-    use common_file_formats::FileFormatConfig;
-    use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_dsl::python::PyExpr;
-    use daft_schema::python::field::PyField;
-    use daft_schema::schema::SchemaRef;
-
-    use daft_stats::PartitionSpec;
-    use daft_stats::TableMetadata;
-    use daft_stats::TableStatistics;
-    use daft_table::python::PyTable;
-    use daft_table::Table;
-    use pyo3::prelude::*;
-
-    use pyo3::types::PyIterator;
-    use pyo3::types::PyList;
     use std::sync::Arc;
 
-    use daft_schema::python::schema::PySchema;
-
-    use pyo3::pyclass;
+    use common_daft_config::PyDaftExecutionConfig;
+    use common_error::DaftResult;
+    use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
+    use common_py_serde::impl_bincode_py_state_serialization;
+    use daft_dsl::python::PyExpr;
+    use daft_schema::{
+        python::{field::PyField, schema::PySchema},
+        schema::SchemaRef,
+    };
+    use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+    use daft_table::{python::PyTable, Table};
+    use pyo3::{
+        prelude::*,
+        pyclass,
+        types::{PyIterator, PyList},
+    };
     use serde::{Deserialize, Serialize};
 
-    use crate::anonymous::AnonymousScanOperator;
-    use crate::storage_config::PythonStorageConfig;
-    use crate::DataSource;
-    use crate::PartitionField;
-    use crate::Pushdowns;
-    use crate::ScanOperator;
-    use crate::ScanOperatorRef;
-    use crate::ScanTask;
-
-    use crate::glob::GlobScanOperator;
-    use crate::storage_config::PyStorageConfig;
-    use common_daft_config::PyDaftExecutionConfig;
-
     use super::PythonTablesFactoryArgs;
+    use crate::{
+        anonymous::AnonymousScanOperator,
+        glob::GlobScanOperator,
+        storage_config::{PyStorageConfig, PythonStorageConfig},
+        DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
+    };
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {

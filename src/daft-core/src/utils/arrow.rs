@@ -1,8 +1,7 @@
-use lazy_static::lazy_static;
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use arrow2::compute::cast;
+use lazy_static::lazy_static;
 
 // TODO(Clark): Refactor to GILOnceCell in order to avoid deadlock between the below mutex and the Python GIL.
 lazy_static! {

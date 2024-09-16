@@ -206,7 +206,6 @@ use arrow2::{
     buffer::Buffer,
     datatypes::DataType,
 };
-
 use common_error::{DaftError, DaftResult};
 
 pub mod compute;

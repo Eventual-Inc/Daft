@@ -1,10 +1,13 @@
-use super::SQLModule;
-use crate::functions::SQLFunctions;
 use daft_dsl::ExprRef;
 use daft_functions::float;
 use sqlparser::ast::FunctionArg;
 
-use crate::{error::SQLPlannerResult, functions::SQLFunction, unsupported_sql_err};
+use super::SQLModule;
+use crate::{
+    error::SQLPlannerResult,
+    functions::{SQLFunction, SQLFunctions},
+    unsupported_sql_err,
+};
 
 pub struct SQLModuleFloat;
 

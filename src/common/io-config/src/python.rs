@@ -239,8 +239,7 @@ impl IOConfig {
     }
 
     pub fn __hash__(&self) -> PyResult<u64> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
+        use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
         let mut hasher = DefaultHasher::new();
         self.config.hash(&mut hasher);

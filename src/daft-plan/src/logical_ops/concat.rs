@@ -3,9 +3,7 @@ use std::sync::Arc;
 use common_error::DaftError;
 use snafu::ResultExt;
 
-use crate::logical_plan;
-use crate::logical_plan::CreationSnafu;
-use crate::LogicalPlan;
+use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concat {

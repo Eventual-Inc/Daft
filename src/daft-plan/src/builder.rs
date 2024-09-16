@@ -3,6 +3,26 @@ use std::{
     sync::Arc,
 };
 
+use common_daft_config::DaftPlanningConfig;
+use common_display::mermaid::MermaidDisplayOptions;
+use common_error::DaftResult;
+use common_file_formats::FileFormat;
+use common_io_config::IOConfig;
+use daft_core::join::{JoinStrategy, JoinType};
+use daft_dsl::{col, ExprRef};
+use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_schema::schema::{Schema, SchemaRef};
+#[cfg(feature = "python")]
+use {
+    crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
+    crate::source_info::InMemoryInfo,
+    common_daft_config::PyDaftPlanningConfig,
+    daft_dsl::python::PyExpr,
+    daft_scan::python::pylib::ScanOperatorHandle,
+    daft_schema::python::schema::PySchema,
+    pyo3::prelude::*,
+};
+
 use crate::{
     logical_ops,
     logical_optimization::{Optimizer, OptimizerConfig},
@@ -13,27 +33,6 @@ use crate::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     LogicalPlanRef,
-};
-use common_daft_config::DaftPlanningConfig;
-use common_display::mermaid::MermaidDisplayOptions;
-use common_error::DaftResult;
-use common_file_formats::FileFormat;
-use common_io_config::IOConfig;
-use daft_core::join::{JoinStrategy, JoinType};
-use daft_schema::schema::{Schema, SchemaRef};
-
-use daft_dsl::{col, ExprRef};
-use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
-
-#[cfg(feature = "python")]
-use {
-    crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::source_info::InMemoryInfo,
-    common_daft_config::PyDaftPlanningConfig,
-    daft_dsl::python::PyExpr,
-    daft_scan::python::pylib::ScanOperatorHandle,
-    daft_schema::python::schema::PySchema,
-    pyo3::prelude::*,
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via

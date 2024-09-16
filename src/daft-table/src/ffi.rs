@@ -1,15 +1,12 @@
-use pyo3::exceptions::PyValueError;
-
-use pyo3::prelude::*;
-use pyo3::types::PyList;
-
-use crate::Table;
 use common_error::DaftResult;
 use daft_core::{
     prelude::SchemaRef,
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
+
+use crate::Table;
 
 pub fn record_batches_to_table(
     py: Python,

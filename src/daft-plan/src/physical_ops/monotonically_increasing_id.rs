@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
+
+use crate::physical_plan::PhysicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {

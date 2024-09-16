@@ -1,14 +1,13 @@
 use common_error::DaftResult;
 
+#[cfg(feature = "python")]
+use crate::series::ops::py_between_op_utilfn;
 use crate::{
     array::ops::DaftBetween,
     datatypes::{BooleanArray, DataType, InferDataType},
     series::{IntoSeries, Series},
     with_match_numeric_daft_types,
 };
-
-#[cfg(feature = "python")]
-use crate::series::ops::py_between_op_utilfn;
 
 impl Series {
     pub fn between(&self, lower: &Series, upper: &Series) -> DaftResult<Series> {
@@ -53,9 +52,9 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use crate::{datatypes::DataType, series::Series};
-
     use common_error::DaftResult;
+
+    use crate::{datatypes::DataType, series::Series};
 
     #[test]
     fn test_between_all_null() -> DaftResult<()> {

@@ -28,13 +28,12 @@ pub use physical_planner::{
     logical_to_physical, populate_aggregation_stages, AdaptivePlanner, MaterializedResults,
     QueryStageOutput,
 };
-pub use sink_info::{OutputFileInfo, SinkInfo};
-pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
-
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+pub use sink_info::{OutputFileInfo, SinkInfo};
+pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 #[cfg(feature = "python")]
 use {
     common_file_formats::{

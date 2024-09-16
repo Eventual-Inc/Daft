@@ -1,6 +1,7 @@
-use crate::{datatypes::TimeUnit, series::Series};
 use common_display::table_display::StrValue;
 use itertools::Itertools;
+
+use crate::{datatypes::TimeUnit, series::Series};
 
 pub fn display_date32(val: i32) -> String {
     let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();

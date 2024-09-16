@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-
 use daft_dsl::resolve_exprs;
 
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};

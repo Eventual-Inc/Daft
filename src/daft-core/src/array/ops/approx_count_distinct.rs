@@ -3,10 +3,11 @@ use std::collections::HashSet;
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
-use crate::array::ops::as_arrow::AsArrow;
-use crate::array::ops::DaftApproxCountDistinctAggable;
-use crate::datatypes::UInt64Array;
-use crate::utils::identity_hash_set::IdentityBuildHasher;
+use crate::{
+    array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctAggable},
+    datatypes::UInt64Array,
+    utils::identity_hash_set::IdentityBuildHasher,
+};
 
 impl DaftApproxCountDistinctAggable for UInt64Array {
     type Output = DaftResult<UInt64Array>;

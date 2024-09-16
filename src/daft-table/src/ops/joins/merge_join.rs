@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::full::FullNull,
     datatypes::{DataType, UInt64Array},
@@ -8,7 +9,6 @@ use daft_core::{
 };
 
 use crate::Table;
-use common_error::{DaftError, DaftResult};
 
 /// A state machine for the below merge-join algorithm.
 ///
