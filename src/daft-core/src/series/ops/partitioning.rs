@@ -45,7 +45,7 @@ impl Series {
                 ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run partitioning_years() operation on temporal types, got {}",
+                "Can only run partitioning_months() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }?;
