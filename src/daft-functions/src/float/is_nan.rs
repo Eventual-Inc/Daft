@@ -1,20 +1,27 @@
-use daft_core::prelude::*;
-
-use crate::ExprRef;
-
-use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct IsNan {}
 
-pub(super) struct NotNanEvaluator {}
-
-impl FunctionEvaluator for NotNanEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "not_nan"
+#[typetag::serde]
+impl ScalarUDF for IsNan {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "is_nan"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
@@ -35,13 +42,29 @@ impl FunctionEvaluator for NotNanEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data] => data.not_nan(),
+            [data] => data.is_nan(),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()
             ))),
         }
     }
+}
+
+pub fn is_nan(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(IsNan {}, vec![input]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "is_nan")]
+pub fn py_is_nan(expr: PyExpr) -> PyResult<PyExpr> {
+    Ok(is_nan(expr.into()).into())
 }
