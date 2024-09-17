@@ -434,9 +434,7 @@ pub(super) fn translate_single_logical_node(
                 left_clustering_spec.num_partitions(),
                 right_clustering_spec.num_partitions(),
             );
-            println!("1. num_partitions: {}", num_partitions);
             let num_partitions = min(num_partitions, cfg.shuffle_join_default_partitions);
-            println!("2. num_partitions: {}", num_partitions);
 
             let is_left_hash_partitioned =
                 matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
@@ -619,7 +617,7 @@ pub(super) fn translate_single_logical_node(
                     // allow for leniency in partition size to avoid minor repartitions
                     let num_left_partitions = left_clustering_spec.num_partitions();
                     let num_right_partitions = right_clustering_spec.num_partitions();
-
+                    // 100, 300
                     let num_partitions = match (
                         is_left_hash_partitioned,
                         is_right_hash_partitioned,
@@ -640,13 +638,14 @@ pub(super) fn translate_single_logical_node(
                         }
                         (_, _, a, b) => max(a, b),
                     };
+                    let num_partitions = min(num_partitions, cfg.shuffle_join_default_partitions);
 
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             left_physical,
-                            min(num_partitions, cfg.shuffle_join_default_partitions),
+                            num_partitions,
                             left_on.clone(),
                         ));
                         left_physical =
@@ -657,7 +656,7 @@ pub(super) fn translate_single_logical_node(
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             right_physical,
-                            min(num_partitions, cfg.shuffle_join_default_partitions),
+                            num_partitions,
                             right_on.clone(),
                         ));
                         right_physical =
