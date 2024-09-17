@@ -502,10 +502,12 @@ class DataType:
 
 
 _EXT_TYPE_REGISTERED = False
+_STATIC_DAFT_EXTENSION = None
 
 
 def _ensure_registered_super_ext_type():
     global _EXT_TYPE_REGISTERED
+    global _STATIC_DAFT_EXTENSION
     if not _EXT_TYPE_REGISTERED:
 
         class DaftExtension(pa.ExtensionType):
@@ -525,8 +527,14 @@ def _ensure_registered_super_ext_type():
             def __arrow_ext_deserialize__(cls, storage_type, serialized):
                 return cls(storage_type, serialized)
 
+        _STATIC_DAFT_EXTENSION = DaftExtension
         pa.register_extension_type(DaftExtension(pa.null()))
         import atexit
 
         atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
         _EXT_TYPE_REGISTERED = True
+
+
+def get_super_ext_type():
+    _ensure_registered_super_ext_type()
+    return _STATIC_DAFT_EXTENSION
