@@ -1,7 +1,5 @@
-use crate::array::prelude::*;
-use crate::datatypes::prelude::*;
-
 use super::DataArray;
+use crate::{array::prelude::*, datatypes::prelude::*};
 
 impl<T> DataArray<T>
 where

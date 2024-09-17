@@ -2,12 +2,11 @@ mod file_format;
 pub use file_format::FileFormat;
 
 mod file_format_config;
+#[cfg(feature = "python")]
+pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
 };
-
-#[cfg(feature = "python")]
-pub use file_format_config::DatabaseSourceConfig;
 
 #[cfg(feature = "python")]
 pub mod python;

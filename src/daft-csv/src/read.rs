@@ -7,8 +7,9 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
+use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
+use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
@@ -28,10 +29,10 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::ArrowSnafu;
-use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_compression::CompressionCodec;
-use daft_decoding::deserialize::deserialize_column;
+use crate::{
+    metadata::read_csv_schema_single, ArrowSnafu, CsvConvertOptions, CsvParseOptions,
+    CsvReadOptions,
+};
 
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
@@ -663,24 +664,21 @@ fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
-
     use arrow2::io::csv::read::{
         deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
         ReaderBuilder,
     };
+    use common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use rstest::rstest;
 
-    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-
     use super::read_csv;
+    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(

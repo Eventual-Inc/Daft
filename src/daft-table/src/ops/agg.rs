@@ -1,12 +1,8 @@
-use daft_core::{array::ops::IntoGroups, prelude::*};
-
-use daft_dsl::{functions::FunctionExpr, AggExpr, Expr};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_dsl::{functions::FunctionExpr, AggExpr, Expr, ExprRef};
 
 use crate::Table;
-
-use daft_dsl::ExprRef;
 
 impl Table {
     pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {

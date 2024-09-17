@@ -1,12 +1,12 @@
+use common_error::DaftResult;
 use num_traits::Float;
 use serde::{Deserialize, Serialize};
 
-use common_error::DaftResult;
-
-use crate::array::DataArray;
-use crate::datatypes::{DaftFloatType, Float32Array, Float64Array};
-
 use super::DaftAtan2;
+use crate::{
+    array::DataArray,
+    datatypes::{DaftFloatType, Float32Array, Float64Array},
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TrigonometricFunction {

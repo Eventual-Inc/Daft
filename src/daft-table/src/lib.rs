@@ -2,22 +2,24 @@
 #![feature(let_chains)]
 
 use core::slice;
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{Display, Formatter, Result},
+};
 
 use common_display::table_display::{make_comfy_table, StrValue};
-use daft_core::array::ops::full::FullNull;
-use num_traits::ToPrimitive;
-
-use daft_core::array::ops::{DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices};
-
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
-
-use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{
-    col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue, SketchType,
+use daft_core::{
+    array::ops::{
+        full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
+    },
+    prelude::*,
 };
+use daft_dsl::{
+    col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
+    LiteralValue, SketchType,
+};
+use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
 mod growable;
@@ -26,7 +28,6 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableTable;
-
 pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
@@ -796,11 +797,11 @@ impl<'a> IntoIterator for &'a Table {
 
 #[cfg(test)]
 mod test {
-    use crate::Table;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_dsl::col;
+
+    use crate::Table;
 
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {

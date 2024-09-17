@@ -1,5 +1,4 @@
-use crate::ExprRef;
-use crate::{Expr, Operator};
+use crate::{Expr, ExprRef, Operator};
 
 macro_rules! impl_expr_op {
     ($func_name:ident, $op_name: ident) => {
@@ -25,8 +24,9 @@ impl_expr_op!(rem, Modulus);
 
 #[cfg(test)]
 mod tests {
-    use crate::{col, Expr};
     use common_error::{DaftError, DaftResult};
+
+    use crate::{col, Expr};
 
     #[test]
     fn check_add_expr_type() -> DaftResult<()> {

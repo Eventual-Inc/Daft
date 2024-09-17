@@ -1,8 +1,9 @@
-use crate::datatypes::TimeUnit;
-use crate::series::array_impl::IntoSeries;
-use crate::{datatypes::DataType, series::Series};
-
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    datatypes::{DataType, TimeUnit},
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
     pub fn dt_date(&self) -> DaftResult<Self> {

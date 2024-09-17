@@ -13,9 +13,8 @@ use daft_core::{
     },
 };
 
-use crate::{ops::hash::IndexHash, Table};
-
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
+use crate::{ops::hash::IndexHash, Table};
 pub(crate) struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,

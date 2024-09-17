@@ -1,11 +1,10 @@
 use common_error::DaftResult;
 use daft_core::prelude::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
+use indexmap::IndexMap;
 use snafu::ResultExt;
 
 use super::column_range::parquet_statistics_to_column_range_statistics;
-
-use indexmap::IndexMap;
 
 pub fn row_group_metadata_to_table_stats(
     metadata: &crate::metadata::RowGroupMetaData,

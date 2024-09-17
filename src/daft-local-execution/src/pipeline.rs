@@ -1,5 +1,23 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
+use common_error::DaftResult;
+use daft_core::{
+    datatypes::Field,
+    prelude::{Schema, SchemaRef},
+    utils::supertype,
+};
+use daft_dsl::{join::get_common_join_keys, Expr};
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    UnGroupedAggregate,
+};
+use daft_plan::{populate_aggregation_stages, JoinType};
+use daft_table::{Probeable, Table};
+use indexmap::IndexSet;
+use snafu::ResultExt;
+
 use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
@@ -15,23 +33,6 @@ use crate::{
     sources::in_memory::InMemorySource,
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
-
-use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
-use common_error::DaftResult;
-use daft_core::{datatypes::Field, utils::supertype};
-
-use daft_core::prelude::{Schema, SchemaRef};
-
-use daft_dsl::{join::get_common_join_keys, Expr};
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
-};
-use daft_plan::{populate_aggregation_stages, JoinType};
-use daft_table::{Probeable, Table};
-use indexmap::IndexSet;
-use snafu::ResultExt;
 
 #[derive(Clone)]
 pub enum PipelineResultType {
@@ -99,8 +100,9 @@ pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
-    use crate::sources::scan_task::ScanTaskSource;
     use daft_physical_plan::PhysicalScan;
+
+    use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());

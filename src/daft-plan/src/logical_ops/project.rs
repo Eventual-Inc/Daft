@@ -7,8 +7,10 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use crate::logical_plan::{CreationSnafu, Result};
-use crate::LogicalPlan;
+use crate::{
+    logical_plan::{CreationSnafu, Result},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Project {
@@ -456,7 +458,6 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_dsl::{binary_op, col, lit, Operator};
 
     use crate::{

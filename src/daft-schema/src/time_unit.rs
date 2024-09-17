@@ -1,7 +1,5 @@
-use derive_more::Display;
-
 use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
-
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -22,6 +20,15 @@ impl TimeUnit {
             TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
             TimeUnit::Seconds => ArrowTimeUnit::Second,
+        }
+    }
+
+    pub fn to_scale_factor(&self) -> i64 {
+        match self {
+            TimeUnit::Seconds => 1,
+            TimeUnit::Milliseconds => 1000,
+            TimeUnit::Microseconds => 1_000_000,
+            TimeUnit::Nanoseconds => 1_000_000_000,
         }
     }
 }

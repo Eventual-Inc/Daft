@@ -1,6 +1,7 @@
+use std::{cmp::max, ops::Add, sync::Arc};
+
 use common_display::ascii::AsciiTreeDisplay;
 use serde::{Deserialize, Serialize};
-use std::{cmp::max, ops::Add, sync::Arc};
 
 use crate::{
     partitioning::{

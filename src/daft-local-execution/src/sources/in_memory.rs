@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use crate::ExecutionRuntimeHandle;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::sources::source::SourceStream;
+use crate::{sources::source::SourceStream, ExecutionRuntimeHandle};
 
 pub struct InMemorySource {
     data: Vec<Arc<MicroPartition>>,

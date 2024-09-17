@@ -1,16 +1,16 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    array::{ListArray, StructArray},
-    datatypes::{DaftLogicalType, DateType, Field},
-    with_match_daft_logical_primitive_types,
-};
 use common_error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
     TimeType, TimestampType,
+};
+use crate::{
+    array::{ListArray, StructArray},
+    datatypes::{DaftLogicalType, DateType, Field},
+    with_match_daft_logical_primitive_types,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
