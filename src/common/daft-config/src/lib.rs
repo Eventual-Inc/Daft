@@ -106,13 +106,11 @@ impl DaftExecutionConfig {
 mod python;
 
 #[cfg(feature = "python")]
+use pyo3::prelude::*;
+#[cfg(feature = "python")]
 pub use python::PyDaftExecutionConfig;
-
 #[cfg(feature = "python")]
 pub use python::PyDaftPlanningConfig;
-
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

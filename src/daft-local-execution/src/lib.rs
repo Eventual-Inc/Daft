@@ -9,8 +9,7 @@ mod sources;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
-use snafu::futures::TryFutureExt;
-use snafu::Snafu;
+use snafu::{futures::TryFutureExt, Snafu};
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }

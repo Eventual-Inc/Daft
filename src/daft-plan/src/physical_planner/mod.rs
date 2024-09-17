@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-
-use crate::LogicalPlan;
-use crate::{physical_optimization::optimizer::PhysicalOptimizer, physical_plan::PhysicalPlanRef};
-
-use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;
+
+use crate::{
+    physical_optimization::optimizer::PhysicalOptimizer, physical_plan::PhysicalPlanRef,
+    physical_planner::planner::PhysicalPlanTranslator, LogicalPlan,
+};
 mod planner;
 pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 mod translate;

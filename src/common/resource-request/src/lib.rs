@@ -1,3 +1,8 @@
+use std::{
+    hash::{Hash, Hasher},
+    ops::Add,
+};
+
 use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
@@ -8,10 +13,6 @@ use pyo3::{
     types::{PyModule, PyModuleMethods},
     Bound, PyObject, PyResult, Python,
 };
-
-use std::hash::{Hash, Hasher};
-use std::ops::Add;
-
 use serde::{Deserialize, Serialize};
 
 /// Resource request for a query fragment task.

@@ -1,21 +1,20 @@
 use common_display::table_display::StrValue;
+use common_error::DaftResult;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
-    datatypes::DataType,
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeBinaryArray,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
         NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{display_date32, display_decimal128, display_time64, display_timestamp},
     with_match_daft_types,
 };
-use common_error::DaftResult;
 
 // Default implementation of str_value: format the value with the given format string.
 macro_rules! impl_array_str_value {

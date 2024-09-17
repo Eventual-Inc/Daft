@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use crate::{physical_plan::PhysicalPlan, LogicalPlan};
 use common_error::DaftResult;
 use common_treenode::DynTreeNode;
+
+use crate::{physical_plan::PhysicalPlan, LogicalPlan};
 
 impl DynTreeNode for LogicalPlan {
     fn arc_children(&self) -> Vec<Arc<Self>> {

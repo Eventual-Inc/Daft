@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -7,16 +9,14 @@ use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
-use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::instrument;
 
 use crate::{
     channel::{create_channel, Sender},
     sources::source::{Source, SourceStream},
     ExecutionRuntimeHandle,
 };
-
-use tracing::instrument;
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,

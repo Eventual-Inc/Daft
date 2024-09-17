@@ -1,10 +1,10 @@
 use std::ops::Not;
 
-use crate::DaftCoreComputeSnafu;
 use daft_core::prelude::*;
 use snafu::ResultExt;
 
 use super::ColumnRangeStatistics;
+use crate::DaftCoreComputeSnafu;
 
 impl DaftCompare<&ColumnRangeStatistics> for ColumnRangeStatistics {
     type Output = crate::Result<ColumnRangeStatistics>;

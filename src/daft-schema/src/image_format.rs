@@ -1,11 +1,10 @@
-use derive_more::Display;
 use std::str::FromStr;
 
+use common_error::{DaftError, DaftResult};
+use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-
-use common_error::{DaftError, DaftResult};
 
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]

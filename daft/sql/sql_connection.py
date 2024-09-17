@@ -55,20 +55,9 @@ class SQLConnection:
             sql = self.construct_sql_query(sql, limit=0)
         else:
             sql = self.construct_sql_query(sql, limit=infer_schema_length)
-        table = self._execute_sql_query(sql)
+        table = self.execute_sql_query(sql)
         schema = Schema.from_pyarrow_schema(table.schema)
         return schema
-
-    def read(
-        self,
-        sql: str,
-        projection: list[str] | None = None,
-        limit: int | None = None,
-        predicate: str | None = None,
-        partition_bounds: tuple[str, str] | None = None,
-    ) -> pa.Table:
-        sql = self.construct_sql_query(sql, projection, predicate, limit, partition_bounds)
-        return self._execute_sql_query(sql)
 
     def construct_sql_query(
         self,
@@ -130,7 +119,7 @@ class SQLConnection:
                 return True
         return False
 
-    def _execute_sql_query(self, sql: str) -> pa.Table:
+    def execute_sql_query(self, sql: str) -> pa.Table:
         if self._should_use_connectorx():
             return self._execute_sql_query_with_connectorx(sql)
         else:

@@ -1,15 +1,13 @@
+use std::{
+    any::Any,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    time::SystemTime,
+};
+
 use aws_credential_types::provider::ProvideCredentials;
-use chrono::offset::Utc;
-use chrono::DateTime;
-use serde::Deserialize;
-use serde::Serialize;
-use std::any::Any;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::time::SystemTime;
+use chrono::{offset::Utc, DateTime};
+use serde::{Deserialize, Serialize};
 
 pub use crate::ObfuscatedString;
 

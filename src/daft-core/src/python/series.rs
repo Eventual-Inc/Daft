@@ -1,5 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+use common_arrow_ffi as ffi;
+use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -9,7 +11,10 @@ use pyo3::{
 
 use crate::{
     array::{
-        ops::{DaftLogical, Utf8NormalizeOptions},
+        ops::{
+            as_arrow::AsArrow, trigonometry::TrigonometricFunction, DaftLogical,
+            Utf8NormalizeOptions,
+        },
         pseudo_arrow::PseudoArrowArray,
         DataArray,
     },
@@ -18,12 +23,6 @@ use crate::{
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
-
-use common_arrow_ffi as ffi;
-
-use crate::array::ops::as_arrow::AsArrow;
-use crate::array::ops::trigonometry::TrigonometricFunction;
-use daft_schema::python::PyDataType;
 
 #[pyclass]
 #[derive(Clone)]

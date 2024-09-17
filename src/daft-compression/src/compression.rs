@@ -1,8 +1,9 @@
+use std::{path::PathBuf, pin::Pin};
+
 use async_compression::tokio::bufread::{
     BrotliDecoder, BzDecoder, DeflateDecoder, GzipDecoder, LzmaDecoder, XzDecoder, ZlibDecoder,
     ZstdDecoder,
 };
-use std::{path::PathBuf, pin::Pin};
 use tokio::io::{AsyncBufRead, AsyncRead};
 use url::Url;
 
