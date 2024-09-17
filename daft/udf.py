@@ -13,16 +13,11 @@ from daft.expressions import Expression
 from daft.lazy_import import LazyImport
 from daft.series import PySeries, Series
 
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
 if TYPE_CHECKING:
     import numpy as np
     import pyarrow as pa
 
+np = LazyImport("numpy")
 pa = LazyImport("pyarrow")
 
 UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
@@ -166,7 +161,7 @@ def run_udf(
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
-    elif _NUMPY_AVAILABLE and isinstance(results[0], np.ndarray):
+    elif np.module_available() and isinstance(results[0], np.ndarray):
         result_np = np.concatenate(results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):

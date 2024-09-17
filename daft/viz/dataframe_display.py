@@ -5,16 +5,6 @@ from dataclasses import dataclass
 from daft.dataframe.preview import DataFramePreview
 from daft.logical.schema import Schema
 
-HAS_PILLOW = False
-try:
-    pass
-
-    HAS_PILLOW = True
-except ImportError:
-    pass
-if HAS_PILLOW:
-    pass
-
 
 @dataclass(frozen=True)
 class DataFrameDisplay:

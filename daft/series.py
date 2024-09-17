@@ -8,16 +8,11 @@ from daft.lazy_import import LazyImport
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
+    import numpy as np
     import pandas as pd
     import pyarrow as pa
 
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
+np = LazyImport("Numpy")
 pd = LazyImport("pandas")
 pa = LazyImport("pyarrow")
 
@@ -642,7 +637,7 @@ class Series:
 def item_to_series(name: str, item: Any) -> Series:
     if isinstance(item, list):
         series = Series.from_pylist(item, name)
-    elif _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+    elif np.module_available() and isinstance(item, np.ndarray):
         series = Series.from_numpy(item, name)
     elif isinstance(item, Series):
         series = item
