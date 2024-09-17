@@ -9,12 +9,11 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
-import pyarrow as pa
-
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
 from daft.expressions import ExpressionsProjection
+from daft.lazy_import import LazyImport
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -65,8 +64,11 @@ from daft.table import MicroPartition
 if TYPE_CHECKING:
     import dask
     import pandas as pd
+    import pyarrow as pa
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
+
+pa = LazyImport("pyarrow")
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:

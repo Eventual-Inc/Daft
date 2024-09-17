@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-
-import pyarrow as pa
-import pyarrow.fs as pafs
-import pyarrow.parquet as pq
+from typing import TYPE_CHECKING
 
 from daft.filesystem import join_path
+from daft.lazy_import import LazyImport
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+    import pyarrow.fs as pafs
+    import pyarrow.parquet as pq
+
+pa = LazyImport("pyarrow")
+pafs = LazyImport("pyarrow.fs")
+pq = LazyImport("pyarrow.parquet")
 
 
 @dataclass(init=False)

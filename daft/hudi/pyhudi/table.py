@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-
-import pyarrow as pa
-import pyarrow.fs as pafs
+from typing import TYPE_CHECKING
 
 from daft.filesystem import join_path
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
@@ -14,6 +12,14 @@ from daft.hudi.pyhudi.utils import (
     list_leaf_dirs,
     list_relative_file_paths,
 )
+from daft.lazy_import import LazyImport
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+    import pyarrow.fs as pafs
+
+pa = LazyImport("pyarrow")
+pafs = LazyImport("pyarrow.fs")
 
 # TODO(Shiyan): support base file in .orc
 BASE_FILE_EXTENSIONS = [".parquet"]

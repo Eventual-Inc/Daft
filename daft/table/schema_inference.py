@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import pathlib
 
-import pyarrow.csv as pacsv
-import pyarrow.json as pajson
-import pyarrow.parquet as papq
-
 from daft.daft import (
     CsvParseOptions,
     JsonParseOptions,
@@ -15,10 +11,15 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
+from daft.lazy_import import LazyImport
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import MicroPartition
 from daft.table.table_io import FileInput, _open_stream
+
+pacsv = LazyImport("pyarrow.csv")
+pajson = LazyImport("pyarrow.json")
+papq = LazyImport("pyarrow.parquet")
 
 
 def from_csv(

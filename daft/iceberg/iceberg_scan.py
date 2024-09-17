@@ -4,7 +4,6 @@ import logging
 import warnings
 from collections.abc import Iterator
 
-import pyarrow as pa
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
@@ -25,8 +24,10 @@ from daft.daft import (
 from daft.datatype import DataType
 from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
+from daft.lazy_import import LazyImport
 from daft.logical.schema import Field, Schema
 
+pa = LazyImport("pyarrow")
 logger = logging.getLogger(__name__)
 
 

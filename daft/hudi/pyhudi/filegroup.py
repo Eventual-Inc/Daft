@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
 from sortedcontainers import SortedDict
 
 from daft.hudi.pyhudi.utils import FsFileMetadata
+from daft.lazy_import import LazyImport
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
+pa = LazyImport("pyarrow")
 
 
 @dataclass(init=False)
