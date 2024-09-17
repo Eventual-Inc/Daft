@@ -1,9 +1,8 @@
-use crate::{functions::FunctionExpr, ExprRef};
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
-use common_error::{DaftError, DaftResult};
-
 use super::{super::FunctionEvaluator, ListExpr};
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) struct CountEvaluator {}
 

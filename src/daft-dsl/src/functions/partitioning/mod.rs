@@ -2,6 +2,7 @@ mod evaluators;
 
 use serde::{Deserialize, Serialize};
 
+use super::FunctionEvaluator;
 use crate::{
     functions::partitioning::evaluators::{
         DaysEvaluator, HoursEvaluator, IcebergBucketEvaluator, IcebergTruncateEvaluator,
@@ -9,8 +10,6 @@ use crate::{
     },
     Expr, ExprRef,
 };
-
-use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PartitioningExpr {

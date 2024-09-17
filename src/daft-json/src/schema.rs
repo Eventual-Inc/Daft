@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
+use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
@@ -16,7 +17,6 @@ use crate::{
     inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
 };
-use daft_compression::CompressionCodec;
 
 #[derive(Debug, Clone)]
 pub struct JsonReadStats {
@@ -198,7 +198,6 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 

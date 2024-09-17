@@ -1,3 +1,6 @@
+use common_error::{DaftError, DaftResult};
+
+use super::full::FullNull;
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -5,10 +8,6 @@ use crate::{
     },
     datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };
-
-use common_error::{DaftError, DaftResult};
-
-use super::full::FullNull;
 
 pub trait Broadcastable {
     fn broadcast(&self, num: usize) -> DaftResult<Self>

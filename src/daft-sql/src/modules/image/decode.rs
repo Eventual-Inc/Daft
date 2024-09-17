@@ -1,4 +1,5 @@
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::decode::{decode, ImageDecode};
 use sqlparser::ast::FunctionArg;
 
 use crate::{
@@ -6,7 +7,6 @@ use crate::{
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::decode::{decode, ImageDecode};
 
 pub struct SQLImageDecode;
 

@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::array::growable::{Growable, GrowableArray};
-use crate::datatypes::DataType;
-use crate::datatypes::{DaftArrayType, Field};
-use crate::series::Series;
+use crate::{
+    array::growable::{Growable, GrowableArray},
+    datatypes::{DaftArrayType, DataType, Field},
+    series::Series,
+};
 
 #[derive(Clone, Debug)]
 pub struct FixedSizeListArray {
@@ -222,12 +223,11 @@ impl Iterator for FixedSizeListArrayIter<'_> {
 mod tests {
     use common_error::DaftResult;
 
+    use super::FixedSizeListArray;
     use crate::{
         datatypes::{DataType, Field, Int32Array},
         series::IntoSeries,
     };
-
-    use super::FixedSizeListArray;
 
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
     fn get_i32_fixed_size_list_array(validity: &[bool]) -> FixedSizeListArray {

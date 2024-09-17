@@ -2,10 +2,11 @@ use std::vec;
 
 use common_error::DaftResult;
 
-use crate::array::prelude::*;
-use crate::datatypes::prelude::*;
-
-use crate::series::{IntoSeries, Series};
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 #[derive(Clone)]
 pub struct BBox(pub u32, pub u32, pub u32, pub u32);

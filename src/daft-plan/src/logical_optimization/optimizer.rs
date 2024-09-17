@@ -1,8 +1,7 @@
 use std::{ops::ControlFlow, sync::Arc};
 
 use common_error::DaftResult;
-
-use crate::LogicalPlan;
+use common_treenode::Transformed;
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
@@ -11,7 +10,7 @@ use super::{
         SplitActorPoolProjects,
     },
 };
-use common_treenode::Transformed;
+use crate::LogicalPlan;
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -231,17 +230,15 @@ mod tests {
     use common_error::DaftResult;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
-
     use daft_dsl::{col, lit};
 
+    use super::{Optimizer, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
         logical_ops::{Filter, Project},
         logical_optimization::rules::OptimizerRule,
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
-
-    use super::{Optimizer, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
 
     /// Test that the optimizer terminates early when the plan is not transformed
     /// by a rule (i.e. a fixed-point is reached).

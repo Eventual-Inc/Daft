@@ -11,14 +11,16 @@ mod year;
 
 use serde::{Deserialize, Serialize};
 
-use crate::functions::temporal::{
-    date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
-    minute::MinuteEvaluator, month::MonthEvaluator, second::SecondEvaluator, time::TimeEvaluator,
-    truncate::TruncateEvaluator, year::YearEvaluator,
-};
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{
+    functions::temporal::{
+        date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator,
+        hour::HourEvaluator, minute::MinuteEvaluator, month::MonthEvaluator,
+        second::SecondEvaluator, time::TimeEvaluator, truncate::TruncateEvaluator,
+        year::YearEvaluator,
+    },
+    Expr, ExprRef,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TemporalExpr {

@@ -177,8 +177,8 @@ mod tests {
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, HashJoin, ReduceMerge},
-        physical_optimization::{
-            rules::reorder_partition_keys::ReorderPartitionKeys, rules::PhysicalOptimizerRule,
+        physical_optimization::rules::{
+            reorder_partition_keys::ReorderPartitionKeys, PhysicalOptimizerRule,
         },
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };

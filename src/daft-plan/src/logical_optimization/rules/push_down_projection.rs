@@ -1,10 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
-
 use daft_dsl::{
     col, has_stateful_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
@@ -13,14 +11,12 @@ use daft_dsl::{
 use indexmap::IndexSet;
 use itertools::Itertools;
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
     source_info::SourceInfo,
     LogicalPlan, LogicalPlanRef,
 };
-
-use super::OptimizerRule;
-use common_treenode::DynTreeNode;
 
 #[derive(Default, Debug)]
 pub struct PushDownProjection {}
@@ -908,12 +904,16 @@ mod tests {
     /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
     #[test]
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
-        use crate::logical_ops::ActorPoolProject;
-        use crate::logical_ops::Project;
         use common_resource_request::ResourceRequest;
-        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
-        use daft_dsl::functions::FunctionExpr;
-        use daft_dsl::Expr;
+        use daft_dsl::{
+            functions::{
+                python::{PythonUDF, StatefulPythonUDF},
+                FunctionExpr,
+            },
+            Expr,
+        };
+
+        use crate::logical_ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -966,12 +966,16 @@ mod tests {
     /// Projection<-ActorPoolProject<-ActorPoolProject prunes columns from both ActorPoolProjects
     #[test]
     fn test_projection_pushdown_into_double_actorpoolproject() -> DaftResult<()> {
-        use crate::logical_ops::ActorPoolProject;
-        use crate::logical_ops::Project;
         use common_resource_request::ResourceRequest;
-        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
-        use daft_dsl::functions::FunctionExpr;
-        use daft_dsl::Expr;
+        use daft_dsl::{
+            functions::{
+                python::{PythonUDF, StatefulPythonUDF},
+                FunctionExpr,
+            },
+            Expr,
+        };
+
+        use crate::logical_ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -1047,12 +1051,16 @@ mod tests {
     /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
     #[test]
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
-        use crate::logical_ops::ActorPoolProject;
-        use crate::logical_ops::Project;
         use common_resource_request::ResourceRequest;
-        use daft_dsl::functions::python::{PythonUDF, StatefulPythonUDF};
-        use daft_dsl::functions::FunctionExpr;
-        use daft_dsl::Expr;
+        use daft_dsl::{
+            functions::{
+                python::{PythonUDF, StatefulPythonUDF},
+                FunctionExpr,
+            },
+            Expr,
+        };
+
+        use crate::logical_ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),

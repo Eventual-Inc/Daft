@@ -6,7 +6,6 @@ use std::{
 
 use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
 use common_error::DaftResult;
-
 use daft_core::prelude::*;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
@@ -18,10 +17,10 @@ use futures::{
 };
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct ParquetSchemaInferenceOptions {
@@ -1023,14 +1022,11 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::metadata::FileMetaData;
 
-    use super::read_parquet;
-    use super::read_parquet_metadata;
-    use super::stream_parquet;
+    use super::{read_parquet, read_parquet_metadata, stream_parquet};
 
     const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";

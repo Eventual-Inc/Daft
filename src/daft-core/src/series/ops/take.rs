@@ -1,11 +1,11 @@
+use arrow2::types::IndexRange;
+use common_display::table_display::StrValue;
+use common_error::DaftResult;
+
 use crate::{
     datatypes::Utf8Array,
     series::{IntoSeries, Series},
 };
-
-use arrow2::types::IndexRange;
-use common_display::table_display::StrValue;
-use common_error::DaftResult;
 
 impl Series {
     pub fn head(&self, num: usize) -> DaftResult<Series> {

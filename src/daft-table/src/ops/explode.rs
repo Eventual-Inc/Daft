@@ -1,10 +1,9 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::count_mode::CountMode;
-use daft_core::series::IntoSeries;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
+    count_mode::CountMode,
     datatypes::{DataType, UInt64Array},
-    series::Series,
+    series::{IntoSeries, Series},
 };
 use daft_dsl::Expr;
 

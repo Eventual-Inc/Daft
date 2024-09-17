@@ -1,13 +1,14 @@
+use daft_dsl::{
+    functions::{self, numeric::NumericExpr},
+    ExprRef, LiteralValue,
+};
+
 use super::SQLModule;
 use crate::{
     ensure,
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctions},
     invalid_operation_err,
-};
-use daft_dsl::{
-    functions::{self, numeric::NumericExpr},
-    ExprRef, LiteralValue,
 };
 
 pub struct SQLModuleNumeric;

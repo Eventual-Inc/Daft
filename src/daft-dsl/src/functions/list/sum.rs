@@ -1,10 +1,8 @@
-use crate::ExprRef;
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::try_sum_supertype, prelude::*};
 
-use crate::functions::FunctionExpr;
-use common_error::{DaftError, DaftResult};
-
 use super::super::FunctionEvaluator;
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) struct SumEvaluator {}
 

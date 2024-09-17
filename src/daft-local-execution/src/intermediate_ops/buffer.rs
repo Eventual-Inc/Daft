@@ -1,8 +1,7 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use std::cmp::Ordering::*;
 
 pub struct OperatorBuffer {
     pub buffer: VecDeque<Arc<MicroPartition>>,

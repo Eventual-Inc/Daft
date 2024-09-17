@@ -1,3 +1,4 @@
+use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
@@ -10,8 +11,6 @@ use crate::{
     },
     series::Series,
 };
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -174,8 +173,7 @@ mod tests {
 
     use crate::{
         array::FixedSizeListArray,
-        datatypes::DataType,
-        datatypes::{Field, Int32Array},
+        datatypes::{DataType, Field, Int32Array},
         series::IntoSeries,
     };
 
