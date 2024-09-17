@@ -126,6 +126,12 @@ def test_sql_groupby_agg():
     actual = daft.sql("SELECT n as n_alias, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
     assert actual.collect().to_pydict() == {"n_alias": [1, 2], "sum": [3, 7]}
 
+    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY -n", catalog=catalog)
+    assert actual.collect().to_pydict() == {"n": [2, 1], "sum": [7, 3]}
+
+    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY sum", catalog=catalog)
+    assert actual.collect().to_pydict() == {"n": [1, 2], "sum": [3, 7]}
+
 
 def test_sql_count_star():
     df = daft.from_pydict(
