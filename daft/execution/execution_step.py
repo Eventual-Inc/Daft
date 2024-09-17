@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
+from daft.daft import ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
@@ -22,6 +22,8 @@ from daft.table import MicroPartition, table_io
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
 
 
 ID_GEN = itertools.count()

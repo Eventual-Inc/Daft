@@ -30,7 +30,7 @@ from typing import (
 )
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
+from daft.daft import ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -55,6 +55,8 @@ T = TypeVar("T")
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
