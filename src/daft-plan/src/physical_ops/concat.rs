@@ -1,5 +1,6 @@
-use crate::{impl_default_tree_display, physical_plan::PhysicalPlanRef};
 use serde::{Deserialize, Serialize};
+
+use crate::{impl_default_tree_display, physical_plan::PhysicalPlanRef};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Concat {

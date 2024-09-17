@@ -1,10 +1,11 @@
+use arrow2::bitmap::Bitmap;
+use common_error::DaftResult;
+
 use crate::{
     datatypes::{DataType, Int32Array, UInt64Array},
     series::Series,
     with_match_hashable_daft_types,
 };
-use arrow2::bitmap::Bitmap;
-use common_error::DaftResult;
 
 impl Series {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {

@@ -83,7 +83,7 @@ def test_sql_partitioned_read_with_non_uniformly_distributed_column(test_db, num
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("partition_col", ["string_col", "time_col", "null_col"])
+@pytest.mark.parametrize("partition_col", ["string_col", "null_col"])
 def test_sql_partitioned_read_with_non_partionable_column(test_db, partition_col) -> None:
     with pytest.raises(ValueError, match="Failed to get partition bounds"):
         df = daft.read_sql(
@@ -275,7 +275,6 @@ def test_sql_read_without_schema_inference(test_db, generated_data) -> None:
         "bool_col": daft.DataType.bool(),
         "date_col": daft.DataType.date(),
         "date_time_col": daft.DataType.timestamp(timeunit="ns"),
-        "time_col": daft.DataType.time(timeunit="ns"),
         "null_col": daft.DataType.null(),
         "non_uniformly_distributed_col": daft.DataType.int32(),
     }

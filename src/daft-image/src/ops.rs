@@ -1,13 +1,18 @@
-use crate::{iters::*, CountingWriter, DaftImageBuffer};
+use std::{borrow::Cow, sync::Arc};
+
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
-use daft_core::array::image_array::{BBox, ImageArraySidecarData};
-use daft_core::array::prelude::*;
-use daft_core::datatypes::prelude::*;
-use daft_core::prelude::ImageArray;
+use daft_core::{
+    array::{
+        image_array::{BBox, ImageArraySidecarData},
+        prelude::*,
+    },
+    datatypes::prelude::*,
+    prelude::ImageArray,
+};
 use num_traits::FromPrimitive;
-use std::borrow::Cow;
-use std::sync::Arc;
+
+use crate::{iters::*, CountingWriter, DaftImageBuffer};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait AsImageObj {

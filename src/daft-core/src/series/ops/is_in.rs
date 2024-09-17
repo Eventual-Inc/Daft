@@ -1,14 +1,13 @@
 use common_error::DaftResult;
 
+#[cfg(feature = "python")]
+use crate::series::ops::py_membership_op_utilfn;
 use crate::{
     array::ops::DaftIsIn,
     datatypes::{BooleanArray, DataType, InferDataType},
     series::{IntoSeries, Series},
     with_match_comparable_daft_types,
 };
-
-#[cfg(feature = "python")]
-use crate::series::ops::py_membership_op_utilfn;
 
 fn default(name: &str, size: usize) -> DaftResult<Series> {
     Ok(BooleanArray::from((name, vec![false; size].as_slice())).into_series())

@@ -1,8 +1,7 @@
 use common_error::DaftResult;
-use common_treenode::ConcreteTreeNode;
+use common_treenode::{ConcreteTreeNode, DynTreeNode};
 
 use crate::PhysicalPlanRef;
-use common_treenode::DynTreeNode;
 // This struct allows providing context or state to go along
 // with visiting TreeNodes.
 pub(super) struct PlanContext<T: Sized> {

@@ -16,8 +16,11 @@ use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
-    azure::AzureConfig, config::IOConfig, gcs::GCSConfig, http::HTTPConfig, s3::S3Config,
-    s3::S3Credentials,
+    azure::AzureConfig,
+    config::IOConfig,
+    gcs::GCSConfig,
+    http::HTTPConfig,
+    s3::{S3Config, S3Credentials},
 };
 
 #[derive(Clone)]

@@ -1,8 +1,12 @@
+use std::fmt;
+
 #[cfg(feature = "python")]
 use pyo3::{types::PyAnyMethods, PyObject, Python};
-
-use serde::{de::Error as DeError, de::Visitor, ser::Error as SerError, Deserializer, Serializer};
-use std::fmt;
+use serde::{
+    de::{Error as DeError, Visitor},
+    ser::Error as SerError,
+    Deserializer, Serializer,
+};
 #[cfg(feature = "python")]
 
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>

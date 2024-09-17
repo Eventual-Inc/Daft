@@ -1,6 +1,5 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::NumericNative, prelude::*};
-
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,

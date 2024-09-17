@@ -5,7 +5,6 @@ use common_io_config::IOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_io::{get_io_client, get_runtime, IOClient, RuntimeRef};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_io_config::python,

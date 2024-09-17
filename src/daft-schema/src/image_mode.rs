@@ -1,13 +1,13 @@
-use crate::dtype::DataType;
+use std::str::FromStr;
+
+use common_error::{DaftError, DaftResult};
+use derive_more::Display;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
-use derive_more::Display;
-
-use common_error::{DaftError, DaftResult};
+use crate::dtype::DataType;
 
 /// Supported image modes for Daft's image type.
 ///

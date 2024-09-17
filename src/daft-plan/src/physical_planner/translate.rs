@@ -1,36 +1,34 @@
-use std::cmp::Ordering;
-use std::sync::Arc;
 use std::{
-    cmp::{max, min},
+    cmp::{max, min, Ordering},
     collections::HashMap,
+    sync::Arc,
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
-use daft_dsl::{col, ApproxPercentileParams, SketchType};
-use daft_dsl::{is_partition_compatible, ExprRef};
-
+use daft_dsl::{col, is_partition_compatible, ApproxPercentileParams, ExprRef, SketchType};
 use daft_scan::PhysicalScanInfo;
 
-use crate::logical_ops::{
-    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-    Join as LogicalJoin, Limit as LogicalLimit,
-    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+use crate::{
+    logical_ops::{
+        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+        Join as LogicalJoin, Limit as LogicalLimit,
+        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
+        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
+        Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+    },
+    logical_plan::LogicalPlan,
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+    },
+    physical_ops::*,
+    physical_plan::{PhysicalPlan, PhysicalPlanRef},
+    sink_info::{OutputFileInfo, SinkInfo},
+    source_info::{PlaceHolderInfo, SourceInfo},
 };
-use crate::logical_plan::LogicalPlan;
-use crate::partitioning::{
-    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
-};
-use crate::physical_ops::*;
-use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
-use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::{PlaceHolderInfo, SourceInfo};
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -962,19 +960,20 @@ pub fn populate_aggregation_stages(
 
 #[cfg(test)]
 mod tests {
+    use std::{assert_matches::assert_matches, sync::Arc};
+
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use std::assert_matches::assert_matches;
-    use std::sync::Arc;
-
-    use crate::physical_plan::PhysicalPlan;
-    use crate::physical_planner::logical_to_physical;
-    use crate::test::{dummy_scan_node, dummy_scan_operator};
-    use crate::{LogicalPlanBuilder, PhysicalPlanRef};
 
     use super::HashJoin;
+    use crate::{
+        physical_plan::PhysicalPlan,
+        physical_planner::logical_to_physical,
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlanBuilder, PhysicalPlanRef,
+    };
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
     ///

@@ -1,7 +1,9 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Display;
-use std::sync::Arc;
-use std::{ops::Deref, sync::Mutex};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::Display,
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
@@ -9,24 +11,23 @@ use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
+use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{ChunkSpec, DataSource, Pushdowns, ScanTask};
+use daft_scan::{
+    storage_config::{NativeStorageConfig, StorageConfig},
+    ChunkSpec, DataSource, Pushdowns, ScanTask,
+};
+use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
-
-use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
-
-use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
-use daft_stats::TableStatistics;
-use daft_stats::{PartitionSpec, TableMetadata};
-
 #[cfg(feature = "python")]
 use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
+
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 #[derive(Debug)]
 pub(crate) enum TableState {

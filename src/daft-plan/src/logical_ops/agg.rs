@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
+use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
-use daft_schema::schema::{Schema, SchemaRef};
-
-use crate::logical_plan::{self, CreationSnafu};
-use crate::LogicalPlan;
+use crate::{
+    logical_plan::{self, CreationSnafu},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Aggregate {

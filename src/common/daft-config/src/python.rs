@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use common_io_config::python::IOConfig as PyIOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
-use common_io_config::python::IOConfig as PyIOConfig;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]

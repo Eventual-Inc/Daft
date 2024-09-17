@@ -1,9 +1,10 @@
+use common_error::DaftResult;
+
 use crate::{
     array::ops::{DaftCompare, DaftLogical},
     datatypes::BooleanArray,
     series::Series,
 };
-use common_error::DaftResult;
 
 macro_rules! call_inner {
     ($fname:ident) => {

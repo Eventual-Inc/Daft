@@ -1,12 +1,11 @@
+use std::str::FromStr;
+
+use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
+use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
-
-use derive_more::Display;
-
-use common_error::{DaftError, DaftResult};
 
 /// Supported count modes for Daft's count aggregation.
 ///

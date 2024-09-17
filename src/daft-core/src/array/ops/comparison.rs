@@ -1,5 +1,10 @@
+use std::ops::Not;
+
+use arrow2::{compute::comparison, scalar::PrimitiveScalar};
+use common_error::{DaftError, DaftResult};
 use num_traits::{NumCast, ToPrimitive};
 
+use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 use crate::{
     array::DataArray,
     datatypes::{
@@ -8,15 +13,6 @@ use crate::{
     },
     utils::arrow::arrow_bitmap_and_helper,
 };
-
-use common_error::{DaftError, DaftResult};
-
-use std::ops::Not;
-
-use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
-
-use super::as_arrow::AsArrow;
-use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 impl<T> PartialEq for DataArray<T>
 where
@@ -1751,8 +1747,9 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
 
 #[cfg(test)]
 mod tests {
-    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
     use common_error::DaftResult;
+
+    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
 
     #[test]
     fn equal_int64_array_with_scalar() -> DaftResult<()> {

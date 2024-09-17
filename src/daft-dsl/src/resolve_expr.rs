@@ -1,14 +1,14 @@
-use crate::{col, AggExpr, ApproxPercentileParams, Expr, ExprRef};
-use crate::{expr::has_agg, has_stateful_udf};
-use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TransformedResult, TreeNode};
-use daft_core::prelude::*;
-
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
     sync::Arc,
 };
+
+use common_error::{DaftError, DaftResult};
+use common_treenode::{Transformed, TransformedResult, TreeNode};
+use daft_core::prelude::*;
+
+use crate::{col, expr::has_agg, has_stateful_udf, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 
 // Calculates all the possible struct get expressions in a schema.
 // For each sugared string, calculates all possible corresponding expressions, in order of priority.

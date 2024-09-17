@@ -9,14 +9,15 @@ use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
 };
-
 use hyper::header;
 use reqwest::{
     header::{CONTENT_LENGTH, RANGE},
     Client,
 };
+use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
@@ -24,9 +25,6 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     FileFormat,
 };
-use serde::{Deserialize, Serialize};
-
-use super::object_io::{GetResult, ObjectSource};
 
 #[derive(Debug, Snafu)]
 enum Error {

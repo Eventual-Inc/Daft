@@ -1,18 +1,19 @@
-use std::ops::Range;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
-use futures::stream::{BoxStream, Stream};
-use futures::StreamExt;
-
+use futures::{
+    stream::{BoxStream, Stream},
+    StreamExt,
+};
 use tokio::sync::OwnedSemaphorePermit;
 
-use crate::local::{collect_file, LocalFile};
-use crate::stats::IOStatsRef;
-use crate::FileFormat;
+use crate::{
+    local::{collect_file, LocalFile},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 pub struct StreamingRetryParams {
     source: Arc<dyn ObjectSource>,

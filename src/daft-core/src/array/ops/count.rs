@@ -1,13 +1,13 @@
 use std::{iter::repeat, sync::Arc};
 
+use common_error::DaftResult;
+
+use super::{DaftCountAggable, GroupIndices};
 use crate::{
     array::{ListArray, StructArray},
     count_mode::CountMode,
     datatypes::*,
 };
-use common_error::DaftResult;
-
-use super::{DaftCountAggable, GroupIndices};
 
 /// Helper to perform a grouped count on a validity map of type arrow2::bitmap::Bitmap
 fn grouped_count_arrow_bitmap(

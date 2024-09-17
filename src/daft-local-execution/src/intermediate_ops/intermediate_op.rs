@@ -5,14 +5,13 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
+use super::buffer::OperatorBuffer;
 use crate::{
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
-
-use super::buffer::OperatorBuffer;
 
 pub trait IntermediateOperatorState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;

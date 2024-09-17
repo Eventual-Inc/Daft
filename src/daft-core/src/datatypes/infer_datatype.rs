@@ -5,9 +5,8 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 
-use crate::utils::supertype::try_get_supertype;
-
 use super::DataType;
+use crate::utils::supertype::try_get_supertype;
 
 // This is a stopgap to keep this logic separated from the DataTypes themselves
 // Once we convert daft-dsl to a root level crate, this logic should move there
