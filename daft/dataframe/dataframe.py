@@ -1314,8 +1314,10 @@ class DataFrame:
     def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
-        Alias for DataFrame.where.
-        See DataFrame.where for more information.
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth: `.where(predicate) <DataFrame.where>`
 
         Args:
             predicate (Expression): expression that keeps row if evaluates to True.
