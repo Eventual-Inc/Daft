@@ -24,20 +24,28 @@ impl ScalarUDF for ListSlice {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
-            [input] => {
-                let field = input.to_field(schema)?.to_exploded_field()?;
+            [input, start, end] => {
+                let input_field = input.to_field(schema)?;
+                let start_field = start.to_field(schema)?;
+                let end_field = end.to_field(schema)?;
 
-                if field.dtype.is_numeric() {
-                    Ok(field)
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Expected input to be numeric, got {}",
-                        field.dtype
-                    )))
+                if !start_field.dtype.is_integer() {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected start index to be integer, received: {}",
+                        start_field.dtype
+                    )));
                 }
+
+                if !end_field.dtype.is_integer() && !end_field.dtype.is_null() {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected end index to be integer or unprovided, received: {}",
+                        end_field.dtype
+                    )));
+                }
+                Ok(input_field.to_exploded_field()?.to_list_field()?)
             }
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
+                "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }

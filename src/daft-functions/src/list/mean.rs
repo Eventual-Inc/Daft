@@ -1,5 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    datatypes::try_mean_supertype,
     prelude::{Field, Schema},
     series::Series,
 };
@@ -25,16 +26,11 @@ impl ScalarUDF for ListMean {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let field = input.to_field(schema)?.to_exploded_field()?;
-
-                if field.dtype.is_numeric() {
-                    Ok(field)
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Expected input to be numeric, got {}",
-                        field.dtype
-                    )))
-                }
+                let inner_field = input.to_field(schema)?.to_exploded_field()?;
+                Ok(Field::new(
+                    inner_field.name.as_str(),
+                    try_mean_supertype(&inner_field.dtype)?,
+                ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
