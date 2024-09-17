@@ -8,18 +8,17 @@ import sys
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
-from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
-from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
-
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.lazy_import import LazyImport
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     import fsspec
+    from pyarrow.fs import FileSystem
 
 logger = logging.getLogger(__name__)
 fsspec = LazyImport("fsspec")
+pafs = LazyImport("pyarrow.fs")
 
 _CACHED_FSES: dict[tuple[str, IOConfig | None], FileSystem] = {}
 
@@ -169,7 +168,7 @@ def _resolve_paths_and_filesystem(
 
     # filesystem should be a non-None pyarrow FileSystem at this point, either
     # user-provided, taken from the cache, or inferred from the first path.
-    assert resolved_filesystem is not None and isinstance(resolved_filesystem, FileSystem)
+    assert resolved_filesystem is not None and isinstance(resolved_filesystem, pafs.FileSystem)
 
     # Resolve all other paths and validate with the user-provided/cached/inferred filesystem.
     resolved_paths = [resolved_path]
@@ -232,7 +231,7 @@ def _infer_filesystem(
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
 
-        resolved_filesystem = S3FileSystem(**translated_kwargs)
+        resolved_filesystem = pafs.S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem
 
@@ -240,7 +239,7 @@ def _infer_filesystem(
     # Local
     ###
     elif protocol == "file":
-        resolved_filesystem = LocalFileSystem()
+        resolved_filesystem = pafs.LocalFileSystem()
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem
 
@@ -272,7 +271,7 @@ def _infer_filesystem(
     elif protocol in {"http", "https"}:
         fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
         fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(resolved_path)
         return resolved_path, resolved_filesystem
 
@@ -295,7 +294,7 @@ def _infer_filesystem(
             )
         else:
             fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
         return resolved_path, resolved_filesystem
 
@@ -356,7 +355,7 @@ def join_path(fs: FileSystem, base_path: str, *sub_paths: str) -> str:
     Join a base path with sub-paths using the appropriate path separator
     for the given filesystem.
     """
-    if isinstance(fs, LocalFileSystem):
+    if isinstance(fs, pafs.LocalFileSystem):
         return os.path.join(base_path, *sub_paths)
     else:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"

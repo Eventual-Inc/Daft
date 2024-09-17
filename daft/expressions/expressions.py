@@ -16,8 +16,6 @@ from typing import (
     overload,
 )
 
-import pyarrow as pa
-
 import daft.daft as native
 from daft import context
 from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
@@ -39,6 +37,7 @@ from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
+from daft.lazy_import import LazyImport
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
@@ -67,6 +66,8 @@ elif os.getenv("DAFT_SPHINX_BUILD") == "1":
                 return self  # type: ignore[return-value]
 
     property = sphinx_accessor  # type: ignore[misc]
+
+pa = LazyImport("pyarrow")
 
 
 def lit(value: object) -> Expression:

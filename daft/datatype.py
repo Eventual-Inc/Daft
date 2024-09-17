@@ -3,13 +3,15 @@ from __future__ import annotations
 import builtins
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
+from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
     import numpy as np
+    import pyarrow as pa
+
+pa = LazyImport("pyarrow")
 
 
 class TimeUnit:

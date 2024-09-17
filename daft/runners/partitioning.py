@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
-import pyarrow as pa
-
 from daft.datatype import TimeUnit
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
@@ -16,6 +14,7 @@ from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     import pandas as pd
+    import pyarrow as pa
 
 PartID = int
 

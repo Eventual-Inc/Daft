@@ -10,9 +10,6 @@ from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
-import pyarrow as pa
-from pyarrow import json as pajson
-
 from daft.context import get_context
 from daft.daft import (
     CsvConvertOptions,
@@ -49,13 +46,15 @@ from daft.table import MicroPartition
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 if TYPE_CHECKING:
+    import pyarrow as pa
     from pyarrow import dataset as pads
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-
+pa = LazyImport("pyarrow")
 pacsv = LazyImport("pyarrow.csv")
 pads = LazyImport("pyarrow.dataset")
+pajson = LazyImport("pyarrow.json")
 papq = LazyImport("pyarrow.parquet")
 
 
@@ -341,9 +340,11 @@ def read_csv(
             io_config = config.io_config
 
     with _open_stream(file, io_config) as f:
-        from daft.utils import ARROW_VERSION
+        from daft.utils import get_arrow_version
 
-        if csv_options.comment is not None and ARROW_VERSION < (7, 0, 0):
+        arrow_version = get_arrow_version()
+
+        if csv_options.comment is not None and arrow_version < (7, 0, 0):
             raise ValueError(
                 "pyarrow < 7.0.0 doesn't support handling comments in CSVs, please upgrade pyarrow to 7.0.0+."
             )
@@ -354,7 +355,7 @@ def read_csv(
             escape_char=csv_options.escape_char,
         )
 
-        if ARROW_VERSION >= (7, 0, 0):
+        if arrow_version >= (7, 0, 0):
             parse_options.invalid_row_handler = skip_comment(csv_options.comment)
 
         pacsv_stream = pacsv.open_csv(
@@ -704,7 +705,7 @@ def write_deltalake(
 
     from daft.io._deltalake import large_dtypes_kwargs
     from daft.io.object_store_options import io_config_to_storage_options
-    from daft.utils import ARROW_VERSION
+    from daft.utils import get_arrow_version
 
     protocol = get_protocol_from_path(base_path)
     canonicalized_protocol = canonicalize_protocol(protocol)
@@ -725,7 +726,7 @@ def write_deltalake(
         stats = get_file_stats_from_metadata(written_file.metadata)
 
         # PyArrow added support for written_file.size in 9.0.0
-        if ARROW_VERSION >= (9, 0, 0):
+        if get_arrow_version() >= (9, 0, 0):
             size = written_file.size
         elif fs is not None:
             size = fs.get_file_info([path])[0].size
@@ -856,14 +857,16 @@ def _write_tabular_arrow_table(
 ):
     kwargs = dict()
 
-    from daft.utils import ARROW_VERSION
+    from daft.utils import get_arrow_version
 
-    if ARROW_VERSION >= (7, 0, 0):
+    arrow_version = get_arrow_version()
+
+    if arrow_version >= (7, 0, 0):
         kwargs["max_rows_per_file"] = rows_per_file
         kwargs["min_rows_per_group"] = rows_per_row_group
         kwargs["max_rows_per_group"] = rows_per_row_group
 
-    if ARROW_VERSION >= (8, 0, 0) and not create_dir:
+    if arrow_version >= (8, 0, 0) and not create_dir:
         kwargs["create_dir"] = False
 
     basename_template = _generate_basename_template(format.default_extname, version)

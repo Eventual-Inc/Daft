@@ -5,9 +5,13 @@ import random
 import statistics
 from typing import Any, Callable
 
-import pyarrow as pa
+from daft.lazy_import import LazyImport
 
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+pa = LazyImport("pyarrow")
+
+
+def get_arrow_version():
+    return tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 def in_notebook():
@@ -132,4 +136,4 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
     """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
     from daft.context import get_context
 
-    return hasattr(pa, "fixed_shape_tensor") and (not get_context().is_ray_runner or ARROW_VERSION >= (13, 0, 0))
+    return hasattr(pa, "fixed_shape_tensor") and (not get_context().is_ray_runner or get_arrow_version() >= (13, 0, 0))

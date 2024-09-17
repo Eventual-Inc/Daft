@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.arrow_utils import ensure_table
 from daft.daft import (
     CsvConvertOptions,
@@ -37,6 +35,7 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 pd = LazyImport("pandas")
+pa = LazyImport("pyarrow")
 logger = logging.getLogger(__name__)
 
 

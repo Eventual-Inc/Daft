@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
-import pyarrow as pa
-
-from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType
 from daft.lazy_import import LazyImport
@@ -12,6 +9,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import pandas as pd
+    import pyarrow as pa
 
 
 _NUMPY_AVAILABLE = True
@@ -20,8 +18,8 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 pd = LazyImport("pandas")
+pa = LazyImport("pyarrow")
 
 from daft.datatype import _ensure_registered_super_ext_type
 
@@ -57,7 +55,7 @@ class Series:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
-            array = ensure_array(array)
+            # array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
@@ -65,7 +63,7 @@ class Series:
                 pys = PySeries.from_arrow(name, array)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
-            array = ensure_chunked_array(array)
+            # array = ensure_chunked_array(array)
             arr_type = array.type
             if isinstance(arr_type, pa.BaseExtensionType):
                 combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
