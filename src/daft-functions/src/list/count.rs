@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{CountMode, DataType, Field, Schema},
-    series::Series,
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
