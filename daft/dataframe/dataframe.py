@@ -1311,6 +1311,21 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for DataFrame.where.
+        See DataFrame.where for more information.
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
+
+    @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
