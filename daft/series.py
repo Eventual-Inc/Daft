@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
+from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType
 from daft.lazy_import import LazyImport
@@ -50,7 +51,7 @@ class Series:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
-            # array = ensure_array(array)
+            array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
@@ -58,7 +59,7 @@ class Series:
                 pys = PySeries.from_arrow(name, array)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
-            # array = ensure_chunked_array(array)
+            array = ensure_chunked_array(array)
             arr_type = array.type
             if isinstance(arr_type, pa.BaseExtensionType):
                 combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
