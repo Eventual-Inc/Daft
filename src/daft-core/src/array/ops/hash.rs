@@ -1,3 +1,8 @@
+use arrow2::types::Index;
+use common_error::{DaftError, DaftResult};
+use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
+
+use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -10,12 +15,6 @@ use crate::{
     series::Series,
     utils::arrow::arrow_bitmap_and_helper,
 };
-
-use arrow2::types::Index;
-use common_error::{DaftError, DaftResult};
-use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where

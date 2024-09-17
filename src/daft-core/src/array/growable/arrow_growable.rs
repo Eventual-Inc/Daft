@@ -2,9 +2,12 @@ use std::{marker::PhantomData, sync::Arc};
 
 use common_error::DaftResult;
 
-use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries, series::Series};
-
 use super::Growable;
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 pub struct ArrowBackedDataArrayGrowable<
     'a,

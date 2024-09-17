@@ -1,11 +1,5 @@
 use std::sync::Arc;
 
-use crate::{
-    catalog::SQLCatalog,
-    column_not_found_err,
-    error::{PlannerError, SQLPlannerResult},
-    invalid_operation_err, table_not_found_err, unsupported_sql_err,
-};
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -16,7 +10,6 @@ use daft_dsl::{
     has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
-
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
@@ -26,6 +19,13 @@ use sqlparser::{
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
     tokenizer::Tokenizer,
+};
+
+use crate::{
+    catalog::SQLCatalog,
+    column_not_found_err,
+    error::{PlannerError, SQLPlannerResult},
+    invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query

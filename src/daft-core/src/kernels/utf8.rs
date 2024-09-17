@@ -4,7 +4,6 @@
 // ****************************************************************************************
 
 use arrow2::array::Utf8Array;
-
 use common_error::{DaftError, DaftResult};
 
 fn concat_strings(l: &str, r: &str) -> String {

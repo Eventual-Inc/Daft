@@ -4,11 +4,10 @@ use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use tracing::instrument;
 
-use crate::pipeline::PipelineResultType;
-
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
+use crate::pipeline::PipelineResultType;
 
 pub struct ProjectOperator {
     projection: Vec<ExprRef>,

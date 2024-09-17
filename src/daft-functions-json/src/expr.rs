@@ -1,8 +1,7 @@
-use daft_core::prelude::*;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
-
 // use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 
 use crate::json_query_series;

@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
-use crate::{ExprRef, Operator};
-
 use super::expr::Expr;
+use crate::{ExprRef, Operator};
 
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];

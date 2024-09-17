@@ -1,6 +1,9 @@
-use crate::series::{IntoSeries, Series};
-use crate::with_match_daft_types;
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    series::{IntoSeries, Series},
+    with_match_daft_types,
+};
 
 impl Series {
     pub fn concat(series: &[&Series]) -> DaftResult<Self> {

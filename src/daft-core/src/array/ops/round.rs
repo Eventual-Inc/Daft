@@ -1,8 +1,7 @@
+use common_error::DaftResult;
 use num_traits::Pow;
 
 use crate::datatypes::{Float32Array, Float64Array};
-
-use common_error::DaftResult;
 
 impl Float32Array {
     pub fn round(&self, decimal: i32) -> DaftResult<Self> {

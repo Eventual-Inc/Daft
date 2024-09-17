@@ -1,11 +1,10 @@
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use crate::{
     physical_ops::FanoutByHash, physical_optimization::rules::PhysicalOptimizerRule,
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
-use common_treenode::DynTreeNode;
 pub struct DropRepartitionPhysical {}
 
 // if we are repartitioning but the child already has the correct spec, then don't repartition
@@ -57,14 +56,13 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{col, ExprRef};
 
+    use super::DropRepartitionPhysical;
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, ReduceMerge},
         physical_optimization::rules::PhysicalOptimizerRule,
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
-
-    use super::DropRepartitionPhysical;
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {
         PhysicalPlan::EmptyScan(EmptyScan::new(

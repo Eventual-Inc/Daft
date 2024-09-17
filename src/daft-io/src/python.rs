@@ -2,10 +2,11 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
     use common_error::DaftResult;
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
+
+    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
 
     #[pyfunction]
     fn io_glob(

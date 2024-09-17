@@ -1,6 +1,7 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, parse_url, GetResult, IOClient, IOStatsRef, SourceType};
@@ -18,11 +19,10 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{decoding::deserialize_records, local::read_json_local, ArrowSnafu, ChunkSnafu};
 use crate::{
-    schema::read_json_schema_single, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    decoding::deserialize_records, local::read_json_local, schema::read_json_schema_single,
+    ArrowSnafu, ChunkSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
 };
-use daft_compression::CompressionCodec;
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
@@ -563,24 +563,21 @@ mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
     use common_error::DaftResult;
-
     use daft_core::{
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use indexmap::IndexMap;
     use rstest::rstest;
 
+    use super::read_json;
     use crate::{
         decoding::deserialize_records,
         inference::{column_types_map_to_fields, infer_records_schema},
+        JsonConvertOptions, JsonReadOptions,
     };
-    use crate::{JsonConvertOptions, JsonReadOptions};
-
-    use super::read_json;
 
     fn check_equal_local_arrow2(
         path: &str,

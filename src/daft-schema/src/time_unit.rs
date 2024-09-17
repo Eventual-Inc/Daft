@@ -1,7 +1,5 @@
-use derive_more::Display;
-
 use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
-
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 #[derive(

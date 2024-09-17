@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
-use crate::count_mode::CountMode;
-use crate::datatypes::*;
-
 use common_error::DaftResult;
 
-use super::{DaftCountAggable, DaftMeanAggable, DaftSumAggable};
-
-use super::as_arrow::AsArrow;
-
-use crate::array::ops::GroupIndices;
+use super::{as_arrow::AsArrow, DaftCountAggable, DaftMeanAggable, DaftSumAggable};
+use crate::{array::ops::GroupIndices, count_mode::CountMode, datatypes::*};
 impl DaftMeanAggable for &DataArray<Float64Type> {
     type Output = DaftResult<DataArray<Float64Type>>;
 

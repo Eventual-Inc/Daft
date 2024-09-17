@@ -1,10 +1,10 @@
-use crate::datatypes::{DataType, UInt64Array, Utf8Array};
-use crate::prelude::CountMode;
-use crate::series::IntoSeries;
-use crate::series::Series;
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 
-use common_error::DaftResult;
+use crate::{
+    datatypes::{DataType, UInt64Array, Utf8Array},
+    prelude::CountMode,
+    series::{IntoSeries, Series},
+};
 
 impl Series {
     pub fn explode(&self) -> DaftResult<Series> {

@@ -4,6 +4,30 @@ use std::{
     sync::Arc,
 };
 
+use arrow2::{
+    array::Array,
+    bitmap::utils::SlicesIterator,
+    compute::{
+        self,
+        cast::{can_cast_types, cast, CastOptions},
+    },
+    offset::Offsets,
+};
+use common_error::{DaftError, DaftResult};
+use indexmap::IndexMap;
+#[cfg(feature = "python")]
+use {
+    crate::array::pseudo_arrow::PseudoArrowArray,
+    crate::datatypes::PythonArray,
+    crate::with_match_numeric_daft_types,
+    common_arrow_ffi as ffi,
+    ndarray::IntoDimension,
+    num_traits::{NumCast, ToPrimitive},
+    numpy::{PyArray3, PyReadonlyArrayDyn, PyUntypedArrayMethods},
+    pyo3::prelude::*,
+    std::iter,
+};
+
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
@@ -25,32 +49,6 @@ use crate::{
     utils::display::display_time64,
 };
 
-use common_error::{DaftError, DaftResult};
-
-use arrow2::{
-    array::Array,
-    bitmap::utils::SlicesIterator,
-    compute::{
-        self,
-        cast::{can_cast_types, cast, CastOptions},
-    },
-    offset::Offsets,
-};
-use indexmap::IndexMap;
-
-#[cfg(feature = "python")]
-use {
-    crate::array::pseudo_arrow::PseudoArrowArray,
-    crate::datatypes::PythonArray,
-    crate::with_match_numeric_daft_types,
-    common_arrow_ffi as ffi,
-    ndarray::IntoDimension,
-    num_traits::{NumCast, ToPrimitive},
-    numpy::{PyArray3, PyReadonlyArrayDyn, PyUntypedArrayMethods},
-    pyo3::prelude::*,
-    std::iter,
-};
-
 impl<T> DataArray<T>
 where
     T: DaftArrowBackedType,
@@ -59,8 +57,9 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                use crate::python::PySeries;
                 use pyo3::prelude::*;
+
+                use crate::python::PySeries;
                 // Convert something to Python.
 
                 // Use the existing logic on the Python side of the PyO3 layer
@@ -502,8 +501,9 @@ fn append_values_from_numpy<
     values_vec: &mut Vec<Tgt>,
     shapes_vec: &mut Vec<u64>,
 ) -> DaftResult<(usize, usize)> {
-    use daft_schema::python::PyDataType;
     use std::num::Wrapping;
+
+    use daft_schema::python::PyDataType;
 
     let np_dtype = pyarray.getattr(pyo3::intern!(py, "dtype"))?;
 
@@ -998,8 +998,9 @@ fn extract_python_like_to_tensor_array<
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        use crate::python::PySeries;
         use pyo3::prelude::*;
+
+        use crate::python::PySeries;
         match dtype {
             DataType::Python => Ok(self.clone().into_series()),
 

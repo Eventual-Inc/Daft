@@ -1,13 +1,11 @@
-use super::full::FullNull;
-use super::{DaftCompareAggable, GroupIndices};
+use arrow2::array::{Array, PrimitiveArray};
+use common_error::DaftResult;
+
+use super::{full::FullNull, DaftCompareAggable, GroupIndices};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::*,
 };
-use arrow2::array::Array;
-use arrow2::array::PrimitiveArray;
-
-use common_error::DaftResult;
 
 fn grouped_cmp_native<T, F>(
     data_array: &DataArray<T>,

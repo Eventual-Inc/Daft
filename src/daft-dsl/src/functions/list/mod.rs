@@ -22,9 +22,8 @@ use serde::{Deserialize, Serialize};
 use slice::SliceEvaluator;
 use sum::SumEvaluator;
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ListExpr {

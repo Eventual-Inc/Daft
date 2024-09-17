@@ -1,13 +1,11 @@
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 use arrow2::datatypes::Field as ArrowField;
-
-use crate::dtype::DataType;
 use common_error::{DaftError, DaftResult};
 use derive_more::Display;
-
 use serde::{Deserialize, Serialize};
+
+use crate::dtype::DataType;
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 

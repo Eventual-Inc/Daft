@@ -4,10 +4,8 @@ use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
-
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
-use parquet2::schema::types::ParquetType;
-use parquet2::{metadata::RowGroupList, read::deserialize_metadata};
+use parquet2::{metadata::RowGroupList, read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};

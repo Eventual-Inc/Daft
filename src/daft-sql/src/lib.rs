@@ -22,9 +22,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use crate::planner::SQLPlanner;
-
-    use super::*;
     use catalog::SQLCatalog;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
@@ -34,6 +31,9 @@ mod tests {
     };
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
+
+    use super::*;
+    use crate::planner::SQLPlanner;
 
     #[fixture]
     fn tbl_1() -> LogicalPlanRef {

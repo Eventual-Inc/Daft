@@ -1,26 +1,26 @@
-use std::collections::hash_map::DefaultHasher;
-
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
-use daft_core::array::ops::Utf8NormalizeOptions;
-use daft_core::python::PySeries;
-use daft_core::python::{PyDataType, PyField, PySchema, PyTimeUnit};
-use serde::{Deserialize, Serialize};
-
-use crate::{functions, Expr, ExprRef, LiteralValue};
-use daft_core::prelude::*;
-
+use daft_core::{
+    array::ops::Utf8NormalizeOptions,
+    prelude::*,
+    python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
+};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
 };
+use serde::{Deserialize, Serialize};
+
+use crate::{functions, Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {

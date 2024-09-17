@@ -1,5 +1,6 @@
-use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
+
+use crate::physical_plan::PhysicalPlanRef;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Split {

@@ -1,5 +1,6 @@
-use indexmap::IndexMap;
 use std::fmt;
+
+use indexmap::IndexMap;
 
 use crate::{tree::TreeDisplay, DisplayLevel};
 

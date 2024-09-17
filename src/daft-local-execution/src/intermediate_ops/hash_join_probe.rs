@@ -7,11 +7,10 @@ use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeTable, Table};
 use tracing::{info_span, instrument};
 
-use crate::pipeline::PipelineResultType;
-
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
+use crate::pipeline::PipelineResultType;
 
 enum HashJoinProbeState {
     Building,

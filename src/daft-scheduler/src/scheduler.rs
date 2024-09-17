@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
-
+use daft_dsl::ExprRef;
+use daft_plan::{
+    logical_to_physical, physical_ops::*, InMemoryInfo, PhysicalPlan, PhysicalPlanRef,
+    QueryStageOutput,
+};
+#[cfg(feature = "python")]
+use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -19,15 +25,6 @@ use {
     pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
-
-use daft_dsl::ExprRef;
-use daft_plan::InMemoryInfo;
-use std::sync::Arc;
-
-use daft_plan::physical_ops::*;
-
-#[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]

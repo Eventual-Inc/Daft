@@ -8,26 +8,21 @@ pub mod struct_;
 pub mod temporal;
 pub mod utf8;
 
-use std::fmt::Write;
-use std::fmt::{Display, Formatter, Result};
-use std::hash::Hash;
-
-use crate::{Expr, ExprRef, Operator};
-
-use self::list::ListExpr;
-use self::map::MapExpr;
-use self::numeric::NumericExpr;
-use self::partitioning::PartitioningExpr;
-use self::sketch::SketchExpr;
-use self::struct_::StructExpr;
-use self::temporal::TemporalExpr;
-use self::utf8::Utf8Expr;
-pub use scalar::*;
+use std::{
+    fmt::{Display, Formatter, Result, Write},
+    hash::Hash,
+};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-
+pub use scalar::*;
 use serde::{Deserialize, Serialize};
+
+use self::{
+    list::ListExpr, map::MapExpr, numeric::NumericExpr, partitioning::PartitioningExpr,
+    sketch::SketchExpr, struct_::StructExpr, temporal::TemporalExpr, utf8::Utf8Expr,
+};
+use crate::{Expr, ExprRef, Operator};
 
 pub mod python;
 use python::PythonUDF;
