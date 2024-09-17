@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import pyarrow as pa
 
-np = LazyImport("Numpy")
+np = LazyImport("numpy")
 pd = LazyImport("pandas")
 pa = LazyImport("pyarrow")
 

@@ -13,8 +13,8 @@ from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
-from daft.series import ARROW_VERSION
 from daft.table import MicroPartition, schema_inference, table_io
+from daft.utils import get_arrow_version
 
 
 def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
@@ -351,7 +351,8 @@ def test_csv_read_data_custom_comment(use_native_downloader):
             }
         )
         # Skipping test for arrow < 7.0.0 as comments are not supported in pyarrow
-        if ARROW_VERSION >= (7, 0, 0):
+        arrow_version = get_arrow_version
+        if arrow_version >= (7, 0, 0):
             table = table_io.read_csv(
                 file,
                 schema,
