@@ -1819,6 +1819,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "daft-core",
  "daft-dsl",

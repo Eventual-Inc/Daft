@@ -33,7 +33,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         parent
     )?)?;
     parent.add_function(wrap_pyfunction_bound!(minhash::python::minhash, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(numeric::cbrt::python::cbrt, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         to_struct::python::to_struct,
         parent
