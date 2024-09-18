@@ -1,5 +1,5 @@
 use daft_core::prelude::CountMode;
-use daft_dsl::{Expr, LiteralValue};
+use daft_dsl::{lit, Expr, LiteralValue};
 
 use super::SQLModule;
 use crate::{
@@ -230,7 +230,21 @@ impl SQLFunction for SQLListSort {
             }
             [input, order] => {
                 let input = planner.plan_function_arg(input)?;
-                let order = planner.plan_function_arg(order)?;
+                use sqlparser::ast::{
+                    Expr::Identifier as SQLIdent, FunctionArg::Unnamed,
+                    FunctionArgExpr::Expr as SQLExpr,
+                };
+
+                let order = match order {
+                    Unnamed(SQLExpr(SQLIdent(ident))) => {
+                        match ident.value.to_lowercase().as_str() {
+                            "asc" => lit(false),
+                            "desc" => lit(true),
+                            _ => unsupported_sql_err!("invalid order for list_sort"),
+                        }
+                    }
+                    _ => unsupported_sql_err!("invalid order for list_sort"),
+                };
                 Ok(daft_functions::list::sort(input, Some(order)))
             }
             _ => unsupported_sql_err!("invalid arguments for list_sort"),
