@@ -4,6 +4,10 @@ pub mod ceil;
 pub mod exp;
 pub mod floor;
 pub mod log;
+pub mod round;
+pub mod sign;
+pub mod sqrt;
+pub mod trigonometry;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -25,11 +29,28 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(log::py_log10, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(log::py_log, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(log::py_ln, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(round::py_round, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(sign::py_sign, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(sqrt::py_sqrt, parent)?)?;
+
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_sin, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_cos, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_tan, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_cot, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arcsin, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arccos, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctan, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_radians, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_degrees, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctanh, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arccosh, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arcsinh, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_atan2, parent)?)?;
 
     Ok(())
 }
 
-pub(self) fn to_field_single_numeric(
+fn to_field_single_numeric(
     f: &dyn ScalarUDF,
     inputs: &[ExprRef],
     schema: &Schema,
@@ -50,7 +71,26 @@ pub(self) fn to_field_single_numeric(
     }
     Ok(field)
 }
-pub(self) fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
+
+fn to_field_single_floating(
+    f: &dyn ScalarUDF,
+    inputs: &[ExprRef],
+    schema: &Schema,
+) -> DaftResult<Field> {
+    match inputs {
+        [first] => {
+            let field = first.to_field(schema)?;
+            let dtype = field.dtype.to_floating_representation()?;
+            Ok(Field::new(field.name, dtype))
+        }
+        _ => Err(DaftError::SchemaMismatch(format!(
+            "Expected 1 input arg for {}, got {}",
+            f.name(),
+            inputs.len()
+        ))),
+    }
+}
+fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
     inputs: &[Series],
     func: F,
 ) -> DaftResult<Series> {

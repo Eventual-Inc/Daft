@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -7,11 +7,11 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct CbrtFunction;
-use super::evaluate_single_numeric;
+pub struct Cbrt;
+use super::{evaluate_single_numeric, to_field_single_floating};
 
 #[typetag::serde]
-impl ScalarUDF for CbrtFunction {
+impl ScalarUDF for Cbrt {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -21,17 +21,7 @@ impl ScalarUDF for CbrtFunction {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?;
-                let dtype = field.dtype.to_floating_representation()?;
-                Ok(Field::new(field.name, dtype))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        to_field_single_floating(self, inputs, schema)
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
@@ -40,7 +30,7 @@ impl ScalarUDF for CbrtFunction {
 }
 
 pub fn cbrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(CbrtFunction {}, vec![input]).into()
+    ScalarFunction::new(Cbrt {}, vec![input]).into()
 }
 
 #[cfg(feature = "python")]

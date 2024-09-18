@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
@@ -272,126 +273,6 @@ impl PyExpr {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }
 
-    pub fn ceil(&self) -> PyResult<Self> {
-        use functions::numeric::ceil;
-        Ok(ceil(self.into()).into())
-    }
-
-    pub fn floor(&self) -> PyResult<Self> {
-        use functions::numeric::floor;
-        Ok(floor(self.into()).into())
-    }
-
-    pub fn sign(&self) -> PyResult<Self> {
-        use functions::numeric::sign;
-        Ok(sign(self.into()).into())
-    }
-
-    pub fn round(&self, decimal: i32) -> PyResult<Self> {
-        use functions::numeric::round;
-        if decimal < 0 {
-            return Err(PyValueError::new_err(format!(
-                "decimal can not be negative: {decimal}"
-            )));
-        }
-        Ok(round(self.into(), decimal).into())
-    }
-
-    pub fn sqrt(&self) -> PyResult<Self> {
-        use functions::numeric::sqrt;
-        Ok(sqrt(self.into()).into())
-    }
-
-    pub fn sin(&self) -> PyResult<Self> {
-        use functions::numeric::sin;
-        Ok(sin(self.into()).into())
-    }
-
-    pub fn cos(&self) -> PyResult<Self> {
-        use functions::numeric::cos;
-        Ok(cos(self.into()).into())
-    }
-
-    pub fn tan(&self) -> PyResult<Self> {
-        use functions::numeric::tan;
-        Ok(tan(self.into()).into())
-    }
-
-    pub fn cot(&self) -> PyResult<Self> {
-        use functions::numeric::cot;
-        Ok(cot(self.into()).into())
-    }
-
-    pub fn arcsin(&self) -> PyResult<Self> {
-        use functions::numeric::arcsin;
-        Ok(arcsin(self.into()).into())
-    }
-
-    pub fn arccos(&self) -> PyResult<Self> {
-        use functions::numeric::arccos;
-        Ok(arccos(self.into()).into())
-    }
-
-    pub fn arctan(&self) -> PyResult<Self> {
-        use functions::numeric::arctan;
-        Ok(arctan(self.into()).into())
-    }
-
-    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
-        use functions::numeric::arctan2;
-        Ok(arctan2(self.into(), other.expr.clone()).into())
-    }
-
-    pub fn radians(&self) -> PyResult<Self> {
-        use functions::numeric::radians;
-        Ok(radians(self.into()).into())
-    }
-
-    pub fn degrees(&self) -> PyResult<Self> {
-        use functions::numeric::degrees;
-        Ok(degrees(self.into()).into())
-    }
-
-    pub fn arctanh(&self) -> PyResult<Self> {
-        use functions::numeric::arctanh;
-        Ok(arctanh(self.into()).into())
-    }
-
-    pub fn arccosh(&self) -> PyResult<Self> {
-        use functions::numeric::arccosh;
-        Ok(arccosh(self.into()).into())
-    }
-
-    pub fn arcsinh(&self) -> PyResult<Self> {
-        use functions::numeric::arcsinh;
-        Ok(arcsinh(self.into()).into())
-    }
-
-    pub fn log2(&self) -> PyResult<Self> {
-        use functions::numeric::log2;
-        Ok(log2(self.into()).into())
-    }
-
-    pub fn log10(&self) -> PyResult<Self> {
-        use functions::numeric::log10;
-        Ok(log10(self.into()).into())
-    }
-
-    pub fn log(&self, base: f64) -> PyResult<Self> {
-        use functions::numeric::log;
-        Ok(log(self.into(), base).into())
-    }
-
-    pub fn ln(&self) -> PyResult<Self> {
-        use functions::numeric::ln;
-        Ok(ln(self.into()).into())
-    }
-
-    pub fn exp(&self) -> PyResult<Self> {
-        use functions::numeric::exp;
-        Ok(exp(self.into()).into())
-    }
-
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self
             .expr
@@ -461,11 +342,6 @@ impl PyExpr {
     pub fn explode(&self) -> PyResult<Self> {
         use functions::list::explode;
         Ok(explode(self.into()).into())
-    }
-
-    pub fn __abs__(&self) -> PyResult<Self> {
-        use functions::numeric::abs;
-        Ok(abs(self.into()).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
