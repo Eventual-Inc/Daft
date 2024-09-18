@@ -11,12 +11,59 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum Log {
-    Log2,
-    Log10,
-    Log(FloatWrapper<f64>),
-    Ln,
+pub struct Log(FloatWrapper<f64>);
+
+// super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
+macro_rules! log {
+    ($name:ident, $variant:ident) => {
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $variant;
+
+        #[typetag::serde]
+        impl ScalarUDF for $variant {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn name(&self) -> &'static str {
+                stringify!($name)
+            }
+
+            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+                if inputs.len() != 1 {
+                    return Err(DaftError::SchemaMismatch(format!(
+                        "Expected 1 input arg, got {}",
+                        inputs.len()
+                    )));
+                };
+                let field = inputs.first().unwrap().to_field(schema)?;
+                let dtype = match field.dtype {
+                    DataType::Float32 => DataType::Float32,
+                    dt if dt.is_numeric() => DataType::Float64,
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Expected input to log to be numeric, got {}",
+                            field.dtype
+                        )))
+                    }
+                };
+                Ok(Field::new(field.name, dtype))
+            }
+
+            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+                evaluate_single_numeric(inputs, Series::$name)
+            }
+        }
+
+        pub fn $name(input: ExprRef) -> ExprRef {
+            ScalarFunction::new($variant, vec![input]).into()
+        }
+    };
 }
+
+log!(log2, Log2);
+log!(log10, Log10);
+log!(ln, Ln);
 
 #[typetag::serde]
 impl ScalarUDF for Log {
@@ -25,12 +72,7 @@ impl ScalarUDF for Log {
     }
 
     fn name(&self) -> &'static str {
-        match self {
-            Log::Log2 => "log2",
-            Log::Log10 => "log10",
-            Log::Log(_) => "log",
-            Log::Ln => "ln",
-        }
+        "log"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -55,35 +97,12 @@ impl ScalarUDF for Log {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => match self {
-                Log::Log2 => input.log2(),
-                Log::Log10 => input.log10(),
-                Log::Log(base) => input.log(base.0),
-                Log::Ln => input.ln(),
-            },
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        evaluate_single_numeric(inputs, |x| x.log(self.0 .0))
     }
 }
 
-pub fn log2(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Log::Log2, vec![input]).into()
-}
-
-pub fn log10(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Log::Log10, vec![input]).into()
-}
-
 pub fn log(input: ExprRef, base: f64) -> ExprRef {
-    ScalarFunction::new(Log::Log(FloatWrapper(base)), vec![input]).into()
-}
-
-pub fn ln(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Log::Ln, vec![input]).into()
+    ScalarFunction::new(Log(FloatWrapper(base)), vec![input]).into()
 }
 
 #[cfg(feature = "python")]
@@ -91,6 +110,8 @@ use {
     daft_dsl::python::PyExpr,
     pyo3::{pyfunction, PyResult},
 };
+
+use super::evaluate_single_numeric;
 
 #[cfg(feature = "python")]
 #[pyfunction]

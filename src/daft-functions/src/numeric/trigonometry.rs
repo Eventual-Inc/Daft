@@ -12,44 +12,68 @@ use serde::{Deserialize, Serialize};
 
 use super::evaluate_single_numeric;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Trigonometry(TrigonometricFunction);
+// super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
+macro_rules! trigonometry {
+    ($name:ident, $variant:ident) => {
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $variant;
 
-#[typetag::serde]
-impl ScalarUDF for Trigonometry {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &'static str {
-        self.0.fn_name()
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            )));
-        };
-        let field = inputs.first().unwrap().to_field(schema)?;
-        let dtype = match field.dtype {
-            DataType::Float32 => DataType::Float32,
-            dt if dt.is_numeric() => DataType::Float64,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Expected input to trigonometry to be numeric, got {}",
-                    field.dtype
-                )))
+        #[typetag::serde]
+        impl ScalarUDF for $variant {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
             }
-        };
-        Ok(Field::new(field.name, dtype))
-    }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |s| s.trigonometry(&self.0))
-    }
+            fn name(&self) -> &'static str {
+                TrigonometricFunction::$variant.fn_name()
+            }
+
+            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+                if inputs.len() != 1 {
+                    return Err(DaftError::SchemaMismatch(format!(
+                        "Expected 1 input arg, got {}",
+                        inputs.len()
+                    )));
+                };
+                let field = inputs.first().unwrap().to_field(schema)?;
+                let dtype = match field.dtype {
+                    DataType::Float32 => DataType::Float32,
+                    dt if dt.is_numeric() => DataType::Float64,
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Expected input to trigonometry to be numeric, got {}",
+                            field.dtype
+                        )))
+                    }
+                };
+                Ok(Field::new(field.name, dtype))
+            }
+
+            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+                evaluate_single_numeric(inputs, |s| {
+                    s.trigonometry(&TrigonometricFunction::$variant)
+                })
+            }
+        }
+
+        pub fn $name(input: ExprRef) -> ExprRef {
+            ScalarFunction::new($variant, vec![input]).into()
+        }
+    };
 }
+
+trigonometry!(sin, Sin);
+trigonometry!(cos, Cos);
+trigonometry!(tan, Tan);
+trigonometry!(cot, Cot);
+trigonometry!(arcsin, ArcSin);
+trigonometry!(arccos, ArcCos);
+trigonometry!(arctan, ArcTan);
+trigonometry!(radians, Radians);
+trigonometry!(degrees, Degrees);
+trigonometry!(arctanh, ArcTanh);
+trigonometry!(arccosh, ArcCosh);
+trigonometry!(arcsinh, ArcSinh);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Atan2 {}
@@ -96,27 +120,6 @@ impl ScalarUDF for Atan2 {
         }
     }
 }
-
-macro_rules! trigonometry {
-    ($name:ident, $variant:ident) => {
-        pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new(Trigonometry(TrigonometricFunction::$variant), vec![input]).into()
-        }
-    };
-}
-
-trigonometry!(sin, Sin);
-trigonometry!(cos, Cos);
-trigonometry!(tan, Tan);
-trigonometry!(cot, Cot);
-trigonometry!(arcsin, ArcSin);
-trigonometry!(arccos, ArcCos);
-trigonometry!(arctan, ArcTan);
-trigonometry!(radians, Radians);
-trigonometry!(degrees, Degrees);
-trigonometry!(arctanh, ArcTanh);
-trigonometry!(arccosh, ArcCosh);
-trigonometry!(arcsinh, ArcSinh);
 
 pub fn atan2(x: ExprRef, y: ExprRef) -> ExprRef {
     ScalarFunction::new(Atan2 {}, vec![x, y]).into()
