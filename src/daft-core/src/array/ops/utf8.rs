@@ -3,7 +3,6 @@ use std::{
     iter::{self, Repeat, Take},
 };
 
-use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
@@ -14,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 use super::{as_arrow::AsArrow, full::FullNull};
+use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 
 enum BroadcastedStrIter<'a> {
     Repeat(std::iter::Take<std::iter::Repeat<Option<&'a str>>>),

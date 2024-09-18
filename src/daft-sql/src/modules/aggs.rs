@@ -3,6 +3,7 @@ use std::sync::Arc;
 use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
+use super::SQLModule;
 use crate::{
     ensure,
     error::SQLPlannerResult,
@@ -10,8 +11,6 @@ use crate::{
     planner::SQLPlanner,
     unsupported_sql_err,
 };
-
-use super::SQLModule;
 
 pub struct SQLModuleAggs;
 

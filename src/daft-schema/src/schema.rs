@@ -8,13 +8,12 @@ use common_display::{
     table_display::{make_comfy_table, make_schema_vertical_table},
     DisplayAs,
 };
+use common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::field::Field;
-
-use common_error::{DaftError, DaftResult};
 
 pub type SchemaRef = Arc<Schema>;
 

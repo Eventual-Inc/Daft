@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::functions::ScalarUDF;
-use daft_dsl::ExprRef;
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::{get_io_client, get_runtime, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use snafu::prelude::*;
-
-use common_error::{DaftError, DaftResult};
 
 use crate::InvalidArgumentSnafu;
 

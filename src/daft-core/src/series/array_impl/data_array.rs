@@ -1,20 +1,20 @@
-use super::{ArrayWrapper, IntoSeries, Series};
 use std::sync::Arc;
 
-use crate::array::ops::broadcast::Broadcastable;
-use crate::array::ops::DaftListAggable;
-use crate::array::ops::GroupIndices;
-use crate::array::DataArray;
-use crate::datatypes::DaftArrowBackedType;
-
-use crate::datatypes::FixedSizeBinaryArray;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::{array::prelude::*, series::series_like::SeriesLike, with_match_integer_daft_types};
 use common_error::DaftResult;
 
-use crate::datatypes::DataType;
+use super::{ArrayWrapper, IntoSeries, Series};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
+use crate::{
+    array::{
+        ops::{broadcast::Broadcastable, DaftListAggable, GroupIndices},
+        prelude::*,
+        DataArray,
+    },
+    datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray},
+    series::{array_impl::binary_ops::SeriesBinaryOps, series_like::SeriesLike},
+    with_match_integer_daft_types,
+};
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where

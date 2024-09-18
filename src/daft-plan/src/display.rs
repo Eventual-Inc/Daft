@@ -86,10 +86,9 @@ impl Display for crate::physical_plan::PhysicalPlan {
 
 #[cfg(test)]
 mod test {
-    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
-
     use std::sync::Arc;
 
+    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{

@@ -1,13 +1,12 @@
+use std::ops::{BitAnd, BitOr, BitXor};
+
+use common_error::DaftResult;
+
+use super::DaftLogical;
 use crate::{
     array::DataArray,
     datatypes::{DaftIntegerType, DaftNumericType},
 };
-
-use common_error::DaftResult;
-
-use std::ops::{BitAnd, BitOr, BitXor};
-
-use super::DaftLogical;
 
 impl<T> DaftLogical<&DataArray<T>> for DataArray<T>
 where

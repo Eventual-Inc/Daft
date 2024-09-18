@@ -2,10 +2,9 @@ mod adaptive;
 mod scheduler;
 
 pub use adaptive::AdaptivePhysicalPlanScheduler;
-pub use scheduler::PhysicalPlanScheduler;
-
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+pub use scheduler::PhysicalPlanScheduler;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

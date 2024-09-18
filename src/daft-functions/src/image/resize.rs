@@ -1,9 +1,9 @@
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-
-use common_error::DaftResult;
-use daft_dsl::functions::{ScalarFunction, ScalarUDF};
-use daft_dsl::ExprRef;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

@@ -1,12 +1,12 @@
 use common_error::DaftError;
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::encode::{encode, ImageEncode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::encode::{encode, ImageEncode};
 
 pub struct SQLImageEncode;
 

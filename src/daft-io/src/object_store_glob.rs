@@ -1,11 +1,11 @@
+use std::{collections::HashSet, path::Path, sync::Arc};
+
 use async_stream::stream;
 use futures::stream::{BoxStream, StreamExt};
-use itertools::Itertools;
-use std::{collections::HashSet, path::Path, sync::Arc};
-use tokio::sync::mpsc::Sender;
-
 use globset::{GlobBuilder, GlobMatcher};
+use itertools::Itertools;
 use lazy_static::lazy_static;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     object_io::{FileMetadata, FileType, ObjectSource},

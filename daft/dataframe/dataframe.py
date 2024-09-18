@@ -1324,6 +1324,23 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth:`.where(predicate) <DataFrame.where>`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
+
+    @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
@@ -2554,6 +2571,27 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+        .. WARNING::
+
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        return list(self.iter_rows())
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":

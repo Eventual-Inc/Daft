@@ -1,12 +1,10 @@
 use std::iter::zip;
 
 use arrow2::array::PrimitiveArray;
-
-use crate::{array::DataArray, datatypes::DaftNumericType, utils::arrow::arrow_bitmap_and_helper};
-
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
+use crate::{array::DataArray, datatypes::DaftNumericType, utils::arrow::arrow_bitmap_and_helper};
 
 impl<T> DataArray<T>
 where

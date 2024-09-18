@@ -8,7 +8,6 @@ use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
 use serde::{Deserialize, Serialize};
 
 /// Format of a file, e.g. Parquet, CSV, JSON.

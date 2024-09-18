@@ -57,9 +57,8 @@ use to_date::ToDateEvaluator;
 use to_datetime::ToDatetimeEvaluator;
 use upper::UpperEvaluator;
 
-use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Utf8Expr {

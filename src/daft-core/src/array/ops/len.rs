@@ -1,13 +1,12 @@
+use common_error::DaftResult;
+
+use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::DaftArrowBackedType,
 };
-use common_error::DaftResult;
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -23,8 +22,7 @@ where
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
+        use pyo3::{prelude::*, types::PyList};
 
         let vector = self.as_arrow().values().to_vec();
         Python::with_gil(|py| {

@@ -1,8 +1,3 @@
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
 use std::{
     collections::HashMap,
     fs::File,
@@ -14,6 +9,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
+use common_tracing::refresh_chrome_trace;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{translate, LocalPhysicalPlan};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,

@@ -1,6 +1,5 @@
-use daft_core::prelude::*;
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 
 use crate::{
     ops::{image_array_from_img_buffers, ImageOps},

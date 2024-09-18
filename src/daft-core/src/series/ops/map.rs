@@ -1,7 +1,6 @@
-use crate::datatypes::DataType;
-use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::{datatypes::DataType, series::Series};
 
 impl Series {
     pub fn map_get(&self, key: &Series) -> DaftResult<Series> {

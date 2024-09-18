@@ -1,11 +1,10 @@
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
+use daft_stats::TruthValue;
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
-
-use daft_stats::TruthValue;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
