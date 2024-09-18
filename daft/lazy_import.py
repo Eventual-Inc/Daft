@@ -46,6 +46,8 @@ class LazyImport:
                 return self.__dict__[name]
             return getattr(self._load_module(), name)
         except AttributeError:
+            if self._module is None:
+                raise AttributeError
             # Dynamically create a new LazyImport instance for the submodule
             submodule_name = f"{self._module_name}.{name}"
             lazy_submodule = LazyImport(submodule_name)
