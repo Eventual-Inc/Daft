@@ -64,7 +64,7 @@ fn to_field_single_numeric(
     let field = inputs.first().unwrap().to_field(schema)?;
     if !field.dtype.is_numeric() {
         return Err(DaftError::TypeError(format!(
-            "Expected input for {} to be numeric, got {}",
+            "Expected input to {} to be numeric, got {}",
             f.name(),
             field.dtype
         )));
