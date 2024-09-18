@@ -213,7 +213,7 @@ pub fn py_arcsinh(expr: PyExpr) -> PyResult<PyExpr> {
 
 #[cfg(feature = "python")]
 #[pyfunction]
-#[pyo3(name = "atan2")]
-pub fn py_atan2(x: PyExpr, y: PyExpr) -> PyResult<PyExpr> {
+#[pyo3(name = "arctan2")]
+pub fn py_arctan2(x: PyExpr, y: PyExpr) -> PyResult<PyExpr> {
     Ok(atan2(x.into(), y.into()).into())
 }

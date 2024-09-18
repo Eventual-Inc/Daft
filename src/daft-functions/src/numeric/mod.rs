@@ -45,7 +45,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctanh, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arccosh, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arcsinh, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_atan2, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctan2, parent)?)?;
 
     Ok(())
 }
