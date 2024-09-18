@@ -9,10 +9,14 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
+# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
+# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
+# serializable before importing pa from daft.dependencies.
+import pyarrow as pa  # noqa: TID253
+
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
-from daft.dependencies import pa
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
 from daft.table import Table
