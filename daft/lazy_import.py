@@ -40,12 +40,15 @@ class LazyImport:
         return self._module
 
     def __getattr__(self, name: str) -> Any:
-        # Attempt to access the attribute, if it fails, assume it's a submodule and lazily import it
+        # Attempt to access the attribute. If it fails, but the parent module exists, assume that
+        # the attribute is a submodule and lazily import it.
         try:
             if name in self.__dict__:
                 return self.__dict__[name]
             return getattr(self._load_module(), name)
         except AttributeError:
+            if self._module is None:
+                raise AttributeError
             # Dynamically create a new LazyImport instance for the submodule
             submodule_name = f"{self._module_name}.{name}"
             lazy_submodule = LazyImport(submodule_name)
