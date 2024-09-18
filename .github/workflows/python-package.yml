@@ -43,8 +43,9 @@ jobs:
         - os: windows-latest
           pyarrow-version: 7.0.0
     steps:
-    - uses: lhotari/action-upterm@v1
     - uses: actions/checkout@v4
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
