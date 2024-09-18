@@ -351,7 +351,7 @@ def test_csv_read_data_custom_comment(use_native_downloader):
             }
         )
         # Skipping test for arrow < 7.0.0 as comments are not supported in pyarrow
-        arrow_version = get_arrow_version
+        arrow_version = get_arrow_version()
         if arrow_version >= (7, 0, 0):
             table = table_io.read_csv(
                 file,
