@@ -93,6 +93,7 @@ jobs:
       run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
+      uses: lhotari/action-upterm@v1
       if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
