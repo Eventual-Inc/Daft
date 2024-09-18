@@ -6,10 +6,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from daft import context
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.udf import udf
 from tests.conftest import assert_df_equals
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):

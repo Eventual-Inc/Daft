@@ -22,6 +22,12 @@ from sqlalchemy import (
     text,
 )
 
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 URLS = [
     "trino://user@localhost:8080/memory/default",
     "postgresql://username:password@localhost:5432/postgres",

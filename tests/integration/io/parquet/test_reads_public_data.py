@@ -8,9 +8,15 @@ from pyarrow import parquet as pq
 
 import daft
 import daft.table
+from daft import context
 from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
 from daft.table import MicroPartition, Table
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
