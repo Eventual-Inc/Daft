@@ -26,7 +26,9 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value.cast(&DataType::Int32)
+        value
+            .rename(format!("{}_years", self.name()))
+            .cast(&DataType::Int32)
     }
 
     pub fn partitioning_months(&self) -> DaftResult<Self> {
@@ -49,34 +51,29 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value.cast(&DataType::Int32)
+        value
+            .rename(format!("{}_months", self.name()))
+            .cast(&DataType::Int32)
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
-        match self.data_type() {
+        let value = match self.data_type() {
             DataType::Date => {
                 let date_array = self.downcast::<DateArray>()?;
                 Ok(date_array.physical.clone().into_series())
             }
-            DataType::Timestamp(unit, _) => {
-                let ts_array = self.downcast::<TimestampArray>()?;
-                let physical = &ts_array.physical.cast(&DataType::Float64)?;
-                let unit_to_days: f64 = match unit {
-                    TimeUnit::Nanoseconds => 86_400_000_000_000.0,
-                    TimeUnit::Microseconds => 86_400_000_000.0,
-                    TimeUnit::Milliseconds => 86_400_000.0,
-                    TimeUnit::Seconds => 86_400.0,
-                };
-                // TODO: use floor division once it is implemented
-                let divider = Float64Array::from(("divider", vec![unit_to_days])).into_series();
-                let days = (physical / &divider)?.floor()?;
-                days.cast(&DataType::Int32)
+            DataType::Timestamp(tu, _) => {
+                let array = self.cast(&DataType::Timestamp(*tu, None))?;
+                let ts_array = array.downcast::<TimestampArray>()?;
+                Ok(ts_array.date()?.physical.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_days() operation on temporal types, got {}",
                 self.data_type()
             ))),
-        }
+        }?;
+
+        Ok(value.rename(format!("{}_days", self.name())))
     }
 
     pub fn partitioning_hours(&self) -> DaftResult<Self> {
@@ -99,7 +96,9 @@ impl Series {
                 self.data_type()
             ))),
         }?;
-        value.cast(&DataType::Int32)
+        value
+            .rename(format!("{}_hours", self.name()))
+            .cast(&DataType::Int32)
     }
 
     pub fn partitioning_iceberg_bucket(&self, n: i32) -> DaftResult<Self> {
@@ -110,12 +109,15 @@ impl Series {
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
-        Ok(Int32Array::from((self.name(), array)).into_series())
+        Ok(
+            Int32Array::from((format!("{}_bucket_{}", self.name(), n).as_str(), array))
+                .into_series(),
+        )
     }
 
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         assert!(w > 0, "Expected w to be positive, got {w}");
-        match self.data_type() {
+        let trunc = match self.data_type() {
             i if i.is_integer() => {
                 with_match_integer_daft_types!(i, |$T| {
                     let downcasted = self.downcast::<<$T as DaftDataType>::ArrayType>()?;
@@ -129,6 +131,8 @@ impl Series {
                 "Can only run partitioning_iceberg_truncate() operation on integers, decimal, string, and binary, got {}",
                 self.data_type()
             ))),
-        }
+        }?;
+
+        Ok(trunc.rename(format!("{}_trunc_{}", self.name(), w)))
     }
 }

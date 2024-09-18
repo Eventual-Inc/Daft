@@ -1,15 +1,19 @@
 import datetime
 import uuid
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator, List, Tuple
 
-from daft import Expression, Series, col
+from daft import Expression, col
 from daft.table import MicroPartition
+from daft.table.partitioning import PartitionedTable, partition_strings_to_path, partition_values_to_string
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
+    from pyiceberg.typedef import Record as IcebergRecord
 
 
 def add_missing_columns(table: MicroPartition, schema: "pa.Schema") -> MicroPartition:
@@ -24,7 +28,7 @@ def add_missing_columns(table: MicroPartition, schema: "pa.Schema") -> MicroPart
         if name in existing_columns:
             columns[name] = table.get_column(name)
         else:
-            columns[name] = Series.from_arrow(pa.nulls(len(table), type=schema.field(name).type), name=name)
+            columns[name] = pa.nulls(len(table), type=schema.field(name).type)
 
     return MicroPartition.from_pydict(columns)
 
@@ -82,28 +86,37 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         YearTransform,
     )
 
-    partition_col = col(schema.find_field(field.source_id).name)
+    part_col = schema.find_field(field.source_id).name
 
     if isinstance(field.transform, IdentityTransform):
-        return partition_col
+        transform_expr = col(part_col)
     elif isinstance(field.transform, YearTransform):
-        return partition_col.partitioning.years()
+        transform_expr = col(part_col).partitioning.years()
     elif isinstance(field.transform, MonthTransform):
-        return partition_col.partitioning.months()
+        transform_expr = col(part_col).partitioning.months()
     elif isinstance(field.transform, DayTransform):
-        return partition_col.partitioning.days()
+        transform_expr = col(part_col).partitioning.days()
     elif isinstance(field.transform, HourTransform):
-        return partition_col.partitioning.hours()
+        transform_expr = col(part_col).partitioning.hours()
     elif isinstance(field.transform, BucketTransform):
-        return partition_col.partitioning.iceberg_bucket(field.transform.num_buckets)
+        transform_expr = col(part_col).partitioning.iceberg_bucket(field.transform.num_buckets)
     elif isinstance(field.transform, TruncateTransform):
-        return partition_col.partitioning.iceberg_truncate(field.transform.width)
+        transform_expr = col(part_col).partitioning.iceberg_truncate(field.transform.width)
     else:
         warnings.warn(f"{field.transform} not implemented, Please make an issue!")
-        return partition_col
+        transform_expr = col(part_col)
+
+    # currently the partitioning expressions change the name of the column
+    # so we need to alias it back to the original column name
+    return transform_expr.alias(part_col)
 
 
 def to_partition_representation(value: Any):
+    """
+    Converts a partition value to the format expected by Iceberg metadata.
+    Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
+    """
+
     if value is None:
         return None
 
@@ -120,3 +133,107 @@ def to_partition_representation(value: Any):
         return str(value)
     else:
         return value
+
+
+class IcebergWriteVisitors:
+    class FileVisitor:
+        def __init__(self, parent: "IcebergWriteVisitors", partition_record: "IcebergRecord"):
+            self.parent = parent
+            self.partition_record = partition_record
+
+        def __call__(self, written_file):
+            import pyiceberg
+            from packaging.version import parse
+            from pyiceberg.io.pyarrow import (
+                compute_statistics_plan,
+                parquet_path_to_id_mapping,
+            )
+            from pyiceberg.manifest import DataFile, DataFileContent
+            from pyiceberg.manifest import FileFormat as IcebergFileFormat
+
+            file_path = f"{self.parent.protocol}://{written_file.path}"
+            size = written_file.size
+            metadata = written_file.metadata
+
+            kwargs = {
+                "content": DataFileContent.DATA,
+                "file_path": file_path,
+                "file_format": IcebergFileFormat.PARQUET,
+                "partition": self.partition_record,
+                "file_size_in_bytes": size,
+                # After this has been fixed:
+                # https://github.com/apache/iceberg-python/issues/271
+                # "sort_order_id": task.sort_order_id,
+                "sort_order_id": None,
+                # Just copy these from the table for now
+                "spec_id": self.parent.spec_id,
+                "equality_ids": None,
+                "key_metadata": None,
+            }
+
+            if parse(pyiceberg.__version__) >= parse("0.7.0"):
+                from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
+
+                statistics = data_file_statistics_from_parquet_metadata(
+                    parquet_metadata=metadata,
+                    stats_columns=compute_statistics_plan(self.parent.schema, self.parent.properties),
+                    parquet_column_mapping=parquet_path_to_id_mapping(self.parent.schema),
+                )
+
+                data_file = DataFile(
+                    **{
+                        **kwargs,
+                        **statistics.to_serialized_dict(),
+                    }
+                )
+            else:
+                from pyiceberg.io.pyarrow import fill_parquet_file_metadata
+
+                data_file = DataFile(**kwargs)
+
+                fill_parquet_file_metadata(
+                    data_file=data_file,
+                    parquet_metadata=metadata,
+                    stats_columns=compute_statistics_plan(self.parent.schema, self.parent.properties),
+                    parquet_column_mapping=parquet_path_to_id_mapping(self.parent.schema),
+                )
+
+            self.parent.data_files.append(data_file)
+
+    def __init__(self, protocol: str, spec_id: int, schema: "IcebergSchema", properties: "IcebergTableProperties"):
+        self.data_files: List[DataFile] = []
+        self.protocol = protocol
+        self.spec_id = spec_id
+        self.schema = schema
+        self.properties = properties
+
+    def visitor(self, partition_record: "IcebergRecord") -> "IcebergWriteVisitors.FileVisitor":
+        return self.FileVisitor(self, partition_record)
+
+    def to_metadata(self) -> MicroPartition:
+        return MicroPartition.from_pydict({"data_file": self.data_files})
+
+
+def partitioned_table_to_iceberg_iter(
+    partitioned: PartitionedTable, root_path: str, schema: "pa.Schema"
+) -> Iterator[Tuple["pa.Table", str, "IcebergRecord"]]:
+    from pyiceberg.typedef import Record as IcebergRecord
+
+    if partitioned.partition_values:
+        partition_strings = partition_values_to_string(
+            partitioned.partition_values, partition_null_fallback="null"
+        ).to_pylist()
+        partition_values = partitioned.partition_values.to_pylist()
+
+        for table, part_vals, part_strs in zip(partitioned.partitions, partition_values, partition_strings):
+            iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
+            part_record = IcebergRecord(**iceberg_part_vals)
+            part_path = partition_strings_to_path(root_path, part_strs)
+
+            arrow_table = coerce_pyarrow_table_to_schema(table.to_arrow(), schema)
+
+            yield arrow_table, part_path, part_record
+    else:
+        arrow_table = coerce_pyarrow_table_to_schema(partitioned.table.to_arrow(), schema)
+
+        yield arrow_table, root_path, IcebergRecord()

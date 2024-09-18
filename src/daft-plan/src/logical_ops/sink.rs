@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 
-use daft_dsl::{resolve_exprs, ExprRef};
+use daft_dsl::resolve_exprs;
 
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
 
@@ -23,19 +23,6 @@ impl Sink {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
         let schema = input.schema();
 
-        fn resolve_partition_cols(
-            partition_cols: &Option<Vec<ExprRef>>,
-            schema: &SchemaRef,
-        ) -> DaftResult<Option<Vec<ExprRef>>> {
-            partition_cols
-                .clone()
-                .map(|cols| {
-                    resolve_exprs(cols, schema, false).map(|(resolved_cols, _)| resolved_cols)
-                })
-                .transpose()
-        }
-
-        // TODO(Kevin): consolidate the sink info structs so that this is cleaner
         let sink_info = match sink_info.as_ref() {
             SinkInfo::OutputFileInfo(OutputFileInfo {
                 root_dir,
@@ -43,13 +30,22 @@ impl Sink {
                 partition_cols,
                 compression,
                 io_config,
-            }) => Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
-                root_dir: root_dir.clone(),
-                file_format: *file_format,
-                partition_cols: resolve_partition_cols(partition_cols, &schema)?,
-                compression: compression.clone(),
-                io_config: io_config.clone(),
-            })),
+            }) => {
+                let resolved_partition_cols = partition_cols
+                    .clone()
+                    .map(|cols| {
+                        resolve_exprs(cols, &schema, false).map(|(resolved_cols, _)| resolved_cols)
+                    })
+                    .transpose()?;
+
+                Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
+                    root_dir: root_dir.clone(),
+                    file_format: *file_format,
+                    partition_cols: resolved_partition_cols,
+                    compression: compression.clone(),
+                    io_config: io_config.clone(),
+                }))
+            }
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(_) => sink_info,
         };
