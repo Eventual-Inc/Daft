@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from daft.dataframe.preview import DataFramePreview
-from daft.logical.schema import Schema
+if TYPE_CHECKING:
+    from daft.dataframe.preview import DataFramePreview
+    from daft.logical.schema import Schema
 
 
 @dataclass(frozen=True)

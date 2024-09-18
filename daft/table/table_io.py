@@ -5,7 +5,6 @@ import math
 import pathlib
 import random
 import time
-from collections.abc import Callable, Generator
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
@@ -26,7 +25,6 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
-from daft.expressions.expressions import Expression
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -40,16 +38,20 @@ from daft.runners.partitioning import (
     TableReadOptions,
 )
 from daft.series import Series
-from daft.sql.sql_connection import SQLConnection
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Generator
+
     import pyarrow as pa
     from pyarrow import dataset as pads
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.expressions.expressions import Expression
+    from daft.sql.sql_connection import SQLConnection
 
 pa = LazyImport("pyarrow")
 pacsv = LazyImport("pyarrow.csv")

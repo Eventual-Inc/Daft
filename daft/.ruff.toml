@@ -2,7 +2,8 @@ extend = "../.ruff.toml"
 
 [lint]
 extend-select = [
-  "TID253"  # banned-module-level-imports, derived from flake8-tidy-imports
+  "TID253",  # banned-module-level-imports, derived from flake8-tidy-imports
+  "TCH"  # flake8-type-checking
 ]
 
 [lint.flake8-tidy-imports]

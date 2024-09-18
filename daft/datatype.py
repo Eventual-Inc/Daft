@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -8,6 +7,8 @@ from daft.daft import ImageMode, PyDataType, PyTimeUnit
 from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
+    import builtins
+
     import numpy as np
     import pyarrow as pa
 

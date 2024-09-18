@@ -3,12 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import FileFormatConfig, ScanOperatorHandle, StorageConfig
-from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    pass
+    from daft.datatype import DataType
 
 
 def _get_schema_from_dict(fields: dict[str, DataType]) -> Schema:

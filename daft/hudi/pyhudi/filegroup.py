@@ -5,11 +5,12 @@ from typing import TYPE_CHECKING
 
 from sortedcontainers import SortedDict
 
-from daft.hudi.pyhudi.utils import FsFileMetadata
 from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+    from daft.hudi.pyhudi.utils import FsFileMetadata
 
 pa = LazyImport("pyarrow")
 

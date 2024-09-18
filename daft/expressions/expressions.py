@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import math
 import os
 from datetime import date, datetime, time
@@ -42,6 +41,8 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    import builtins
+
     from daft.io import IOConfig
     from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
