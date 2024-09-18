@@ -43,6 +43,7 @@ jobs:
         - os: windows-latest
           pyarrow-version: 7.0.0
     steps:
+    - uses: lhotari/action-upterm@v1
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
@@ -93,7 +94,6 @@ jobs:
       run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
-      uses: lhotari/action-upterm@v1
       if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
