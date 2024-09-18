@@ -35,8 +35,8 @@ from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
+from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
-from daft.lazy_import import LazyImport
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
@@ -67,8 +67,6 @@ elif os.getenv("DAFT_SPHINX_BUILD") == "1":
                 return self  # type: ignore[return-value]
 
     property = sphinx_accessor  # type: ignore[misc]
-
-pa = LazyImport("pyarrow")
 
 
 def lit(value: object) -> Expression:

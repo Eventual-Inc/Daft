@@ -4,14 +4,12 @@ import logging
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import urlparse
 
-from daft.lazy_import import LazyImport
+from daft.dependencies import pa
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    import pyarrow as pa
     from sqlalchemy.engine import Connection
 
-pa = LazyImport("pyarrow")
 
 logger = logging.getLogger(__name__)
 

@@ -4,21 +4,14 @@ import dataclasses
 import functools
 import inspect
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import Any, Callable, Union
 
 from daft.context import get_context
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
+from daft.dependencies import np, pa
 from daft.expressions import Expression
-from daft.lazy_import import LazyImport
 from daft.series import PySeries, Series
-
-if TYPE_CHECKING:
-    import numpy as np
-    import pyarrow as pa
-
-np = LazyImport("numpy")
-pa = LazyImport("pyarrow")
 
 UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 

@@ -6,14 +6,12 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.dependencies import unity_catalog
 from daft.io.catalog import DataCatalogTable
-from daft.lazy_import import LazyImport
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from daft.unity_catalog import UnityCatalogTable
-
-unity_catalog = LazyImport("daft.unity_catalog")
 
 
 @PublicAPI

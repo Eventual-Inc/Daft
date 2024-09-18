@@ -1,23 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.datatype import DataType
-from daft.lazy_import import LazyImport
+from daft.datatype import DataType, _ensure_registered_super_ext_type
+from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-
-if TYPE_CHECKING:
-    import numpy as np
-    import pandas as pd
-    import pyarrow as pa
-
-np = LazyImport("numpy")
-pd = LazyImport("pandas")
-pa = LazyImport("pyarrow")
-
-from daft.datatype import _ensure_registered_super_ext_type
 
 
 class Series:

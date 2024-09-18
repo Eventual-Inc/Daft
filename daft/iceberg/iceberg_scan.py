@@ -18,9 +18,9 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
-from daft.lazy_import import LazyImport
 from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table
     from pyiceberg.typedef import Record
 
-pa = LazyImport("pyarrow")
 logger = logging.getLogger(__name__)
 
 

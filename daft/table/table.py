@@ -23,19 +23,14 @@ from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
+from daft.dependencies import pa, pd
 from daft.expressions import Expression, ExpressionsProjection
-from daft.lazy_import import LazyImport
 from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    import pandas as pd
-    import pyarrow as pa
-
     from daft.io import IOConfig
 
-pd = LazyImport("pandas")
-pa = LazyImport("pyarrow")
 logger = logging.getLogger(__name__)
 
 

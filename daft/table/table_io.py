@@ -24,13 +24,13 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pa, pacsv, pads, pajson, pq
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
     get_protocol_from_path,
 )
-from daft.lazy_import import LazyImport
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     TableParseCSVOptions,
@@ -45,19 +45,11 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
-    import pyarrow as pa
-    from pyarrow import dataset as pads
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.expressions.expressions import Expression
     from daft.sql.sql_connection import SQLConnection
-
-pa = LazyImport("pyarrow")
-pacsv = LazyImport("pyarrow.csv")
-pads = LazyImport("pyarrow.dataset")
-pajson = LazyImport("pyarrow.json")
-papq = LazyImport("pyarrow.parquet")
 
 
 @contextlib.contextmanager
@@ -199,7 +191,7 @@ def read_parquet(
 
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        pqf = papq.ParquetFile(
+        pqf = pq.ParquetFile(
             f,
             coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
         )
@@ -209,7 +201,7 @@ def read_parquet(
             schema=arrow_schema,
         )
     elif read_options.num_rows is not None:
-        pqf = papq.ParquetFile(
+        pqf = pq.ParquetFile(
             f,
             coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
         )
@@ -225,7 +217,7 @@ def read_parquet(
             # Need to truncate the table to the row limit.
             table = table.slice(length=read_options.num_rows)
     else:
-        table = papq.read_table(
+        table = pq.read_table(
             f,
             columns=read_options.column_names,
             coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
@@ -915,7 +907,7 @@ def write_empty_tabular(
 
     def write_table():
         if file_format == FileFormat.Parquet:
-            papq.write_table(
+            pq.write_table(
                 table,
                 file_path,
                 compression=compression,

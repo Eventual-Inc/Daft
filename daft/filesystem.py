@@ -6,24 +6,18 @@ import os
 import pathlib
 import sys
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
-from daft.lazy_import import LazyImport
+from daft.dependencies import fsspec, pafs
 from daft.table import MicroPartition
 
-if TYPE_CHECKING:
-    import fsspec
-    from pyarrow.fs import FileSystem
-
 logger = logging.getLogger(__name__)
-fsspec = LazyImport("fsspec")
-pafs = LazyImport("pyarrow.fs")
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], FileSystem] = {}
+_CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
 
 
-def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> FileSystem | None:
+def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
     """
     Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
 
@@ -34,7 +28,7 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> FileSystem 
     return _CACHED_FSES.get((protocol, io_config))
 
 
-def _put_fs_in_cache(protocol: str, fs: FileSystem, io_config: IOConfig | None) -> None:
+def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> None:
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
@@ -117,7 +111,7 @@ def canonicalize_protocol(protocol: str) -> str:
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
-) -> tuple[list[str], FileSystem]:
+) -> tuple[list[str], pafs.FileSystem]:
     """
     Resolves and normalizes all provided paths, infers a filesystem from the
     paths, and ensures that all paths use the same filesystem.
@@ -179,7 +173,7 @@ def _resolve_paths_and_filesystem(
     return resolved_paths, resolved_filesystem
 
 
-def _validate_filesystem(path: str, fs: FileSystem, io_config: IOConfig | None) -> str:
+def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> str:
     resolved_path, inferred_fs = _infer_filesystem(path, io_config)
     if not isinstance(fs, type(inferred_fs)):
         raise RuntimeError(
@@ -191,7 +185,7 @@ def _validate_filesystem(path: str, fs: FileSystem, io_config: IOConfig | None) 
 def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
-) -> tuple[str, FileSystem]:
+) -> tuple[str, pafs.FileSystem]:
     """
     Resolves and normalizes the provided path, infers a filesystem from the
     path, and ensures that the inferred filesystem is compatible with the passed
@@ -350,7 +344,7 @@ def glob_path_with_stats(
 ###
 
 
-def join_path(fs: FileSystem, base_path: str, *sub_paths: str) -> str:
+def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
     """
     Join a base path with sub-paths using the appropriate path separator
     for the given filesystem.

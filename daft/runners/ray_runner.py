@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
-from daft.lazy_import import LazyImport
+from daft.dependencies import pa
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
 from daft.table import Table
@@ -61,15 +61,12 @@ from daft.table import MicroPartition
 if TYPE_CHECKING:
     import dask
     import pandas as pd
-    import pyarrow as pa
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
 
     from daft.expressions import ExpressionsProjection
     from daft.logical.builder import LogicalPlanBuilder
     from daft.plan_scheduler import PhysicalPlanScheduler
-
-pa = LazyImport("pyarrow")
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:

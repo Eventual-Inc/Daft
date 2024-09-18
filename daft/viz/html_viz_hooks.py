@@ -2,16 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import Callable, TypeVar
 
-from daft.lazy_import import LazyImport
-
-if TYPE_CHECKING:
-    import numpy as np
-    import PIL.Image
-
-np = LazyImport("numpy")
-pil_image = LazyImport("PIL.Image")
+from daft.dependencies import np, pil_image
 
 HookClass = TypeVar("HookClass")
 
@@ -39,7 +32,7 @@ def get_viz_hook(val: object) -> Callable[[object], str] | None:
 
     if pil_image.module_available() and not _PILLOW_REGISTERED:
 
-        def _viz_pil_image(val: PIL.Image.Image) -> str:
+        def _viz_pil_image(val: pil_image.Image) -> str:
             img = val.copy()
             img.thumbnail((128, 128))
             bio = io.BytesIO()

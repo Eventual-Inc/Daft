@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
 
-from daft.lazy_import import LazyImport
-
-if TYPE_CHECKING:
-    import pyarrow as pa
-
-pa = LazyImport("pyarrow")
+from daft.dependencies import pa
 
 
 def ensure_array(arr: pa.Array) -> pa.Array:

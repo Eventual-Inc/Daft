@@ -5,9 +5,7 @@ import random
 import statistics
 from typing import Any, Callable
 
-from daft.lazy_import import LazyImport
-
-pa = LazyImport("pyarrow")
+from daft.dependencies import pa
 
 
 def get_arrow_version():

@@ -10,16 +10,12 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pacsv, pajson, pq
 from daft.filesystem import _resolve_paths_and_filesystem
-from daft.lazy_import import LazyImport
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import MicroPartition
 from daft.table.table_io import FileInput, _open_stream
-
-pacsv = LazyImport("pyarrow.csv")
-pajson = LazyImport("pyarrow.json")
-papq = LazyImport("pyarrow.parquet")
 
 
 def from_csv(
@@ -138,7 +134,7 @@ def from_parquet(
         path = paths[0]
         f = fs.open_input_file(path)
 
-    pqf = papq.ParquetFile(f)
+    pqf = pq.ParquetFile(f)
     arrow_schema = pqf.metadata.schema.to_arrow_schema()
 
     return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
