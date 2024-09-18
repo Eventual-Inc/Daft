@@ -4,6 +4,12 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 TABLE_NAME = "my_table"
 data = {

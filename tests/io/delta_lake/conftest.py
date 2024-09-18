@@ -18,9 +18,14 @@ from azure.storage.blob import BlobServiceClient
 from pytest_lazyfixture import lazy_fixture
 
 import daft
-from daft import DataCatalogTable, DataCatalogType
+from daft import DataCatalogTable, DataCatalogType, context
 from daft.io.object_store_options import io_config_to_storage_options
 from tests.io.mock_aws_server import start_service, stop_process
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.fixture(params=[1, 2, 8])

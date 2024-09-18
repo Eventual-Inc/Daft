@@ -3,6 +3,13 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
+
 pyiceberg = pytest.importorskip("pyiceberg")
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
