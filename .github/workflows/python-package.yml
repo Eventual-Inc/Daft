@@ -44,11 +44,6 @@ jobs:
           pyarrow-version: 7.0.0
     steps:
     - uses: actions/checkout@v4
-    - name: Setup upterm session
-      uses: lhotari/action-upterm@v1
-      with:
-        ## If no one connects after 5 minutes, shut down server.
-        wait-timeout-minutes: 2
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -96,6 +91,12 @@ jobs:
     - name: Override deltalake for pyarrow
       if: ${{ (matrix.pyarrow-version == '7.0.0') }}
       run: uv pip install deltalake==0.10.0
+
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      with:
+        ## If no one connects after 5 minutes, shut down server.
+        wait-timeout-minutes: 2
 
     - name: Build library and Test with pytest (unix)
       if: ${{ (runner.os != 'Windows') }}
