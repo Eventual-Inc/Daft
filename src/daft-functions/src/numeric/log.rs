@@ -10,9 +10,6 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Log(FloatWrapper<f64>);
-
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
     ($name:ident, $variant:ident) => {
@@ -64,6 +61,9 @@ macro_rules! log {
 log!(log2, Log2);
 log!(log10, Log10);
 log!(ln, Ln);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Log(FloatWrapper<f64>);
 
 #[typetag::serde]
 impl ScalarUDF for Log {
