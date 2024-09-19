@@ -1,5 +1,4 @@
 use common_error::{DaftError, DaftResult};
-
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},

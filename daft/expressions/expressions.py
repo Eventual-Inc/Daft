@@ -537,13 +537,13 @@ class Expression:
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
         | Map                | N    | N       | N        | N      | N          | N      | N      | N                 | N     | N                 | Y         | N      | N                  | N      | Y    | Y               | N      | Y   | N         | N    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
-        | Timestamp          | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | N        |
+        | Timestamp          | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
-        | Date               | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
+        | Date               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
-        | Time               | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | Y        |
+        | Time               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | Y    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
-        | Duration           | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | Y        |
+        | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
 
         Note:
@@ -1362,7 +1362,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Boolean Expression indicating whether values are invalid.
         """
-        return Expression._from_pyexpr(self._expr.is_nan())
+        return Expression._from_pyexpr(native.is_nan(self._expr))
 
     def is_inf(self) -> Expression:
         """Checks if values in the Expression are Infinity.
@@ -1394,7 +1394,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Boolean Expression indicating whether values are Infinity.
         """
-        return Expression._from_pyexpr(self._expr.is_inf())
+        return Expression._from_pyexpr(native.is_inf(self._expr))
 
     def not_nan(self) -> Expression:
         """Checks if values are not NaN (a special float value indicating not-a-number)
@@ -1424,7 +1424,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Boolean Expression indicating whether values are not invalid.
         """
-        return Expression._from_pyexpr(self._expr.not_nan())
+        return Expression._from_pyexpr(native.not_nan(self._expr))
 
     def fill_nan(self, fill_value: Expression) -> Expression:
         """Fills NaN values in the Expression with the provided fill_value
@@ -1453,7 +1453,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         """
 
         fill_value = Expression._to_expression(fill_value)
-        expr = self._expr.fill_nan(fill_value._expr)
+        expr = native.fill_nan(self._expr, fill_value._expr)
         return Expression._from_pyexpr(expr)
 
 

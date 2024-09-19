@@ -1,10 +1,11 @@
-use crate::array::ops::as_arrow::AsArrow;
-use crate::datatypes::logical::TimestampArray;
-use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
-use crate::series::array_impl::IntoSeries;
-use crate::with_match_integer_daft_types;
-use crate::{datatypes::DataType, series::Series};
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::ops::as_arrow::AsArrow,
+    datatypes::{logical::TimestampArray, DataType, Int32Array, Int64Array, TimeUnit},
+    series::{array_impl::IntoSeries, Series},
+    with_match_integer_daft_types,
+};
 
 impl Series {
     pub fn partitioning_years(&self) -> DaftResult<Self> {

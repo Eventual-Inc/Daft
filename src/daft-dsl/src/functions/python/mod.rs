@@ -13,9 +13,8 @@ pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 pub use udf_runtime_binding::UDFRuntimeBinding;
 
-use crate::{Expr, ExprRef};
-
 use super::{FunctionEvaluator, FunctionExpr};
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PythonUDF {

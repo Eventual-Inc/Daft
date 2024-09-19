@@ -1,3 +1,5 @@
+use std::{ops::Range, sync::Arc};
+
 use async_trait::async_trait;
 use azure_core::{auth::TokenCredential, new_http_client};
 use azure_identity::{ClientSecretCredential, DefaultAzureCredential};
@@ -7,9 +9,9 @@ use azure_storage_blobs::{
     container::{operations::BlobItem, Container},
     prelude::*,
 };
+use common_io_config::AzureConfig;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
-use std::{ops::Range, sync::Arc};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -17,7 +19,6 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     FileFormat, GetResult,
 };
-use common_io_config::AzureConfig;
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;

@@ -1,11 +1,12 @@
+use std::{
+    borrow::Cow,
+    io::{Seek, Write},
+    ops::Deref,
+};
+
 use common_error::{DaftError, DaftResult};
-use daft_core::array::image_array::BBox;
-use daft_core::datatypes::prelude::*;
-use image::{ColorType, DynamicImage, ImageBuffer};
-use image::{Luma, LumaA, Rgb, Rgba};
-use std::borrow::Cow;
-use std::io::{Seek, Write};
-use std::ops::Deref;
+use daft_core::{array::image_array::BBox, datatypes::prelude::*};
+use image::{ColorType, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 
 #[allow(clippy::upper_case_acronyms, dead_code)]
 #[derive(Debug)]

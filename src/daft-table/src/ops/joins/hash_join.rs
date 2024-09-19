@@ -1,20 +1,18 @@
 use std::{cmp, iter::repeat};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
-use daft_core::prelude::*;
-
+use common_error::DaftResult;
+use daft_core::{
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    prelude::*,
+};
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
 };
 
-use crate::Table;
-use common_error::DaftResult;
-
-use daft_core::array::ops::as_arrow::AsArrow;
-
 use super::{add_non_join_key_columns, match_types_for_tables};
-use daft_core::array::ops::arrow2::comparison::build_multi_array_is_equal;
+use crate::Table;
 pub(super) fn hash_inner_join(
     left: &Table,
     right: &Table,

@@ -1,7 +1,6 @@
-use crate::datatypes::DataType;
-use crate::datatypes::TimeUnit;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::datatypes::{DataType, TimeUnit};
 
 // TODO: Deprecate this logic soon!
 

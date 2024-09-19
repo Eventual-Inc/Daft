@@ -9,8 +9,7 @@ use std::{
 use base64::{engine::general_purpose, DecodeError, Engine};
 use common_error::{DaftError, DaftResult};
 use daft_io::{get_io_client, get_runtime, IOConfig};
-use snafu::prelude::*;
-use snafu::Snafu;
+use snafu::{prelude::*, Snafu};
 use tiktoken_rs::CoreBPE;
 
 use super::special_tokens::get_special_tokens;

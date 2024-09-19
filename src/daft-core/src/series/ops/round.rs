@@ -1,8 +1,9 @@
-use crate::datatypes::DataType;
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
     pub fn round(&self, decimal: i32) -> DaftResult<Series> {

@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-
-use crate::LogicalPlan;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
-
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use crate::LogicalPlan;
 
 /// Optimization rules for dropping unnecessary Repartitions.
 ///
@@ -46,11 +44,11 @@ impl OptimizerRule for DropRepartition {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_dsl::col;
-    use std::sync::Arc;
 
     use crate::{
         logical_optimization::{

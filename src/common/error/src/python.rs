@@ -1,5 +1,4 @@
-use pyo3::exceptions::PyFileNotFoundError;
-use pyo3::import_exception;
+use pyo3::{exceptions::PyFileNotFoundError, import_exception};
 
 use crate::DaftError;
 

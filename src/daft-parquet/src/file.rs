@@ -3,10 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
+use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
@@ -29,7 +28,6 @@ use crate::{
     UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
-use arrow2::io::parquet::read::column_iter_to_arrays;
 
 pub(crate) struct ParquetReaderBuilder {
     pub uri: String,

@@ -939,9 +939,8 @@ impl<T: ConcreteTreeNode> TreeNode for T {
 mod tests {
     use std::fmt::Display;
 
-    use crate::Result;
     use crate::{
-        Transformed, TreeNode, TreeNodeIterator, TreeNodeRecursion, TreeNodeRewriter,
+        Result, Transformed, TreeNode, TreeNodeIterator, TreeNodeRecursion, TreeNodeRewriter,
         TreeNodeVisitor,
     };
 

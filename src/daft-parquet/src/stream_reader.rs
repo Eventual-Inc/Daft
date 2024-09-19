@@ -8,14 +8,13 @@ use std::{
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::IntoParallelRefMutIterator,
+    iter::{IntoParallelRefMutIterator, ParallelIterator},
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
@@ -23,11 +22,9 @@ use snafu::ResultExt;
 use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
+    stream_reader::read::schema::infer_schema_with_options,
     UnableToConvertSchemaToDaftSnafu,
 };
-
-use crate::stream_reader::read::schema::infer_schema_with_options;
-use rayon::iter::ParallelIterator;
 
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,

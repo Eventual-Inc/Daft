@@ -1,10 +1,10 @@
 use common_display::tree::TreeDisplay;
+use daft_core::join::JoinType;
 use daft_dsl::ExprRef;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::physical_plan::PhysicalPlanRef;
-use daft_core::join::JoinType;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BroadcastJoin {

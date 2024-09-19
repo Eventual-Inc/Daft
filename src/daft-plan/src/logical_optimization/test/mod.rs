@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
+use super::optimizer::OptimizerRuleInBatch;
 use crate::{
     logical_optimization::{
         optimizer::{RuleBatch, RuleExecutionStrategy},
@@ -9,8 +10,6 @@ use crate::{
     },
     LogicalPlan,
 };
-
-use super::optimizer::OptimizerRuleInBatch;
 
 /// Helper that creates an optimizer with the provided rules registered, optimizes
 /// the provided plan with said optimizer, and compares the optimized plan with

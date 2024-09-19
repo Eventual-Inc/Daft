@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
+use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
-
 use serde::{Deserialize, Serialize};
 
-use super::datatype::PyDataType;
-use super::field::PyField;
-use crate::field::Field;
-use crate::schema;
-use common_py_serde::impl_bincode_py_state_serialization;
+use super::{datatype::PyDataType, field::PyField};
+use crate::{field::Field, schema};
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]

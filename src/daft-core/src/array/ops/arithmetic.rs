@@ -1,18 +1,15 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
-
-use crate::{
-    array::{DataArray, FixedSizeListArray},
-    datatypes::DataType,
-    datatypes::{DaftNumericType, Field, Float64Array, Int64Array, Utf8Array},
-    kernels::utf8::add_utf8_arrays,
-    series::Series,
-};
-
 use common_error::{DaftError, DaftResult};
 
 use super::{as_arrow::AsArrow, full::FullNull};
+use crate::{
+    array::{DataArray, FixedSizeListArray},
+    datatypes::{DaftNumericType, DataType, Field, Float64Array, Int64Array, Utf8Array},
+    kernels::utf8::add_utf8_arrays,
+    series::Series,
+};
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting

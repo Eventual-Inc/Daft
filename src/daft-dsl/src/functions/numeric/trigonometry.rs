@@ -2,8 +2,10 @@ use common_error::{DaftError, DaftResult};
 pub use daft_core::array::ops::trigonometry::TrigonometricFunction;
 use daft_core::prelude::*;
 
-use crate::functions::{FunctionEvaluator, FunctionExpr};
-use crate::ExprRef;
+use crate::{
+    functions::{FunctionEvaluator, FunctionExpr},
+    ExprRef,
+};
 
 pub(super) struct TrigonometryEvaluator(pub TrigonometricFunction);
 

@@ -76,7 +76,6 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_dsl::{col, lit};
 
     use crate::{

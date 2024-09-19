@@ -1,8 +1,11 @@
-use crate::array::ops::{PadPlacement, Utf8NormalizeOptions};
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
-use crate::{datatypes::*, with_match_integer_daft_types};
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::ops::{PadPlacement, Utf8NormalizeOptions},
+    datatypes::*,
+    series::{array_impl::IntoSeries, Series},
+    with_match_integer_daft_types,
+};
 
 impl Series {
     pub fn with_utf8_array(

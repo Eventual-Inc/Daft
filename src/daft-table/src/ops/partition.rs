@@ -1,14 +1,14 @@
 use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
-use daft_core::array::ops::IntoGroups;
+use common_error::{DaftError, DaftResult};
+use daft_core::{
+    array::ops::{as_arrow::AsArrow, IntoGroups},
+    datatypes::UInt64Array,
+    series::IntoSeries,
+};
 use daft_dsl::ExprRef;
 use rand::SeedableRng;
-
-use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::UInt64Array, series::IntoSeries};
-
-use daft_core::array::ops::as_arrow::AsArrow;
 
 use crate::Table;
 

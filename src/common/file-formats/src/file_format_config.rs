@@ -1,17 +1,16 @@
-use crate::FileFormat;
-use daft_schema::{field::Field, time_unit::TimeUnit};
-use serde::{Deserialize, Serialize};
-use std::hash::Hash;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use common_py_serde::impl_bincode_py_state_serialization;
-
+use daft_schema::{field::Field, time_unit::TimeUnit};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyResult, Python},
 };
+
+use crate::FileFormat;
 
 /// Configuration for parsing a particular file format.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

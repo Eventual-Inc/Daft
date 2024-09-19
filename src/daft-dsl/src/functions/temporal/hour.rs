@@ -1,10 +1,8 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
-use crate::functions::FunctionExpr;
-use crate::ExprRef;
-
 use super::super::FunctionEvaluator;
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) struct HourEvaluator {}
 

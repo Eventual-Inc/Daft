@@ -2,8 +2,9 @@
 
 extern crate test;
 
-use daft_minhash::{load_simd, minhash};
 use std::{iter::repeat_with, ops::Range};
+
+use daft_minhash::{load_simd, minhash};
 use test::Bencher;
 
 const N_TOKENS: usize = 10000;

@@ -1,3 +1,9 @@
+use std::{
+    io::{self, Write},
+    sync::Arc,
+};
+
+use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
@@ -5,8 +11,11 @@ use daft_core::{
     prelude::*,
     utils::supertype::try_get_supertype,
 };
+use derive_more::Display;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
+use super::functions::FunctionExpr;
 use crate::{
     functions::{
         binary_op_display_without_formatter, function_display_without_formatter,
@@ -20,17 +29,6 @@ use crate::{
     lit,
     optimization::{get_required_columns, requires_computation},
 };
-
-use common_error::{DaftError, DaftResult};
-
-use derive_more::Display;
-use serde::{Deserialize, Serialize};
-use std::{
-    io::{self, Write},
-    sync::Arc,
-};
-
-use super::functions::FunctionExpr;
 
 pub type ExprRef = Arc<Expr>;
 

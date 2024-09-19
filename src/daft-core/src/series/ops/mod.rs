@@ -1,7 +1,7 @@
-use crate::utils::supertype::try_get_supertype;
 use common_error::DaftResult;
 
 use super::Series;
+use crate::utils::supertype::try_get_supertype;
 
 pub mod abs;
 pub mod agg;
@@ -57,9 +57,9 @@ pub fn cast_series_to_supertype(series: &[&Series]) -> DaftResult<Vec<Series>> {
 #[cfg(feature = "python")]
 macro_rules! py_binary_op_utilfn {
     ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
-        use crate::datatypes::DataType;
-        use crate::python::PySeries;
         use pyo3::prelude::*;
+
+        use crate::{datatypes::DataType, python::PySeries};
 
         let lhs = $lhs.cast(&DataType::Python)?;
         let rhs = $rhs.cast(&DataType::Python)?;
@@ -99,9 +99,9 @@ pub(super) use py_binary_op_utilfn;
 
 #[cfg(feature = "python")]
 pub(super) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
-    use crate::datatypes::DataType;
-    use crate::python::PySeries;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let lhs_casted = lhs.cast(&DataType::Python)?;
     let rhs_casted = rhs.cast(&DataType::Python)?;
@@ -136,9 +136,9 @@ pub(super) fn py_between_op_utilfn(
     lower: &Series,
     upper: &Series,
 ) -> DaftResult<Series> {
-    use crate::datatypes::DataType;
-    use crate::python::PySeries;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let value_casted = value.cast(&DataType::Python)?;
     let lower_casted = lower.cast(&DataType::Python)?;

@@ -1,10 +1,11 @@
+use std::sync::Arc;
+
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_file_formats::FileFormatConfig;
 use daft_scan::ScanTask;
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
 use crate::ClusteringSpec;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularScan {

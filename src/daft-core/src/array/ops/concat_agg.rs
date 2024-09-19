@@ -1,3 +1,7 @@
+use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, DaftConcatAggable};
 use crate::{
     array::{
         growable::{make_growable, Growable},
@@ -5,18 +9,14 @@ use crate::{
     },
     prelude::Utf8Type,
 };
-use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, DaftConcatAggable};
 
 #[cfg(feature = "python")]
 impl DaftConcatAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
@@ -33,9 +33,9 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
 
@@ -194,8 +194,7 @@ mod test {
 
     use crate::{
         array::{ops::DaftConcatAggable, ListArray},
-        datatypes::DataType,
-        datatypes::{Field, Int64Array},
+        datatypes::{DataType, Field, Int64Array},
         series::IntoSeries,
     };
 

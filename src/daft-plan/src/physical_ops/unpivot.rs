@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use daft_dsl::ExprRef;
-use serde::{Deserialize, Serialize};
-
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,

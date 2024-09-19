@@ -3,7 +3,6 @@ use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
-
 use hyper::header;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -11,14 +10,13 @@ use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat,
 };
-
-use super::object_io::{GetResult, ObjectSource};
 
 const HTTP_DELIMITER: &str = "/";
 
@@ -353,9 +351,7 @@ mod tests {
 
     use std::default;
 
-    use crate::object_io::ObjectSource;
-    use crate::HttpSource;
-    use crate::Result;
+    use crate::{object_io::ObjectSource, HttpSource, Result};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {

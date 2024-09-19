@@ -3,6 +3,7 @@ use std::ops::Rem;
 use common_error::DaftResult;
 use num_traits::ToPrimitive;
 
+use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
@@ -10,8 +11,6 @@ use crate::{
         UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Array,
     },
 };
-
-use super::as_arrow::AsArrow;
 
 macro_rules! impl_int_truncate {
     ($DT:ty) => {
