@@ -9,9 +9,10 @@ use tracing::{info_span, instrument};
 use super::buffer::OperatorBuffer;
 use crate::{
     channel::{create_channel, create_ordering_aware_channel, PipelineChannel, Receiver, Sender},
+    create_worker_set,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, WorkerSet, NUM_CPUS,
 };
 
 pub trait IntermediateOperatorState: Send + Sync {
@@ -102,7 +103,7 @@ impl IntermediateNode {
         op: Arc<dyn IntermediateOperator>,
         input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
         output_senders: Vec<Sender<Arc<MicroPartition>>>,
-        worker_set: &mut tokio::task::JoinSet<DaftResult<()>>,
+        worker_set: &mut WorkerSet<DaftResult<()>>,
         stats: Arc<RuntimeStatsContext>,
     ) {
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
@@ -209,7 +210,8 @@ impl PipelineNode for IntermediateNode {
                     (0..num_workers).map(|_| create_channel(1)).unzip();
                 let (output_senders, mut output_receiver) =
                     create_ordering_aware_channel(num_workers, maintain_order);
-                let mut worker_set = tokio::task::JoinSet::new();
+
+                let mut worker_set = create_worker_set();
                 Self::spawn_workers(
                     op.clone(),
                     input_receivers,
@@ -217,6 +219,7 @@ impl PipelineNode for IntermediateNode {
                     &mut worker_set,
                     stats.clone(),
                 );
+
                 Self::forward_input_to_workers(child_result_receivers, input_senders, morsel_size)
                     .await?;
 
