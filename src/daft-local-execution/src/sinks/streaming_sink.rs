@@ -7,7 +7,7 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, make_ordering_aware_channel, PipelineChannel, Receiver, Sender},
+    channel::{create_channel, create_ordering_aware_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
@@ -78,11 +78,10 @@ impl StreamingSinkNode {
                 let result =
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
                 match result {
-                    StreamingSinkOutput::NeedMoreInput(Some(mp)) => {
-                        let _ = output_sender.send(mp).await;
-                        break;
-                    }
-                    StreamingSinkOutput::NeedMoreInput(None) => {
+                    StreamingSinkOutput::NeedMoreInput(mp) => {
+                        if let Some(mp) = mp {
+                            let _ = output_sender.send(mp).await;
+                        }
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
@@ -199,7 +198,7 @@ impl PipelineNode for StreamingSinkNode {
                 let (input_senders, input_receivers) =
                     (0..num_workers).map(|_| create_channel(1)).unzip();
                 let (output_senders, mut output_receiver) =
-                    make_ordering_aware_channel(num_workers, maintain_order);
+                    create_ordering_aware_channel(num_workers, maintain_order);
                 let mut worker_set = tokio::task::JoinSet::new();
                 Self::spawn_workers(
                     op.clone(),

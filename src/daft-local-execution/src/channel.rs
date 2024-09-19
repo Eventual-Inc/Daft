@@ -39,7 +39,7 @@ impl PipelineChannel {
     }
 }
 
-pub(crate) fn make_ordering_aware_channel<T>(
+pub(crate) fn create_ordering_aware_channel<T>(
     buffer_size: usize,
     ordered: bool,
 ) -> (Vec<Sender<T>>, OrderingAwareReceiver<T>) {

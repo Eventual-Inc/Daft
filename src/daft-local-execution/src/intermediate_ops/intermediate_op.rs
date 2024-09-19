@@ -3,14 +3,15 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
 use crate::{
-    channel::{create_channel, make_ordering_aware_channel, PipelineChannel, Receiver, Sender},
+    channel::{create_channel, create_ordering_aware_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
-    ExecutionRuntimeHandle, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
 };
 
 pub trait IntermediateOperatorState: Send + Sync {
@@ -207,7 +208,7 @@ impl PipelineNode for IntermediateNode {
                 let (input_senders, input_receivers) =
                     (0..num_workers).map(|_| create_channel(1)).unzip();
                 let (output_senders, mut output_receiver) =
-                    make_ordering_aware_channel(num_workers, maintain_order);
+                    create_ordering_aware_channel(num_workers, maintain_order);
                 let mut worker_set = tokio::task::JoinSet::new();
                 Self::spawn_workers(
                     op.clone(),
@@ -221,6 +222,9 @@ impl PipelineNode for IntermediateNode {
 
                 while let Some(morsel) = output_receiver.recv().await {
                     let _ = destination_sender.send(morsel.into()).await;
+                }
+                while let Some(result) = worker_set.join_next().await {
+                    result.context(JoinSnafu)??;
                 }
                 Ok(())
             },
