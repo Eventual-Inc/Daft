@@ -40,7 +40,7 @@ class LazyImport:
         return self._module
 
     def __getattr__(self, name: str) -> Any:
-        if name == "FixedShapeTensorType":
+        if name == "FixedShapeTensorType" or "ymp":
             import pyarrow as pa
 
             v = getattr(pa, "FixedShapeTensorType")  # noqa: F841
