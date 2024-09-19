@@ -33,7 +33,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 }
 
 macro_rules! impl_temporal {
-    ($name:ident, $dt:ident, $py_name:ident, $dtype:ident) => {
+    ($name_str:expr, $name:ident, $dt:ident, $py_name:ident, $dtype:ident) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $name {}
 
@@ -44,7 +44,7 @@ macro_rules! impl_temporal {
             }
 
             fn name(&self) -> &'static str {
-                stringify!($fn_name)
+                $name_str
             }
 
             fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -94,14 +94,20 @@ macro_rules! impl_temporal {
     };
 }
 
-impl_temporal!(Date, dt_date, py_dt_date, Date);
-impl_temporal!(Day, dt_day, py_dt_day, UInt32);
-impl_temporal!(DayOfWeek, dt_day_of_week, py_dt_day_of_week, UInt32);
-impl_temporal!(Hour, dt_hour, py_dt_hour, UInt32);
-impl_temporal!(Minute, dt_minute, py_dt_minute, UInt32);
-impl_temporal!(Month, dt_month, py_dt_month, UInt32);
-impl_temporal!(Second, dt_second, py_dt_second, UInt32);
-impl_temporal!(Year, dt_year, py_dt_year, Int32);
+impl_temporal!("date", Date, dt_date, py_dt_date, Date);
+impl_temporal!("day", Day, dt_day, py_dt_day, UInt32);
+impl_temporal!(
+    "day_of_week",
+    DayOfWeek,
+    dt_day_of_week,
+    py_dt_day_of_week,
+    UInt32
+);
+impl_temporal!("hour", Hour, dt_hour, py_dt_hour, UInt32);
+impl_temporal!("minute", Minute, dt_minute, py_dt_minute, UInt32);
+impl_temporal!("month", Month, dt_month, py_dt_month, UInt32);
+impl_temporal!("second", Second, dt_second, py_dt_second, UInt32);
+impl_temporal!("year", Year, dt_year, py_dt_year, Int32);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time {}
