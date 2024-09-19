@@ -74,8 +74,8 @@ impl PipelineNode for SourceNode {
             self.source
                 .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
 
-        let mut channel = PipelineChannel::new(1, maintain_order);
-        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
+        let channel = PipelineChannel::new();
+        let counting_sender = channel.get_sender_with_stats(&self.runtime_stats);
         runtime_handle.spawn(
             async move {
                 while let Some(part) = source_stream.next().await {

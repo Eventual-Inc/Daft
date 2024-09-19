@@ -8,7 +8,7 @@ use std::{
 use tokio::sync::mpsc::error::SendError;
 
 use crate::{
-    channel::{PipelineReceiver, Sender},
+    channel::{Receiver, Sender},
     pipeline::PipelineResultType,
 };
 
@@ -140,7 +140,10 @@ pub struct CountingReceiver {
 }
 
 impl CountingReceiver {
-    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<PipelineResultType>,
+        rt: Arc<RuntimeStatsContext>,
+    ) -> Self {
         Self { receiver, rt }
     }
     #[inline]
