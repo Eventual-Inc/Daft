@@ -40,32 +40,23 @@ class LazyImport:
         return self._module
 
     def __getattr__(self, name: str) -> Any:
-        print(f"getting {name}")
-        if name == "FixedShapeTensorType":
-            from importlib.metadata import version
-
-            import pyarrow as pa
-
-            print(f"pyarrow version: {version('pyarrow')}")
-            print(f"pyarrow fstt: {dir(pa)}")
-        # Attempt to access the attribute. If it fails, but the parent module exists, assume that
-        # the attribute is a submodule and lazily import it.
+        # Given a lazy module and an attribute to get, we have the following possibilities:
+        #   1. The attribute is the lazy object's attribute.
+        #   2. The attribute is an attribute of the module.
+        #   3. The module does not exist.
+        #   4. The attribute is a submodule.
+        #   5. The attribute does not exist.
         try:
             if name in self.__dict__:
-                print(f"1 ret {self.__dict__[name]}")
                 return self.__dict__[name]
-            print(f"2 ret {getattr(self._load_module(), name)}")
             return getattr(self._load_module(), name)
-        except AttributeError:
-            print("3 attribute error")
+        except AttributeError as e:
             if self._module is None:
-                print("4 no module, attribute error")
-                raise AttributeError
-            print("5 submodule")
-            # Dynamically create a new LazyImport instance for the submodule
+                raise e
+            # Dynamically create a new LazyImport instance for the submodule.
             submodule_name = f"{self._module_name}.{name}"
             lazy_submodule = LazyImport(submodule_name)
             if lazy_submodule.module_available():
                 setattr(self, name, lazy_submodule)
                 return lazy_submodule
-            raise AttributeError
+            raise e
