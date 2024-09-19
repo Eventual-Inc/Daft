@@ -43,10 +43,12 @@ class LazyImport:
         print(f"getting {name}")
 
         if name == "FixedShapeTensorType":
+            from importlib.metadata import version
+
             import pyarrow as pa
 
-            v = getattr(pa, "FixedShapeTensorType")  # noqa: F841
-            print("pyarrow fstt: {v}")
+            print(f"pyarrow version: {version('pyarrow')}")
+            print(f"pyarrow fstt: {dir(pa)}")
         # Attempt to access the attribute. If it fails, but the parent module exists, assume that
         # the attribute is a submodule and lazily import it.
         try:
