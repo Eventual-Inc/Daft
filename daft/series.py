@@ -41,7 +41,7 @@ class Series:
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
-            if isinstance(array.type, pa.FixedShapeTensorType):
+            if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
             else:
