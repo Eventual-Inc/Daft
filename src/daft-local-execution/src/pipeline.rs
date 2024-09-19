@@ -21,9 +21,9 @@ use snafu::ResultExt;
 use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator,
-        hash_join_probe::HashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator,
+        aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
+        filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
@@ -235,15 +235,18 @@ pub fn physical_plan_to_pipeline(
             // Determine the build and probe sides based on the join type
             // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
             // to determine the build and probe sides
-            let (build_on, probe_on, build_child, probe_child, build_on_left) = match join_type {
-                JoinType::Inner => (left_on, right_on, left, right, true),
-                JoinType::Right => (left_on, right_on, left, right, true),
-                JoinType::Left | JoinType::Anti | JoinType::Semi => {
-                    (right_on, left_on, right, left, false)
-                }
+            let build_on_left = match join_type {
+                JoinType::Inner => true,
+                JoinType::Right => true,
+                JoinType::Left => false,
+                JoinType::Anti | JoinType::Semi => false,
                 JoinType::Outer => {
                     unimplemented!("Outer join not supported yet");
                 }
+            };
+            let (build_on, probe_on, build_child, probe_child) = match build_on_left {
+                true => (left_on, right_on, left, right),
+                false => (right_on, left_on, right, left),
             };
 
             let build_schema = build_child.schema();
@@ -291,19 +294,30 @@ pub fn physical_plan_to_pipeline(
                 let build_node =
                     BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();
 
-                let probe_op = HashJoinProbeOperator::new(
-                    casted_probe_on,
-                    left_schema,
-                    right_schema,
-                    *join_type,
-                    build_on_left,
-                    common_join_keys,
-                );
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
-                DaftResult::Ok(IntermediateNode::new(
-                    Arc::new(probe_op),
-                    vec![build_node, probe_child_node],
-                ))
+
+                match join_type {
+                    JoinType::Anti | JoinType::Semi => DaftResult::Ok(IntermediateNode::new(
+                        Arc::new(AntiSemiProbeOperator::new(casted_probe_on, *join_type)),
+                        vec![build_node, probe_child_node],
+                    )),
+                    JoinType::Inner | JoinType::Left | JoinType::Right => {
+                        DaftResult::Ok(IntermediateNode::new(
+                            Arc::new(HashJoinProbeOperator::new(
+                                casted_probe_on,
+                                left_schema,
+                                right_schema,
+                                *join_type,
+                                build_on_left,
+                                common_join_keys,
+                            )),
+                            vec![build_node, probe_child_node],
+                        ))
+                    }
+                    JoinType::Outer => {
+                        unimplemented!("Outer join not supported yet");
+                    }
+                }
             }()
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),

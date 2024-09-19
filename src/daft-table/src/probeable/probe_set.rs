@@ -47,38 +47,37 @@ impl ProbeSet {
         })
     }
 
-    fn probe<'a>(&'a self, right: &'a Table) -> DaftResult<impl Iterator<Item = bool> + 'a> {
-        assert_eq!(self.schema.len(), right.schema.len());
+    fn probe<'a>(&'a self, input: &'a Table) -> DaftResult<impl Iterator<Item = bool> + 'a> {
+        assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema
             .fields
             .values()
-            .zip(right.schema.fields.values())
+            .zip(input.schema.fields.values())
             .all(|(l, r)| l.dtype == r.dtype));
 
-        let r_hashes = right.hash_rows()?;
+        let hashes = input.hash_rows()?;
 
-        let right_arrays = right
+        let input_arrays = input
             .columns
             .iter()
             .map(|s| Ok(s.as_physical()?.to_arrow()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let iter = r_hashes.as_arrow().clone().into_iter();
+        let iter = hashes.as_arrow().clone().into_iter();
 
-        Ok(iter.enumerate().map(move |(r_idx, h)| {
+        Ok(iter.enumerate().map(move |(idx, h)| {
             if let Some(h) = h {
                 self.hash_table.raw_entry().from_hash(h, |other| {
                     h == other.hash && {
-                        let l_idx = other.idx;
-                        let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                        let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
+                        let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
+                        let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
 
-                        let l_table = self.tables.get(l_table_idx).unwrap();
+                        let other_table = self.tables.get(other_table_idx).unwrap();
 
-                        let left_refs = l_table.0.as_slice();
+                        let other_refs = other_table.0.as_slice();
 
-                        (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
+                        (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
                     }
                 })
             } else {
@@ -147,13 +146,13 @@ impl ProbeSet {
 impl Probeable for ProbeSet {
     fn probe_exists<'a>(
         &'a self,
-        right: &'a Table,
+        table: &'a Table,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
-        Ok(Box::new(self.probe(right)?))
+        Ok(Box::new(self.probe(table)?))
     }
 
-    fn probe_indices<'a>(&'a self, _right: &'a Table) -> DaftResult<IndicesMapper<'a>> {
-        panic!("Not implemented")
+    fn probe_indices<'a>(&'a self, _table: &'a Table) -> DaftResult<IndicesMapper<'a>> {
+        panic!("Probe indices is not supported for ProbeSet")
     }
 }
 
