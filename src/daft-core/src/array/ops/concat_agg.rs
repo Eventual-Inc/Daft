@@ -1,4 +1,6 @@
-use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
+use arrow2::{
+    array::Utf8Array, bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index,
+};
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};
@@ -153,36 +155,34 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     type Output = DaftResult<Self>;
 
     fn concat(&self) -> Self::Output {
-        let mut concat_result = String::new();
+        let arrow_array = self.as_arrow();
+        let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *arrow_array.offsets().last()])?;
+        let output = Utf8Array::new(
+            arrow_array.data_type().clone(),
+            new_offsets,
+            arrow_array.values().clone(),
+            None,
+        );
 
-        for idx in 0..self.len() {
-            if self.get(idx).is_some() {
-                let x = self.get(idx).unwrap().to_string();
-                concat_result.push_str(&x);
-            }
-        }
-        let result_box = Box::new(arrow2::array::Utf8Array::<i64>::from_slice([concat_result]));
-
+        let result_box = Box::new(output);
         DataArray::new(self.field().clone().into(), result_box)
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let mut result_data = vec![];
-        for group in groups {
-            let mut group_res = String::new();
-            for idx in group {
-                let ind: usize = idx.to_usize();
-                if self.get(ind).is_some() {
-                    let x = self.get(ind).unwrap().to_string();
-                    group_res.push_str(&x);
-                }
-            }
-            result_data.push(group_res);
-        }
+        let arrow_array = self.as_arrow();
+        let concat_per_group = Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
+            let mut group_res = vec![];
+            g.iter().for_each(|index| {
+                let idx = *index as usize;
+                group_res.push(arrow_array.value(idx));
+            });
+            Some(group_res.concat())
+        })));
 
-        let result_box = Box::new(arrow2::array::Utf8Array::<i64>::from_slice(result_data));
-
-        DataArray::new(self.field().clone().into(), result_box)
+        Ok(DataArray::from((
+            self.field.name.as_ref(),
+            concat_per_group,
+        )))
     }
 }
 
