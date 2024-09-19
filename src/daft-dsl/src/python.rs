@@ -579,56 +579,6 @@ impl PyExpr {
         hasher.finish()
     }
 
-    pub fn dt_date(&self) -> PyResult<Self> {
-        use functions::temporal::date;
-        Ok(date(self.into()).into())
-    }
-
-    pub fn dt_day(&self) -> PyResult<Self> {
-        use functions::temporal::day;
-        Ok(day(self.into()).into())
-    }
-
-    pub fn dt_hour(&self) -> PyResult<Self> {
-        use functions::temporal::hour;
-        Ok(hour(self.into()).into())
-    }
-
-    pub fn dt_minute(&self) -> PyResult<Self> {
-        use functions::temporal::minute;
-        Ok(minute(self.into()).into())
-    }
-
-    pub fn dt_second(&self) -> PyResult<Self> {
-        use functions::temporal::second;
-        Ok(second(self.into()).into())
-    }
-
-    pub fn dt_time(&self) -> PyResult<Self> {
-        use functions::temporal::time;
-        Ok(time(self.into()).into())
-    }
-
-    pub fn dt_month(&self) -> PyResult<Self> {
-        use functions::temporal::month;
-        Ok(month(self.into()).into())
-    }
-
-    pub fn dt_year(&self) -> PyResult<Self> {
-        use functions::temporal::year;
-        Ok(year(self.into()).into())
-    }
-
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        use functions::temporal::day_of_week;
-        Ok(day_of_week(self.into()).into())
-    }
-
-    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
-        use functions::temporal::truncate;
-        Ok(truncate(self.into(), interval, relative_to.expr.clone()).into())
-    }
-
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::endswith;
         Ok(endswith(self.into(), pattern.expr.clone()).into())
