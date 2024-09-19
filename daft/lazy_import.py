@@ -65,5 +65,7 @@ class LazyImport:
             # Dynamically create a new LazyImport instance for the submodule
             submodule_name = f"{self._module_name}.{name}"
             lazy_submodule = LazyImport(submodule_name)
-            setattr(self, name, lazy_submodule)
-            return lazy_submodule
+            if lazy_submodule.module_available():
+                setattr(self, name, lazy_submodule)
+                return lazy_submodule
+            raise AttributeError
