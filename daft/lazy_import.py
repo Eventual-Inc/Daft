@@ -44,11 +44,16 @@ class LazyImport:
         # the attribute is a submodule and lazily import it.
         try:
             if name in self.__dict__:
+                print(f"1 ret {self.__dict__[name]}")
                 return self.__dict__[name]
+            print(f"2 ret {getattr(self._load_module(), name)}")
             return getattr(self._load_module(), name)
         except AttributeError:
+            print("3 attribute error")
             if self._module is None:
+                print("4 no module, attribute error")
                 raise AttributeError
+            print("5 submodule")
             # Dynamically create a new LazyImport instance for the submodule
             submodule_name = f"{self._module_name}.{name}"
             lazy_submodule = LazyImport(submodule_name)
