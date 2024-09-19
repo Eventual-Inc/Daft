@@ -8,17 +8,16 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 
 def skip_invalid_join_strategies(join_strategy, join_type):
-    if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
-        pytest.skip("Sort merge currently only supports inner joins")
-    elif join_strategy == "broadcast" and join_type == "outer":
-        pytest.skip("Broadcast join does not support outer joins")
+    if context.get_context().daft_execution_config.enable_native_executor is True:
+        if join_type == "outer" or join_strategy not in [None, "hash"]:
+            pytest.skip("Native executor fails for these tests")
+    else:
+        if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
+            pytest.skip("Sort merge currently only supports inner joins")
+        elif join_strategy == "broadcast" and join_type == "outer":
+            pytest.skip("Broadcast join does not support outer joins")
 
 
 def test_invalid_join_strategies(make_df):
