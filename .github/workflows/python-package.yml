@@ -75,7 +75,7 @@ jobs:
     - name: Install dependencies
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        activate
+        source activate
         uv pip install -r requirements-dev.txt
 
     - name: Install dependencies (Windows)
