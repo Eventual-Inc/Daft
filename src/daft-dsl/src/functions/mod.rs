@@ -54,17 +54,16 @@ pub trait FunctionEvaluator {
 impl FunctionExpr {
     #[inline]
     fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use FunctionExpr::*;
         match self {
-            Numeric(expr) => expr.get_evaluator(),
-            Utf8(expr) => expr.get_evaluator(),
-            Temporal(expr) => expr.get_evaluator(),
-            List(expr) => expr.get_evaluator(),
-            Map(expr) => expr.get_evaluator(),
-            Sketch(expr) => expr.get_evaluator(),
-            Struct(expr) => expr.get_evaluator(),
-            Python(expr) => expr.get_evaluator(),
-            Partitioning(expr) => expr.get_evaluator(),
+            FunctionExpr::Numeric(expr) => expr.get_evaluator(),
+            FunctionExpr::Utf8(expr) => expr.get_evaluator(),
+            FunctionExpr::Temporal(expr) => expr.get_evaluator(),
+            FunctionExpr::List(expr) => expr.get_evaluator(),
+            FunctionExpr::Map(expr) => expr.get_evaluator(),
+            FunctionExpr::Sketch(expr) => expr.get_evaluator(),
+            FunctionExpr::Struct(expr) => expr.get_evaluator(),
+            FunctionExpr::Python(expr) => expr.get_evaluator(),
+            FunctionExpr::Partitioning(expr) => expr.get_evaluator(),
         }
     }
 }

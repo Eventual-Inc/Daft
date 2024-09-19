@@ -39,18 +39,17 @@ pub enum TemporalExpr {
 impl TemporalExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use TemporalExpr::*;
         match self {
-            Day => &DayEvaluator {},
-            Hour => &HourEvaluator {},
-            Month => &MonthEvaluator {},
-            Year => &YearEvaluator {},
-            DayOfWeek => &DayOfWeekEvaluator {},
-            Date => &DateEvaluator {},
-            Minute => &MinuteEvaluator {},
-            Second => &SecondEvaluator {},
-            Time => &TimeEvaluator {},
-            Truncate(..) => &TruncateEvaluator {},
+            TemporalExpr::Day => &DayEvaluator {},
+            TemporalExpr::Hour => &HourEvaluator {},
+            TemporalExpr::Month => &MonthEvaluator {},
+            TemporalExpr::Year => &YearEvaluator {},
+            TemporalExpr::DayOfWeek => &DayOfWeekEvaluator {},
+            TemporalExpr::Date => &DateEvaluator {},
+            TemporalExpr::Minute => &MinuteEvaluator {},
+            TemporalExpr::Second => &SecondEvaluator {},
+            TemporalExpr::Time => &TimeEvaluator {},
+            TemporalExpr::Truncate(..) => &TruncateEvaluator {},
         }
     }
 }

@@ -30,9 +30,8 @@ pub enum SketchExpr {
 impl SketchExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use SketchExpr::*;
         match self {
-            Percentile { .. } => &PercentileEvaluator {},
+            SketchExpr::Percentile { .. } => &PercentileEvaluator {},
         }
     }
 }

@@ -42,18 +42,17 @@ pub enum ListExpr {
 impl ListExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use ListExpr::*;
         match self {
-            Explode => &ExplodeEvaluator {},
-            Join => &JoinEvaluator {},
-            Count(_) => &CountEvaluator {},
-            Get => &GetEvaluator {},
-            Sum => &SumEvaluator {},
-            Mean => &MeanEvaluator {},
-            Min => &MinEvaluator {},
-            Max => &MaxEvaluator {},
-            Slice => &SliceEvaluator {},
-            Chunk(_) => &ChunkEvaluator {},
+            ListExpr::Explode => &ExplodeEvaluator {},
+            ListExpr::Join => &JoinEvaluator {},
+            ListExpr::Count(_) => &CountEvaluator {},
+            ListExpr::Get => &GetEvaluator {},
+            ListExpr::Sum => &SumEvaluator {},
+            ListExpr::Mean => &MeanEvaluator {},
+            ListExpr::Min => &MinEvaluator {},
+            ListExpr::Max => &MaxEvaluator {},
+            ListExpr::Slice => &SliceEvaluator {},
+            ListExpr::Chunk(_) => &ChunkEvaluator {},
         }
     }
 }

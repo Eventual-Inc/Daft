@@ -14,9 +14,8 @@ pub enum MapExpr {
 impl MapExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use MapExpr::*;
         match self {
-            Get => &GetEvaluator {},
+            MapExpr::Get => &GetEvaluator {},
         }
     }
 }

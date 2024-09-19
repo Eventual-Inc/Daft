@@ -60,18 +60,17 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
-        use Error::*;
         match err {
-            Base64Decode { .. } => DaftError::ValueError(err.to_string()),
-            RankNumberParse { .. } => DaftError::ValueError(err.to_string()),
-            InvalidUtf8Sequence { .. } => DaftError::ValueError(err.to_string()),
-            InvalidTokenLine { .. } => DaftError::ValueError(err.to_string()),
-            EmptyTokenFile {} => DaftError::ValueError(err.to_string()),
-            BPECreation { .. } => DaftError::ComputeError(err.to_string()),
-            BadToken { .. } => DaftError::ValueError(err.to_string()),
-            Decode { .. } => DaftError::ComputeError(err.to_string()),
-            MissingPattern {} => DaftError::ValueError(err.to_string()),
-            UnsupportedSpecialTokens { .. } => DaftError::ValueError(err.to_string()),
+            Error::Base64Decode { .. } => DaftError::ValueError(err.to_string()),
+            Error::RankNumberParse { .. } => DaftError::ValueError(err.to_string()),
+            Error::InvalidUtf8Sequence { .. } => DaftError::ValueError(err.to_string()),
+            Error::InvalidTokenLine { .. } => DaftError::ValueError(err.to_string()),
+            Error::EmptyTokenFile {} => DaftError::ValueError(err.to_string()),
+            Error::BPECreation { .. } => DaftError::ComputeError(err.to_string()),
+            Error::BadToken { .. } => DaftError::ValueError(err.to_string()),
+            Error::Decode { .. } => DaftError::ComputeError(err.to_string()),
+            Error::MissingPattern {} => DaftError::ValueError(err.to_string()),
+            Error::UnsupportedSpecialTokens { .. } => DaftError::ValueError(err.to_string()),
         }
     }
 }
