@@ -41,6 +41,7 @@ class LazyImport:
 
     def __getattr__(self, name: str) -> Any:
         print(f"getting {name}")
+
         if name == "FixedShapeTensorType":
             import pyarrow as pa
 
