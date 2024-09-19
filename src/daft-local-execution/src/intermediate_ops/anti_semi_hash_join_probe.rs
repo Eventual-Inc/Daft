@@ -43,14 +43,14 @@ impl IntermediateOperatorState for AntiSemiProbeState {
 
 pub struct AntiSemiProbeOperator {
     probe_on: Vec<ExprRef>,
-    join_type: JoinType,
+    is_semi: bool,
 }
 
 impl AntiSemiProbeOperator {
-    pub fn new(probe_on: Vec<ExprRef>, join_type: JoinType) -> Self {
+    pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType) -> Self {
         Self {
             probe_on,
-            join_type,
+            is_semi: *join_type == JoinType::Semi,
         }
     }
 
@@ -76,7 +76,7 @@ impl AntiSemiProbeOperator {
                 let iter = probe_set.probe_exists(&join_keys)?;
 
                 for (probe_row_idx, matched) in iter.enumerate() {
-                    match (self.join_type == JoinType::Semi, matched) {
+                    match (self.is_semi, matched) {
                         (true, true) | (false, false) => {
                             probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                         }
@@ -120,10 +120,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
                 let input = input.as_data();
-                let out = match self.join_type {
-                    JoinType::Semi | JoinType::Anti => self.probe_anti_semi(input, state),
-                    _ => unreachable!("Only Semi and Anti joins are supported"),
-                }?;
+                let out = self.probe_anti_semi(input, state)?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }
         }

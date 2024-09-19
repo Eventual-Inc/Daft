@@ -22,12 +22,13 @@ use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
-        filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
+        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
         intermediate_op::IntermediateNode, project::ProjectOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
@@ -131,7 +132,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
+            StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Concat(_) => {
             todo!("concat")
@@ -238,11 +239,9 @@ pub fn physical_plan_to_pipeline(
             let build_on_left = match join_type {
                 JoinType::Inner => true,
                 JoinType::Right => true,
+                JoinType::Outer => true,
                 JoinType::Left => false,
                 JoinType::Anti | JoinType::Semi => false,
-                JoinType::Outer => {
-                    unimplemented!("Outer join not supported yet");
-                }
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
@@ -251,7 +250,7 @@ pub fn physical_plan_to_pipeline(
 
             let build_schema = build_child.schema();
             let probe_schema = probe_child.schema();
-            let probe_node = || -> DaftResult<_> {
+            || -> DaftResult<_> {
                 let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
                     .map(|k| k.to_string())
                     .collect();
@@ -297,32 +296,40 @@ pub fn physical_plan_to_pipeline(
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
 
                 match join_type {
-                    JoinType::Anti | JoinType::Semi => DaftResult::Ok(IntermediateNode::new(
-                        Arc::new(AntiSemiProbeOperator::new(casted_probe_on, *join_type)),
+                    JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
+                        Arc::new(AntiSemiProbeOperator::new(casted_probe_on, join_type)),
                         vec![build_node, probe_child_node],
-                    )),
-                    JoinType::Inner | JoinType::Left | JoinType::Right => {
-                        DaftResult::Ok(IntermediateNode::new(
-                            Arc::new(HashJoinProbeOperator::new(
+                    )
+                    .boxed()),
+                    JoinType::Inner => Ok(IntermediateNode::new(
+                        Arc::new(InnerHashJoinProbeOperator::new(
+                            casted_probe_on,
+                            left_schema,
+                            right_schema,
+                            build_on_left,
+                            common_join_keys,
+                        )),
+                        vec![build_node, probe_child_node],
+                    )
+                    .boxed()),
+                    JoinType::Left | JoinType::Right | JoinType::Outer => {
+                        Ok(StreamingSinkNode::new(
+                            Arc::new(OuterHashJoinProbeSink::new(
                                 casted_probe_on,
                                 left_schema,
                                 right_schema,
                                 *join_type,
-                                build_on_left,
                                 common_join_keys,
                             )),
                             vec![build_node, probe_child_node],
-                        ))
-                    }
-                    JoinType::Outer => {
-                        unimplemented!("Outer join not supported yet");
+                        )
+                        .boxed())
                     }
                 }
             }()
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
-            })?;
-            probe_node.boxed()
+            })?
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());
