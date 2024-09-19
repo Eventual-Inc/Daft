@@ -23,6 +23,8 @@ except ImportError:
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
+from daft.datatype import _ensure_registered_super_ext_type
+
 
 class Series:
     """
@@ -49,6 +51,8 @@ class Series:
             array: The pyarrow (chunked) array whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
         """
+
+        _ensure_registered_super_ext_type()
         if DataType.from_arrow_type(array.type) == DataType.python():
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
