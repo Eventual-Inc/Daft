@@ -40,6 +40,11 @@ class LazyImport:
         return self._module
 
     def __getattr__(self, name: str) -> Any:
+        if name == "FixedShapeTensorType":
+            import pyarrow as pa
+
+            v = getattr(pa, "FixedShapeTensorType")  # noqa: F841
+            print("pyarrow fstt: {v}")
         # Attempt to access the attribute. If it fails, but the parent module exists, assume that
         # the attribute is a submodule and lazily import it.
         try:
