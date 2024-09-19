@@ -92,13 +92,33 @@ jobs:
       if: ${{ (matrix.pyarrow-version == '7.0.0') }}
       run: uv pip install deltalake==0.10.0
 
-    - name: Build library and Test with pytest (unix)
+    - name: Build library (unix)
       if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
+      env:
+        # output of `cargo llvm-cov show-env --export-prefix`
+        RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        CARGO_LLVM_COV: 1
+        CARGO_LLVM_COV_SHOW_ENV: 1
+        CARGO_LLVM_COV_TARGET_DIR: ./target
+        CARGO_TARGET_DIR: ./target
+
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      with:
+        ## If no one connects after 5 minutes, shut down server.
+        wait-timeout-minutes: 2
+
+    - name: test
+      if: ${{ (runner.os != 'Windows') }}
+      run: |
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
