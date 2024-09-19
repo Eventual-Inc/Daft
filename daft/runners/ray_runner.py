@@ -17,6 +17,7 @@ import pyarrow as pa  # noqa: TID253
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
+from daft.dependencies import np
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
 from daft.table import Table
@@ -111,12 +112,6 @@ else:
             _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
     except ImportError:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
 
 
 @ray.remote
