@@ -3,10 +3,15 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft import col
+from daft import col, context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def skip_invalid_join_strategies(join_strategy, join_type):

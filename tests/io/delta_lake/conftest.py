@@ -35,9 +35,15 @@ def num_partitions(request) -> int:
         pytest.param((lambda i: i * 1.5, "b"), id="float_partitioned"),
         pytest.param((lambda i: f"foo_{i}", "c"), id="string_partitioned"),
         pytest.param((lambda i: f"foo_{i}".encode(), "d"), id="string_partitioned"),
-        pytest.param((lambda i: datetime.datetime(2024, 2, i + 1), "f"), id="timestamp_partitioned"),
+        pytest.param(
+            (lambda i: datetime.datetime(2024, 2, i + 1), "f"),
+            id="timestamp_partitioned",
+        ),
         pytest.param((lambda i: datetime.date(2024, 2, i + 1), "g"), id="date_partitioned"),
-        pytest.param((lambda i: decimal.Decimal(str(1000 + i) + ".567"), "h"), id="decimal_partitioned"),
+        pytest.param(
+            (lambda i: decimal.Decimal(str(1000 + i) + ".567"), "h"),
+            id="decimal_partitioned",
+        ),
         pytest.param((lambda i: i if i % 2 == 0 else None, "a"), id="partitioned_with_nulls"),
     ]
 )
@@ -54,10 +60,22 @@ def base_table() -> pa.Table:
             "c": ["foo", "bar", "baz"],
             "d": [b"foo", b"bar", b"baz"],
             "e": [True, False, True],
-            "f": [datetime.datetime(2024, 2, 10), datetime.datetime(2024, 2, 11), datetime.datetime(2024, 2, 12)],
-            "g": [datetime.date(2024, 2, 10), datetime.date(2024, 2, 11), datetime.date(2024, 2, 12)],
+            "f": [
+                datetime.datetime(2024, 2, 10),
+                datetime.datetime(2024, 2, 11),
+                datetime.datetime(2024, 2, 12),
+            ],
+            "g": [
+                datetime.date(2024, 2, 10),
+                datetime.date(2024, 2, 11),
+                datetime.date(2024, 2, 12),
+            ],
             "h": pa.array(
-                [decimal.Decimal("1234.567"), decimal.Decimal("1233.456"), decimal.Decimal("1232.345")],
+                [
+                    decimal.Decimal("1234.567"),
+                    decimal.Decimal("1233.456"),
+                    decimal.Decimal("1232.345"),
+                ],
                 type=pa.decimal128(7, 3),
             ),
             "i": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -282,7 +300,11 @@ def s3_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
     ],
 )
 def s3_path(
-    request, s3_uri: str, aws_server: str, aws_credentials: dict[str, str], reset_aws: None
+    request,
+    s3_uri: str,
+    aws_server: str,
+    aws_credentials: dict[str, str],
+    reset_aws: None,
 ) -> tuple[str, daft.io.IOConfig, DataCatalogTable | None]:
     s3 = boto3.resource(
         "s3",
@@ -417,13 +439,18 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
         pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
     ],
 )
-def cloud_paths(request) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable | None]:
+def cloud_paths(
+    request,
+) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable | None]:
     return request.param
 
 
 @pytest.fixture(scope="function")
 def deltalake_table(
-    cloud_paths, base_table: pa.Table, num_partitions: int, partition_generator: callable
+    cloud_paths,
+    base_table: pa.Table,
+    num_partitions: int,
+    partition_generator: callable,
 ) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
     partition_generator, col = partition_generator
     path, io_config, catalog_table = cloud_paths
