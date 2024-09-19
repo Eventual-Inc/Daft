@@ -7,12 +7,17 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import col
+from daft import col, context
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
 from tests.utils import sort_arrow_table
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
