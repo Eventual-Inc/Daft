@@ -1,46 +1,43 @@
-use async_trait::async_trait;
-use aws_config::meta::credentials::CredentialsProviderChain;
-use aws_config::retry::RetryMode;
-use aws_config::timeout::TimeoutConfig;
-use aws_sdk_s3::operation::put_object::PutObjectError;
-use aws_smithy_async::rt::sleep::TokioSleep;
-use futures::stream::BoxStream;
-use reqwest::StatusCode;
-use s3::operation::head_object::HeadObjectError;
-use s3::operation::list_objects_v2::ListObjectsV2Error;
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use std::{collections::HashMap, io, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
 
-use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::stats::IOStatsRef;
-use crate::stream_utils::io_stats_on_bytestream;
-use crate::{get_io_pool_num_threads, FileFormat, InvalidArgumentSnafu, SourceType};
-use aws_config::SdkConfig;
-use aws_credential_types::cache::{
-    CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache,
+use async_recursion::async_recursion;
+use async_trait::async_trait;
+use aws_config::{
+    meta::credentials::CredentialsProviderChain, retry::RetryMode, timeout::TimeoutConfig,
+    SdkConfig,
 };
-use aws_credential_types::provider::error::CredentialsError;
+use aws_credential_types::{
+    cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
+    provider::error::CredentialsError,
+};
+use aws_sdk_s3 as s3;
+use aws_sdk_s3::{operation::put_object::PutObjectError, primitives::ByteStreamError};
 use aws_sig_auth::signer::SigningRequirements;
+use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
-use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::Response;
-use s3::config::{Credentials, Region};
-use s3::error::{DisplayErrorContext, SdkError};
-use s3::operation::get_object::GetObjectError;
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use reqwest::StatusCode;
+use s3::{
+    client::customize::Response,
+    config::{Credentials, Region},
+    error::{DisplayErrorContext, SdkError},
+    operation::{
+        get_object::GetObjectError, head_object::HeadObjectError,
+        list_objects_v2::ListObjectsV2Error,
+    },
+};
 use snafu::{ensure, IntoError, ResultExt, Snafu};
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
-use async_recursion::async_recursion;
-use aws_sdk_s3 as s3;
-use aws_sdk_s3::primitives::ByteStreamError;
-
-use std::collections::HashMap;
-
-use std::io;
-use std::ops::Range;
-use std::string::FromUtf8Error;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::{
+    get_io_pool_num_threads,
+    object_io::{FileMetadata, FileType, LSResult},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+    FileFormat, InvalidArgumentSnafu, SourceType,
+};
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
@@ -336,8 +333,7 @@ fn handle_https_client_settings(
         http_connector,
         tls_connector.into(),
     ));
-    use aws_smithy_client::http_connector::ConnectorSettings;
-    use aws_smithy_client::hyper_ext;
+    use aws_smithy_client::{http_connector::ConnectorSettings, hyper_ext};
     let smithy_client = hyper_ext::Adapter::builder()
         .connector_settings(
             ConnectorSettings::builder()
@@ -547,9 +543,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
         connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
             (config.max_connections_per_io_thread as usize)
-                * get_io_pool_num_threads()
-                    .await
-                    .expect("Should be running in tokio pool"),
+                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
         )),
         s3_config: config.clone(),
         default_region,
@@ -1189,10 +1183,9 @@ impl ObjectSource for S3LikeSource {
 #[cfg(test)]
 mod tests {
 
-    use crate::object_io::ObjectSource;
-    use crate::Result;
-    use crate::S3LikeSource;
     use common_io_config::S3Config;
+
+    use crate::{object_io::ObjectSource, Result, S3LikeSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

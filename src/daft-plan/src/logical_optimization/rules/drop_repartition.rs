@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
+use super::OptimizerRule;
 use crate::LogicalPlan;
-
-use super::{ApplyOrder, OptimizerRule, Transformed};
-
-use common_treenode::DynTreeNode;
 
 /// Optimization rules for dropping unnecessary Repartitions.
 ///
@@ -22,36 +20,35 @@ impl DropRepartition {
 }
 
 impl OptimizerRule for DropRepartition {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        let repartition = match plan.as_ref() {
-            LogicalPlan::Repartition(repartition) => repartition,
-            _ => return Ok(Transformed::No(plan)),
-        };
-        let child_plan = repartition.input.as_ref();
-        let new_plan = match child_plan {
-            LogicalPlan::Repartition(_) => {
-                // Drop upstream Repartition for back-to-back Repartitions.
-                //
-                // Repartition1-Repartition2 -> Repartition1
-                plan.with_new_children(&[child_plan.arc_children()[0].clone()])
-                    .into()
-            }
-            _ => return Ok(Transformed::No(plan)),
-        };
-        Ok(Transformed::Yes(new_plan))
+        plan.transform_down(|node| {
+            let repartition = match node.as_ref() {
+                LogicalPlan::Repartition(repartition) => repartition,
+                _ => return Ok(Transformed::no(node)),
+            };
+            let child_plan = repartition.input.as_ref();
+            let new_plan = match child_plan {
+                LogicalPlan::Repartition(_) => {
+                    // Drop upstream Repartition for back-to-back Repartitions.
+                    //
+                    // Repartition1-Repartition2 -> Repartition1
+                    node.with_new_children(&[child_plan.arc_children()[0].clone()])
+                        .into()
+                }
+                _ => return Ok(Transformed::no(node)),
+            };
+            Ok(Transformed::yes(new_plan))
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::col;
     use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_dsl::col;
 
     use crate::{
         logical_optimization::{

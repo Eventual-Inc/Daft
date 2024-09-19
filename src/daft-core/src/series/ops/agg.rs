@@ -1,11 +1,17 @@
-use crate::array::ListArray;
-use crate::count_mode::CountMode;
-use crate::series::IntoSeries;
-use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
+use logical::Decimal128Array;
 
-use crate::datatypes::*;
+use crate::{
+    array::{
+        ops::{DaftHllMergeAggable, GroupIndices},
+        ListArray,
+    },
+    count_mode::CountMode,
+    datatypes::*,
+    series::{IntoSeries, Series},
+    with_match_physical_daft_types,
+};
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Series> {
@@ -20,8 +26,7 @@ impl Series {
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftSumAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftSumAggable, datatypes::DataType::*};
 
         match self.data_type() {
             // intX -> int64 (in line with numpy)
@@ -61,6 +66,27 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
+            Decimal128(_, _) => match groups {
+                Some(groups) => Ok(Decimal128Array::new(
+                    Field {
+                        dtype: try_sum_supertype(self.data_type())?,
+                        ..self.field().clone()
+                    },
+                    DaftSumAggable::grouped_sum(
+                        &self.as_physical()?.downcast::<Int128Array>()?,
+                        groups,
+                    )?,
+                )
+                .into_series()),
+                None => Ok(Decimal128Array::new(
+                    Field {
+                        dtype: try_sum_supertype(self.data_type())?,
+                        ..self.field().clone()
+                    },
+                    DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
+                )
+                .into_series()),
+            },
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
                 other
@@ -69,8 +95,7 @@ impl Series {
     }
 
     pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftApproxSketchAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftApproxSketchAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and compute approx_sketch.
         match self.data_type() {
@@ -95,8 +120,7 @@ impl Series {
     }
 
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftMergeSketchAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftMergeSketchAggable, datatypes::DataType::*};
 
         match self.data_type() {
             Struct(_) => match groups {
@@ -114,9 +138,18 @@ impl Series {
         }
     }
 
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
+        let series = match groups {
+            Some(groups) => downcasted_self.grouped_hll_merge(groups),
+            None => downcasted_self.hll_merge(),
+        }?
+        .into_series();
+        Ok(series)
+    }
+
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftMeanAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftMeanAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and use f64 mean kernel.
         match self.data_type() {

@@ -5,19 +5,9 @@ from typing import Any, Literal, TypeVar
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PySeries
+from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-try:
-    from ray.data.extensions import (
-        ArrowTensorArray,
-        ArrowTensorType,
-        ArrowVariableShapedTensorType,
-    )
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 _NUMPY_AVAILABLE = True
 try:
@@ -64,18 +54,7 @@ class Series:
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
-            if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
-                storage_series = Series.from_arrow(array.storage, name=name)
-                series = storage_series.cast(
-                    DataType.fixed_size_list(
-                        DataType.from_arrow_type(array.type.scalar_type),
-                        int(np.prod(array.type.shape)),
-                    )
-                )
-                return series.cast(DataType.from_arrow_type(array.type))
-            elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
-                return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
-            elif isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
+            if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
             else:
@@ -242,40 +221,21 @@ class Series:
     def datatype(self) -> DataType:
         return DataType._from_pydatatype(self._series.data_type())
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Array:
+    def to_arrow(self) -> pa.Array:
         """
         Convert this Series to an pyarrow array.
         """
         dtype = self.datatype()
-        if cast_tensors_to_ray_tensor_dtype and (dtype._is_tensor_type() or dtype._is_fixed_shape_tensor_type()):
-            if not _RAY_DATA_EXTENSIONS_AVAILABLE:
-                raise ValueError("Trying to convert tensors to Ray tensor dtypes, but Ray is not installed.")
-            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=True)
-            if isinstance(pyarrow_dtype, ArrowTensorType):
-                assert dtype._is_fixed_shape_tensor_type()
-                arrow_series = self._series.to_arrow()
-                storage = arrow_series.storage
-                list_size = storage.type.list_size
-                storage = pa.ListArray.from_arrays(
-                    pa.array(
-                        list(range(0, (len(arrow_series) + 1) * list_size, list_size)),
-                        pa.int32(),
-                    ),
-                    storage.values,
-                )
-                return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
-            else:
-                # Variable-shaped tensor columns can't be converted directly to Ray's variable-shaped tensor extension
-                # type since it expects all tensor elements to have the same number of dimensions, which Daft does not enforce.
-                # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
-                # elements have the same number of dimensions, without going through pylist roundtrip.
-                return ArrowTensorArray.from_numpy(self.to_pylist())
-        elif dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
+        arrow_arr = self._series.to_arrow()
+
+        # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
+        # TODO: Push this down into self._series.to_arrow()?
+        if dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
+            pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-        else:
-            return self._series.to_arrow()
+
+        return arrow_arr
 
     def to_pylist(self) -> list:
         """
@@ -787,6 +747,10 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_length())
 
+    def length_bytes(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_length_bytes())
+
     def lower(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_lower())
@@ -1010,14 +974,14 @@ class SeriesImageNamespace(SeriesNamespace):
                 mode = ImageMode.from_mode_string(mode.upper())
             if not isinstance(mode, ImageMode):
                 raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error, mode=mode))
+        return Series._from_pyseries(image.decode(self._series, raise_error_on_failure=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Series:
         if isinstance(image_format, str):
             image_format = ImageFormat.from_format_string(image_format.upper())
         if not isinstance(image_format, ImageFormat):
             raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Series._from_pyseries(self._series.image_encode(image_format))
+        return Series._from_pyseries(image.encode(self._series, image_format))
 
     def resize(self, w: int, h: int) -> Series:
         if not isinstance(w, int):
@@ -1025,11 +989,11 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(h, int):
             raise TypeError(f"expected int for h but got {type(h)}")
 
-        return Series._from_pyseries(self._series.image_resize(w, h))
+        return Series._from_pyseries(image.resize(self._series, w, h))
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(self._series.image_to_mode(mode))
+        return Series._from_pyseries(image.to_mode(self._series, mode))

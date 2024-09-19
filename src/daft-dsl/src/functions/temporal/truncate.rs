@@ -1,11 +1,8 @@
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
-
-use crate::ExprRef;
-
-use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 
 use super::{super::FunctionEvaluator, TemporalExpr};
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) struct TruncateEvaluator {}
 

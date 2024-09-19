@@ -1,11 +1,8 @@
-use crate::Table;
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    array::ops::{as_arrow::AsArrow, IntoGroups},
-    datatypes::UInt64Array,
-    IntoSeries, Series,
-};
+use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::ExprRef;
+
+use crate::Table;
 
 fn map_name_to_pivot_key_idx<'a>(
     pivot_series: &'a Series,

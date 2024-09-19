@@ -1,14 +1,8 @@
-use daft_core::{
-    datatypes::{DataType, Field},
-    schema::Schema,
-    series::Series,
-};
-
-use crate::{functions::partitioning::PartitioningExpr, ExprRef};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 
 use super::super::FunctionEvaluator;
+use crate::{functions::partitioning::PartitioningExpr, ExprRef};
 
 macro_rules! impl_func_evaluator_for_partitioning {
     ($name:ident, $op:ident, $kernel:ident, $result_type:ident) => {
@@ -58,8 +52,9 @@ macro_rules! impl_func_evaluator_for_partitioning {
         }
     };
 }
-use crate::functions::FunctionExpr;
 use DataType::{Date, Int32};
+
+use crate::functions::FunctionExpr;
 impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
 impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
 impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);

@@ -1,12 +1,14 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
-use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
-    FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
-};
-
-use crate::array::DataArray;
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::DataArray,
+    datatypes::{
+        BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
+        FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
+    },
+};
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
     for DataArray<T>
@@ -44,6 +46,25 @@ impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryA
         DataArray::new(
             Field::new(name, DataType::FixedSizeBinary(array.size())).into(),
             array,
+        )
+        .unwrap()
+    }
+}
+
+impl<'a, I> From<(&str, I, usize)> for FixedSizeBinaryArray
+where
+    Cow<'a, [u8]>: From<I>,
+{
+    fn from((name, array, length): (&str, I, usize)) -> Self {
+        let array = Cow::from(array);
+        let array = array.into_owned();
+        DataArray::new(
+            Field::new(name, DataType::FixedSizeBinary(length)).into(),
+            Box::new(arrow2::array::FixedSizeBinaryArray::new(
+                arrow2::datatypes::DataType::FixedSizeBinary(length),
+                arrow2::buffer::Buffer::from(array),
+                None,
+            )),
         )
         .unwrap()
     }

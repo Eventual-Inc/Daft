@@ -86,12 +86,11 @@ impl Display for crate::physical_plan::PhysicalPlan {
 
 #[cfg(test)]
 mod test {
-    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
-
     use std::sync::Arc;
 
+    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{
         col,
         functions::utf8::{endswith, startswith},
@@ -165,7 +164,7 @@ mod test {
                 subplan2,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .filter(col("first_name").eq(lit("hello")))?
@@ -236,7 +235,7 @@ Project1 --> Limit0
                 subplan2,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .filter(col("first_name").eq(lit("hello")))?

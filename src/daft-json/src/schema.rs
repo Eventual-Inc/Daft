@@ -1,7 +1,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::schema::Schema;
+use daft_compression::CompressionCodec;
+use daft_core::prelude::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
@@ -16,7 +17,6 @@ use crate::{
     inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
 };
-use daft_compression::CompressionCodec;
 
 #[derive(Debug, Clone)]
 pub struct JsonReadStats {
@@ -56,8 +56,7 @@ pub fn read_json_schema(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
-    runtime_handle.block_on(async {
+    runtime_handle.block_on_current_thread(async {
         read_json_schema_single(
             uri,
             parse_options.unwrap_or_default(),
@@ -79,9 +78,8 @@ pub async fn read_json_schema_bulk(
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Schema>> {
     let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
     let result = runtime_handle
-        .block_on(async {
+        .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
                 let owned_string = uri.to_string();
                 let owned_client = io_client.clone();
@@ -199,11 +197,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
-        DataType,
-    };
+    use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 

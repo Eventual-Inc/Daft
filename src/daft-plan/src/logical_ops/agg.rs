@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
+use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{resolve_aggexprs, resolve_exprs, AggExpr, ExprRef};
-
-use crate::logical_plan::{self, CreationSnafu};
-use crate::LogicalPlan;
+use crate::{
+    logical_plan::{self, CreationSnafu},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Aggregate {
@@ -31,7 +32,7 @@ impl Aggregate {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
         let (groupby, groupby_fields) =
-            resolve_exprs(groupby, &upstream_schema).context(CreationSnafu)?;
+            resolve_exprs(groupby, &upstream_schema, false).context(CreationSnafu)?;
         let (aggregations, aggregation_fields) =
             resolve_aggexprs(aggregations, &upstream_schema).context(CreationSnafu)?;
 

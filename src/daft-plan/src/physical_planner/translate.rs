@@ -1,39 +1,34 @@
-use std::cmp::Ordering;
-use std::sync::Arc;
 use std::{
-    cmp::{max, min},
+    cmp::{max, min, Ordering},
     collections::HashMap,
+    sync::Arc,
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-
-use daft_core::count_mode::CountMode;
-use daft_core::join::{JoinStrategy, JoinType};
-use daft_core::schema::SchemaRef;
-use daft_core::DataType;
-use daft_dsl::{col, ApproxPercentileParams};
-use daft_dsl::{is_partition_compatible, ExprRef};
-
+use common_file_formats::FileFormat;
+use daft_core::prelude::*;
+use daft_dsl::{col, is_partition_compatible, ApproxPercentileParams, ExprRef, SketchType};
 use daft_scan::PhysicalScanInfo;
 
-use crate::logical_ops::{
-    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-    Join as LogicalJoin, Limit as LogicalLimit,
-    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+use crate::{
+    logical_ops::{
+        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+        Join as LogicalJoin, Limit as LogicalLimit,
+        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
+        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
+        Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+    },
+    logical_plan::LogicalPlan,
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+    },
+    physical_ops::*,
+    physical_plan::{PhysicalPlan, PhysicalPlanRef},
+    sink_info::{OutputFileInfo, SinkInfo},
+    source_info::{PlaceHolderInfo, SourceInfo},
 };
-use crate::logical_plan::LogicalPlan;
-use crate::partitioning::{
-    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
-};
-use crate::physical_ops::*;
-use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
-use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::{PlaceHolderInfo, SourceInfo};
-use crate::FileFormat;
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -58,7 +53,8 @@ pub(super) fn translate_single_logical_node(
                 );
 
                 // Apply transformations on the ScanTasks to optimize
-                let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, cfg);
+                let scan_tasks =
+                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -292,15 +288,18 @@ pub(super) fn translate_single_logical_node(
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
                         populate_aggregation_stages(aggregations, &schema, groupby);
 
-                    let first_stage_agg = if first_stage_aggs.is_empty() {
-                        input_physical
+                    let (first_stage_agg, groupby) = if first_stage_aggs.is_empty() {
+                        (input_physical, groupby.clone())
                     } else {
-                        PhysicalPlan::Aggregate(Aggregate::new(
-                            input_physical,
-                            first_stage_aggs.values().cloned().collect(),
-                            groupby.clone(),
-                        ))
-                        .arced()
+                        (
+                            PhysicalPlan::Aggregate(Aggregate::new(
+                                input_physical,
+                                first_stage_aggs.values().cloned().collect(),
+                                groupby.clone(),
+                            ))
+                            .arced(),
+                            groupby.iter().map(|e| col(e.name())).collect(),
+                        )
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
@@ -325,7 +324,7 @@ pub(super) fn translate_single_logical_node(
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan,
                         second_stage_aggs.values().cloned().collect(),
-                        groupby.clone(),
+                        groupby,
                     ));
 
                     PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
@@ -773,7 +772,7 @@ pub fn populate_aggregation_stages(
     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     // Project the aggregation results to their final output names
-    let mut final_exprs: Vec<ExprRef> = group_by.to_vec();
+    let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
 
     for agg_expr in aggregations {
         let output_name = agg_expr.name();
@@ -897,31 +896,59 @@ pub fn populate_aggregation_stages(
                     });
                 final_exprs.push(col(output_name));
             }
-            ApproxSketch(_) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
-            }
-            MergeSketch(_) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
-            }
-            ApproxPercentile(ApproxPercentileParams {
-                child: e,
-                percentiles,
+            &ApproxPercentile(ApproxPercentileParams {
+                child: ref e,
+                ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 let sketch_id = agg_expr.semantic_id(schema).id;
-                let approx_id = ApproxSketch(col(sketch_id.clone())).semantic_id(schema).id;
+                let approx_id = ApproxSketch(col(sketch_id.clone()), SketchType::DDSketch)
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(sketch_id.clone())
-                    .or_insert(ApproxSketch(e.alias(sketch_id.clone()).clone()));
+                    .or_insert(ApproxSketch(
+                        e.alias(sketch_id.clone()),
+                        SketchType::DDSketch,
+                    ));
                 second_stage_aggs
                     .entry(approx_id.clone())
-                    .or_insert(MergeSketch(col(sketch_id.clone()).alias(approx_id.clone())));
+                    .or_insert(MergeSketch(
+                        col(sketch_id.clone()).alias(approx_id.clone()),
+                        SketchType::DDSketch,
+                    ));
                 final_exprs.push(
-                    col(approx_id.clone())
-                        .sketch_percentile(percentiles.as_slice(), *force_list_output)
+                    col(approx_id)
+                        .sketch_percentile(percentiles.as_slice(), force_list_output)
                         .alias(output_name),
                 );
+            }
+            ApproxCountDistinct(e) => {
+                let first_stage_id = agg_expr.semantic_id(schema).id;
+                let second_stage_id =
+                    MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)
+                        .semantic_id(schema)
+                        .id;
+                first_stage_aggs
+                    .entry(first_stage_id.clone())
+                    .or_insert(ApproxSketch(
+                        e.alias(first_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                second_stage_aggs
+                    .entry(second_stage_id.clone())
+                    .or_insert(MergeSketch(
+                        col(first_stage_id).alias(second_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                final_exprs.push(col(second_stage_id).alias(output_name));
+            }
+            ApproxSketch(..) => {
+                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            }
+            MergeSketch(..) => {
+                unimplemented!("User-facing merge_sketch aggregation is not implemented")
             }
         }
     }
@@ -930,19 +957,20 @@ pub fn populate_aggregation_stages(
 
 #[cfg(test)]
 mod tests {
+    use std::{assert_matches::assert_matches, sync::Arc};
+
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use std::assert_matches::assert_matches;
-    use std::sync::Arc;
-
-    use crate::physical_plan::PhysicalPlan;
-    use crate::physical_planner::logical_to_physical;
-    use crate::test::{dummy_scan_node, dummy_scan_operator};
-    use crate::{LogicalPlanBuilder, PhysicalPlanRef};
 
     use super::HashJoin;
+    use crate::{
+        physical_plan::PhysicalPlan,
+        physical_planner::logical_to_physical,
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlanBuilder, PhysicalPlanRef,
+    };
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
     ///
@@ -1091,8 +1119,8 @@ mod tests {
                 join_node,
                 vec![col("a"), col("b")],
                 vec![col("a"), col("b")],
-                daft_core::JoinType::Inner,
-                Some(daft_core::JoinStrategy::Hash),
+                JoinType::Inner,
+                Some(JoinStrategy::Hash),
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

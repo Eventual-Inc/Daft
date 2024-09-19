@@ -7,7 +7,9 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_compression::CompressionCodec;
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
@@ -27,10 +29,10 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::ArrowSnafu;
-use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_compression::CompressionCodec;
-use daft_decoding::deserialize::deserialize_column;
+use crate::{
+    metadata::read_csv_schema_single, ArrowSnafu, CsvConvertOptions, CsvParseOptions,
+    CsvReadOptions,
+};
 
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
@@ -52,8 +54,7 @@ pub fn read_csv(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
-    runtime_handle.block_on(async {
+    runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
             uri,
             convert_options,
@@ -80,8 +81,7 @@ pub fn read_csv_bulk(
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
-    let tables = runtime_handle.block_on(async move {
+    let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
@@ -594,7 +594,7 @@ fn parse_into_column_array_chunk_stream(
         .iter()
         .map(|i| fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::schema::Schema::new(fields_subset)?);
+    let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset)?);
     let read_daft_fields = Arc::new(
         read_schema
             .fields
@@ -664,25 +664,21 @@ fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
-
     use arrow2::io::csv::read::{
         deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
         ReaderBuilder,
     };
+    use common_error::{DaftError, DaftResult};
     use daft_core::{
-        datatypes::Field,
-        schema::Schema,
+        prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        DataType,
     };
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use rstest::rstest;
 
-    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-
     use super::read_csv;
+    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(

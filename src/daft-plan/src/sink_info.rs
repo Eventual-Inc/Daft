@@ -1,17 +1,14 @@
 use std::hash::Hash;
 
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
-use daft_dsl::ExprRef;
-use itertools::Itertools;
-
-#[cfg(feature = "python")]
-use pyo3::PyObject;
-
-use crate::FileFormat;
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+use daft_dsl::ExprRef;
+use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::PyObject;
+use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq, Hash)]

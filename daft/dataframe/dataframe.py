@@ -28,12 +28,11 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, resolve_expr
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column_name_validity
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -63,9 +62,6 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
-
-
-NUM_CPUS = multiprocessing.cpu_count()
 
 
 class DataFrame:
@@ -226,7 +222,9 @@ class DataFrame:
         return self.iter_rows(results_buffer_size=None)
 
     @DataframePublicAPI
-    def iter_rows(self, results_buffer_size: Optional[int] = NUM_CPUS) -> Iterator[Dict[str, Any]]:
+    def iter_rows(
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+    ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
@@ -263,6 +261,9 @@ class DataFrame:
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
         """
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -270,7 +271,6 @@ class DataFrame:
             for i in range(len(self)):
                 row = {key: value[i] for (key, value) in pydict.items()}
                 yield row
-
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -286,21 +286,32 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def to_arrow_iter(self, results_buffer_size: Optional[int] = 1) -> Iterator["pyarrow.RecordBatch"]:
+    def to_arrow_iter(
+        self,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+    ) -> Iterator["pyarrow.RecordBatch"]:
         """
         Return an iterator of pyarrow recordbatches for this dataframe.
         """
+        for name in self.schema().column_names():
+            if self.schema()[name].dtype._is_python_type():
+                raise ValueError(
+                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
+                )
+
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            yield from self.to_arrow().to_batches()
-
+            for _, result in self._result.items():
+                yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size)
+            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -308,7 +319,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Optional[int] = NUM_CPUS
+        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
@@ -365,7 +376,9 @@ class DataFrame:
         Statistics: missing
         <BLANKLINE>
         """
-        if results_buffer_size is not None and not results_buffer_size > 0:
+        if results_buffer_size == "num_cpus":
+            results_buffer_size = multiprocessing.cpu_count()
+        elif results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
 
         if self._result is not None:
@@ -390,11 +403,11 @@ class DataFrame:
             self._preview.preview_partition is None or len(self._preview.preview_partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
-            preview_parts = self._result._get_preview_vpartition(self._num_preview_rows)
+            preview_parts = self._result._get_preview_micropartitions(self._num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_vpartition()
+            preview_partition = preview_results._get_merged_micropartition()
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
                 dataframe_num_rows=len(self),
@@ -436,8 +449,8 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = MicroPartition.from_pydict(data)
-        return cls._from_tables(data_vpartition)
+        data_micropartition = MicroPartition.from_pydict(data)
+        return cls._from_tables(data_micropartition)
 
     @classmethod
     def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
@@ -446,16 +459,16 @@ class DataFrame:
             data = list(data)
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
-        return cls._from_tables(*data_vpartitions)
+        data_micropartitions = [MicroPartition.from_arrow(table) for table in data]
+        return cls._from_tables(*data_micropartitions)
 
     @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
-        return cls._from_tables(*data_vpartitions)
+        data_micropartitions = [MicroPartition.from_pandas(df) for df in data]
+        return cls._from_tables(*data_micropartitions)
 
     @classmethod
     def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
@@ -747,6 +760,7 @@ class DataFrame:
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
+        allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -763,6 +777,7 @@ class DataFrame:
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
             dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -781,7 +796,9 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
+        from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
@@ -811,22 +828,29 @@ class DataFrame:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = urlparse(table_uri).scheme
+        scheme = get_protocol_from_path(table_uri)
         if scheme == "s3" or scheme == "s3a":
             if dynamo_table_name is not None:
                 storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
                 storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
             else:
                 storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+                if not allow_unsafe_rename:
+                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+        elif scheme == "file":
+            if allow_unsafe_rename:
+                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+
+        large_dtypes = True
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
@@ -851,7 +875,7 @@ class DataFrame:
             table_uri,
             mode,
             version,
-            large_dtypes=True,
+            large_dtypes,
             io_config=io_config,
         )
         write_df = DataFrame(builder)
@@ -1088,12 +1112,9 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
-            if (item == "*" or item.endswith(".*")) and item not in schema.column_names():
-                # does not account for weird column names
-                # like if struct "a" has a field named "*", then a.* will wrongly fail
-                raise ValueError("Wildcard expressions are not supported in DataFrame.__getitem__")
-            expr, _ = resolve_expr(col(item)._expr, schema._schema)
-            return Expression._from_pyexpr(expr)
+            check_column_name_validity(item, schema._schema)
+
+            return col(item)
         elif isinstance(item, Iterable):
             schema = self._builder.schema()
 
@@ -1288,6 +1309,23 @@ class DataFrame:
         """
         builder = self._builder.exclude(list(names))
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth:`.where(predicate) <DataFrame.where>`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
 
     @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
@@ -2094,13 +2132,14 @@ class DataFrame:
     def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global count on the DataFrame
 
-        If no columns are specified (i.e. in the case you call `df.count()`) this functions very
-        similarly to a COUNT(*) operation in SQL and will return a new dataframe with a single column
-        with the name "count".
+        If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
+        this functions very similarly to a COUNT(*) operation in SQL and will return a new dataframe with a
+        single column with the name "count".
 
             >>> import daft
-            >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2]})
-            >>> df.count().show()
+            >>> from daft import col
+            >>> df = daft.from_pydict({"foo": [1, None, None], "bar": [None, 2, 2], "baz": [3, 4, 5]})
+            >>> df.count().show()  # equivalent to df.count("*").show()
             ╭────────╮
             │ count  │
             │ ---    │
@@ -2112,7 +2151,8 @@ class DataFrame:
             (Showing first 1 of 1 rows)
 
         However, specifying some column names would instead change the behavior to count all non-null values,
-        similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`
+        similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`. Also, using `df.count(col("*"))`
+        will expand out into count() for each column.
 
             >>> df.count("foo", "bar").show()
             ╭────────┬────────╮
@@ -2124,6 +2164,16 @@ class DataFrame:
             ╰────────┴────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+            >>> df.count(col("*")).show()
+            ╭────────┬────────┬────────╮
+            │ foo    ┆ bar    ┆ baz    │
+            │ ---    ┆ ---    ┆ ---    │
+            │ UInt64 ┆ UInt64 ┆ UInt64 │
+            ╞════════╪════════╪════════╡
+            │ 1      ┆ 2      ┆ 3      │
+            ╰────────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
 
         Args:
             *cols (Union[str, Expression]): columns to count
@@ -2131,9 +2181,14 @@ class DataFrame:
             DataFrame: Globally aggregated count. Should be a single row.
         """
         # Special case: treat this as a COUNT(*) operation which is likely what most people would expect
-        if len(cols) == 0:
+        # If user passes in "*", also do this behavior (by default it would count each column individually)
+        if len(cols) == 0 or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*"):
             builder = self._builder.count()
             return DataFrame(builder)
+
+        if any(isinstance(c, str) and c == "*" for c in cols):
+            # we do not support hybrid count-all and count-nonnull
+            raise ValueError("Cannot call count() with both * and column names")
 
         # Otherwise, perform a column-wise count on the specified columns
         return self._apply_agg_fn(Expression.count, cols)
@@ -2164,6 +2219,8 @@ class DataFrame:
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
+
+        For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
 
         Example:
             >>> import daft
@@ -2446,14 +2503,11 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(
-        self, cast_tensors_to_ray_tensor_dtype: bool = False, coerce_temporal_nanoseconds: bool = False
-    ) -> "pandas.DataFrame":
+    def to_pandas(self, coerce_temporal_nanoseconds: bool = False) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
         If results have not computed yet, collect will be called.
 
         Args:
-            cast_tensors_to_ray_tensor_dtype (bool): Whether to cast tensors to Ray tensor dtype. Defaults to False.
             coerce_temporal_nanoseconds (bool): Whether to coerce temporal columns to nanoseconds. Only applicable to pandas version >= 2.0 and pyarrow version >= 13.0.0. Defaults to False. See `pyarrow.Table.to_pandas <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html#pyarrow.Table.to_pandas>`__ for more information.
 
         Returns:
@@ -2468,13 +2522,12 @@ class DataFrame:
 
         pd_df = result.to_pandas(
             schema=self._builder.schema(),
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
         return pd_df
 
     @DataframePublicAPI
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pyarrow.Table":
+    def to_arrow(self) -> "pyarrow.Table":
         """Converts the current DataFrame to a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__.
         If results have not computed yet, collect will be called.
 
@@ -2484,11 +2537,10 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        self.collect()
-        result = self._result
-        assert result is not None
+        import pyarrow as pa
 
-        return result.to_arrow(cast_tensors_to_ray_tensor_dtype)
+        arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
+        return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:
@@ -2506,6 +2558,27 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+        .. WARNING::
+
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        return list(self.iter_rows())
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
@@ -2622,7 +2695,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_vpartition()
+        preview_partition = preview_results._get_merged_micropartition()
         df._preview = DataFramePreview(
             preview_partition=preview_partition,
             dataframe_num_rows=dataframe_num_rows,
@@ -2714,7 +2787,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_vpartition()
+        preview_partition = preview_results._get_merged_micropartition()
         df._preview = DataFramePreview(
             preview_partition=preview_partition,
             dataframe_num_rows=dataframe_num_rows,
@@ -2819,6 +2892,8 @@ class GroupedDataFrame:
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
+
+        For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
 
         Example:
             >>> import daft

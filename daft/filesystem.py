@@ -221,6 +221,13 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
             _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
+            if s3_config.num_tries is not None:
+                try:
+                    from pyarrow.fs import AwsStandardS3RetryStrategy
+
+                    translated_kwargs["retry_strategy"] = AwsStandardS3RetryStrategy(max_attempts=s3_config.num_tries)
+                except ImportError:
+                    pass  # Config does not exist in pyarrow 7.0.0
 
         resolved_filesystem = S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))

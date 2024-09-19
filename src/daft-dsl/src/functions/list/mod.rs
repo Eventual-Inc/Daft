@@ -11,7 +11,7 @@ mod sum;
 
 use chunk::ChunkEvaluator;
 use count::CountEvaluator;
-use daft_core::CountMode;
+use daft_core::count_mode::CountMode;
 use explode::ExplodeEvaluator;
 use get::GetEvaluator;
 use join::JoinEvaluator;
@@ -22,9 +22,8 @@ use serde::{Deserialize, Serialize};
 use slice::SliceEvaluator;
 use sum::SumEvaluator;
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ListExpr {

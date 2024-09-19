@@ -1,6 +1,6 @@
-use crate::series::Series;
-
 use common_error::DaftResult;
+
+use crate::series::Series;
 
 impl Series {
     pub fn is_null(&self) -> DaftResult<Series> {

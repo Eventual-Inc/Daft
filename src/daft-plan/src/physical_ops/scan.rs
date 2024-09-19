@@ -1,9 +1,11 @@
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use daft_scan::{file_format::FileFormatConfig, ScanTask};
 use std::sync::Arc;
 
-use crate::ClusteringSpec;
+use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_file_formats::FileFormatConfig;
+use daft_scan::ScanTask;
 use serde::{Deserialize, Serialize};
+
+use crate::ClusteringSpec;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularScan {
@@ -38,7 +40,7 @@ impl TreeDisplay for TabularScan {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes().unwrap_or(0))
+                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
                 .sum();
 
             let clustering_spec = scan.clustering_spec.multiline_display().join(", ");

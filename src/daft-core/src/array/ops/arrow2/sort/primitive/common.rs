@@ -1,5 +1,8 @@
-use arrow2::array::ord::DynComparator;
-use arrow2::{array::PrimitiveArray, bitmap::Bitmap, types::Index};
+use arrow2::{
+    array::{ord::DynComparator, PrimitiveArray},
+    bitmap::Bitmap,
+    types::Index,
+};
 
 pub fn idx_sort<I, F>(
     validity: Option<&Bitmap>,

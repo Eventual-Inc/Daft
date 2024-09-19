@@ -1,21 +1,22 @@
 use common_error::DaftResult;
 
-use crate::{
-    array::ops::DaftBetween, datatypes::BooleanArray, with_match_numeric_daft_types, DataType,
-    IntoSeries, Series,
-};
-
 #[cfg(feature = "python")]
 use crate::series::ops::py_between_op_utilfn;
+use crate::{
+    array::ops::DaftBetween,
+    datatypes::{BooleanArray, DataType, InferDataType},
+    series::{IntoSeries, Series},
+    with_match_numeric_daft_types,
+};
 
 impl Series {
     pub fn between(&self, lower: &Series, upper: &Series) -> DaftResult<Series> {
-        let (_output_type, _intermediate, lower_comp_type) =
-            self.data_type().comparison_op(lower.data_type())?;
-        let (_output_type, _intermediate, upper_comp_type) =
-            self.data_type().comparison_op(upper.data_type())?;
-        let (output_type, intermediate, comp_type) =
-            lower_comp_type.comparison_op(&upper_comp_type)?;
+        let (_output_type, _intermediate, lower_comp_type) = InferDataType::from(self.data_type())
+            .comparison_op(&InferDataType::from(lower.data_type()))?;
+        let (_output_type, _intermediate, upper_comp_type) = InferDataType::from(self.data_type())
+            .comparison_op(&InferDataType::from(upper.data_type()))?;
+        let (output_type, intermediate, comp_type) = InferDataType::from(&lower_comp_type)
+            .comparison_op(&InferDataType::from(&upper_comp_type))?;
         let (it_value, it_lower, it_upper) = if let Some(ref it) = intermediate {
             (self.cast(it)?, lower.cast(it)?, upper.cast(it)?)
         } else {
@@ -51,9 +52,9 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DataType, Series};
-
     use common_error::DaftResult;
+
+    use crate::{datatypes::DataType, series::Series};
 
     #[test]
     fn test_between_all_null() -> DaftResult<()> {

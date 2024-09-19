@@ -1,11 +1,13 @@
 use std::{borrow::Borrow, collections::HashSet};
 
-use crate::deserializer::{Object, Value as BorrowedValue};
-use arrow2::datatypes::{DataType, Field, Metadata, Schema, TimeUnit};
-use arrow2::error::{Error, Result};
+use arrow2::{
+    datatypes::{DataType, Field, Metadata, Schema, TimeUnit},
+    error::{Error, Result},
+};
 use indexmap::IndexMap;
-
 use simd_json::StaticNode;
+
+use crate::deserializer::{Object, Value as BorrowedValue};
 
 const ITEM_NAME: &str = "item";
 

@@ -1,33 +1,30 @@
+use std::sync::Arc;
+
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
-
+use daft_dsl::ExprRef;
+use daft_plan::{
+    logical_to_physical, physical_ops::*, InMemoryInfo, PhysicalPlan, PhysicalPlanRef,
+    QueryStageOutput,
+};
+#[cfg(feature = "python")]
+use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     common_io_config::IOConfig,
-    daft_core::python::schema::PySchema,
-    daft_core::schema::SchemaRef,
+    daft_core::prelude::SchemaRef,
+    daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_io::FileFormat,
     daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
-    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
+    pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
-
-use daft_dsl::ExprRef;
-use daft_plan::InMemoryInfo;
-use std::sync::Arc;
-
-use daft_plan::physical_ops::*;
-
-#[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -51,7 +48,7 @@ impl PhysicalPlanScheduler {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
@@ -97,7 +94,7 @@ impl StreamingPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
         let iter = &mut slf.iter;
         Ok(py.allow_threads(|| iter.next().transpose())?)
     }
@@ -136,7 +133,7 @@ impl PartitionIterator {
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn tabular_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     file_format: &FileFormat,
     schema: &SchemaRef,
@@ -151,7 +148,7 @@ fn tabular_write(
             .collect::<Vec<PyExpr>>()
     });
     let py_iter = py
-        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_file"))?
         .call1((
             upstream_iter,
@@ -172,12 +169,12 @@ fn tabular_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn iceberg_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     iceberg_info: &IcebergCatalogInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
-        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_iceberg"))?
         .call1((
             upstream_iter,
@@ -198,12 +195,12 @@ fn iceberg_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn deltalake_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     delta_lake_info: &DeltaLakeCatalogInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
-        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_deltalake"))?
         .call1((
             upstream_iter,
@@ -222,12 +219,12 @@ fn deltalake_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn lance_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     lance_info: &LanceCatalogInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
-        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_lance"))?
         .call1((
             upstream_iter,
@@ -247,7 +244,7 @@ fn lance_write(
 #[cfg(feature = "python")]
 fn physical_plan_to_partition_tasks(
     physical_plan: &PhysicalPlan,
-    py: Python<'_>,
+    py: Python,
     psets: &HashMap<String, Vec<PyObject>>,
 ) -> PyResult<PyObject> {
     match physical_plan {
@@ -260,14 +257,14 @@ fn physical_plan_to_partition_tasks(
                 index: 0usize,
             };
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "partition_read"))?
                 .call1((partition_iter,))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::TabularScan(TabularScan { scan_tasks, .. }) => {
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "scan_with_tasks"))?
                 .call1((scan_tasks
                     .iter()
@@ -276,7 +273,7 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
         PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
-            let schema_mod = py.import(pyo3::intern!(py, "daft.logical.schema"))?;
+            let schema_mod = py.import_bound(pyo3::intern!(py, "daft.logical.schema"))?;
             let python_schema = schema_mod
                 .getattr(pyo3::intern!(py, "Schema"))?
                 .getattr(pyo3::intern!(py, "_from_pyschema"))?
@@ -285,7 +282,7 @@ fn physical_plan_to_partition_tasks(
                 },))?;
 
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "empty_scan"))?
                 .call1((python_schema,))?;
             Ok(py_iter.into())
@@ -302,7 +299,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "project"))?
                 .call1((
                     upstream_iter,
@@ -317,38 +314,9 @@ fn physical_plan_to_partition_tasks(
                 input, projection, ..
             },
         ) => {
-            use daft_dsl::{
-                common_treenode::TreeNode,
-                functions::{
-                    python::{PythonUDF, StatefulPythonUDF},
-                    FunctionExpr,
-                },
-            };
-
-            // Extract any StatefulUDFs from the projection
-            let mut py_partial_udfs = HashMap::new();
-            projection.iter().for_each(|e| {
-                e.apply(|child| {
-                    if let Expr::Function {
-                        func:
-                            FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                                name,
-                                stateful_partial_func: py_partial_udf,
-                                ..
-                            })),
-                        ..
-                    } = child.as_ref()
-                    {
-                        py_partial_udfs.insert(name.as_ref().to_string(), py_partial_udf.0.clone());
-                    }
-                    Ok(daft_dsl::common_treenode::TreeNodeRecursion::Continue)
-                })
-                .unwrap();
-            });
-
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "actor_pool_project"))?
                 .call1((
                     upstream_iter,
@@ -356,15 +324,16 @@ fn physical_plan_to_partition_tasks(
                         .iter()
                         .map(|expr| PyExpr::from(expr.clone()))
                         .collect::<Vec<_>>(),
-                    py_partial_udfs,
                     app.resource_request(),
+                    app.concurrency(),
                 ))?;
             Ok(py_iter.into())
         }
 
         PhysicalPlan::Filter(Filter { input, predicate }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
+            let expressions_mod =
+                py.import_bound(pyo3::intern!(py, "daft.expressions.expressions"))?;
             let py_predicate = expressions_mod
                 .getattr(pyo3::intern!(py, "Expression"))?
                 .getattr(pyo3::intern!(py, "_from_pyexpr"))?
@@ -373,7 +342,7 @@ fn physical_plan_to_partition_tasks(
                 .getattr(pyo3::intern!(py, "ExpressionsProjection"))?
                 .call1((vec![py_predicate],))?;
             let execution_step_mod =
-                py.import(pyo3::intern!(py, "daft.execution.execution_step"))?;
+                py.import_bound(pyo3::intern!(py, "daft.execution.execution_step"))?;
             let filter_step = execution_step_mod
                 .getattr(pyo3::intern!(py, "Filter"))?
                 .call1((expressions_projection,))?;
@@ -381,7 +350,7 @@ fn physical_plan_to_partition_tasks(
                 .getattr(pyo3::intern!(py, "ResourceRequest"))?
                 .call0()?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "pipeline_instruction"))?
                 .call1((upstream_iter, filter_step, resource_request))?;
             Ok(py_iter.into())
@@ -393,7 +362,8 @@ fn physical_plan_to_partition_tasks(
             num_partitions,
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
+            let py_physical_plan =
+                py.import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?;
             let global_limit_iter = py_physical_plan
                 .getattr(pyo3::intern!(py, "global_limit"))?
                 .call1((upstream_iter, *limit, *eager, *num_partitions))?;
@@ -408,7 +378,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "explode"))?
                 .call1((upstream_iter, explode_pyexprs))?;
             Ok(py_iter.into())
@@ -429,7 +399,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "unpivot"))?
                 .call1((
                     upstream_iter,
@@ -448,7 +418,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "sample"))?
                 .call1((upstream_iter, *fraction, *with_replacement, *seed))?;
             Ok(py_iter.into())
@@ -459,7 +429,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "monotonically_increasing_id"))?
                 .call1((upstream_iter, column_name))?;
             Ok(py_iter.into())
@@ -476,7 +446,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "sort"))?
                 .call1((
                     upstream_iter,
@@ -493,7 +463,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "split"))?
                 .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
             Ok(py_iter.into())
@@ -501,7 +471,7 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::Flatten(Flatten { input }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "flatten_plan"))?
                 .call1((upstream_iter,))?;
             Ok(py_iter.into())
@@ -512,7 +482,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "fanout_random"))?
                 .call1((upstream_iter, *num_partitions))?;
             Ok(py_iter.into())
@@ -528,7 +498,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "split_by_hash"))?
                 .call1((upstream_iter, *num_partitions, partition_by_pyexprs))?;
             Ok(py_iter.into())
@@ -539,7 +509,7 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "reduce_merge"))?
                 .call1((upstream_iter,))?;
             Ok(py_iter.into())
@@ -560,7 +530,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "local_aggregate"))?
                 .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
             Ok(py_iter.into())
@@ -580,7 +550,7 @@ fn physical_plan_to_partition_tasks(
             let pivot_column_pyexpr = PyExpr::from(pivot_column.clone());
             let value_column_pyexpr = PyExpr::from(value_column.clone());
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "pivot"))?
                 .call1((
                     upstream_iter,
@@ -598,7 +568,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "coalesce"))?
                 .call1((upstream_iter, *num_from, *num_to))?;
             Ok(py_iter.into())
@@ -607,7 +577,7 @@ fn physical_plan_to_partition_tasks(
             let upstream_input_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let upstream_other_iter = physical_plan_to_partition_tasks(other, py, psets)?;
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "concat"))?
                 .call1((upstream_input_iter, upstream_other_iter))?;
             Ok(py_iter.into())
@@ -631,7 +601,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "hash_join"))?
                 .call1((
                     upstream_left_iter,
@@ -664,7 +634,7 @@ fn physical_plan_to_partition_tasks(
                 .collect();
             // TODO(Clark): Elide sorting one side of the join if already range-partitioned, where we'd use that side's boundaries to sort the other side.
             let py_iter = if *needs_presort {
-                py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                py.import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "sort_merge_join_aligned_boundaries"))?
                     .call1((
                         left_iter,
@@ -676,7 +646,7 @@ fn physical_plan_to_partition_tasks(
                         *left_is_larger,
                     ))?
             } else {
-                py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                py.import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "merge_join_sorted"))?
                     .call1((
                         left_iter,
@@ -708,7 +678,7 @@ fn physical_plan_to_partition_tasks(
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
             let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "broadcast_join"))?
                 .call1((
                     upstream_left_iter,

@@ -1,8 +1,11 @@
-use crate::array::ops::{PadPlacement, Utf8NormalizeOptions};
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
-use crate::{datatypes::*, with_match_integer_daft_types};
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::ops::{PadPlacement, Utf8NormalizeOptions},
+    datatypes::*,
+    series::{array_impl::IntoSeries, Series},
+    with_match_integer_daft_types,
+};
 
 impl Series {
     pub fn with_utf8_array(
@@ -82,6 +85,10 @@ impl Series {
 
     pub fn utf8_length(&self) -> DaftResult<Series> {
         self.with_utf8_array(|arr| Ok(arr.length()?.into_series()))
+    }
+
+    pub fn utf8_length_bytes(&self) -> DaftResult<Series> {
+        self.with_utf8_array(|arr| Ok(arr.length_bytes()?.into_series()))
     }
 
     pub fn utf8_lower(&self) -> DaftResult<Series> {

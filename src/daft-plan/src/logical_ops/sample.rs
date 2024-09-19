@@ -1,6 +1,9 @@
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
+
 use crate::LogicalPlan;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {

@@ -1,12 +1,11 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
+use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_core::schema::SchemaRef;
 use daft_dsl::optimization::get_required_columns;
+use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
-
-use common_display::ascii::AsciiTreeDisplay;
 
 pub use crate::logical_ops::*;
 

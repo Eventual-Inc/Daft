@@ -1,28 +1,20 @@
-use super::{ArrayWrapper, IntoSeries, Series};
 use std::sync::Arc;
 
-use crate::array::ops::broadcast::Broadcastable;
-use crate::array::ops::DaftListAggable;
-use crate::array::ops::GroupIndices;
-use crate::array::DataArray;
-use crate::datatypes::DaftArrowBackedType;
-
-use crate::datatypes::FixedSizeBinaryArray;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::{
-    datatypes::{
-        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
-    },
-    series::series_like::SeriesLike,
-    with_match_integer_daft_types,
-};
 use common_error::DaftResult;
 
-use crate::datatypes::DataType;
+use super::{ArrayWrapper, IntoSeries, Series};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
+use crate::{
+    array::{
+        ops::{broadcast::Broadcastable, DaftListAggable, GroupIndices},
+        prelude::*,
+        DataArray,
+    },
+    datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray},
+    series::{array_impl::binary_ops::SeriesBinaryOps, series_like::SeriesLike},
+    with_match_integer_daft_types,
+};
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where
@@ -132,9 +124,7 @@ macro_rules! impl_series_like_for_data_array {
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
             }
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
-            }
+
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self

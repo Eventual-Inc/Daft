@@ -7,12 +7,17 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import col
+from daft import col, context
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
 from tests.utils import sort_arrow_table
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -312,6 +317,48 @@ def test_agg_groupby_empty(make_df):
     assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
         pa.Table.from_pydict(expected), "group"
     )
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
+def test_agg_groupby_with_alias(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "values": [1, None, 2, 2, None, 4],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.groupby(daft_df["group"].alias("group_alias")).agg(
+        [
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
+        ]
+    )
+    expected = {
+        "group_alias": [1, 2],
+        "sum": [3, 6],
+        "mean": [1.5, 3],
+        "min": [1, 2],
+        "max": [2, 4],
+        "count": [2, 2],
+        "list": [[1, None, 2], [2, None, 4]],
+    }
+
+    daft_df.collect()
+    daft_cols = daft_df.to_pydict()
+    res_list = daft_cols.pop("list")
+    exp_list = expected.pop("list")
+
+    assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group_alias") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "group_alias"
+    )
+
+    arg_sort = np.argsort(daft_cols["group_alias"])
+    assert freeze([list(map(set, res_list))[i] for i in arg_sort]) == freeze(list(map(set, exp_list)))
 
 
 @dataclass

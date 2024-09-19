@@ -1,29 +1,26 @@
-use std::collections::hash_map::DefaultHasher;
-
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
-use daft_core::array::ops::Utf8NormalizeOptions;
-use daft_core::python::datatype::PyTimeUnit;
-use daft_core::python::PySeries;
-use serde::{Deserialize, Serialize};
-
-use crate::{functions, Expr, ExprRef, LiteralValue};
 use daft_core::{
-    count_mode::CountMode,
-    datatypes::{ImageFormat, ImageMode},
-    python::{datatype::PyDataType, field::PyField, schema::PySchema},
+    array::ops::Utf8NormalizeOptions,
+    prelude::*,
+    python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
-
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
 };
+use serde::{Deserialize, Serialize};
+
+use crate::{functions, Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -104,7 +101,7 @@ pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
+pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
         Ok(crate::lit(val).into())
@@ -128,7 +125,7 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     } else if let Ok(pystr) = item.downcast::<PyString>() {
         Ok(crate::lit(
             pystr
-                .to_str()
+                .extract::<String>()
                 .expect("could not transform Python string to Rust Unicode"),
         )
         .into())
@@ -148,9 +145,8 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
 // * `return_dtype` - returned column's DataType
 #[pyfunction]
 pub fn stateless_udf(
-    py: Python,
     name: &str,
-    partial_stateless_udf: &PyAny,
+    partial_stateless_udf: PyObject,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
@@ -166,14 +162,11 @@ pub fn stateless_udf(
         }
     }
 
-    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
-    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let partial_stateless_udf = partial_stateless_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
     Ok(PyExpr {
         expr: stateless_udf(
             name,
-            partial_stateless_udf,
+            partial_stateless_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
@@ -190,13 +183,12 @@ pub fn stateless_udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn stateful_udf(
-    py: Python,
     name: &str,
-    partial_stateful_udf: &PyAny,
+    partial_stateful_udf: PyObject,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     resource_request: Option<ResourceRequest>,
-    init_args: Option<&PyAny>,
+    init_args: Option<PyObject>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
 ) -> PyResult<PyExpr> {
@@ -210,15 +202,12 @@ pub fn stateful_udf(
         }
     }
 
-    // Convert &PyAny values to a GIL-independent reference to Python objects (PyObject) so that we can store them in our Rust Expr enums
-    // See: https://pyo3.rs/v0.18.2/types#pyt-and-pyobject
-    let partial_stateful_udf = partial_stateful_udf.to_object(py);
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    let init_args = init_args.map(|args| args.to_object(py));
+    let init_args = init_args.map(|args| args.into());
     Ok(PyExpr {
         expr: stateful_udf(
             name,
-            partial_stateful_udf,
+            partial_stateful_udf.into(),
             &expressions_map,
             return_dtype.dtype,
             resource_request,
@@ -228,6 +217,23 @@ pub fn stateful_udf(
         )?
         .into(),
     })
+}
+
+/// Extracts the `class PartialStatefulUDF` Python objects that are in the specified expression tree
+#[pyfunction]
+pub fn extract_partial_stateful_udf_py(expr: PyExpr) -> HashMap<String, Py<PyAny>> {
+    use crate::functions::python::extract_partial_stateful_udf_py;
+    extract_partial_stateful_udf_py(expr.expr)
+}
+
+/// Binds the StatefulPythonUDFs in a given expression to any corresponding initialized Python callables in the provided map
+#[pyfunction]
+pub fn bind_stateful_udfs(
+    expr: PyExpr,
+    initialized_funcs: HashMap<String, Py<PyAny>>,
+) -> PyResult<PyExpr> {
+    use crate::functions::python::bind_stateful_udfs;
+    Ok(bind_stateful_udfs(expr.expr, &initialized_funcs).map(PyExpr::from)?)
 }
 
 #[pyclass(module = "daft.daft")]
@@ -242,9 +248,8 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 }
 
 #[pyfunction]
-pub fn resolve_expr(expr: &PyExpr, schema: &PySchema) -> PyResult<(PyExpr, PyField)> {
-    let (resolved_expr, field) = crate::resolve_single_expr(expr.expr.clone(), &schema.schema)?;
-    Ok((resolved_expr.into(), field.into()))
+pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
+    Ok(crate::check_column_name_validity(name, &schema.schema)?)
 }
 
 #[derive(FromPyObject)]
@@ -401,6 +406,10 @@ impl PyExpr {
 
     pub fn sum(&self) -> PyResult<Self> {
         Ok(self.expr.clone().sum().into())
+    }
+
+    pub fn approx_count_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().approx_count_distinct().into())
     }
 
     pub fn approx_percentiles(&self, percentiles: ApproxPercentileInput) -> PyResult<Self> {
@@ -570,26 +579,6 @@ impl PyExpr {
         hasher.finish()
     }
 
-    pub fn is_nan(&self) -> PyResult<Self> {
-        use functions::float::is_nan;
-        Ok(is_nan(self.into()).into())
-    }
-
-    pub fn is_inf(&self) -> PyResult<Self> {
-        use functions::float::is_inf;
-        Ok(is_inf(self.into()).into())
-    }
-
-    pub fn not_nan(&self) -> PyResult<Self> {
-        use functions::float::not_nan;
-        Ok(not_nan(self.into()).into())
-    }
-
-    pub fn fill_nan(&self, fill_value: &Self) -> PyResult<Self> {
-        use functions::float::fill_nan;
-        Ok(fill_nan(self.into(), fill_value.expr.clone()).into())
-    }
-
     pub fn dt_date(&self) -> PyResult<Self> {
         use functions::temporal::date;
         Ok(date(self.into()).into())
@@ -689,6 +678,11 @@ impl PyExpr {
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
         Ok(length(self.into()).into())
+    }
+
+    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
+        use crate::functions::utf8::length_bytes;
+        Ok(length_bytes(self.into()).into())
     }
 
     pub fn utf8_lower(&self) -> PyResult<Self> {
@@ -794,45 +788,6 @@ impl PyExpr {
         Ok(normalize(self.into(), opts).into())
     }
 
-    pub fn image_decode(
-        &self,
-        raise_error_on_failure: bool,
-        mode: Option<ImageMode>,
-    ) -> PyResult<Self> {
-        use crate::functions::image::decode;
-        Ok(decode(self.into(), raise_error_on_failure, mode).into())
-    }
-
-    pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {
-        use crate::functions::image::encode;
-        Ok(encode(self.into(), image_format).into())
-    }
-
-    pub fn image_resize(&self, w: i64, h: i64) -> PyResult<Self> {
-        if w < 0 {
-            return Err(PyValueError::new_err(format!(
-                "width can not be negative: {w}"
-            )));
-        }
-        if h < 0 {
-            return Err(PyValueError::new_err(format!(
-                "height can not be negative: {h}"
-            )));
-        }
-        use crate::functions::image::resize;
-        Ok(resize(self.into(), w as u32, h as u32).into())
-    }
-
-    pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
-        use crate::functions::image::crop;
-        Ok(crop(self.into(), bbox.into()).into())
-    }
-
-    pub fn image_to_mode(&self, mode: ImageMode) -> PyResult<Self> {
-        use crate::functions::image::to_mode;
-        Ok(to_mode(self.into(), mode).into())
-    }
-
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
         use crate::functions::list::join;
         Ok(join(self.into(), delimiter.into()).into())
@@ -916,11 +871,6 @@ impl PyExpr {
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> PyResult<Self> {
         use crate::functions::partitioning::iceberg_truncate;
         Ok(iceberg_truncate(self.into(), w).into())
-    }
-
-    pub fn json_query(&self, _query: &str) -> PyResult<Self> {
-        use crate::functions::json::query;
-        Ok(query(self.into(), _query).into())
     }
 }
 

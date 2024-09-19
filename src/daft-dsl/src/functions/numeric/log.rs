@@ -1,11 +1,8 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, series::Series, DataType};
+use daft_core::prelude::*;
 
-use crate::functions::FunctionExpr;
-use crate::ExprRef;
-
-use super::super::FunctionEvaluator;
-use super::NumericExpr;
+use super::{super::FunctionEvaluator, NumericExpr};
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) enum LogFunction {
     Log2,

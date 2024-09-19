@@ -1,24 +1,24 @@
-use crate::array::{
-    growable::{make_growable, Growable},
-    ListArray,
-};
 use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};
+use crate::array::{
+    growable::{make_growable, Growable},
+    ListArray,
+};
 
 #[cfg(feature = "python")]
 impl DaftConcatAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
         let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
-            let pylist: Py<PyList> = PyList::empty(py).into();
+            let pylist: Py<PyList> = PyList::empty_bound(py).into();
             for pyobj in pyobj_vec {
                 if !pyobj.is_none(py) {
                     pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
@@ -30,9 +30,9 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
         Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
 
@@ -40,7 +40,7 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
             for group in groups {
                 let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
                 let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
-                let pylist: Py<PyList> = PyList::empty(py).into();
+                let pylist: Py<PyList> = PyList::empty_bound(py).into();
                 for pyobj in group_pyobjs {
                     if !pyobj.is_none(py) {
                         pylist.call_method1(py, pyo3::intern!(py, "extend"), (pyobj,))?;
@@ -154,8 +154,8 @@ mod test {
 
     use crate::{
         array::{ops::DaftConcatAggable, ListArray},
-        datatypes::{Field, Int64Array},
-        DataType, IntoSeries,
+        datatypes::{DataType, Field, Int64Array},
+        series::IntoSeries,
     };
 
     #[test]

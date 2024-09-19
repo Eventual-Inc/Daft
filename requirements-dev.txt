@@ -35,7 +35,8 @@ opencv-python==4.8.1.78
 tiktoken==0.7.0
 
 # Pyarrow
-pyarrow==15.0.0
+pyarrow==16.0.0; python_version >= '3.9'
+pyarrow==15.0.0; python_version < '3.9'
 # Ray
 ray[data, client]==2.10.0; python_version == '3.8'
 ray[data, client]==2.34.0; python_version >= '3.9'
@@ -49,7 +50,8 @@ tenacity==8.2.3; python_version >= '3.8'
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.18.2; platform_system != "Windows" and python_version >= '3.8'
+deltalake==0.18.2; platform_system != "Windows" and python_version < '3.9'
+deltalake==0.19.2; platform_system != "Windows" and python_version >= '3.9'
 
 # Databricks
 databricks-sdk==0.12.0

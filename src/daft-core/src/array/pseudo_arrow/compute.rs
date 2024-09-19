@@ -1,8 +1,8 @@
 use std::ops::Not;
 
+use arrow2::{array::Array, bitmap::Bitmap};
+
 use crate::array::pseudo_arrow::PseudoArrowArray;
-use arrow2::array::Array;
-use arrow2::bitmap::Bitmap;
 
 impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
     pub fn concatenate(arrays: Vec<&Self>) -> Self {

@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    JoinType,
-};
+use daft_core::prelude::*;
 use indexmap::IndexSet;
 
 use crate::{Expr, ExprRef};
@@ -85,9 +82,8 @@ pub fn infer_join_schema(
 
 #[cfg(test)]
 mod tests {
-    use crate::col;
-
     use super::*;
+    use crate::col;
 
     #[test]
     fn test_get_common_join_keys() {

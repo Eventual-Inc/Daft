@@ -1,14 +1,8 @@
-use crate::ExprRef;
-use daft_core::{
-    datatypes::{try_mean_supertype, Field},
-    schema::Schema,
-    series::Series,
-};
-
-use crate::functions::FunctionExpr;
 use common_error::{DaftError, DaftResult};
+use daft_core::{datatypes::try_mean_supertype, prelude::*};
 
 use super::super::FunctionEvaluator;
+use crate::{functions::FunctionExpr, ExprRef};
 
 pub(super) struct MeanEvaluator {}
 

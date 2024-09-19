@@ -1,8 +1,7 @@
 use bytes::Bytes;
+use futures::{stream::BoxStream, StreamExt};
 
 use crate::stats::{IOStatsByteStreamContextHandle, IOStatsRef};
-
-use futures::{stream::BoxStream, StreamExt};
 
 pub(crate) fn io_stats_on_bytestream(
     mut s: impl futures::stream::Stream<Item = super::Result<Bytes>>

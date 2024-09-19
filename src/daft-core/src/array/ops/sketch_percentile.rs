@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{FixedSizeListArray, StructArray},
-    datatypes::{Field, Float64Array},
-    DataType, IntoSeries, Series,
-};
-
 use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};
 use common_error::DaftResult;
 
 use super::from_arrow::FromArrow;
+use crate::{
+    array::{FixedSizeListArray, StructArray},
+    datatypes::{DataType, Field, Float64Array},
+    series::{IntoSeries, Series},
+};
 
 impl StructArray {
     pub fn sketch_percentile(

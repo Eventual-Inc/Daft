@@ -1,7 +1,6 @@
-use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
-use serde::{Deserialize, Serialize};
-
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+use pyo3::{prelude::*, types::PyTuple};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -21,8 +20,8 @@ impl PythonTablesFactoryArgs {
         Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
     }
 
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
-        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
+        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
     }
 }
 
@@ -39,44 +38,33 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use common_error::DaftResult;
-    use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_core::python::field::PyField;
-    use daft_core::schema::SchemaRef;
-    use daft_dsl::python::PyExpr;
-
-    use daft_stats::PartitionSpec;
-    use daft_stats::TableMetadata;
-    use daft_stats::TableStatistics;
-    use daft_table::python::PyTable;
-    use daft_table::Table;
-    use pyo3::prelude::*;
-
-    use pyo3::types::PyIterator;
-    use pyo3::types::PyList;
     use std::sync::Arc;
 
-    use daft_core::python::schema::PySchema;
-
-    use pyo3::pyclass;
+    use common_daft_config::PyDaftExecutionConfig;
+    use common_error::DaftResult;
+    use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
+    use common_py_serde::impl_bincode_py_state_serialization;
+    use daft_dsl::python::PyExpr;
+    use daft_schema::{
+        python::{field::PyField, schema::PySchema},
+        schema::SchemaRef,
+    };
+    use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+    use daft_table::{python::PyTable, Table};
+    use pyo3::{
+        prelude::*,
+        pyclass,
+        types::{PyIterator, PyList},
+    };
     use serde::{Deserialize, Serialize};
 
-    use crate::anonymous::AnonymousScanOperator;
-    use crate::file_format::FileFormatConfig;
-    use crate::storage_config::PythonStorageConfig;
-    use crate::DataSource;
-    use crate::PartitionField;
-    use crate::Pushdowns;
-    use crate::ScanOperator;
-    use crate::ScanOperatorRef;
-    use crate::ScanTask;
-
-    use crate::file_format::PyFileFormatConfig;
-    use crate::glob::GlobScanOperator;
-    use crate::storage_config::PyStorageConfig;
-    use common_daft_config::PyDaftExecutionConfig;
-
     use super::PythonTablesFactoryArgs;
+    use crate::{
+        anonymous::AnonymousScanOperator,
+        glob::GlobScanOperator,
+        storage_config::{PyStorageConfig, PythonStorageConfig},
+        DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
+    };
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -114,7 +102,7 @@ pub mod pylib {
         #[staticmethod]
         pub fn glob_scan(
             py: Python,
-            glob_path: Vec<&str>,
+            glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             infer_schema: bool,
@@ -122,7 +110,7 @@ pub mod pylib {
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path.as_slice(),
+                    glob_path,
                     file_format_config.into(),
                     storage_config.into(),
                     infer_schema,
@@ -220,7 +208,7 @@ pub mod pylib {
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
             &self.partitioning_keys
         }
-        fn schema(&self) -> daft_core::schema::SchemaRef {
+        fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
         }
         fn can_absorb_filter(&self) -> bool {
@@ -249,7 +237,7 @@ pub mod pylib {
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_object(py, &pyiter)?;
+                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -283,10 +271,6 @@ pub mod pylib {
     impl PyScanTask {
         pub fn num_rows(&self) -> PyResult<Option<i64>> {
             Ok(self.0.num_rows().map(i64::try_from).transpose()?)
-        }
-
-        pub fn size_bytes(&self) -> PyResult<Option<i64>> {
-            Ok(self.0.size_bytes().map(i64::try_from).transpose()?)
         }
 
         pub fn estimate_in_memory_size_bytes(
@@ -325,7 +309,7 @@ pub mod pylib {
                 let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);
                 let series = eval_pred.get_column_by_index(0)?;
-                assert_eq!(series.data_type(), &daft_core::DataType::Boolean);
+                assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
                 let boolean = series.bool()?;
                 assert_eq!(boolean.len(), 1);
                 let value = boolean.get(0);
@@ -406,7 +390,7 @@ pub mod pylib {
             py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<&PyAny>,
+            func_args: Vec<Bound<PyAny>>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -584,7 +568,7 @@ pub mod pylib {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;

@@ -9,8 +9,7 @@ mod sources;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
-use snafu::futures::TryFutureExt;
-use snafu::Snafu;
+use snafu::{futures::TryFutureExt, Snafu};
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
@@ -95,7 +94,7 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<NativeExecutor>()?;
     Ok(())
 }

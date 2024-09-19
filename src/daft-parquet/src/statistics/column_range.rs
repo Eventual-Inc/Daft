@@ -1,11 +1,5 @@
 use arrow2::array::PrimitiveArray;
-use daft_core::{
-    datatypes::{
-        logical::{DateArray, Decimal128Array, TimestampArray},
-        BinaryArray, BooleanArray, Int128Array, Int32Array, Int64Array, Utf8Array,
-    },
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
     schema::types::{PhysicalType, PrimitiveConvertedType, TimeUnit},
@@ -15,10 +9,10 @@ use parquet2::{
 };
 use snafu::{OptionExt, ResultExt};
 
-use super::{DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, Wrap};
-
-use super::utils::*;
-use super::UnableToParseUtf8FromBinarySnafu;
+use super::{
+    utils::*, DaftStatsSnafu, MissingParquetColumnStatisticsSnafu,
+    UnableToParseUtf8FromBinarySnafu, Wrap,
+};
 
 impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;

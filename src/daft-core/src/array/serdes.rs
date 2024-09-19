@@ -2,18 +2,16 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
+use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
     },
-    DataType, IntoSeries, Series,
+    series::{IntoSeries, Series},
 };
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
-use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 
 pub struct IterSer<I>
 where

@@ -1,14 +1,14 @@
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::DaftArrowBackedType,
-    IntoSeries,
+    series::IntoSeries,
 };
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 
 impl<T> DaftListAggable for DataArray<T>
 where
@@ -63,22 +63,22 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<crate::datatypes::PythonArray>;
 
     fn list(&self) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
-        let pylist: Py<PyList> = Python::with_gil(|py| PyList::new(py, pyobj_vec).into());
+        let pylist: Py<PyList> = Python::with_gil(|py| PyList::new_bound(py, pyobj_vec).into());
 
         let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(vec![pylist.into()]);
         Self::new(self.field().clone().into(), Box::new(arrow_array))
     }
 
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
 
@@ -86,7 +86,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
             for group in groups {
                 let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
                 let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
-                result_pylists.push(PyList::new(py, group_pyobjs).into());
+                result_pylists.push(PyList::new_bound(py, group_pyobjs).into());
             }
             Ok(())
         })?;

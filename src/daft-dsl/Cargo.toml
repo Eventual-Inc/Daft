@@ -7,6 +7,7 @@ common-resource-request = {path = "../common/resource-request", default-features
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
+derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
@@ -16,6 +17,7 @@ typetag = "0.2.16"
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python", "common-resource-request/python"]
+test-utils = []
 
 [package]
 edition = {workspace = true}

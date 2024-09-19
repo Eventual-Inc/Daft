@@ -1,13 +1,15 @@
-use crate::array::{ListArray, StructArray};
-use crate::datatypes::logical::{
-    DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray,
-};
-use crate::datatypes::*;
-use crate::series::array_impl::ArrayWrapper;
-use crate::series::Series;
 use common_error::DaftResult;
+use logical::{EmbeddingArray, FixedShapeTensorArray, TensorArray};
 
 use self::logical::{DurationArray, ImageArray, MapArray};
+use crate::{
+    array::{ListArray, StructArray},
+    datatypes::{
+        logical::{DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray},
+        *,
+    },
+    series::{array_impl::ArrayWrapper, Series},
+};
 
 impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
@@ -137,6 +139,18 @@ impl Series {
 
     #[cfg(feature = "python")]
     pub fn python(&self) -> DaftResult<&PythonArray> {
+        self.downcast()
+    }
+
+    pub fn embedding(&self) -> DaftResult<&EmbeddingArray> {
+        self.downcast()
+    }
+
+    pub fn tensor(&self) -> DaftResult<&TensorArray> {
+        self.downcast()
+    }
+
+    pub fn fixed_shape_tensor(&self) -> DaftResult<&FixedShapeTensorArray> {
         self.downcast()
     }
 }

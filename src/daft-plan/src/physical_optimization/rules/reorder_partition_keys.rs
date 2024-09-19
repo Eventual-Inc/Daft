@@ -171,17 +171,14 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::Field,
-        schema::{Schema, SchemaRef},
-    };
+    use daft_core::prelude::*;
     use daft_dsl::{col, ExprRef};
 
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, HashJoin, ReduceMerge},
-        physical_optimization::{
-            rules::reorder_partition_keys::ReorderPartitionKeys, rules::PhysicalOptimizerRule,
+        physical_optimization::rules::{
+            reorder_partition_keys::ReorderPartitionKeys, PhysicalOptimizerRule,
         },
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
@@ -211,9 +208,9 @@ mod tests {
     fn test_repartition_modified() -> DaftResult<()> {
         let base = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );
@@ -235,9 +232,9 @@ mod tests {
     fn test_repartition_not_modified() -> DaftResult<()> {
         let plan = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );
@@ -257,9 +254,9 @@ mod tests {
     fn test_repartition_hash_join_reorder() -> DaftResult<()> {
         let base1 = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );
@@ -267,9 +264,9 @@ mod tests {
 
         let base2 = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("x", daft_core::DataType::Int32),
-                Field::new("y", daft_core::DataType::Int32),
-                Field::new("z", daft_core::DataType::Int32),
+                Field::new("x", DataType::Int32),
+                Field::new("y", DataType::Int32),
+                Field::new("z", DataType::Int32),
             ])?),
             1,
         );
@@ -280,7 +277,7 @@ mod tests {
             plan2,
             vec![col("b"), col("a")],
             vec![col("x"), col("y")],
-            daft_core::JoinType::Inner,
+            JoinType::Inner,
         ))
         .arced();
 
@@ -293,7 +290,7 @@ mod tests {
             add_repartition(base2, 1, vec![col("x"), col("y")]),
             vec![col("b"), col("a")],
             vec![col("x"), col("y")],
-            daft_core::JoinType::Inner,
+            JoinType::Inner,
         ))
         .arced();
         assert_eq!(res.data, expected_plan);

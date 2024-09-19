@@ -3,6 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     impl_default_tree_display,
@@ -10,7 +11,6 @@ use crate::{
     physical_plan::PhysicalPlanRef,
     ClusteringSpec,
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Explode {
@@ -79,7 +79,7 @@ impl_default_tree_display!(Explode);
 mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::col;
 
     use crate::{

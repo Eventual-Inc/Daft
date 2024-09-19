@@ -8,6 +8,8 @@ mod sign;
 mod sqrt;
 mod trigonometry;
 
+use std::hash::Hash;
+
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
 use common_hashable_float_wrapper::FloatWrapper;
@@ -17,14 +19,16 @@ use round::RoundEvaluator;
 use serde::{Deserialize, Serialize};
 use sign::SignEvaluator;
 use sqrt::SqrtEvaluator;
-use std::hash::Hash;
 use trigonometry::Atan2Evaluator;
 
-use crate::functions::numeric::exp::ExpEvaluator;
-use crate::functions::numeric::trigonometry::{TrigonometricFunction, TrigonometryEvaluator};
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{
+    functions::numeric::{
+        exp::ExpEvaluator,
+        trigonometry::{TrigonometricFunction, TrigonometryEvaluator},
+    },
+    Expr, ExprRef,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NumericExpr {

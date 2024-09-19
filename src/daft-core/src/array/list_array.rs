@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::array::growable::{Growable, GrowableArray};
-use crate::datatypes::{DaftArrayType, Field};
-use crate::series::Series;
-use crate::DataType;
+use crate::{
+    array::growable::{Growable, GrowableArray},
+    datatypes::{DaftArrayType, DataType, Field},
+    series::Series,
+};
 
 #[derive(Clone, Debug)]
 pub struct ListArray {

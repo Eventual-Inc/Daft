@@ -1,15 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use daft_core::schema::Schema;
-use daft_core::DataType;
+use daft_core::prelude::*;
 use daft_dsl::{resolve_exprs, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use crate::logical_plan;
-use crate::logical_plan::CreationSnafu;
-use crate::LogicalPlan;
+use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
@@ -33,7 +30,7 @@ impl Sort {
         }
 
         let (sort_by, sort_by_fields) =
-            resolve_exprs(sort_by, &input.schema()).context(CreationSnafu)?;
+            resolve_exprs(sort_by, &input.schema(), false).context(CreationSnafu)?;
 
         let sort_by_resolved_schema = Schema::new(sort_by_fields).context(CreationSnafu)?;
 

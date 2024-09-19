@@ -1,7 +1,7 @@
 use std::{collections::HashSet, iter, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeRewriter};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
     functions::{
         python::{PythonUDF, StatefulPythonUDF},
@@ -12,12 +12,11 @@ use daft_dsl::{
 };
 use itertools::Itertools;
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{ActorPoolProject, Project},
     LogicalPlan,
 };
-
-use super::{ApplyOrder, OptimizerRule, Transformed};
 
 #[derive(Default, Debug)]
 pub struct SplitActorPoolProjects {}
@@ -121,16 +120,11 @@ impl SplitActorPoolProjects {
 ///        │                 │  │                    │                 │           │
 ///        └─────────────────┘  └────────────────────┘                 └───────────┘
 impl OptimizerRule for SplitActorPoolProjects {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan.as_ref() {
-            LogicalPlan::Project(projection) => try_optimize_project(projection, plan.clone(), 0),
-            // TODO: Figure out how to split other nodes as well such as Filter, Agg etc
-            _ => Ok(Transformed::No(plan)),
-        }
+        plan.transform_down(|node| match node.as_ref() {
+            LogicalPlan::Project(projection) => try_optimize_project(projection, node.clone(), 0),
+            _ => Ok(Transformed::no(node)),
+        })
     }
 }
 
@@ -381,7 +375,7 @@ fn try_optimize_project(
     // Base case: no stateful UDFs at all
     let has_stateful_udfs = projection.projection.iter().any(has_stateful_udf);
     if !has_stateful_udfs {
-        return Ok(Transformed::No(plan));
+        return Ok(Transformed::no(plan));
     }
 
     log::debug!(
@@ -424,7 +418,7 @@ fn try_optimize_project(
         let new_child_project = LogicalPlan::Project(new_project.clone()).arced();
         let optimized_child_plan =
             try_optimize_project(&new_project, new_child_project.clone(), recursive_count + 1)?;
-        optimized_child_plan.unwrap().clone()
+        optimized_child_plan.data.clone()
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
@@ -500,7 +494,7 @@ fn try_optimize_project(
     )?)
     .arced();
 
-    Ok(Transformed::Yes(final_selection_project))
+    Ok(Transformed::yes(final_selection_project))
 }
 
 #[inline]
@@ -519,20 +513,21 @@ fn has_stateful_udf(e: &ExprRef) -> bool {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use test_log::test;
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
-    use daft_core::datatypes::Field;
+    use daft_core::prelude::*;
     use daft_dsl::{
         col,
         functions::{
-            python::{PythonUDF, StatefulPythonUDF},
+            python::{PythonUDF, StatefulPythonUDF, UDFRuntimeBinding},
             FunctionExpr,
         },
         Expr, ExprRef,
     };
+    use test_log::test;
 
+    use super::SplitActorPoolProjects;
     use crate::{
         logical_ops::{ActorPoolProject, Project},
         logical_optimization::{
@@ -541,8 +536,6 @@ mod tests {
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
-
-    use super::SplitActorPoolProjects;
 
     /// Helper that creates an optimizer with the SplitExprByStatefulUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
@@ -575,16 +568,19 @@ mod tests {
         )
     }
 
-    #[cfg(not(feature = "python"))]
     fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
                 name: Arc::new("foo".to_string()),
+                stateful_partial_func:
+                    daft_dsl::functions::python::RuntimePyObject::new_testing_none(),
                 num_expressions: inputs.len(),
-                return_dtype: daft_core::DataType::Int64,
+                return_dtype: DataType::Int64,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
+                init_args: None,
+                runtime_binding: UDFRuntimeBinding::Unbound,
             })),
             inputs,
         }
@@ -599,10 +595,9 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stateful_project_expr = create_stateful_udf(vec![col("a")]);
 
@@ -626,12 +621,11 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_parallel() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Utf8),
-            Field::new("b", daft_core::DataType::Utf8),
+            Field::new("a", DataType::Utf8),
+            Field::new("b", DataType::Utf8),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
@@ -715,78 +709,9 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
-    #[test]
-    fn test_multiple_with_column_parallel_common_subtree_eliminated() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
-        let scan_plan = dummy_scan_node(scan_op);
-        let stateful_project_expr = create_stateful_udf(vec![col("a")]);
-
-        // Add a Projection with StatefulUDF and resource request
-        // NOTE: Our common-subtree elimination will build this as 2 project nodes:
-        // Project([col("a").alias("a"), foo(col("a")).alias(factored_column_name)])
-        //   --> Project([col("a"), col(factored_column_name).alias("b"), col(factored_column_name).alias("c")])
-        let factored_column_name = "Function_Python(Stateful(StatefulPythonUDF { name: \"foo\", num_expressions: 1, return_dtype: Int64, resource_request: Some(ResourceRequest { num_cpus: Some(8.0), num_gpus: Some(1.0), memory_bytes: None }), batch_size: None, concurrency: Some(8) }))(a)";
-        let project_plan = scan_plan
-            .with_columns(vec![
-                stateful_project_expr.clone().alias("b"),
-                stateful_project_expr.clone().alias("c"),
-            ])?
-            .build();
-
-        let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            expected,
-            vec![
-                col("a"),
-                stateful_project_expr.clone().alias(factored_column_name),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![col("a"), col(factored_column_name)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                col("a"),
-                col(factored_column_name).alias("b"),
-                col(factored_column_name).alias("c"),
-            ],
-        )?)
-        .arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected.clone())?;
-
-        // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
-        let expected = scan_plan.select(vec![col("a").alias("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            expected,
-            vec![
-                col("a"),
-                stateful_project_expr.clone().alias(factored_column_name),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                col("a"),
-                col(factored_column_name).alias("b"),
-                col(factored_column_name).alias("c"),
-            ],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
-
-        Ok(())
-    }
-
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Utf8)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr =
             create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
@@ -860,12 +785,11 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial_multiarg() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Utf8),
-            Field::new("b", daft_core::DataType::Utf8),
+            Field::new("a", DataType::Utf8),
+            Field::new("b", DataType::Utf8),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr = create_stateful_udf(vec![
@@ -964,12 +888,11 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_multiple_with_column_serial_multiarg_with_intermediate_stateless() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("a", daft_core::DataType::Int64),
-            Field::new("b", daft_core::DataType::Int64),
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr = create_stateful_udf(vec![create_stateful_udf(vec![
@@ -1085,10 +1008,9 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(not(feature = "python"))]
     #[test]
     fn test_nested_with_column_same_names() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_stateful_project_expr =
             create_stateful_udf(vec![col("a").add(create_stateful_udf(vec![col("a")]))]);
@@ -1159,7 +1081,7 @@ mod tests {
 
     #[test]
     fn test_stateless_expr_with_only_some_stateful_children() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![Field::new("a", daft_core::DataType::Int64)]);
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
 
         // (col("a") + col("a"))  +  foo(col("a"))

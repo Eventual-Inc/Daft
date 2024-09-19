@@ -1,11 +1,8 @@
-use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, series::IntoSeries, Series};
-use daft_dsl::{functions::FunctionExpr, AggExpr, Expr};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_dsl::{functions::FunctionExpr, AggExpr, Expr, ExprRef};
 
 use crate::Table;
-
-use daft_dsl::ExprRef;
 
 impl Table {
     pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {
@@ -72,7 +69,7 @@ impl Table {
         inputs: &[ExprRef],
         group_by: &[ExprRef],
     ) -> DaftResult<Table> {
-        use daft_core::schema::Schema;
+        use daft_core::array::ops::IntoGroups;
         use daft_dsl::functions::python::PythonUDF;
 
         let udf = match func {

@@ -1,11 +1,11 @@
+use std::{collections::HashSet, path::Path, sync::Arc};
+
 use async_stream::stream;
 use futures::stream::{BoxStream, StreamExt};
-use itertools::Itertools;
-use std::{collections::HashSet, path::Path, sync::Arc};
-use tokio::sync::mpsc::Sender;
-
 use globset::{GlobBuilder, GlobMatcher};
+use itertools::Itertools;
 use lazy_static::lazy_static;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     object_io::{FileMetadata, FileType, ObjectSource},
@@ -26,10 +26,12 @@ const SCHEME_SUFFIX_LEN: usize = "://".len();
 /// the `glob` utility can only be used with POSIX-style paths.
 const GLOB_DELIMITER: &str = "/";
 
-// NOTE: We use the following suffixes to filter out Spark marker files
+// NOTE: We use the following suffixes to filter out Spark/Databricks marker files
 const MARKER_SUFFIXES: [&str; 1] = [".crc"];
-// NOTE: We use the following file names to filter out Spark marker files
+// NOTE: We use the following file names to filter out Spark/Databricks marker files
 const MARKER_FILES: [&str; 3] = ["_metadata", "_common_metadata", "_success"];
+// NOTE: We use the following prefixes to filter out Spark/Databricks marker files
+const MARKER_PREFIXES: [&str; 2] = ["_started", "_committed"];
 
 #[derive(Clone)]
 pub(crate) struct GlobState {
@@ -322,7 +324,12 @@ fn _should_return(fm: &FileMetadata) -> bool {
                 .iter()
                 .any(|suffix| file_path.ends_with(suffix))
                 || file_name
-                    .is_some_and(|file| MARKER_FILES.iter().any(|m_file| file == *m_file)) =>
+                    .is_some_and(|file| MARKER_FILES.iter().any(|m_file| file == *m_file))
+                || file_name.is_some_and(|file| {
+                    MARKER_PREFIXES
+                        .iter()
+                        .any(|m_prefix| file.starts_with(m_prefix))
+                }) =>
         {
             false
         }

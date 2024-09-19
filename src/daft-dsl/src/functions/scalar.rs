@@ -1,14 +1,14 @@
-use std::any::Any;
-use std::fmt::{Display, Formatter};
-use std::sync::Arc;
+use std::{
+    any::Any,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
-use daft_core::datatypes::FieldID;
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
+use daft_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{Expr, ExprRef};
-
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
