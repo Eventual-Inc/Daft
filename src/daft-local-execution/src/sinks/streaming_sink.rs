@@ -7,7 +7,7 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, create_ordering_aware_channel, PipelineChannel, Receiver, Sender},
+    channel::{create_channel, PipelineChannel, Receiver, Sender},
     create_worker_set,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
@@ -187,9 +187,9 @@ impl PipelineNode for StreamingSinkNode {
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats.clone()));
         }
 
-        let destination_channel = PipelineChannel::new();
+        let mut destination_channel = PipelineChannel::new(1, maintain_order);
         let destination_sender =
-            destination_channel.get_sender_with_stats(&self.runtime_stats.clone());
+            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -198,14 +198,13 @@ impl PipelineNode for StreamingSinkNode {
                 let num_workers = op.max_concurrency();
                 let (input_senders, input_receivers) =
                     (0..num_workers).map(|_| create_channel(1)).unzip();
-                let (output_senders, mut output_receiver) =
-                    create_ordering_aware_channel(num_workers, maintain_order);
+                let (output_sender, mut output_receiver) = create_channel(num_workers);
 
                 let mut worker_set = create_worker_set();
                 Self::spawn_workers(
                     op.clone(),
                     input_receivers,
-                    output_senders,
+                    (0..num_workers).map(|_| output_sender.clone()).collect(),
                     &mut worker_set,
                     runtime_stats.clone(),
                 );

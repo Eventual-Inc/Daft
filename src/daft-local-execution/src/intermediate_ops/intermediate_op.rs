@@ -3,16 +3,14 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
 use crate::{
-    channel::{create_channel, create_ordering_aware_channel, PipelineChannel, Receiver, Sender},
-    create_worker_set,
+    channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, WorkerSet, NUM_CPUS,
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 pub trait IntermediateOperatorState: Send + Sync {
@@ -70,28 +68,28 @@ impl IntermediateNode {
     }
 
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
-    async fn run_worker(
+    pub async fn run_worker(
         op: Arc<dyn IntermediateOperator>,
-        mut input_receiver: Receiver<(usize, PipelineResultType)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        mut receiver: Receiver<(usize, PipelineResultType)>,
+        sender: CountingSender,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let mut state = op.make_state();
-        while let Some((idx, morsel)) = input_receiver.recv().await {
+        while let Some((idx, morsel)) = receiver.recv().await {
             loop {
                 let result =
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        let _ = output_sender.send(mp).await;
+                        let _ = sender.send(mp.into()).await;
                         break;
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        let _ = output_sender.send(mp).await;
+                        let _ = sender.send(mp.into()).await;
                     }
                 }
             }
@@ -99,24 +97,32 @@ impl IntermediateNode {
         Ok(())
     }
 
-    fn spawn_workers(
-        op: Arc<dyn IntermediateOperator>,
-        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
-        output_senders: Vec<Sender<Arc<MicroPartition>>>,
-        worker_set: &mut WorkerSet<DaftResult<()>>,
-        stats: Arc<RuntimeStatsContext>,
-    ) {
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
-            worker_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                output_sender,
-                stats.clone(),
-            ));
+    pub fn spawn_workers(
+        &self,
+        num_workers: usize,
+        destination_channel: &mut PipelineChannel,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+    ) -> Vec<Sender<(usize, PipelineResultType)>> {
+        let mut worker_senders = Vec::with_capacity(num_workers);
+        for _ in 0..num_workers {
+            let (worker_sender, worker_receiver) = create_channel(1);
+            let destination_sender =
+                destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+            runtime_handle.spawn(
+                Self::run_worker(
+                    self.intermediate_op.clone(),
+                    worker_receiver,
+                    destination_sender,
+                    self.runtime_stats.clone(),
+                ),
+                self.intermediate_op.name(),
+            );
+            worker_senders.push(worker_sender);
         }
+        worker_senders
     }
 
-    async fn forward_input_to_workers(
+    pub async fn send_to_workers(
         receivers: Vec<CountingReceiver>,
         worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
         morsel_size: usize,
@@ -196,41 +202,16 @@ impl PipelineNode for IntermediateNode {
             child_result_receivers
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));
         }
+        let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
 
-        let destination_channel = PipelineChannel::new();
-        let destination_sender = destination_channel.get_sender_with_stats(&self.runtime_stats);
-
-        let op = self.intermediate_op.clone();
-        let stats = self.runtime_stats.clone();
-        let morsel_size = runtime_handle.default_morsel_size();
+        let worker_senders =
+            self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
         runtime_handle.spawn(
-            async move {
-                let num_workers = *NUM_CPUS;
-                let (input_senders, input_receivers) =
-                    (0..num_workers).map(|_| create_channel(1)).unzip();
-                let (output_senders, mut output_receiver) =
-                    create_ordering_aware_channel(num_workers, maintain_order);
-
-                let mut worker_set = create_worker_set();
-                Self::spawn_workers(
-                    op.clone(),
-                    input_receivers,
-                    output_senders,
-                    &mut worker_set,
-                    stats.clone(),
-                );
-
-                Self::forward_input_to_workers(child_result_receivers, input_senders, morsel_size)
-                    .await?;
-
-                while let Some(morsel) = output_receiver.recv().await {
-                    let _ = destination_sender.send(morsel.into()).await;
-                }
-                while let Some(result) = worker_set.join_next().await {
-                    result.context(JoinSnafu)??;
-                }
-                Ok(())
-            },
+            Self::send_to_workers(
+                child_result_receivers,
+                worker_senders,
+                runtime_handle.default_morsel_size(),
+            ),
             self.intermediate_op.name(),
         );
         Ok(destination_channel)
