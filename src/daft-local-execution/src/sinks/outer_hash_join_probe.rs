@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::bitmap::MutableBitmap;
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{Field, Schema, SchemaRef},
+    prelude::{Schema, SchemaRef},
     series::Series,
 };
 use daft_dsl::ExprRef;
@@ -119,8 +119,9 @@ impl StreamingSinkState for OuterHashJoinProbeState {
 pub(crate) struct OuterHashJoinProbeSink {
     probe_on: Vec<ExprRef>,
     common_join_keys: Vec<String>,
-    left_non_join_columns: Vec<Field>,
-    right_non_join_columns: Vec<Field>,
+    left_non_join_columns: Vec<String>,
+    right_non_join_columns: Vec<String>,
+    right_non_join_schema: SchemaRef,
     join_type: JoinType,
 }
 
@@ -134,22 +135,26 @@ impl OuterHashJoinProbeSink {
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
-            .values()
-            .filter(|field| !common_join_keys.contains(field.name.as_str()))
+            .keys()
+            .filter(|c| !common_join_keys.contains(*c))
             .cloned()
             .collect();
-        let right_non_join_columns = right_schema
+        let right_non_join_fields = right_schema
             .fields
             .values()
-            .filter(|field| !common_join_keys.contains(field.name.as_str()))
+            .filter(|f| !common_join_keys.contains(&f.name))
             .cloned()
             .collect();
+        let right_non_join_schema =
+            Arc::new(Schema::new(right_non_join_fields).expect("right schema should be valid"));
+        let right_non_join_columns = right_non_join_schema.fields.keys().cloned().collect();
         let common_join_keys = common_join_keys.into_iter().collect();
         Self {
             probe_on,
             common_join_keys,
             left_non_join_columns,
             right_non_join_columns,
+            right_non_join_schema,
             join_type,
         }
     }
@@ -204,37 +209,13 @@ impl OuterHashJoinProbeSink {
 
         let final_table = if self.join_type == JoinType::Left {
             let join_table = probe_side_table.get_columns(&self.common_join_keys)?;
-            let left = probe_side_table.get_columns(
-                &self
-                    .left_non_join_columns
-                    .iter()
-                    .map(|f| f.name.as_str())
-                    .collect::<Vec<_>>(),
-            )?;
-            let right = build_side_table.get_columns(
-                &self
-                    .right_non_join_columns
-                    .iter()
-                    .map(|f| f.name.as_str())
-                    .collect::<Vec<_>>(),
-            )?;
+            let left = probe_side_table.get_columns(&self.left_non_join_columns)?;
+            let right = build_side_table.get_columns(&self.right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         } else {
             let join_table = probe_side_table.get_columns(&self.common_join_keys)?;
-            let left = build_side_table.get_columns(
-                &self
-                    .left_non_join_columns
-                    .iter()
-                    .map(|f| f.name.as_str())
-                    .collect::<Vec<_>>(),
-            )?;
-            let right = probe_side_table.get_columns(
-                &self
-                    .right_non_join_columns
-                    .iter()
-                    .map(|f| f.name.as_str())
-                    .collect::<Vec<_>>(),
-            )?;
+            let left = build_side_table.get_columns(&self.left_non_join_columns)?;
+            let right = probe_side_table.get_columns(&self.right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         };
         Ok(Arc::new(MicroPartition::new_loaded(
@@ -254,13 +235,16 @@ impl OuterHashJoinProbeSink {
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
 
         // Need to set use_validity to true here because we add nulls to the build side
-        let mut build_side_growable =
-            GrowableTable::new(&tables.iter().collect::<Vec<_>>(), true, 20)?;
+        let mut build_side_growable = GrowableTable::new(
+            &tables.iter().collect::<Vec<_>>(),
+            true,
+            tables.iter().map(|t| t.len()).sum(),
+        )?;
 
         let input_tables = input.get_tables()?;
 
         let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
 
         let left_idx_used = bitmap.as_mut().expect("bitmap should be set in outer join");
 
@@ -295,20 +279,8 @@ impl OuterHashJoinProbeSink {
         let probe_side_table = probe_side_growable.build()?;
 
         let join_table = probe_side_table.get_columns(&self.common_join_keys)?;
-        let left = build_side_table.get_columns(
-            &self
-                .left_non_join_columns
-                .iter()
-                .map(|f| f.name.as_str())
-                .collect::<Vec<_>>(),
-        )?;
-        let right = probe_side_table.get_columns(
-            &self
-                .right_non_join_columns
-                .iter()
-                .map(|f| f.name.as_str())
-                .collect::<Vec<_>>(),
-        )?;
+        let left = build_side_table.get_columns(&self.left_non_join_columns)?;
+        let right = probe_side_table.get_columns(&self.right_non_join_columns)?;
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
@@ -365,21 +337,15 @@ impl OuterHashJoinProbeSink {
         let build_side_table = build_side_growable.build()?;
 
         let join_table = build_side_table.get_columns(&self.common_join_keys)?;
-        let left = build_side_table.get_columns(
-            &self
-                .left_non_join_columns
-                .iter()
-                .map(|f| f.name.as_str())
-                .collect::<Vec<_>>(),
-        )?;
+        let left = build_side_table.get_columns(&self.left_non_join_columns)?;
         let right = {
-            let schema = Schema::new(self.right_non_join_columns.to_vec())?;
             let columns = self
-                .right_non_join_columns
-                .iter()
+                .right_non_join_schema
+                .fields
+                .values()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
-            Table::new_unchecked(schema, columns, left.len())
+            Table::new_unchecked(self.right_non_join_schema.clone(), columns, left.len())
         };
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
