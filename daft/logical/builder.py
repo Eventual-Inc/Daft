@@ -289,12 +289,12 @@ class LogicalPlanBuilder:
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
-        spec_id = table.spec().spec_id
+        partition_spec = table.spec()
         schema = table.schema()
         props = table.properties
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-        builder = self._builder.iceberg_write(name, location, spec_id, schema, props, columns, io_config)
+        builder = self._builder.iceberg_write(name, location, partition_spec, schema, props, columns, io_config)
         return LogicalPlanBuilder(builder)
 
     def write_deltalake(

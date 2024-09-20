@@ -3307,7 +3307,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """Partitioning Transform that returns the number of days since epoch (1970-01-01)
 
         Returns:
-            Expression: Date Type Expression
+            Expression: Int32 Expression in days
         """
         return Expression._from_pyexpr(self._expr.partitioning_days())
 
