@@ -434,7 +434,6 @@ pub(super) fn translate_single_logical_node(
                 left_clustering_spec.num_partitions(),
                 right_clustering_spec.num_partitions(),
             );
-            let num_partitions = min(num_partitions, cfg.shuffle_join_default_partitions);
 
             let is_left_hash_partitioned =
                 matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
@@ -572,6 +571,7 @@ pub(super) fn translate_single_logical_node(
                             "Sort-merge join currently only supports inner joins".to_string(),
                         ));
                     }
+                    let num_partitions = max(num_partitions, cfg.shuffle_join_default_partitions);
 
                     let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
                         // Use the special-purpose presorting that ensures join inputs are sorted with aligned
@@ -617,7 +617,6 @@ pub(super) fn translate_single_logical_node(
                     // allow for leniency in partition size to avoid minor repartitions
                     let num_left_partitions = left_clustering_spec.num_partitions();
                     let num_right_partitions = right_clustering_spec.num_partitions();
-                    // 100, 300
                     let num_partitions = match (
                         is_left_hash_partitioned,
                         is_right_hash_partitioned,

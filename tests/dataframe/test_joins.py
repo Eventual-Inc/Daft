@@ -1165,4 +1165,4 @@ def test_join_result_partitions_for_sortmerge(shuffle_join_default_partitions):
 
             actual = df_left.join(df_right, on="group", how="inner", strategy="sort_merge").collect()
 
-            assert actual.num_partitions() == max(partition_size, 50)
+            assert actual.num_partitions() == max(min_partitions, partition_size, 50)

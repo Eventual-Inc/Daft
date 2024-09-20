@@ -76,7 +76,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
-            shuffle_join_default_partitions: 200,
+            shuffle_join_default_partitions: 16,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,
