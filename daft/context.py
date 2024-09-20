@@ -308,7 +308,6 @@ def set_execution_config(
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
-    shuffle_join_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
@@ -345,7 +344,6 @@ def set_execution_config(
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
-        shuffle_join_default_partitions: Minimum number of partitions to create when performing joins. Defaults to 16, unless the number of input partitions is greater than 16.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
@@ -371,7 +369,6 @@ def set_execution_config(
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
-            shuffle_join_default_partitions=shuffle_join_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
