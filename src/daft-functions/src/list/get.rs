@@ -1,17 +1,28 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ListGet {}
 
-pub(super) struct GetEvaluator {}
-
-impl FunctionEvaluator for GetEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "get"
+#[typetag::serde]
+impl ScalarUDF for ListGet {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn name(&self) -> &'static str {
+        "list_get"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input, idx, default] => {
                 let input_field = input.to_field(schema)?;
@@ -37,7 +48,7 @@ impl FunctionEvaluator for GetEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input, idx, default] => Ok(input.list_get(idx, default)?),
             _ => Err(DaftError::ValueError(format!(
@@ -46,4 +57,21 @@ impl FunctionEvaluator for GetEvaluator {
             ))),
         }
     }
+}
+
+pub fn list_get(expr: ExprRef, idx: ExprRef, default_value: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListGet {}, vec![expr, idx, default_value]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "list_get")]
+pub fn py_list_get(expr: PyExpr, idx: PyExpr, default_value: PyExpr) -> PyResult<PyExpr> {
+    Ok(list_get(expr.into(), idx.into(), default_value.into()).into())
 }

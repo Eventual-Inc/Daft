@@ -4,6 +4,7 @@ pub mod distance;
 pub mod float;
 pub mod hash;
 pub mod image;
+pub mod list;
 pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
@@ -50,6 +51,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(uri::python::url_upload, parent)?)?;
     image::register_modules(parent)?;
     float::register_modules(parent)?;
+    list::register_modules(parent)?;
     Ok(())
 }
 
