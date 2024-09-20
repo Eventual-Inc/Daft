@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
     prelude::{Schema, SchemaRef},
@@ -10,8 +12,8 @@ use daft_core::{
 use daft_dsl::{join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalWrite,
+    Project, Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -27,8 +29,8 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
-        streaming_sink::StreamingSinkNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink, physical_write::PhysicalWriteSink,
+        sort::SortSink, streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
     ExecutionRuntimeHandle, PipelineCreationSnafu,
@@ -99,6 +101,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_physical_plan::PhysicalScan;
 
@@ -110,27 +113,29 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone()).boxed().into()
+            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+                .boxed()
+                .into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             StreamingSinkNode::new(sink.boxed(), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Concat(_) => {
@@ -156,7 +161,7 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 vec![],
             );
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let post_first_agg_node =
                 IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
@@ -192,7 +197,7 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 group_by.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let post_first_agg_node =
                 IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
@@ -218,7 +223,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
@@ -290,11 +295,11 @@ pub fn physical_plan_to_pipeline(
                 // we should move to a builder pattern
                 let build_sink =
                     HashJoinBuildSink::new(key_schema.clone(), casted_build_on, join_type)?;
-                let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
                     BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();
 
-                let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
+                let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
                 match join_type {
                     JoinType::Anti | JoinType::Semi => DaftResult::Ok(IntermediateNode::new(
@@ -324,8 +329,25 @@ pub fn physical_plan_to_pipeline(
             })?;
             probe_node.boxed()
         }
-        _ => {
-            unimplemented!("Physical plan not supported: {}", physical_plan.name());
+        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+            input, file_info, ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let (inflation_factor, target_file_size) = match file_info.file_format {
+                FileFormat::Parquet => (cfg.parquet_inflation_factor, cfg.parquet_target_filesize),
+                FileFormat::Csv => (cfg.csv_inflation_factor, cfg.csv_target_filesize),
+                _ => unreachable!("Unsupported file format"),
+            };
+            let write_sink = PhysicalWriteSink::new(
+                file_info.clone(),
+                inflation_factor,
+                target_file_size,
+                cfg.parquet_target_row_group_size,
+            )
+            .context(PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            BlockingSinkNode::new(write_sink.boxed(), child_node).boxed()
         }
     };
 

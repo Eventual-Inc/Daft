@@ -11,11 +11,6 @@ import pytz
 import daft
 from daft import DataType, col, context
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
@@ -48,7 +43,10 @@ def test_temporal_arithmetic_with_same_type() -> None:
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.parametrize(
+    "use_native_downloader",
+    [True, False] if context.get_context().daft_execution_config.enable_native_executor is False else [True],
+)
 def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
     data = {
         "date32": pa.array([1], pa.date32()),

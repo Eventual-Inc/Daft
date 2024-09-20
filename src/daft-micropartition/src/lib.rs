@@ -1,7 +1,9 @@
 #![feature(let_chains)]
 #![feature(iterator_try_reduce)]
 
-use common_error::DaftError;
+use std::sync::Arc;
+
+use common_error::{DaftError, DaftResult};
 use snafu::Snafu;
 mod micropartition;
 mod ops;
@@ -12,6 +14,8 @@ pub use micropartition::MicroPartition;
 pub mod python;
 #[cfg(feature = "python")]
 use pyo3::PyErr;
+#[cfg(feature = "python")]
+pub mod py_writers;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -58,4 +62,9 @@ impl From<Error> for pyo3::PyErr {
         let daft_error: DaftError = value.into();
         daft_error.into()
     }
+}
+
+pub trait FileWriter: Send + Sync {
+    fn write(&self, data: &Arc<MicroPartition>) -> DaftResult<()>;
+    fn close(&self) -> DaftResult<Option<String>>;
 }

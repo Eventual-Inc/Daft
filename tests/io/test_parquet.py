@@ -21,10 +21,6 @@ from daft.table import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 
@@ -49,7 +45,10 @@ def storage_config_from_use_native_downloader(use_native_downloader: bool) -> St
         return StorageConfig.python(PythonStorageConfig(None))
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.parametrize(
+    "use_native_downloader",
+    [True, False] if context.get_context().daft_execution_config.enable_native_executor is False else [True],
+)
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
 def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_native_downloader):
     data = {
@@ -81,7 +80,10 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{df.to_arrow()}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.parametrize(
+    "use_native_downloader",
+    [True, False] if context.get_context().daft_execution_config.enable_native_executor is False else [True],
+)
 @pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
 def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader):
     # NOTE: datetime.datetime(3000, 1, 1) and datetime.datetime(1000, 1, 1) cannot be represented by our timestamp64(nanosecond)

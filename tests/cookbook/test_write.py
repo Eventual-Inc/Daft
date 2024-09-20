@@ -7,14 +7,9 @@ import pytest
 from pyarrow import dataset as pads
 
 import daft
-from daft import context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
@@ -178,9 +173,8 @@ def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize):
     df = daft.from_pydict(data)
     df2 = df.write_parquet(tmp_path)
     assert len(df2) > 1
-    ds = pads.dataset(tmp_path, format="parquet")
-    readback = ds.to_table()
-    assert readback.to_pydict() == data
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/*.parquet").sort(by="x").to_pydict()
+    assert read_back == data
 
 
 @pytest.mark.skipif(
