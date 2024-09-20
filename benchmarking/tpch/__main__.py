@@ -123,7 +123,7 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
 
 def run_all_benchmarks(
     parquet_folder: str,
-    skip_questions: set[int],
+    questions: list[int],
     csv_output_location: str | None,
     ray_job_dashboard_url: str | None = None,
     requirements: str | None = None,
@@ -133,11 +133,7 @@ def run_all_benchmarks(
     daft_context = get_context()
     metrics_builder = MetricsBuilder(daft_context.runner_config.name)
 
-    for i in range(1, 23):
-        if i in skip_questions:
-            logger.warning("Skipping TPC-H q%s", i)
-            continue
-
+    for i in questions:
         # Run as a Ray Job if dashboard URL is provided
         if ray_job_dashboard_url is not None:
             from benchmarking.tpch import ray_job_runner
@@ -202,7 +198,10 @@ def get_ray_runtime_env(requirements: str | None) -> dict:
     runtime_env = {
         "py_modules": [daft],
         "eager_install": True,
-        "env_vars": {"DAFT_PROGRESS_BAR": "0"},
+        "env_vars": {
+            "DAFT_PROGRESS_BAR": "0",
+            "DAFT_RUNNER": "ray",
+        },
     }
     if requirements:
         runtime_env.update({"pip": requirements})
@@ -266,6 +265,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_parts", default=None, help="Number of parts to generate (defaults to 1 part per GB)", type=int
     )
+    parser.add_argument("--questions", type=str, default=None, help="Comma-separated list of questions to run")
     parser.add_argument("--skip_questions", type=str, default=None, help="Comma-separated list of questions to skip")
     parser.add_argument("--output_csv", default=None, type=str, help="Location to output CSV file")
     parser.add_argument(
@@ -310,9 +310,19 @@ if __name__ == "__main__":
     else:
         warmup_environment(args.requirements, parquet_folder)
 
+    if args.skip_questions is not None:
+        if args.questions is not None:
+            raise ValueError("Cannot specify both --questions and --skip_questions")
+        skip_questions = {int(s) for s in args.skip_questions.split(",")}
+        questions = [q for q in range(1, MetricsBuilder.NUM_TPCH_QUESTIONS + 1) if q not in skip_questions]
+    elif args.questions is not None:
+        questions = sorted(set(int(s) for s in args.questions.split(",")))
+    else:
+        questions = list(range(1, MetricsBuilder.NUM_TPCH_QUESTIONS + 1))
+
     run_all_benchmarks(
         parquet_folder,
-        skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
+        questions=questions,
         csv_output_location=args.output_csv,
         ray_job_dashboard_url=args.ray_job_dashboard_url,
         requirements=args.requirements,

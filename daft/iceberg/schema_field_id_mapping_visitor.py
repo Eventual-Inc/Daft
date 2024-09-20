@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema, SchemaVisitor
-from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
 
 from daft import DataType
 from daft.daft import PyField
+
+if TYPE_CHECKING:
+    from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
 
 FieldIdMapping = Dict[int, PyField]
 

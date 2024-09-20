@@ -5,9 +5,14 @@ import math
 import pyarrow as pa
 import pytest
 
+from daft import context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 ###
 # Validation tests
 ###

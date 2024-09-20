@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import TYPE_CHECKING
 
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft.table import MicroPartition
 
 
 class MapPartitionOp:

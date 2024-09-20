@@ -1,17 +1,28 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ListJoin {}
 
-pub(super) struct JoinEvaluator {}
-
-impl FunctionEvaluator for JoinEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "join"
+#[typetag::serde]
+impl ScalarUDF for ListJoin {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn name(&self) -> &'static str {
+        "list_join"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input, delimiter] => {
                 let input_field = input.to_field(schema)?;
@@ -45,7 +56,7 @@ impl FunctionEvaluator for JoinEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input, delimiter] => {
                 let delimiter = delimiter.utf8().unwrap();
@@ -57,4 +68,21 @@ impl FunctionEvaluator for JoinEvaluator {
             ))),
         }
     }
+}
+
+pub fn list_join(expr: ExprRef, delim: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListJoin {}, vec![expr, delim]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "list_join")]
+pub fn py_list_join(expr: PyExpr, delim: PyExpr) -> PyResult<PyExpr> {
+    Ok(list_join(expr.into(), delim.into()).into())
 }

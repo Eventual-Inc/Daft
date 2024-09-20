@@ -700,7 +700,7 @@ impl SQLPlanner {
                 Subscript::Index { index } => {
                     let index = self.plan_expr(index)?;
                     let expr = self.plan_expr(expr)?;
-                    Ok(daft_dsl::functions::list::get(expr, index, null_lit()))
+                    Ok(daft_functions::list::get(expr, index, null_lit()))
                 }
                 Subscript::Slice {
                     lower_bound,
@@ -715,7 +715,7 @@ impl SQLPlanner {
                             let lower = self.plan_expr(lower)?;
                             let upper = self.plan_expr(upper)?;
                             let expr = self.plan_expr(expr)?;
-                            Ok(daft_dsl::functions::list::slice(expr, lower, upper))
+                            Ok(daft_functions::list::slice(expr, lower, upper))
                         }
                         _ => {
                             unsupported_sql_err!("slice with only one bound not yet supported");

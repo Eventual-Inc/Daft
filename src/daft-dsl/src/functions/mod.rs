@@ -1,4 +1,3 @@
-pub mod list;
 pub mod map;
 pub mod partitioning;
 pub mod scalar;
@@ -18,8 +17,8 @@ pub use scalar::*;
 use serde::{Deserialize, Serialize};
 
 use self::{
-    list::ListExpr, map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr,
-    struct_::StructExpr, temporal::TemporalExpr, utf8::Utf8Expr,
+    map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr,
+    temporal::TemporalExpr, utf8::Utf8Expr,
 };
 use crate::{Expr, ExprRef, Operator};
 
@@ -30,7 +29,6 @@ use python::PythonUDF;
 pub enum FunctionExpr {
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
-    List(ListExpr),
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
@@ -56,7 +54,6 @@ impl FunctionExpr {
         match self {
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
-            List(expr) => expr.get_evaluator(),
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
