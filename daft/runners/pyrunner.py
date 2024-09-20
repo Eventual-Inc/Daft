@@ -6,17 +6,14 @@ import threading
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
-from daft.execution import physical_plan
-from daft.execution.execution_step import Instruction, PartitionTask
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
-from daft.logical.builder import LogicalPlanBuilder
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -30,7 +27,12 @@ from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import Runner
 from daft.table import MicroPartition
-from daft.udf import UserProvidedPythonFunction
+
+if TYPE_CHECKING:
+    from daft.execution import physical_plan
+    from daft.execution.execution_step import Instruction, PartitionTask
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.udf import UserProvidedPythonFunction
 
 logger = logging.getLogger(__name__)
 

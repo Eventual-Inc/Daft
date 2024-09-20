@@ -24,11 +24,11 @@ use num_traits::ToPrimitive;
 pub mod ffi;
 mod growable;
 mod ops;
-mod probe_table;
+mod probeable;
 mod repr_html;
 
 pub use growable::GrowableTable;
-pub use probe_table::{ProbeTable, ProbeTableBuilder};
+pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;
