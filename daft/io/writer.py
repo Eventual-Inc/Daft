@@ -58,7 +58,7 @@ class ParquetFileWriter(FileWriterBase):
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         file_path = f"{self.resolved_path}/{self.file_name}"
-        return pa.papq.ParquetWriter(
+        return pq.ParquetWriter(
             file_path,
             schema,
             compression=self.compression,
@@ -73,7 +73,7 @@ class CSVFileWriter(FileWriterBase):
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         file_path = f"{self.resolved_path}/{self.file_name}"
-        return pa.pacsv.CSVWriter(
+        return pacsv.CSVWriter(
             file_path,
             schema,
         )
