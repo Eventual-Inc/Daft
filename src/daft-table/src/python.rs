@@ -1,16 +1,14 @@
-use daft_core::join::JoinType;
-use indexmap::IndexMap;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-
-use crate::ffi;
-use crate::Table;
 use common_error::DaftError;
-use daft_core::prelude::*;
+use daft_core::{
+    join::JoinType,
+    prelude::*,
+    python::{series::PySeries, PySchema},
+};
 use daft_dsl::python::PyExpr;
+use indexmap::IndexMap;
+use pyo3::{exceptions::PyValueError, prelude::*};
 
-use daft_core::python::series::PySeries;
-use daft_core::python::PySchema;
+use crate::{ffi, Table};
 
 #[pyclass]
 #[derive(Clone)]

@@ -1,6 +1,5 @@
-use crate::functions::SQLFunctions;
-
 use super::SQLModule;
+use crate::functions::SQLFunctions;
 pub mod crop;
 pub mod decode;
 pub mod encode;

@@ -1,19 +1,15 @@
 use std::collections::HashSet;
 
-use daft_core::{prelude::*, utils::supertype::try_get_supertype};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::{array::growable::make_growable, prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
 };
 use hash_join::hash_semi_anti_join;
 
-use crate::Table;
-
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
-
-use daft_core::array::growable::make_growable;
+use crate::Table;
 mod hash_join;
 mod merge_join;
 

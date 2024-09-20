@@ -57,7 +57,7 @@ def ray_job_params(
 ) -> dict:
     return dict(
         submission_id=f"tpch-q{tpch_qnum}-{str(uuid.uuid4())[:4]}",
-        entrypoint=f"python {str(entrypoint.relative_to(working_dir))} --parquet-folder {parquet_folder_path} --question-number {tpch_qnum}",
+        entrypoint=f"python3 {str(entrypoint.relative_to(working_dir))} --parquet-folder {parquet_folder_path} --question-number {tpch_qnum}",
         runtime_env={
             "working_dir": str(working_dir),
             **runtime_env,

@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{resolve_single_expr, ExprRef};
 use snafu::ResultExt;
 
-use crate::logical_plan::{CreationSnafu, Result};
-use crate::LogicalPlan;
-use common_error::DaftError;
+use crate::{
+    logical_plan::{CreationSnafu, Result},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Filter {

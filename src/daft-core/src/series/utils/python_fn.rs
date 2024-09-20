@@ -24,9 +24,9 @@ fn python_binary_op_with_utilfn(
     operator_fn: &str,
     util_fn: &str,
 ) -> DaftResult<Series> {
-    use crate::datatypes::DataType;
-    use crate::python::PySeries;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let lhs = lhs.cast(&DataType::Python)?;
     let rhs = rhs.cast(&DataType::Python)?;
@@ -61,9 +61,9 @@ fn python_binary_op_with_utilfn(
 }
 
 pub(crate) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
-    use crate::datatypes::DataType;
-    use crate::python::PySeries;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let lhs_casted = lhs.cast(&DataType::Python)?;
     let rhs_casted = rhs.cast(&DataType::Python)?;
@@ -97,9 +97,9 @@ pub(crate) fn py_between_op_utilfn(
     lower: &Series,
     upper: &Series,
 ) -> DaftResult<Series> {
-    use crate::datatypes::DataType;
-    use crate::python::PySeries;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let value_casted = value.cast(&DataType::Python)?;
     let lower_casted = lower.cast(&DataType::Python)?;

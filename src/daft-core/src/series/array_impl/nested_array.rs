@@ -2,15 +2,16 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::array::ops::broadcast::Broadcastable;
-use crate::array::ops::{DaftIsNull, DaftNotNull, GroupIndices};
-use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::BooleanArray;
-use crate::datatypes::Field;
-use crate::series::{IntoSeries, Series, SeriesLike};
-use crate::{datatypes::DataType, with_match_integer_daft_types};
-
 use super::ArrayWrapper;
+use crate::{
+    array::{
+        ops::{broadcast::Broadcastable, DaftIsNull, DaftNotNull, GroupIndices},
+        FixedSizeListArray, ListArray, StructArray,
+    },
+    datatypes::{BooleanArray, DataType, Field},
+    series::{IntoSeries, Series, SeriesLike},
+    with_match_integer_daft_types,
+};
 
 macro_rules! impl_series_like_for_nested_arrays {
     ($da:ident) => {

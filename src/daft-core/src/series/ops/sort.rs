@@ -1,9 +1,9 @@
-use crate::{series::Series, with_match_comparable_daft_types};
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 
-use common_error::DaftResult;
-
-use crate::series::array_impl::IntoSeries;
+use crate::{
+    series::{array_impl::IntoSeries, Series},
+    with_match_comparable_daft_types,
+};
 
 impl Series {
     pub fn argsort(&self, descending: bool) -> DaftResult<Series> {

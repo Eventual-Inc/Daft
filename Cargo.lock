@@ -1680,6 +1680,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-json",
  "daft-image",
  "daft-io",
  "daft-json",
@@ -1737,10 +1738,6 @@ dependencies = [
  "hyperloglog",
  "indexmap 2.5.0",
  "itertools 0.11.0",
- "jaq-core",
- "jaq-interpret",
- "jaq-parse",
- "jaq-std",
  "lazy_static",
  "log",
  "mur3",
@@ -1750,7 +1747,6 @@ dependencies = [
  "pyo3",
  "regex",
  "serde",
- "serde_json",
  "sketches-ddsketch",
  "unicode-normalization",
  "xxhash-rust",
@@ -1762,7 +1758,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
- "async-compression",
  "async-stream",
  "common-error",
  "common-py-serde",
@@ -1781,7 +1776,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-util",
- "url",
 ]
 
 [[package]]
@@ -1831,6 +1825,7 @@ dependencies = [
  "daft-image",
  "daft-io",
  "futures",
+ "paste",
  "pyo3",
  "serde",
  "snafu",
@@ -1838,6 +1833,25 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
+]
+
+[[package]]
+name = "daft-functions-json"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "itertools 0.11.0",
+ "jaq-core",
+ "jaq-interpret",
+ "jaq-parse",
+ "jaq-std",
+ "lazy_static",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "typetag",
 ]
 
 [[package]]
@@ -1952,6 +1966,7 @@ dependencies = [
  "daft-scan",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "lazy_static",
  "log",
  "num-format",

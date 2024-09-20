@@ -1,8 +1,8 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use crate::series::Series;
-
 use common_error::DaftResult;
+
+use crate::series::Series;
 
 macro_rules! impl_arithmetic_for_series {
     ($trait:ident, $op:ident) => {
@@ -30,10 +30,13 @@ impl_arithmetic_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
-    use crate::array::ops::full::FullNull;
-    use crate::datatypes::{DataType, Float64Array, Int64Array, Utf8Array};
-    use crate::series::IntoSeries;
     use common_error::DaftResult;
+
+    use crate::{
+        array::ops::full::FullNull,
+        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
+        series::IntoSeries,
+    };
 
     #[test]
     fn add_int_and_int() -> DaftResult<()> {

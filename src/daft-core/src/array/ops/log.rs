@@ -1,8 +1,7 @@
+use common_error::DaftResult;
 use num_traits::Float;
 
 use crate::{array::DataArray, datatypes::DaftFloatType};
-
-use common_error::DaftResult;
 
 impl<T> DataArray<T>
 where

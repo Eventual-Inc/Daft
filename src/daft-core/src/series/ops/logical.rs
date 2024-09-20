@@ -1,9 +1,7 @@
 use common_error::DaftResult;
 use daft_schema::dtype::DataType;
 
-use crate::array::ops::DaftLogical;
-
-use crate::series::Series;
+use crate::{array::ops::DaftLogical, series::Series};
 
 macro_rules! binary_op_not_implemented {
     ($self:expr, $rhs:expr, $op:ident) => {{

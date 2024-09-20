@@ -1,39 +1,15 @@
 from __future__ import annotations
 
-import builtins
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
+from daft.dependencies import pa
 
 if TYPE_CHECKING:
+    import builtins
+
     import numpy as np
-
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-_TENSOR_EXTENSION_TYPES = []
-try:
-    import ray
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
-else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
-    try:
-        # Variable-shaped tensor column support was added in Ray 2.1.0.
-        if _RAY_VERSION >= (2, 2, 0):
-            from ray.data.extensions import (
-                ArrowTensorType,
-                ArrowVariableShapedTensorType,
-            )
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
-        else:
-            from ray.data.extensions import ArrowTensorType
-
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
-    except ImportError:
-        _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
 class TimeUnit:
@@ -412,10 +388,6 @@ class DataType:
                 key_type=cls.from_arrow_type(arrow_type.key_type),
                 value_type=cls.from_arrow_type(arrow_type.item_type),
             )
-        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-            scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
-            shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
-            return cls.tensor(scalar_dtype, shape)
         elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
@@ -529,25 +501,40 @@ class DataType:
         return self._dtype.__hash__()
 
 
-class DaftExtension(pa.ExtensionType):
-    def __init__(self, dtype, metadata=b""):
-        # attributes need to be set first before calling
-        # super init (as that calls serialize)
-        self._metadata = metadata
-        super().__init__(dtype, "daft.super_extension")
-
-    def __reduce__(self):
-        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
-
-    def __arrow_ext_serialize__(self):
-        return self._metadata
-
-    @classmethod
-    def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return cls(storage_type, serialized)
+_EXT_TYPE_REGISTERED = False
+_STATIC_DAFT_EXTENSION = None
 
 
-pa.register_extension_type(DaftExtension(pa.null()))
-import atexit
+def _ensure_registered_super_ext_type():
+    global _EXT_TYPE_REGISTERED
+    global _STATIC_DAFT_EXTENSION
+    if not _EXT_TYPE_REGISTERED:
 
-atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        class DaftExtension(pa.ExtensionType):
+            def __init__(self, dtype, metadata=b""):
+                # attributes need to be set first before calling
+                # super init (as that calls serialize)
+                self._metadata = metadata
+                super().__init__(dtype, "daft.super_extension")
+
+            def __reduce__(self):
+                return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+
+            def __arrow_ext_serialize__(self):
+                return self._metadata
+
+            @classmethod
+            def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                return cls(storage_type, serialized)
+
+        _STATIC_DAFT_EXTENSION = DaftExtension
+        pa.register_extension_type(DaftExtension(pa.null()))
+        import atexit
+
+        atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        _EXT_TYPE_REGISTERED = True
+
+
+def get_super_ext_type():
+    _ensure_registered_super_ext_type()
+    return _STATIC_DAFT_EXTENSION

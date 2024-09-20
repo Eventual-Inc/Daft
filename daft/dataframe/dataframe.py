@@ -28,7 +28,6 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -648,12 +647,12 @@ class DataFrame:
             DataFrame: The operations that occurred with this write.
         """
 
-        if len(table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned Iceberg tables")
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
@@ -684,11 +683,17 @@ class DataFrame:
         else:
             deleted_files = []
 
+        schema = table.schema()
+        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+
         for data_file in data_files:
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
             data_file = pf.file
@@ -696,6 +701,9 @@ class DataFrame:
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
             from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
@@ -736,19 +744,23 @@ class DataFrame:
 
             merge.commit()
 
+        with_operations = {
+            "operation": pa.array(operations, type=pa.string()),
+            "rows": pa.array(rows, type=pa.int64()),
+            "file_size": pa.array(size, type=pa.int64()),
+            "file_name": pa.array([fp for fp in path], type=pa.string()),
+        }
+
+        if partitioning:
+            with_operations["partitioning"] = pa.StructArray.from_arrays(
+                partitioning.values(), names=partitioning.keys()
+            )
+
         from daft import from_pydict
 
-        with_operations = from_pydict(
-            {
-                "operation": pa.array(operations, type=pa.string()),
-                "rows": pa.array(rows, type=pa.int64()),
-                "file_size": pa.array(size, type=pa.int64()),
-                "file_name": pa.array([os.path.basename(fp) for fp in path], type=pa.string()),
-            }
-        )
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return with_operations
+        return from_pydict(with_operations)
 
     @DataframePublicAPI
     def write_deltalake(
@@ -761,6 +773,7 @@ class DataFrame:
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
+        allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -777,6 +790,7 @@ class DataFrame:
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
             dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -795,7 +809,9 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
+        from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
@@ -825,22 +841,29 @@ class DataFrame:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = urlparse(table_uri).scheme
+        scheme = get_protocol_from_path(table_uri)
         if scheme == "s3" or scheme == "s3a":
             if dynamo_table_name is not None:
                 storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
                 storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
             else:
                 storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+                if not allow_unsafe_rename:
+                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+        elif scheme == "file":
+            if allow_unsafe_rename:
+                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+
+        large_dtypes = True
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
@@ -865,7 +888,7 @@ class DataFrame:
             table_uri,
             mode,
             version,
-            large_dtypes=True,
+            large_dtypes,
             io_config=io_config,
         )
         write_df = DataFrame(builder)
@@ -1299,6 +1322,23 @@ class DataFrame:
         """
         builder = self._builder.exclude(list(names))
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth:`.where(predicate) <DataFrame.where>`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
 
     @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
@@ -2531,6 +2571,27 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+        .. WARNING::
+
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        return list(self.iter_rows())
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":

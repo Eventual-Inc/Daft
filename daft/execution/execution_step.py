@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import itertools
-import pathlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
+from daft.daft import ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -20,8 +17,15 @@ from daft.runners.partitioning import (
 from daft.table import MicroPartition, table_io
 
 if TYPE_CHECKING:
+    import pathlib
+
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.logical.map_partition_ops import MapPartitionOp
+    from daft.logical.schema import Schema
 
 
 ID_GEN = itertools.count()
@@ -387,7 +391,7 @@ class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    spec_id: int
+    partition_spec: IcebergPartitionSpec
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -415,7 +419,7 @@ class WriteIceberg(SingleOutputInstruction):
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            spec_id=self.spec_id,
+            partition_spec=self.partition_spec,
             io_config=self.io_config,
         )
 

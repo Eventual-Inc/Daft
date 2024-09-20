@@ -1,15 +1,13 @@
 use std::cmp::Ordering;
 
-use crate::datatypes::DataType;
-
+use arrow2::array::{
+    dyn_ord::{build_dyn_array_compare, DynArrayComparator},
+    Array,
+};
+use common_error::{DaftError, DaftResult};
 use daft_schema::schema::Schema;
 
-use arrow2::array::Array;
-use common_error::DaftError;
-use common_error::DaftResult;
-
-use arrow2::array::dyn_ord::build_dyn_array_compare;
-use arrow2::array::dyn_ord::DynArrayComparator;
+use crate::datatypes::DataType;
 
 pub type MultiDynArrayComparator =
     Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>;

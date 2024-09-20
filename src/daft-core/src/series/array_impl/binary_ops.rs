@@ -1,33 +1,28 @@
-use std::borrow::{Borrow, Cow};
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    borrow::{Borrow, Cow},
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
 use common_error::DaftResult;
 
-use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
-    ImageArray, TensorArray, TimeArray, TimestampArray,
-};
-use crate::datatypes::InferDataType;
-use crate::datatypes::{
-    BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
-};
+use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{
         ops::{DaftCompare, DaftLogical},
         FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::DataType,
     datatypes::{
-        logical::{Decimal128Array, MapArray},
-        Field, FixedSizeBinaryArray, Int128Array,
+        logical::{
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+        },
+        BinaryArray, BooleanArray, DataType, ExtensionArray, Field, FixedSizeBinaryArray,
+        Float32Array, Float64Array, InferDataType, Int128Array, Int16Array, Int32Array, Int64Array,
+        Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
 };
-
-use super::{ArrayWrapper, IntoSeries, Series};
-
 #[cfg(feature = "python")]
 use crate::{datatypes::PythonArray, series::ops::py_binary_op_utilfn};
 
@@ -283,21 +278,24 @@ macro_rules! physical_compare_op {
 //     }
 // }
 
-
-fn match_types_for_series<'a>(lhs: &'a Series, rhs: &'a Series) -> DaftResult<(Cow<'a, Series>, Cow<'a, Series>)> {
+fn match_types_for_series<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> DaftResult<(Cow<'a, Series>, Cow<'a, Series>)> {
     match (lhs.data_type(), rhs.data_type()) {
         (l, r) if l == r => Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
-         _ => todo!("match_types_for_series")
+        _ => todo!("match_types_for_series"),
     }
 }
-
 
 macro_rules! binary_op_not_implemented {
     ($self:expr, $rhs:expr, $op:ident) => {{
         let left_dtype = $self.data_type();
         let right_dtype = $rhs.data_type();
         let op_name = stringify!($op);
-        return Err(common_error::DaftError::ComputeError(format!("Binary Op: {op_name} not implemented for {left_dtype}, {right_dtype}")));
+        return Err(common_error::DaftError::ComputeError(format!(
+            "Binary Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
+        )));
     }};
 }
 
@@ -345,7 +343,6 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         binary_op_not_implemented!(self, rhs, gte);
     }
 }
-
 
 #[cfg(feature = "python")]
 impl SeriesBinaryOps for ArrayWrapper<PythonArray> {}
@@ -471,6 +468,3 @@ impl SeriesBinaryOps for ArrayWrapper<ImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<TensorArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeTensorArray> {}
-
-
-

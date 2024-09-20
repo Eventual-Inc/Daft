@@ -9,8 +9,10 @@ import pyarrow as pa
 import pytest
 from PIL import Image, ImageSequence
 
-from daft.datatype import DaftExtension, DataType
+from daft.datatype import DataType, get_super_ext_type
 from daft.series import Series
+
+DaftExtension = get_super_ext_type()
 
 MODE_TO_NP_DTYPE = {
     "L": np.uint8,

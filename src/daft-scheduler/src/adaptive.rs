@@ -2,16 +2,13 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use daft_core::prelude::Schema;
-
-use crate::PhysicalPlanScheduler;
-use daft_plan::InMemoryInfo;
-use daft_plan::LogicalPlan;
-use daft_plan::{AdaptivePlanner, MaterializedResults};
-
+use daft_plan::{AdaptivePlanner, InMemoryInfo, LogicalPlan, MaterializedResults};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_plan::PyLogicalPlanBuilder, pyo3::prelude::*,
 };
+
+use crate::PhysicalPlanScheduler;
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct AdaptivePhysicalPlanScheduler {

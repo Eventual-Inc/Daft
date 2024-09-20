@@ -4,9 +4,15 @@ mod ops;
 mod serdes;
 mod series_like;
 mod utils;
-use derive_more::Display;
 use std::sync::Arc;
 
+pub use array_impl::IntoSeries;
+use common_display::table_display::{make_comfy_table, StrValue};
+use common_error::DaftResult;
+use derive_more::Display;
+pub use ops::cast_series_to_supertype;
+
+pub(crate) use self::series_like::SeriesLike;
 use crate::{
     array::{
         ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
@@ -15,13 +21,6 @@ use crate::{
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
     with_match_daft_types,
 };
-use common_display::table_display::{make_comfy_table, StrValue};
-use common_error::DaftResult;
-
-pub use array_impl::IntoSeries;
-pub use ops::cast_series_to_supertype;
-
-pub(crate) use self::series_like::SeriesLike;
 
 #[derive(Clone, Debug, Display)]
 #[display("{}\n", self.to_comfy_table())]

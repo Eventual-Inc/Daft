@@ -1,16 +1,16 @@
 use std::borrow::Cow;
 
+use common_error::DaftResult;
+use daft_schema::prelude::DataType;
+
+#[cfg(feature = "python")]
+use crate::series::utils::python_fn::run_python_binary_bool_operator;
 use crate::{
     array::ops::DaftCompare,
     datatypes::{BooleanArray, InferDataType},
     series::Series,
     with_match_comparable_daft_types,
 };
-use common_error::DaftResult;
-use daft_schema::dtype::DataType;
-
-#[cfg(feature = "python")]
-use crate::series::utils::python_fn::run_python_binary_bool_operator;
 
 macro_rules! impl_compare_method {
     ($fname:ident, $pyoperator:expr) => {

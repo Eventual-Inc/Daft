@@ -3,13 +3,13 @@ use arrow2::{
     datatypes::DataType,
     error::Result,
 };
+use common_error::DaftResult;
 use num_traits::Float;
 
 use crate::{
     kernels::search_sorted::{build_is_valid, cmp_float},
     series::Series,
 };
-use common_error::DaftResult;
 
 fn build_is_equal_float<F: Float + arrow2::types::NativeType>(
     left: &dyn Array,

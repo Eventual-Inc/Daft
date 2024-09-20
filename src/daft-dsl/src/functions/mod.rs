@@ -1,37 +1,26 @@
-pub mod float;
-pub mod json;
-pub mod list;
 pub mod map;
 pub mod numeric;
 pub mod partitioning;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
-pub mod temporal;
 pub mod utf8;
 
-use std::fmt::Write;
-use std::fmt::{Display, Formatter, Result};
-use std::hash::Hash;
-
-use crate::{Expr, ExprRef, Operator};
-
-use self::float::FloatExpr;
-use self::json::JsonExpr;
-use self::list::ListExpr;
-use self::map::MapExpr;
-use self::numeric::NumericExpr;
-use self::partitioning::PartitioningExpr;
-use self::sketch::SketchExpr;
-use self::struct_::StructExpr;
-use self::temporal::TemporalExpr;
-use self::utf8::Utf8Expr;
-pub use scalar::*;
+use std::{
+    fmt::{Display, Formatter, Result, Write},
+    hash::Hash,
+};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-
+pub use scalar::*;
 use serde::{Deserialize, Serialize};
+
+use self::{
+    map::MapExpr, numeric::NumericExpr, partitioning::PartitioningExpr, sketch::SketchExpr,
+    struct_::StructExpr, utf8::Utf8Expr,
+};
+use crate::{Expr, ExprRef, Operator};
 
 pub mod python;
 use python::PythonUDF;
@@ -39,14 +28,10 @@ use python::PythonUDF;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
-    Float(FloatExpr),
     Utf8(Utf8Expr),
-    Temporal(TemporalExpr),
-    List(ListExpr),
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
-    Json(JsonExpr),
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
 }
@@ -68,14 +53,10 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             Numeric(expr) => expr.get_evaluator(),
-            Float(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
-            Temporal(expr) => expr.get_evaluator(),
-            List(expr) => expr.get_evaluator(),
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
-            Json(expr) => expr.get_evaluator(),
             Python(expr) => expr.get_evaluator(),
             Partitioning(expr) => expr.get_evaluator(),
         }

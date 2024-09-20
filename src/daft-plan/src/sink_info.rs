@@ -2,16 +2,13 @@ use std::hash::Hash;
 
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
-use daft_dsl::ExprRef;
-use itertools::Itertools;
-
-#[cfg(feature = "python")]
-use pyo3::PyObject;
-
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+use daft_dsl::ExprRef;
+use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::PyObject;
+use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -50,7 +47,11 @@ pub enum CatalogType {
 pub struct IcebergCatalogInfo {
     pub table_name: String,
     pub table_location: String,
-    pub spec_id: i64,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub partition_spec: PyObject,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
@@ -70,7 +71,6 @@ impl PartialEq for IcebergCatalogInfo {
     fn eq(&self, other: &Self) -> bool {
         self.table_name == other.table_name
             && self.table_location == other.table_location
-            && self.spec_id == other.spec_id
             && self.io_config == other.io_config
     }
 }
@@ -82,7 +82,6 @@ impl Hash for IcebergCatalogInfo {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.table_name.hash(state);
         self.table_location.hash(state);
-        self.spec_id.hash(state);
         self.io_config.hash(state);
     }
 }
@@ -93,7 +92,6 @@ impl IcebergCatalogInfo {
         let mut res = vec![];
         res.push(format!("Table Name = {}", self.table_name));
         res.push(format!("Table Location = {}", self.table_location));
-        res.push(format!("Spec ID = {}", self.spec_id));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),

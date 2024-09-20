@@ -82,9 +82,8 @@ pub fn infer_join_schema(
 
 #[cfg(test)]
 mod tests {
-    use crate::col;
-
     use super::*;
+    use crate::col;
 
     #[test]
     fn test_get_common_join_keys() {

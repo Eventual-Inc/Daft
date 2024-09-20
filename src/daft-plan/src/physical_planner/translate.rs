@@ -1,36 +1,34 @@
-use std::cmp::Ordering;
-use std::sync::Arc;
 use std::{
-    cmp::{max, min},
+    cmp::{max, min, Ordering},
     collections::HashMap,
+    sync::Arc,
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
-use daft_dsl::{col, ApproxPercentileParams, SketchType};
-use daft_dsl::{is_partition_compatible, ExprRef};
-
+use daft_dsl::{col, is_partition_compatible, ApproxPercentileParams, ExprRef, SketchType};
 use daft_scan::PhysicalScanInfo;
 
-use crate::logical_ops::{
-    ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-    Join as LogicalJoin, Limit as LogicalLimit,
-    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+use crate::{
+    logical_ops::{
+        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
+        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+        Join as LogicalJoin, Limit as LogicalLimit,
+        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
+        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
+        Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+    },
+    logical_plan::LogicalPlan,
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+    },
+    physical_ops::*,
+    physical_plan::{PhysicalPlan, PhysicalPlanRef},
+    sink_info::{OutputFileInfo, SinkInfo},
+    source_info::{PlaceHolderInfo, SourceInfo},
 };
-use crate::logical_plan::LogicalPlan;
-use crate::partitioning::{
-    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
-};
-use crate::physical_ops::*;
-use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
-use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::{PlaceHolderInfo, SourceInfo};
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -573,6 +571,7 @@ pub(super) fn translate_single_logical_node(
                             "Sort-merge join currently only supports inner joins".to_string(),
                         ));
                     }
+                    let num_partitions = max(num_partitions, cfg.shuffle_join_default_partitions);
 
                     let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
                         // Use the special-purpose presorting that ensures join inputs are sorted with aligned
@@ -618,7 +617,6 @@ pub(super) fn translate_single_logical_node(
                     // allow for leniency in partition size to avoid minor repartitions
                     let num_left_partitions = left_clustering_spec.num_partitions();
                     let num_right_partitions = right_clustering_spec.num_partitions();
-
                     let num_partitions = match (
                         is_left_hash_partitioned,
                         is_right_hash_partitioned,
@@ -639,6 +637,7 @@ pub(super) fn translate_single_logical_node(
                         }
                         (_, _, a, b) => max(a, b),
                     };
+                    let num_partitions = max(num_partitions, cfg.shuffle_join_default_partitions);
 
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
@@ -959,19 +958,20 @@ pub fn populate_aggregation_stages(
 
 #[cfg(test)]
 mod tests {
+    use std::{assert_matches::assert_matches, sync::Arc};
+
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use std::assert_matches::assert_matches;
-    use std::sync::Arc;
-
-    use crate::physical_plan::PhysicalPlan;
-    use crate::physical_planner::logical_to_physical;
-    use crate::test::{dummy_scan_node, dummy_scan_operator};
-    use crate::{LogicalPlanBuilder, PhysicalPlanRef};
 
     use super::HashJoin;
+    use crate::{
+        physical_plan::PhysicalPlan,
+        physical_planner::logical_to_physical,
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlanBuilder, PhysicalPlanRef,
+    };
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
     ///
@@ -1077,6 +1077,13 @@ mod tests {
                 Self::Reversed(v) => Self::Reversed(v * x),
             }
         }
+        fn unwrap(&self) -> usize {
+            match self {
+                Self::Good(v) => *v,
+                Self::Bad(v) => *v,
+                Self::Reversed(v) => *v,
+            }
+        }
     }
 
     fn force_repartition(
@@ -1129,21 +1136,31 @@ mod tests {
 
     fn check_physical_matches(
         plan: PhysicalPlanRef,
+        left_partition_size: usize,
+        right_partition_size: usize,
         left_repartitions: bool,
         right_repartitions: bool,
+        shuffle_join_default_partitions: usize,
     ) -> bool {
         match plan.as_ref() {
             PhysicalPlan::HashJoin(HashJoin { left, right, .. }) => {
-                let left_works = match (left.as_ref(), left_repartitions) {
+                let left_works = match (
+                    left.as_ref(),
+                    left_repartitions || left_partition_size < shuffle_join_default_partitions,
+                ) {
                     (PhysicalPlan::ReduceMerge(_), true) => true,
                     (PhysicalPlan::Project(_), false) => true,
                     _ => false,
                 };
-                let right_works = match (right.as_ref(), right_repartitions) {
+                let right_works = match (
+                    right.as_ref(),
+                    right_repartitions || right_partition_size < shuffle_join_default_partitions,
+                ) {
                     (PhysicalPlan::ReduceMerge(_), true) => true,
                     (PhysicalPlan::Project(_), false) => true,
                     _ => false,
                 };
+
                 left_works && right_works
             }
             _ => false,
@@ -1153,7 +1170,7 @@ mod tests {
     /// Tests a variety of settings regarding hash join repartitioning.
     #[test]
     fn repartition_hash_join_tests() -> DaftResult<()> {
-        use RepartitionOptions::*;
+        use RepartitionOptions::{Bad, Good, Reversed};
         let cases = vec![
             (Good(30), Good(30), false, false),
             (Good(30), Good(40), true, false),
@@ -1171,9 +1188,17 @@ mod tests {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         for (l_opts, r_opts, l_exp, r_exp) in cases {
             for mult in [1, 10] {
-                let plan =
-                    get_hash_join_plan(cfg.clone(), l_opts.scale_by(mult), r_opts.scale_by(mult))?;
-                if !check_physical_matches(plan, l_exp, r_exp) {
+                let l_opts = l_opts.scale_by(mult);
+                let r_opts = r_opts.scale_by(mult);
+                let plan = get_hash_join_plan(cfg.clone(), l_opts.clone(), r_opts.clone())?;
+                if !check_physical_matches(
+                    plan,
+                    l_opts.unwrap(),
+                    r_opts.unwrap(),
+                    l_exp,
+                    r_exp,
+                    cfg.shuffle_join_default_partitions,
+                ) {
                     panic!(
                         "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
                         l_opts, r_opts, l_exp, r_exp, mult
@@ -1181,9 +1206,15 @@ mod tests {
                 }
 
                 // reversed direction
-                let plan =
-                    get_hash_join_plan(cfg.clone(), r_opts.scale_by(mult), l_opts.scale_by(mult))?;
-                if !check_physical_matches(plan, r_exp, l_exp) {
+                let plan = get_hash_join_plan(cfg.clone(), r_opts.clone(), l_opts.clone())?;
+                if !check_physical_matches(
+                    plan,
+                    l_opts.unwrap(),
+                    r_opts.unwrap(),
+                    r_exp,
+                    l_exp,
+                    cfg.shuffle_join_default_partitions,
+                ) {
                     panic!(
                         "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
                         r_opts, l_opts, r_exp, l_exp, mult
@@ -1200,27 +1231,38 @@ mod tests {
         let mut cfg = DaftExecutionConfig::default();
         cfg.hash_join_partition_size_leniency = 0.8;
         let cfg = Arc::new(cfg);
+        let (l_opts, r_opts) = (RepartitionOptions::Good(30), RepartitionOptions::Bad(40));
+        let physical_plan = get_hash_join_plan(cfg.clone(), l_opts.clone(), r_opts.clone())?;
+        assert!(check_physical_matches(
+            physical_plan,
+            l_opts.unwrap(),
+            r_opts.unwrap(),
+            true,
+            true,
+            cfg.shuffle_join_default_partitions
+        ));
 
-        let physical_plan = get_hash_join_plan(
-            cfg.clone(),
-            RepartitionOptions::Good(20),
-            RepartitionOptions::Bad(40),
-        )?;
-        assert!(check_physical_matches(physical_plan, true, true));
+        let (l_opts, r_opts) = (RepartitionOptions::Good(20), RepartitionOptions::Bad(25));
+        let physical_plan = get_hash_join_plan(cfg.clone(), l_opts.clone(), r_opts.clone())?;
+        assert!(check_physical_matches(
+            physical_plan,
+            l_opts.unwrap(),
+            r_opts.unwrap(),
+            false,
+            true,
+            cfg.shuffle_join_default_partitions
+        ));
 
-        let physical_plan = get_hash_join_plan(
-            cfg.clone(),
-            RepartitionOptions::Good(20),
-            RepartitionOptions::Bad(25),
-        )?;
-        assert!(check_physical_matches(physical_plan, false, true));
-
-        let physical_plan = get_hash_join_plan(
-            cfg.clone(),
-            RepartitionOptions::Good(20),
-            RepartitionOptions::Bad(26),
-        )?;
-        assert!(check_physical_matches(physical_plan, true, true));
+        let (l_opts, r_opts) = (RepartitionOptions::Good(20), RepartitionOptions::Bad(26));
+        let physical_plan = get_hash_join_plan(cfg.clone(), l_opts.clone(), r_opts.clone())?;
+        assert!(check_physical_matches(
+            physical_plan,
+            l_opts.unwrap(),
+            r_opts.unwrap(),
+            true,
+            true,
+            cfg.shuffle_join_default_partitions
+        ));
         Ok(())
     }
 
@@ -1238,7 +1280,14 @@ mod tests {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         for (l_opts, r_opts, l_exp, r_exp) in cases {
             let plan = get_hash_join_plan(cfg.clone(), l_opts, r_opts)?;
-            if !check_physical_matches(plan, l_exp, r_exp) {
+            if !check_physical_matches(
+                plan,
+                l_opts.unwrap(),
+                r_opts.unwrap(),
+                l_exp,
+                r_exp,
+                cfg.shuffle_join_default_partitions,
+            ) {
                 panic!(
                     "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
                     l_opts, r_opts, l_exp, r_exp
@@ -1247,7 +1296,14 @@ mod tests {
 
             // reversed direction
             let plan = get_hash_join_plan(cfg.clone(), r_opts, l_opts)?;
-            if !check_physical_matches(plan, r_exp, l_exp) {
+            if !check_physical_matches(
+                plan,
+                l_opts.unwrap(),
+                r_opts.unwrap(),
+                r_exp,
+                l_exp,
+                cfg.shuffle_join_default_partitions,
+            ) {
                 panic!(
                     "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
                     r_opts, l_opts, r_exp, l_exp

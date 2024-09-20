@@ -52,6 +52,7 @@ pub struct DaftExecutionConfig {
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
+    pub shuffle_join_default_partitions: usize,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
@@ -75,6 +76,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
+            shuffle_join_default_partitions: 16,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,
@@ -106,13 +108,11 @@ impl DaftExecutionConfig {
 mod python;
 
 #[cfg(feature = "python")]
+use pyo3::prelude::*;
+#[cfg(feature = "python")]
 pub use python::PyDaftExecutionConfig;
-
 #[cfg(feature = "python")]
 pub use python::PyDaftPlanningConfig;
-
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

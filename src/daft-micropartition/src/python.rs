@@ -4,25 +4,21 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_core::prelude::*;
-
-use daft_core::python::PySeries;
-use daft_core::python::{PySchema, PyTimeUnit};
-
+use daft_core::{
+    prelude::*,
+    python::{PySchema, PySeries, PyTimeUnit},
+};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
-use daft_stats::TableStatistics;
+use daft_stats::{TableMetadata, TableStatistics};
 use daft_table::python::PyTable;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
 
 use crate::micropartition::{MicroPartition, TableState};
-
-use daft_stats::TableMetadata;
-use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone)]

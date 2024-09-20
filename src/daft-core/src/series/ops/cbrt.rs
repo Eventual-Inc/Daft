@@ -1,8 +1,9 @@
 use common_error::DaftResult;
 
-use crate::datatypes::DataType;
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
     pub fn cbrt(&self) -> DaftResult<Series> {

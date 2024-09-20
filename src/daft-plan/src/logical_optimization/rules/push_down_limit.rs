@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{Limit as LogicalLimit, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
-
-use super::OptimizerRule;
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 /// Optimization rules for pushing Limits further into the logical plan.
 #[derive(Default, Debug)]
@@ -121,16 +120,15 @@ impl PushDownLimit {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use daft_core::prelude::*;
-
-    use daft_dsl::col;
-    use daft_scan::Pushdowns;
-    use rstest::rstest;
     use std::sync::Arc;
 
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_dsl::col;
+    use daft_scan::Pushdowns;
     #[cfg(feature = "python")]
     use pyo3::Python;
+    use rstest::rstest;
 
     use crate::{
         logical_optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},

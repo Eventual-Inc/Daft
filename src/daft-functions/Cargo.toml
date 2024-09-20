@@ -8,6 +8,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-image = {path = "../daft-image", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
+paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
@@ -23,6 +24,7 @@ python = [
   "common-error/python",
   "daft-core/python",
   "daft-io/python",
+  "daft-dsl/python",
   "daft-image/python",
   "common-io-config/python"
 ]

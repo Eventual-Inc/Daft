@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use common_io_config::python::IOConfig as PyIOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
-use common_io_config::python::IOConfig as PyIOConfig;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
@@ -94,6 +94,7 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        shuffle_join_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
@@ -143,10 +144,16 @@ impl PyDaftExecutionConfig {
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
         }
+
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
         }
+
+        if let Some(shuffle_join_default_partitions) = shuffle_join_default_partitions {
+            config.shuffle_join_default_partitions = shuffle_join_default_partitions;
+        }
+
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
@@ -229,6 +236,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
+    }
+
+    #[getter]
+    fn get_shuffle_join_default_partitions(&self) -> PyResult<usize> {
+        Ok(self.config.shuffle_join_default_partitions)
     }
 
     #[getter]

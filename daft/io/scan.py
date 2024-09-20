@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import abc
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from daft.daft import PartitionField, PartitionTransform, Pushdowns, ScanTask
-from daft.logical.schema import Field, Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.logical.schema import Field, Schema
 
 
 def make_partition_field(

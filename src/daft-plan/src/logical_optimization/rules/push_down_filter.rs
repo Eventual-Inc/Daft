@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::join::JoinType;
 use daft_dsl::{
     col,
@@ -14,14 +15,12 @@ use daft_dsl::{
 };
 use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
-
-use super::OptimizerRule;
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
@@ -356,7 +355,6 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-
     use daft_dsl::{col, lit};
     use daft_scan::Pushdowns;
     use rstest::rstest;
