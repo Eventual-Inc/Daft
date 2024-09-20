@@ -23,20 +23,20 @@ impl ScalarUDF for Truncate {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
-            [input, relative_to] => match (input.to_field(schema), relative_to.to_field(schema)) {
-                (Ok(input_field), Ok(relative_to_field))
-                    if input_field.dtype.is_temporal()
-                        && (relative_to_field.dtype.is_temporal()
-                            || relative_to_field.dtype.is_null()) =>
+            [input, relative_to] => {
+                let input_field = input.to_field(schema)?;
+                let relative_to_field = relative_to.to_field(schema)?;
+                if input_field.dtype.is_temporal()
+                    && (relative_to_field.dtype.is_temporal() || relative_to_field.dtype.is_null())
                 {
                     Ok(Field::new(input_field.name, input_field.dtype))
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Expected temporal input args, got {} and {}",
+                        input_field.dtype, relative_to_field.dtype
+                    )))
                 }
-                (Ok(input_field), Ok(relative_to_field)) => Err(DaftError::TypeError(format!(
-                    "Expected temporal input args, got {} and {}",
-                    input_field.dtype, relative_to_field.dtype
-                ))),
-                (Err(e), _) | (_, Err(e)) => Err(e),
-            },
+            }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
