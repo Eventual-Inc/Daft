@@ -40,7 +40,7 @@ impl CountMode {
 impl_bincode_py_state_serialization!(CountMode);
 
 impl CountMode {
-    pub fn iterator() -> std::slice::Iter<'static, CountMode> {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
         static COUNT_MODES: [CountMode; 3] = [CountMode::All, CountMode::Valid, CountMode::Null];
         COUNT_MODES.iter()
     }
@@ -51,13 +51,13 @@ impl FromStr for CountMode {
 
     fn from_str(count_mode: &str) -> DaftResult<Self> {
         match count_mode {
-            "all" => Ok(CountMode::All),
-            "valid" => Ok(CountMode::Valid),
-            "null" => Ok(CountMode::Null),
+            "all" => Ok(Self::All),
+            "valid" => Ok(Self::Valid),
+            "null" => Ok(Self::Null),
             _ => Err(DaftError::TypeError(format!(
                 "Count mode {} is not supported; only the following modes are supported: {:?}",
                 count_mode,
-                CountMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }

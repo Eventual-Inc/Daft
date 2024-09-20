@@ -73,7 +73,7 @@ impl Table {
         pivot_col: ExprRef,
         values_col: ExprRef,
         names: Vec<String>,
-    ) -> DaftResult<Table> {
+    ) -> DaftResult<Self> {
         // This function pivots the table based on the given group_by, pivot, and values column.
         //
         // At a high level this function does two things:

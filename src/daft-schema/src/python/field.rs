@@ -26,7 +26,7 @@ impl PyField {
         Ok(self.field.dtype.clone().into())
     }
 
-    pub fn eq(&self, other: &PyField) -> PyResult<bool> {
+    pub fn eq(&self, other: &Self) -> PyResult<bool> {
         Ok(self.field.eq(&other.field))
     }
 }
@@ -35,7 +35,7 @@ impl_bincode_py_state_serialization!(PyField);
 
 impl From<Field> for PyField {
     fn from(field: Field) -> Self {
-        PyField { field }
+        Self { field }
     }
 }
 

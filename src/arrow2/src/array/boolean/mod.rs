@@ -237,9 +237,9 @@ impl BooleanArray {
 
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                Left(bitmap) => Left(BooleanArray::new(self.data_type, self.values, Some(bitmap))),
+                Left(bitmap) => Left(Self::new(self.data_type, self.values, Some(bitmap))),
                 Right(mutable_bitmap) => match self.values.into_mut() {
-                    Left(immutable) => Left(BooleanArray::new(
+                    Left(immutable) => Left(Self::new(
                         self.data_type,
                         immutable,
                         Some(mutable_bitmap.into()),
@@ -252,7 +252,7 @@ impl BooleanArray {
             }
         } else {
             match self.values.into_mut() {
-                Left(immutable) => Left(BooleanArray::new(self.data_type, immutable, None)),
+                Left(immutable) => Left(Self::new(self.data_type, immutable, None)),
                 Right(mutable) => {
                     Right(MutableBooleanArray::try_new(self.data_type, mutable, None).unwrap())
                 }

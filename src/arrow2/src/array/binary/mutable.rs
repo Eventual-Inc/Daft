@@ -31,7 +31,7 @@ impl<O: Offset> From<MutableBinaryArray<O>> for BinaryArray<O> {
             let validity: Option<Bitmap> = x.into();
             validity
         });
-        let array: BinaryArray<O> = other.values.into();
+        let array: Self = other.values.into();
         array.with_validity(validity)
     }
 }

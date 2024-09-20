@@ -30,7 +30,7 @@ impl<O: Offset> From<MutableUtf8ValuesArray<O>> for Utf8Array<O> {
         // `MutableUtf8ValuesArray` has the same invariants as `Utf8Array` and thus
         // `Utf8Array` can be safely created from `MutableUtf8ValuesArray` without checks.
         unsafe {
-            Utf8Array::<O>::new_unchecked(
+            Self::new_unchecked(
                 other.data_type,
                 other.offsets.into(),
                 other.values.into(),
@@ -45,7 +45,7 @@ impl<O: Offset> From<MutableUtf8ValuesArray<O>> for MutableUtf8Array<O> {
         // Safety:
         // `MutableUtf8ValuesArray` has the same invariants as `MutableUtf8Array`
         unsafe {
-            MutableUtf8Array::<O>::new_unchecked(other.data_type, other.offsets, other.values, None)
+            Self::new_unchecked(other.data_type, other.offsets, other.values, None)
         }
     }
 }

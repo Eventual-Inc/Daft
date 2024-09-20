@@ -94,20 +94,20 @@ where
                         })
                         .collect(),
                 ));
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
             crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
             crate::datatypes::DataType::Binary => {
                 let cat_array = binary_concat(arrow_arrays.as_slice())?;
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
             _ => {
                 let cat_array: Box<dyn Array> =
                     arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
-                DataArray::try_from((field.clone(), cat_array))
+                Self::try_from((field.clone(), cat_array))
             }
         }
     }

@@ -24,20 +24,11 @@ fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 }
 
 impl MicroPartition {
-    fn vec_part_tables_to_mps(
-        &self,
-        part_tables: Vec<Vec<Table>>,
-    ) -> DaftResult<Vec<MicroPartition>> {
+    fn vec_part_tables_to_mps(&self, part_tables: Vec<Vec<Table>>) -> DaftResult<Vec<Self>> {
         let part_tables = transpose2(part_tables);
         Ok(part_tables
             .into_iter()
-            .map(|v| {
-                MicroPartition::new_loaded(
-                    self.schema.clone(),
-                    Arc::new(v),
-                    self.statistics.clone(),
-                )
-            })
+            .map(|v| Self::new_loaded(self.schema.clone(), Arc::new(v), self.statistics.clone()))
             .collect())
     }
 
@@ -127,11 +118,10 @@ impl MicroPartition {
 
         let mps = tables
             .into_iter()
-            .map(|t| MicroPartition::new_loaded(self.schema.clone(), Arc::new(vec![t]), None))
+            .map(|t| Self::new_loaded(self.schema.clone(), Arc::new(vec![t]), None))
             .collect::<Vec<_>>();
 
-        let values =
-            MicroPartition::new_loaded(values.schema.clone(), Arc::new(vec![values]), None);
+        let values = Self::new_loaded(values.schema.clone(), Arc::new(vec![values]), None);
 
         Ok((mps, values))
     }

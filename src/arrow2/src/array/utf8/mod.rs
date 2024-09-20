@@ -259,7 +259,7 @@ impl<O: Offset> Utf8Array<O> {
             match bitmap.into_mut() {
                 // Safety: invariants are preserved
                 Left(bitmap) => Left(unsafe {
-                    Utf8Array::new_unchecked(
+                    Self::new_unchecked(
                         self.data_type,
                         self.offsets,
                         self.values,
@@ -270,7 +270,7 @@ impl<O: Offset> Utf8Array<O> {
                     (Left(values), Left(offsets)) => {
                         // Safety: invariants are preserved
                         Left(unsafe {
-                            Utf8Array::new_unchecked(
+                            Self::new_unchecked(
                                 self.data_type,
                                 offsets,
                                 values,
@@ -281,7 +281,7 @@ impl<O: Offset> Utf8Array<O> {
                     (Left(values), Right(offsets)) => {
                         // Safety: invariants are preserved
                         Left(unsafe {
-                            Utf8Array::new_unchecked(
+                            Self::new_unchecked(
                                 self.data_type,
                                 offsets.into(),
                                 values,
@@ -292,7 +292,7 @@ impl<O: Offset> Utf8Array<O> {
                     (Right(values), Left(offsets)) => {
                         // Safety: invariants are preserved
                         Left(unsafe {
-                            Utf8Array::new_unchecked(
+                            Self::new_unchecked(
                                 self.data_type,
                                 offsets,
                                 values.into(),
@@ -313,13 +313,13 @@ impl<O: Offset> Utf8Array<O> {
         } else {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
-                    Left(unsafe { Utf8Array::new_unchecked(self.data_type, offsets, values, None) })
+                    Left(unsafe { Self::new_unchecked(self.data_type, offsets, values, None) })
                 }
                 (Left(values), Right(offsets)) => Left(unsafe {
-                    Utf8Array::new_unchecked(self.data_type, offsets.into(), values, None)
+                    Self::new_unchecked(self.data_type, offsets.into(), values, None)
                 }),
                 (Right(values), Left(offsets)) => Left(unsafe {
-                    Utf8Array::new_unchecked(self.data_type, offsets, values.into(), None)
+                    Self::new_unchecked(self.data_type, offsets, values.into(), None)
                 }),
                 (Right(values), Right(offsets)) => Right(unsafe {
                     MutableUtf8Array::new_unchecked(self.data_type, offsets, values, None)
@@ -546,6 +546,6 @@ impl<O: Offset> Default for Utf8Array<O> {
         } else {
             DataType::Utf8
         };
-        Utf8Array::new(data_type, Default::default(), Default::default(), None)
+        Self::new(data_type, Default::default(), Default::default(), None)
     }
 }

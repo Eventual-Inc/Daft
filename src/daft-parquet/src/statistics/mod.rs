@@ -26,7 +26,7 @@ pub(super) enum Error {
 impl From<daft_stats::Error> for Error {
     fn from(value: daft_stats::Error) -> Self {
         match value {
-            daft_stats::Error::DaftCoreCompute { source } => Error::DaftCoreCompute { source },
+            daft_stats::Error::DaftCoreCompute { source } => Self::DaftCoreCompute { source },
             _ => Self::DaftStats { source: value },
         }
     }
@@ -38,7 +38,7 @@ impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
         match value {
             Error::DaftCoreCompute { source } => source,
-            _ => DaftError::External(value.into()),
+            _ => Self::External(value.into()),
         }
     }
 }
@@ -47,6 +47,6 @@ pub(super) struct Wrap<T>(T);
 
 impl<T> From<T> for Wrap<T> {
     fn from(value: T) -> Self {
-        Wrap(value)
+        Self(value)
     }
 }

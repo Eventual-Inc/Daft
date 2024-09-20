@@ -79,7 +79,7 @@ impl StreamState {
     ///
     /// If the `StreamState` was `Waiting`.
     pub fn unwrap(self) -> Chunk<Box<dyn Array>> {
-        if let StreamState::Some(batch) = self {
+        if let Self::Some(batch) = self {
             batch
         } else {
             panic!("The batch is not available")

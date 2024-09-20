@@ -39,6 +39,6 @@ impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> 
         let values = ffi::try_from(values)?;
 
         // the assumption of this trait
-        DictionaryArray::<K>::try_new_unchecked(data_type, keys, values)
+        Self::try_new_unchecked(data_type, keys, values)
     }
 }

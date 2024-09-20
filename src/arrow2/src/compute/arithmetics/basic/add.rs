@@ -138,50 +138,50 @@ where
 }
 
 // Implementation of ArrayAdd trait for PrimitiveArrays
-impl<T> ArrayAdd<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayAdd<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + Add<Output = T>,
 {
-    fn add(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn add(&self, rhs: &Self) -> Self {
         add(self, rhs)
     }
 }
 
-impl<T> ArrayWrappingAdd<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayWrappingAdd<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + WrappingAdd<Output = T>,
 {
-    fn wrapping_add(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn wrapping_add(&self, rhs: &Self) -> Self {
         wrapping_add(self, rhs)
     }
 }
 
 // Implementation of ArrayCheckedAdd trait for PrimitiveArrays
-impl<T> ArrayCheckedAdd<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayCheckedAdd<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + CheckedAdd<Output = T>,
 {
-    fn checked_add(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn checked_add(&self, rhs: &Self) -> Self {
         checked_add(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingAdd trait for PrimitiveArrays
-impl<T> ArraySaturatingAdd<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArraySaturatingAdd<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + SaturatingAdd<Output = T>,
 {
-    fn saturating_add(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn saturating_add(&self, rhs: &Self) -> Self {
         saturating_add(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingAdd trait for PrimitiveArrays
-impl<T> ArrayOverflowingAdd<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayOverflowingAdd<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + OverflowingAdd<Output = T>,
 {
-    fn overflowing_add(&self, rhs: &PrimitiveArray<T>) -> (Self, Bitmap) {
+    fn overflowing_add(&self, rhs: &Self) -> (Self, Bitmap) {
         overflowing_add(self, rhs)
     }
 }

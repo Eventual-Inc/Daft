@@ -12,7 +12,7 @@ pub struct HTTPConfig {
 
 impl Default for HTTPConfig {
     fn default() -> Self {
-        HTTPConfig {
+        Self {
             user_agent: "daft/0.0.1".to_string(), // NOTE: Ideally we grab the version of Daft, but that requires a dependency on daft-core
             bearer_token: None,
         }
@@ -21,7 +21,7 @@ impl Default for HTTPConfig {
 
 impl HTTPConfig {
     pub fn new<S: Into<ObfuscatedString>>(bearer_token: Option<S>) -> Self {
-        HTTPConfig {
+        Self {
             bearer_token: bearer_token.map(|t| t.into()),
             ..Default::default()
         }

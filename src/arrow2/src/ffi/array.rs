@@ -110,12 +110,12 @@ impl ArrowArray {
 
         let children_ptr = children
             .into_iter()
-            .map(|child| Box::into_raw(Box::new(ArrowArray::new(child))))
+            .map(|child| Box::into_raw(Box::new(Self::new(child))))
             .collect::<Box<_>>();
         let n_children = children_ptr.len() as i64;
 
         let dictionary_ptr =
-            dictionary.map(|array| Box::into_raw(Box::new(ArrowArray::new(array))));
+            dictionary.map(|array| Box::into_raw(Box::new(Self::new(array))));
 
         let length = array.len() as i64;
         let null_count = array.null_count() as i64;

@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn round(&self, decimal: i32) -> DaftResult<Series> {
+    pub fn round(&self, decimal: i32) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8
             | DataType::Int16

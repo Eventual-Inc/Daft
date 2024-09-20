@@ -54,6 +54,9 @@ python = [
   "common-file-formats/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-io"

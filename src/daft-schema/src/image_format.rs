@@ -38,7 +38,7 @@ impl ImageFormat {
 }
 
 impl ImageFormat {
-    pub fn iterator() -> std::slice::Iter<'static, ImageFormat> {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
         use ImageFormat::*;
 
         static FORMATS: [ImageFormat; 5] = [PNG, JPEG, TIFF, GIF, BMP];
@@ -61,7 +61,7 @@ impl FromStr for ImageFormat {
             _ => Err(DaftError::TypeError(format!(
                 "Image format {} is not supported; only the following formats are supported: {:?}",
                 format,
-                ImageFormat::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }

@@ -70,7 +70,7 @@ impl ParquetType {
 
     /// Checks if `sub_type` schema is part of current schema.
     /// This method can be used to check if projected columns are part of the root schema.
-    pub fn check_contains(&self, sub_type: &ParquetType) -> bool {
+    pub fn check_contains(&self, sub_type: &Self) -> bool {
         let basic_match = self.get_field_info() == sub_type.get_field_info();
 
         match (self, sub_type) {
@@ -112,13 +112,13 @@ impl ParquetType {
 
 /// Constructors
 impl ParquetType {
-    pub(crate) fn new_root(name: String, fields: Vec<ParquetType>) -> Self {
+    pub(crate) fn new_root(name: String, fields: Vec<Self>) -> Self {
         let field_info = FieldInfo {
             name,
             repetition: Repetition::Optional,
             id: None,
         };
-        ParquetType::GroupType {
+        Self::GroupType {
             field_info,
             fields,
             logical_type: None,
@@ -128,7 +128,7 @@ impl ParquetType {
 
     pub fn from_converted(
         name: String,
-        fields: Vec<ParquetType>,
+        fields: Vec<Self>,
         repetition: Repetition,
         converted_type: Option<GroupConvertedType>,
         id: Option<i32>,
@@ -139,7 +139,7 @@ impl ParquetType {
             id,
         };
 
-        ParquetType::GroupType {
+        Self::GroupType {
             field_info,
             fields,
             converted_type,
@@ -166,7 +166,7 @@ impl ParquetType {
             id,
         };
 
-        Ok(ParquetType::PrimitiveType(PrimitiveType {
+        Ok(Self::PrimitiveType(PrimitiveType {
             field_info,
             converted_type,
             logical_type,
@@ -177,7 +177,7 @@ impl ParquetType {
     /// Helper method to create a [`ParquetType::PrimitiveType`] optional field
     /// with no logical or converted types.
     pub fn from_physical(name: String, physical_type: PhysicalType) -> Self {
-        ParquetType::PrimitiveType(PrimitiveType::from_physical(name, physical_type))
+        Self::PrimitiveType(PrimitiveType::from_physical(name, physical_type))
     }
 
     pub fn from_group(
@@ -185,7 +185,7 @@ impl ParquetType {
         repetition: Repetition,
         converted_type: Option<GroupConvertedType>,
         logical_type: Option<GroupLogicalType>,
-        fields: Vec<ParquetType>,
+        fields: Vec<Self>,
         id: Option<i32>,
     ) -> Self {
         let field_info = FieldInfo {
@@ -194,7 +194,7 @@ impl ParquetType {
             id,
         };
 
-        ParquetType::GroupType {
+        Self::GroupType {
             field_info,
             logical_type,
             converted_type,

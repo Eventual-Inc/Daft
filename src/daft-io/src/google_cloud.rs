@@ -58,50 +58,50 @@ impl From<Error> for super::Error {
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404) | Some(410) => super::Error::NotFound {
+                    Some(404) | Some(410) => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    Some(401) => super::Error::Unauthorized {
+                    Some(401) => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: err.into(),
                     },
                 },
                 GError::Response(err) => match err.code {
-                    404 | 410 => super::Error::NotFound {
+                    404 | 410 => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    401 => super::Error::Unauthorized {
+                    401 => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: err.into(),
                     },
                 },
-                GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                GError::TokenSource(err) => Self::UnableToLoadCredentials {
                     store: super::SourceType::GCS,
                     source: err,
                 },
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
                 source: source.into(),
             },
-            NotAFile { path } => super::Error::NotAFile { path },
+            NotAFile { path } => Self::NotAFile { path },
         }
     }
 }
@@ -392,7 +392,7 @@ impl GCSSource {
         }
 
         let client = Client::new(client_config);
-        Ok(GCSSource {
+        Ok(Self {
             client: GCSClientWrapper(client),
         }
         .into())

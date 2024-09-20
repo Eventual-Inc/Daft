@@ -40,7 +40,7 @@ pub struct SerializeOptions {
 
 impl Default for SerializeOptions {
     fn default() -> Self {
-        SerializeOptions {
+        Self {
             date32_format: None,
             date64_format: None,
             time32_format: None,

@@ -49,10 +49,10 @@ impl Nested {
     /// Returns the length (number of rows) of the element
     pub fn len(&self) -> usize {
         match self {
-            Nested::Primitive(_, _, length) => *length,
-            Nested::List(nested) => nested.offsets.len_proxy(),
-            Nested::LargeList(nested) => nested.offsets.len_proxy(),
-            Nested::Struct(_, _, len) => *len,
+            Self::Primitive(_, _, length) => *length,
+            Self::List(nested) => nested.offsets.len_proxy(),
+            Self::LargeList(nested) => nested.offsets.len_proxy(),
+            Self::Struct(_, _, len) => *len,
         }
     }
 }

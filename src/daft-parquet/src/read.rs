@@ -29,10 +29,10 @@ pub struct ParquetSchemaInferenceOptions {
 
 impl ParquetSchemaInferenceOptions {
     pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
-        let default: ParquetSchemaInferenceOptions = Default::default();
+        let default: Self = Default::default();
         let coerce_int96_timestamp_unit =
             coerce_int96_timestamp_unit.unwrap_or(default.coerce_int96_timestamp_unit);
-        ParquetSchemaInferenceOptions {
+        Self {
             coerce_int96_timestamp_unit,
         }
     }
@@ -40,7 +40,7 @@ impl ParquetSchemaInferenceOptions {
 
 impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
-        ParquetSchemaInferenceOptions {
+        Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
         }
     }
@@ -50,7 +50,7 @@ impl From<ParquetSchemaInferenceOptions>
     for arrow2::io::parquet::read::schema::SchemaInferenceOptions
 {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        arrow2::io::parquet::read::schema::SchemaInferenceOptions {
+        Self {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
         }
     }

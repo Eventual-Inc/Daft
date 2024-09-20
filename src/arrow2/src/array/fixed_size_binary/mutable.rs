@@ -23,7 +23,7 @@ pub struct MutableFixedSizeBinaryArray {
 
 impl From<MutableFixedSizeBinaryArray> for FixedSizeBinaryArray {
     fn from(other: MutableFixedSizeBinaryArray) -> Self {
-        FixedSizeBinaryArray::new(
+        Self::new(
             other.data_type,
             other.values.into(),
             other.validity.map(|x| x.into()),

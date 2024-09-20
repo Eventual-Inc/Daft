@@ -16,6 +16,6 @@ pub use csv_async::Error as CSVError;
 
 impl From<CSVError> for crate::error::Error {
     fn from(error: CSVError) -> Self {
-        crate::error::Error::External("".to_string(), Box::new(error))
+        Self::External("".to_string(), Box::new(error))
     }
 }

@@ -138,50 +138,50 @@ where
 }
 
 // Implementation of ArraySub trait for PrimitiveArrays
-impl<T> ArraySub<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArraySub<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + Sub<Output = T>,
 {
-    fn sub(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn sub(&self, rhs: &Self) -> Self {
         sub(self, rhs)
     }
 }
 
-impl<T> ArrayWrappingSub<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayWrappingSub<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + WrappingSub<Output = T>,
 {
-    fn wrapping_sub(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn wrapping_sub(&self, rhs: &Self) -> Self {
         wrapping_sub(self, rhs)
     }
 }
 
 // Implementation of ArrayCheckedSub trait for PrimitiveArrays
-impl<T> ArrayCheckedSub<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayCheckedSub<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + CheckedSub<Output = T>,
 {
-    fn checked_sub(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn checked_sub(&self, rhs: &Self) -> Self {
         checked_sub(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingSub trait for PrimitiveArrays
-impl<T> ArraySaturatingSub<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArraySaturatingSub<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + SaturatingSub<Output = T>,
 {
-    fn saturating_sub(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn saturating_sub(&self, rhs: &Self) -> Self {
         saturating_sub(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingSub trait for PrimitiveArrays
-impl<T> ArrayOverflowingSub<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayOverflowingSub<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + OverflowingSub<Output = T>,
 {
-    fn overflowing_sub(&self, rhs: &PrimitiveArray<T>) -> (Self, Bitmap) {
+    fn overflowing_sub(&self, rhs: &Self) -> (Self, Bitmap) {
         overflowing_sub(self, rhs)
     }
 }

@@ -49,7 +49,7 @@ enum Error {
 impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
         match &value {
-            Error::GlobNoMatch { glob_path } => DaftError::FileNotFound {
+            Error::GlobNoMatch { glob_path } => Self::FileNotFound {
                 path: glob_path.clone(),
                 source: Box::new(value),
             },

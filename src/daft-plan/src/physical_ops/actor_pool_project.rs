@@ -53,7 +53,7 @@ impl ActorPoolProject {
             return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 stateful UDF expression but found: {num_stateful_udf_exprs}")));
         }
 
-        Ok(ActorPoolProject {
+        Ok(Self {
             input,
             projection,
             clustering_spec,

@@ -40,7 +40,7 @@ pub(super) trait Pushable<T>: Sized {
 impl Pushable<bool> for MutableBitmap {
     #[inline]
     fn reserve(&mut self, additional: usize) {
-        MutableBitmap::reserve(self, additional)
+        Self::reserve(self, additional)
     }
     #[inline]
     fn len(&self) -> usize {
@@ -66,7 +66,7 @@ impl Pushable<bool> for MutableBitmap {
 impl<A: Copy + Default> Pushable<A> for Vec<A> {
     #[inline]
     fn reserve(&mut self, additional: usize) {
-        Vec::reserve(self, additional)
+        Self::reserve(self, additional)
     }
     #[inline]
     fn len(&self) -> usize {

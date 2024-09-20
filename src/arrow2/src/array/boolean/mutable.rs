@@ -26,7 +26,7 @@ pub struct MutableBooleanArray {
 
 impl From<MutableBooleanArray> for BooleanArray {
     fn from(other: MutableBooleanArray) -> Self {
-        BooleanArray::new(
+        Self::new(
             other.data_type,
             other.values.into(),
             other.validity.map(|x| x.into()),
@@ -267,7 +267,7 @@ impl MutableBooleanArray {
     ) -> Self {
         let mut mutable = MutableBitmap::new();
         mutable.extend_from_trusted_len_iter_unchecked(iterator);
-        MutableBooleanArray::try_new(DataType::Boolean, mutable, None).unwrap()
+        Self::try_new(DataType::Boolean, mutable, None).unwrap()
     }
 
     /// Creates a new [`MutableBooleanArray`] from a slice of `bool`.
@@ -474,7 +474,7 @@ impl<Ptr: std::borrow::Borrow<Option<bool>>> FromIterator<Ptr> for MutableBoolea
             None
         };
 
-        MutableBooleanArray::try_new(DataType::Boolean, values, validity).unwrap()
+        Self::try_new(DataType::Boolean, values, validity).unwrap()
     }
 }
 

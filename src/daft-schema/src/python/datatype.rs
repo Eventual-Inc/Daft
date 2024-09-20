@@ -14,7 +14,7 @@ pub struct PyTimeUnit {
 
 impl From<TimeUnit> for PyTimeUnit {
     fn from(value: TimeUnit) -> Self {
-        PyTimeUnit { timeunit: value }
+        Self { timeunit: value }
     }
 }
 
@@ -217,7 +217,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn r#struct(fields: IndexMap<String, PyDataType>) -> Self {
+    pub fn r#struct(fields: IndexMap<String, Self>) -> Self {
         DataType::Struct(
             fields
                 .into_iter()
@@ -395,8 +395,8 @@ impl PyDataType {
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
-        if other.is_instance_of::<PyDataType>() {
-            let other = other.extract::<PyDataType>()?;
+        if other.is_instance_of::<Self>() {
+            let other = other.extract::<Self>()?;
             Ok(self.dtype == other.dtype)
         } else {
             Ok(false)
@@ -423,7 +423,7 @@ impl_bincode_py_state_serialization!(PyDataType);
 
 impl From<DataType> for PyDataType {
     fn from(value: DataType) -> Self {
-        PyDataType { dtype: value }
+        Self { dtype: value }
     }
 }
 

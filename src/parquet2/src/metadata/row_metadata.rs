@@ -21,7 +21,7 @@ impl RowGroupMetaData {
         columns: Vec<ColumnChunkMetaData>,
         num_rows: usize,
         total_byte_size: usize,
-    ) -> RowGroupMetaData {
+    ) -> Self {
         Self {
             columns,
             num_rows,
@@ -56,7 +56,7 @@ impl RowGroupMetaData {
     pub(crate) fn try_from_thrift(
         schema_descr: &SchemaDescriptor,
         rg: RowGroup,
-    ) -> Result<RowGroupMetaData> {
+    ) -> Result<Self> {
         if schema_descr.columns().len() != rg.columns.len() {
             return Err(Error::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
         }
@@ -71,7 +71,7 @@ impl RowGroupMetaData {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(RowGroupMetaData {
+        Ok(Self {
             columns,
             num_rows,
             total_byte_size,

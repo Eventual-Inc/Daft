@@ -49,7 +49,7 @@ impl Indexable for MutableBooleanArray {
 
 impl AsIndexed<MutableBooleanArray> for bool {
     #[inline]
-    fn as_indexed(&self) -> &bool {
+    fn as_indexed(&self) -> &Self {
         self
     }
 }
