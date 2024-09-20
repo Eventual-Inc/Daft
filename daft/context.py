@@ -299,7 +299,7 @@ def set_execution_config(
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
     sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
-    hash_join_partition_size_leniency: bool | None = None,
+    hash_join_partition_size_leniency: float | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
     parquet_target_filesize: int | None = None,
@@ -344,7 +344,7 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
-        shuffle_aggregation_default_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
+        shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         shuffle_join_default_partitions: Minimum number of partitions to create when performing joins. Defaults to 16, unless the number of input partitions is greater than 16.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
