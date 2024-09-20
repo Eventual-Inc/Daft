@@ -72,7 +72,7 @@ def test_explain(files, io_config, benchmark):
     "files, expected_count",
     [
         pytest.param(1, 1024, id="1 Small File"),
-        pytest.param(100, 102400, id="100 Small File"),
+        pytest.param(100, 102400, id="100 Small Files"),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
 )
