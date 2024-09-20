@@ -3,13 +3,13 @@ use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-pub struct Buffer {
+pub struct SizeBasedBuffer {
     pub buffer: VecDeque<Arc<MicroPartition>>,
     pub curr_size: usize,
     pub threshold: usize,
 }
 
-impl Buffer {
+impl SizeBasedBuffer {
     pub fn new(threshold: usize) -> Self {
         assert!(threshold > 0);
         Self {
@@ -27,7 +27,7 @@ impl Buffer {
     pub fn try_clear(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
         match self.curr_size.cmp(&self.threshold) {
             Less => None,
-            Equal => self.clear_all(),
+            Equal => Some(self.concat_and_return()),
             Greater => Some(self.clear_enough()),
         }
     }
@@ -64,15 +64,25 @@ impl Buffer {
         }
     }
 
-    pub fn clear_all(&mut self) -> Option<DaftResult<Arc<MicroPartition>>> {
+    pub fn clear_all(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
         if self.buffer.is_empty() {
-            return None;
+            return Ok(vec![]);
         }
+        let mut res = vec![];
+        while let Some(part) = self.try_clear() {
+            res.push(part?);
+        }
+        if self.curr_size > 0 {
+            res.push(self.concat_and_return()?);
+        }
+        Ok(res)
+    }
+
+    fn concat_and_return(&mut self) -> DaftResult<Arc<MicroPartition>> {
         let concated =
-            MicroPartition::concat(&self.buffer.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
-                .map(Arc::new);
+            MicroPartition::concat(&self.buffer.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
         self.buffer.clear();
         self.curr_size = 0;
-        Some(concated)
+        Ok(concated.into())
     }
 }

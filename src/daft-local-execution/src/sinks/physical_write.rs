@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use super::{
     blocking_sink::{BlockingSink, BlockingSinkStatus},
-    buffer::Buffer,
+    buffer::SizeBasedBuffer,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -107,29 +107,15 @@ impl SizedDataWriter {
 
 struct UnpartitionedWriteExecutor {
     writer: SizedDataWriter,
-    buffer: Buffer,
+    buffer: SizeBasedBuffer,
 }
 
 impl UnpartitionedWriteExecutor {
     fn new(
         file_info: &OutputFileInfo,
-        inflation_factor: f64,
-        target_file_size: usize,
-        target_row_group_size: usize,
+        target_in_memory_file_size: usize,
+        target_in_memory_chunk_size: usize,
     ) -> DaftResult<Self> {
-        let target_in_memory_file_size = target_file_size * inflation_factor as usize;
-        let target_chunk_size = match file_info.file_format {
-            FileFormat::Parquet => min(
-                target_in_memory_file_size,
-                target_row_group_size * inflation_factor as usize,
-            ),
-            FileFormat::Csv => 1024 * 1024,
-            _ => {
-                return Err(DaftError::ComputeError(
-                    "Unsupported file format for physical write".to_string(),
-                ))
-            }
-        };
         Ok(Self {
             writer: SizedDataWriter::new(
                 file_info.root_dir.clone(),
@@ -138,14 +124,11 @@ impl UnpartitionedWriteExecutor {
                 file_info.compression.clone(),
                 file_info.io_config.clone(),
             )?,
-            buffer: Buffer::new(target_chunk_size),
+            buffer: SizeBasedBuffer::new(target_in_memory_chunk_size),
         })
     }
 
     fn submit(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
-        if data.is_empty() {
-            return Ok(());
-        }
         self.buffer.push(data.clone());
         if let Some(partition) = self.buffer.try_clear() {
             let part = partition?;
@@ -155,12 +138,8 @@ impl UnpartitionedWriteExecutor {
     }
 
     fn finalize(&mut self) -> DaftResult<Table> {
-        while let Some(part) = self.buffer.try_clear() {
-            let part = part?;
-            self.writer.write(&part)?;
-        }
-        if let Some(part) = self.buffer.clear_all() {
-            let part = part?;
+        let remaining = self.buffer.clear_all()?;
+        for part in remaining {
             self.writer.write(&part)?;
         }
 
@@ -174,74 +153,64 @@ impl UnpartitionedWriteExecutor {
 
 struct PartitionedWriteExecutor {
     writers: HashMap<String, SizedDataWriter>,
-    buffers: HashMap<String, (Buffer, Table)>,
-    target_chunk_size: usize,
+    buffers: HashMap<String, (SizeBasedBuffer, Table)>,
+    target_in_memory_file_size: usize,
+    target_in_memory_chunk_size: usize,
     root_dir: String,
     file_format: FileFormat,
     compression: Option<String>,
     io_config: Option<daft_io::IOConfig>,
     partition_cols: Vec<ExprRef>,
+    default_partition_fallback: String,
 }
 
 impl PartitionedWriteExecutor {
     fn new(
         file_info: &OutputFileInfo,
-        inflation_factor: f64,
-        target_file_size: usize,
-        target_row_group_size: usize,
+        target_in_memory_file_size: usize,
+        target_in_memory_chunk_size: usize,
     ) -> DaftResult<Self> {
         assert!(file_info.partition_cols.is_some());
-        let target_in_memory_file_size = target_file_size * inflation_factor as usize;
-        let target_chunk_size = match file_info.file_format {
-            FileFormat::Parquet => min(
-                target_in_memory_file_size,
-                target_row_group_size * inflation_factor as usize,
-            ),
-            FileFormat::Csv => 1024 * 1024,
-            _ => {
-                return Err(DaftError::ComputeError(
-                    "Unsupported file format for physical write".to_string(),
-                ))
-            }
-        };
         Ok(Self {
             writers: HashMap::new(),
             buffers: HashMap::new(),
-            target_chunk_size,
+            target_in_memory_file_size,
+            target_in_memory_chunk_size,
             root_dir: file_info.root_dir.clone(),
             file_format: file_info.file_format,
             compression: file_info.compression.clone(),
             io_config: file_info.io_config.clone(),
             partition_cols: file_info.partition_cols.clone().unwrap(),
+            default_partition_fallback: "__HIVE_DEFAULT_PARTITION__".to_string(),
         })
     }
 
-    fn submit(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
-        if data.is_empty() {
-            return Ok(());
-        }
-
-        let (partitioned, partition_keys) = data.partition_by_value(&self.partition_cols)?;
-        let concated = partition_keys
+    fn partition(
+        &self,
+        data: &Arc<MicroPartition>,
+    ) -> DaftResult<(Vec<MicroPartition>, Table, Vec<String>)> {
+        let (split_tables, partition_values) = data.partition_by_value(&self.partition_cols)?;
+        let concated = partition_values
             .concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
-        let partition_keys_table = concated.first().unwrap();
-        let partition_col_names = partition_keys.column_names();
-        let mut values_string_values = Vec::with_capacity(partition_col_names.len());
-        for name in partition_col_names.iter() {
-            let column = partition_keys_table.get_column(name)?;
+        let partition_values_table = concated.first().unwrap();
+        let pkey_names = partition_values_table.column_names();
+
+        let mut values_string_values = Vec::with_capacity(partition_values_table.len());
+        for name in pkey_names.iter() {
+            let column = partition_values_table.get_column(name)?;
             let string_names = column.to_str_values()?;
             let default_part = Utf8Array::from_iter(
                 "default",
-                std::iter::once(Some("__HIVE_DEFAULT_PARTITION__")),
+                std::iter::once(Some(&self.default_partition_fallback)),
             )
             .into_series();
             let null_filled = string_names.if_else(&default_part, &column.not_null()?)?;
             values_string_values.push(null_filled);
         }
 
-        let mut part_keys_postfixes = Vec::with_capacity(partition_keys_table.len());
-        for i in 0..partition_keys_table.len() {
-            let postfix = partition_col_names
+        let mut part_keys_postfixes = Vec::with_capacity(partition_values_table.len());
+        for i in 0..partition_values_table.len() {
+            let postfix = pkey_names
                 .iter()
                 .zip(values_string_values.iter())
                 .map(|(pkey, values)| {
@@ -252,20 +221,32 @@ impl PartitionedWriteExecutor {
             part_keys_postfixes.push(postfix);
         }
 
+        Ok((
+            split_tables,
+            partition_values_table.clone(),
+            part_keys_postfixes,
+        ))
+    }
+
+    fn submit(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
+        let (split_tables, partition_values_table, part_keys_postfixes) = self.partition(data)?;
+
         for (idx, (postfix, partition)) in part_keys_postfixes
             .iter()
-            .zip(partitioned.into_iter())
+            .zip(split_tables.into_iter())
             .enumerate()
         {
             let buffer = if let Some((buffer, _)) = self.buffers.get_mut(postfix) {
                 buffer
             } else {
-                let buffer = Buffer::new(self.target_chunk_size);
-                let row = partition_keys_table.slice(idx, idx + 1)?;
-                self.buffers.insert(postfix.clone(), (buffer, row));
+                let buffer = SizeBasedBuffer::new(self.target_in_memory_chunk_size);
+                let partition_value_row = partition_values_table.slice(idx, idx + 1)?;
+                self.buffers
+                    .insert(postfix.clone(), (buffer, partition_value_row));
                 &mut self.buffers.get_mut(postfix).unwrap().0
             };
             buffer.push(Arc::new(partition));
+
             if let Some(partition) = buffer.try_clear() {
                 let part = partition?;
                 if let Some(writer) = self.writers.get_mut(postfix) {
@@ -273,7 +254,7 @@ impl PartitionedWriteExecutor {
                 } else {
                     let mut writer = SizedDataWriter::new(
                         format!("{}/{}", self.root_dir, postfix),
-                        self.target_chunk_size,
+                        self.target_in_memory_file_size,
                         self.file_format,
                         self.compression.clone(),
                         self.io_config.clone(),
@@ -286,60 +267,54 @@ impl PartitionedWriteExecutor {
         Ok(())
     }
 
+    fn write_for_partition(
+        &mut self,
+        postfix: &str,
+        partition: &Arc<MicroPartition>,
+    ) -> DaftResult<()> {
+        if let Some(writer) = self.writers.get_mut(postfix) {
+            writer.write(partition)?;
+        } else {
+            let mut writer = SizedDataWriter::new(
+                format!("{}/{}", self.root_dir, postfix),
+                self.target_in_memory_file_size,
+                self.file_format,
+                self.compression.clone(),
+                self.io_config.clone(),
+            )?;
+            writer.write(partition)?;
+            self.writers.insert(postfix.to_string(), writer);
+        }
+        Ok(())
+    }
+
     fn finalize(&mut self) -> DaftResult<Table> {
-        for (postfix, (buffer, _)) in self.buffers.iter_mut() {
-            while let Some(partition) = buffer.try_clear() {
-                let part = partition?;
-                if let Some(writer) = self.writers.get_mut(postfix) {
-                    writer.write(&part)?;
-                } else {
-                    let mut writer = SizedDataWriter::new(
-                        format!("{}/{}", self.root_dir, postfix),
-                        self.target_chunk_size,
-                        self.file_format,
-                        self.compression.clone(),
-                        self.io_config.clone(),
-                    )?;
-                    writer.write(&part)?;
-                    self.writers.insert(postfix.clone(), writer);
-                }
-            }
-            if let Some(partition) = buffer.clear_all() {
-                let part = partition?;
-                if let Some(writer) = self.writers.get_mut(postfix) {
-                    writer.write(&part)?;
-                } else {
-                    let mut writer = SizedDataWriter::new(
-                        format!("{}/{}", self.root_dir, postfix),
-                        self.target_chunk_size,
-                        self.file_format,
-                        self.compression.clone(),
-                        self.io_config.clone(),
-                    )?;
-                    writer.write(&part)?;
-                    self.writers.insert(postfix.clone(), writer);
-                }
+        let keys = self.buffers.keys().cloned().collect::<Vec<_>>();
+        for postfix in keys {
+            let remaining = self.buffers.get_mut(&postfix).unwrap().0.clear_all()?;
+            for part in remaining {
+                self.write_for_partition(&postfix, &part)?;
             }
         }
 
         let mut written_files = Vec::with_capacity(self.writers.len());
         let mut partition_keys_values = Vec::with_capacity(self.writers.len());
-        for (postfix, (_, row)) in self.buffers.iter() {
+        for (postfix, (_, partition_value_row)) in self.buffers.iter() {
             let writer = self.writers.get_mut(postfix).unwrap();
             let file_paths = writer.finalize()?;
             if !file_paths.is_empty() {
-                if file_paths.len() > row.len() {
-                    let mut columns = Vec::with_capacity(row.num_columns());
-                    let column_names = row.column_names();
+                if file_paths.len() > partition_value_row.len() {
+                    let mut columns = Vec::with_capacity(partition_value_row.num_columns());
+                    let column_names = partition_value_row.column_names();
                     for name in column_names {
-                        let column = row.get_column(name)?;
+                        let column = partition_value_row.get_column(name)?;
                         let broadcasted = column.broadcast(file_paths.len())?;
                         columns.push(broadcasted);
                     }
                     let table = Table::from_nonempty_columns(columns)?;
                     partition_keys_values.push(table);
                 } else {
-                    partition_keys_values.push(row.clone());
+                    partition_keys_values.push(partition_value_row.clone());
                 }
             }
             written_files.extend(file_paths.into_iter());
@@ -369,23 +344,37 @@ impl WriteExecutor {
         target_file_size: usize,
         target_row_group_size: usize,
     ) -> DaftResult<Self> {
+        let target_in_memory_file_size = target_file_size * inflation_factor as usize;
+        let target_in_memory_chunk_size = match file_info.file_format {
+            FileFormat::Parquet => min(
+                target_in_memory_file_size,
+                target_row_group_size * inflation_factor as usize,
+            ),
+            FileFormat::Csv => 1024 * 1024,
+            _ => {
+                return Err(DaftError::ComputeError(
+                    "Unsupported file format for physical write".to_string(),
+                ))
+            }
+        };
         match file_info.partition_cols {
             Some(_) => Ok(Self::Partitioned(PartitionedWriteExecutor::new(
                 &file_info,
-                inflation_factor,
-                target_file_size,
-                target_row_group_size,
+                target_in_memory_file_size,
+                target_in_memory_chunk_size,
             )?)),
             None => Ok(Self::Unpartitioned(UnpartitionedWriteExecutor::new(
                 &file_info,
-                inflation_factor,
-                target_file_size,
-                target_row_group_size,
+                target_in_memory_file_size,
+                target_in_memory_chunk_size,
             )?)),
         }
     }
 
     fn submit(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
         match self {
             Self::Unpartitioned(executor) => executor.submit(data),
             Self::Partitioned(executor) => executor.submit(data),
