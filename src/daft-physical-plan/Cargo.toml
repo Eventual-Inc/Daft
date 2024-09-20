@@ -9,7 +9,7 @@ log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}
 
 [features]
-python = ["daft-plan/python"]
+python = ["common-error/python", "common-resource-request/python", "daft-core/python", "daft-dsl/python", "daft-plan/python", "daft-scan/python"]
 
 [package]
 edition = {workspace = true}
