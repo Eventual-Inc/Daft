@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import functools
-import pathlib
 from typing import TYPE_CHECKING, Callable
 
 from daft.context import get_context
@@ -17,15 +16,17 @@ from daft.daft import (
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.table import Table as IcebergTable
 
     from daft.plan_scheduler.physical_plan_scheduler import (
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
     )
+    from daft.runners.partitioning import PartitionCacheEntry
 
 
 def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):

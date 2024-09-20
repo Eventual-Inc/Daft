@@ -1,4 +1,7 @@
-use std::collections::{hash_map::RawEntryMut, HashMap};
+use std::{
+    collections::{hash_map::RawEntryMut, HashMap},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_core::{
@@ -10,32 +13,29 @@ use daft_core::{
     },
 };
 
+use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::{ops::hash::IndexHash, Table};
-
-struct ArrowTableEntry(Vec<Box<dyn arrow2::array::Array>>);
-
-pub struct ProbeTable {
+pub(crate) struct ProbeSet {
     schema: SchemaRef,
-    hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
+    hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn: MultiDynArrayComparator,
     num_groups: usize,
     num_rows: usize,
 }
 
-impl ProbeTable {
+impl ProbeSet {
     // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
 
     const DEFAULT_SIZE: usize = 20;
 
-    fn new(schema: SchemaRef) -> DaftResult<Self> {
-        let hash_table =
-            HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
-                Self::DEFAULT_SIZE,
-                Default::default(),
-            );
+    pub(crate) fn new(schema: SchemaRef) -> DaftResult<Self> {
+        let hash_table = HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+            Self::DEFAULT_SIZE,
+            Default::default(),
+        );
         let compare_fn = build_dyn_multi_array_compare(&schema, false, false)?;
         Ok(Self {
             schema,
@@ -47,56 +47,44 @@ impl ProbeTable {
         })
     }
 
-    pub fn probe<'a>(
-        &'a self,
-        right: &'a Table,
-    ) -> DaftResult<impl Iterator<Item = (u32, u64, u64)> + 'a> {
-        assert_eq!(self.schema.len(), right.schema.len());
+    fn probe<'a>(&'a self, input: &'a Table) -> DaftResult<impl Iterator<Item = bool> + 'a> {
+        assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema
             .fields
             .values()
-            .zip(right.schema.fields.values())
+            .zip(input.schema.fields.values())
             .all(|(l, r)| l.dtype == r.dtype));
 
-        let r_hashes = right.hash_rows()?;
+        let hashes = input.hash_rows()?;
 
-        let right_arrays = right
+        let input_arrays = input
             .columns
             .iter()
             .map(|s| Ok(s.as_physical()?.to_arrow()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let iter = r_hashes.as_arrow().clone().into_iter();
+        let iter = hashes.as_arrow().clone().into_iter();
 
-        Ok(iter
-            .enumerate()
-            .filter_map(|(i, h)| h.map(|h| (i, h)))
-            .flat_map(move |(r_idx, h)| {
-                let indices = if let Some((_, indices)) =
-                    self.hash_table.raw_entry().from_hash(h, |other| {
-                        h == other.hash && {
-                            let l_idx = other.idx;
-                            let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                            let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
+        Ok(iter.enumerate().map(move |(idx, h)| {
+            if let Some(h) = h {
+                self.hash_table.raw_entry().from_hash(h, |other| {
+                    h == other.hash && {
+                        let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
+                        let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
 
-                            let l_table = self.tables.get(l_table_idx).unwrap();
+                        let other_table = self.tables.get(other_table_idx).unwrap();
 
-                            let left_refs = l_table.0.as_slice();
+                        let other_refs = other_table.0.as_slice();
 
-                            (self.compare_fn)(left_refs, &right_arrays, l_row_idx, r_idx).is_eq()
-                        }
-                    }) {
-                    indices.as_slice()
-                } else {
-                    [].as_slice()
-                };
-                indices.iter().map(move |l_idx| {
-                    let l_table_idx = (l_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                    let l_row_idx = (l_idx & Self::LOWER_MASK) as usize;
-                    (l_table_idx as u32, l_row_idx as u64, r_idx as u64)
+                        (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
+                    }
                 })
-            }))
+            } else {
+                None
+            }
+            .is_some()
+        }))
     }
 
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {
@@ -143,13 +131,11 @@ impl ProbeTable {
                             idx: idx as u64,
                             hash: *h,
                         },
-                        vec![idx as u64],
+                        (),
                     );
                     self.num_groups += 1;
                 }
-                RawEntryMut::Occupied(mut entry) => {
-                    entry.get_mut().push(idx as u64);
-                }
+                RawEntryMut::Occupied(_) => {}
             }
         }
         self.num_rows += table.len();
@@ -157,18 +143,27 @@ impl ProbeTable {
     }
 }
 
-pub struct ProbeTableBuilder(ProbeTable);
-
-impl ProbeTableBuilder {
-    pub fn new(schema: SchemaRef) -> DaftResult<Self> {
-        Ok(Self(ProbeTable::new(schema)?))
+impl Probeable for ProbeSet {
+    fn probe_exists<'a>(
+        &'a self,
+        table: &'a Table,
+    ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
+        Ok(Box::new(self.probe(table)?))
     }
 
-    pub fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn probe_indices<'a>(&'a self, _table: &'a Table) -> DaftResult<IndicesMapper<'a>> {
+        panic!("Probe indices is not supported for ProbeSet")
+    }
+}
+
+pub(crate) struct ProbeSetBuilder(pub ProbeSet);
+
+impl ProbeableBuilder for ProbeSetBuilder {
+    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
         self.0.add_table(table)
     }
 
-    pub fn build(self) -> ProbeTable {
-        self.0
+    fn build(self: Box<Self>) -> Arc<dyn Probeable> {
+        Arc::new(self.0)
     }
 }

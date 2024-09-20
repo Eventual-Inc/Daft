@@ -17,7 +17,6 @@ import collections
 import itertools
 import logging
 import math
-import pathlib
 from collections import deque
 from typing import (
     TYPE_CHECKING,
@@ -30,7 +29,7 @@ from typing import (
 )
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
+from daft.daft import ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -41,7 +40,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionT,
@@ -53,9 +51,14 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.logical.schema import Schema
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.

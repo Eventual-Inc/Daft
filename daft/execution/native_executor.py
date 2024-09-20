@@ -6,14 +6,14 @@ from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.daft import PyDaftExecutionConfig
-from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import (
-    MaterializedResult,
-    PartitionT,
-)
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.partitioning import (
+        MaterializedResult,
+        PartitionT,
+    )
     from daft.runners.pyrunner import PyMaterializedResult
 
 

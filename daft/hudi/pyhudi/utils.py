@@ -3,10 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-import pyarrow as pa
-import pyarrow.fs as pafs
-import pyarrow.parquet as pq
-
+from daft.dependencies import pa, pafs, pq
 from daft.filesystem import join_path
 
 

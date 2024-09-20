@@ -17,12 +17,13 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.table import MicroPartition
 
 
 def scan_with_tasks(
