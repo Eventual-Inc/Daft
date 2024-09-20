@@ -58,117 +58,133 @@ def local_catalog(tmpdir):
 @pytest.fixture(
     scope="function",
     params=[
-        pytest.param(UNPARTITIONED_PARTITION_SPEC, id="unpartitioned"),
+        pytest.param((UNPARTITIONED_PARTITION_SPEC, 1), id="unpartitioned"),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x")),
+            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x")), 5),
             id="identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="x")),
+            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="x")), 3),
             id="bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(2), name="x")),
+            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(2), name="x")), 3),
             id="truncate_partitioned",
         ),
     ],
 )
 def simple_local_table(request, local_catalog):
+    partition_spec, num_partitions = request.param
+
     schema = Schema(
         NestedField(field_id=1, name="x", type=LongType()),
     )
 
-    table = local_catalog.create_table("default.test", schema, partition_spec=request.param)
-    return table
+    table = local_catalog.create_table("default.test", schema, partition_spec=partition_spec)
+    return table, num_partitions
 
 
 def test_read_after_write_append(simple_local_table):
+    table, num_partitions = simple_local_table
+
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
     as_arrow = df.to_arrow()
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    read_back = daft.read_iceberg(simple_local_table)
+    assert len(as_dict["operation"]) == num_partitions
+    read_back = daft.read_iceberg(table)
     assert as_arrow == read_back.to_arrow().sort_by("x")
 
 
 def test_read_after_write_overwrite(simple_local_table):
+    table, num_partitions = simple_local_table
+
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
     as_arrow = df.to_arrow()
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    num_adds_1 = len(as_dict["operation"])
+    assert len(as_dict["operation"]) == num_partitions
 
     # write again (in append)
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    num_adds_2 = len(as_dict["operation"])
+    assert len(as_dict["operation"]) == num_partitions
 
-    read_back = daft.read_iceberg(simple_local_table)
+    read_back = daft.read_iceberg(table)
     assert pa.concat_tables([as_arrow, as_arrow]).sort_by("x") == read_back.to_arrow().sort_by("x")
 
     # write again (in overwrite)
-    result = df.write_iceberg(simple_local_table, mode="overwrite")
+    result = df.write_iceberg(table, mode="overwrite")
     as_dict = result.to_pydict()
-    total_num_adds = num_adds_1 + num_adds_2
-    assert all(op == "ADD" for op in as_dict["operation"][:-total_num_adds]), as_dict["operation"][:-total_num_adds]
-    assert sum(as_dict["rows"][:-total_num_adds]) == 5, as_dict["rows"][:-total_num_adds]
-    assert all(op == "DELETE" for op in as_dict["operation"][-num_adds_1:]), as_dict["operation"][-num_adds_1:]
-    assert sum(as_dict["rows"][-num_adds_1:]) == 5, as_dict["rows"][-num_adds_1:]
-    assert all(op == "DELETE" for op in as_dict["operation"][-num_adds_2:]), as_dict["operation"][-num_adds_2:]
-    assert sum(as_dict["rows"][-num_adds_2:]) == 5, as_dict["rows"][-num_adds_2:]
+    assert len(as_dict["operation"]) == 3 * num_partitions
+    assert all(op == "ADD" for op in as_dict["operation"][:num_partitions]), as_dict["operation"][:num_partitions]
+    assert sum(as_dict["rows"][:num_partitions]) == 5, as_dict["rows"][:num_partitions]
+    assert all(op == "DELETE" for op in as_dict["operation"][num_partitions:]), as_dict["operation"][num_partitions:]
+    assert sum(as_dict["rows"][num_partitions : 2 * num_partitions]) == 5, as_dict["rows"][
+        num_partitions : 2 * num_partitions
+    ]
+    assert sum(as_dict["rows"][2 * num_partitions :]) == 5, as_dict["rows"][2 * num_partitions :]
 
-    read_back = daft.read_iceberg(simple_local_table)
+    read_back = daft.read_iceberg(table)
     assert as_arrow == read_back.to_arrow().sort_by("x")
 
 
 def test_read_and_overwrite(simple_local_table):
+    table, num_partitions = simple_local_table
+
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    num_adds = len(as_dict["operation"])
+    assert len(as_dict["operation"]) == num_partitions
 
-    df = daft.read_iceberg(simple_local_table).with_column("x", daft.col("x") + 1)
-    result = df.write_iceberg(simple_local_table, mode="overwrite")
+    df = daft.from_pydict({"x": [1, 1, 1, 1, 1]})
+    result = df.write_iceberg(table, mode="overwrite")
     as_dict = result.to_pydict()
-    assert all(op == "ADD" for op in as_dict["operation"][:-num_adds]), as_dict["operation"][:-num_adds]
-    assert sum(as_dict["rows"][:-num_adds]) == 5, as_dict["rows"][:-num_adds]
-    assert all(op == "DELETE" for op in as_dict["operation"][-num_adds:]), as_dict["operation"][-num_adds:]
-    assert sum(as_dict["rows"][-num_adds:]) == 5, as_dict["rows"][-num_adds:]
+    assert len(as_dict["operation"]) == num_partitions + 1
+    assert as_dict["operation"][0] == "ADD"
+    assert as_dict["rows"][0] == 5
+    assert all(op == "DELETE" for op in as_dict["operation"][1:]), as_dict["operation"][1:]
+    assert sum(as_dict["rows"][1:]) == 5, as_dict["rows"][1:]
 
-    read_back = daft.read_iceberg(simple_local_table)
-    assert daft.from_pydict({"x": [2, 3, 4, 5, 6]}).to_arrow() == read_back.to_arrow().sort_by("x")
+    read_back = daft.read_iceberg(table)
+    assert df.to_arrow() == read_back.to_arrow().sort_by("x")
 
 
 def test_missing_columns_write(simple_local_table):
+    table, num_partitions = simple_local_table
+
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
 
     df = daft.from_pydict({"y": [1, 2, 3, 4, 5]})
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
-    assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
-    assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    read_back = daft.read_iceberg(simple_local_table)
+    assert as_dict["operation"] == ["ADD"]
+    assert as_dict["rows"] == [5]
+    read_back = daft.read_iceberg(table)
     assert read_back.to_pydict() == {"x": [None] * 5}
 
 
 def test_too_many_columns_write(simple_local_table):
+    table, num_partitions = simple_local_table
+
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
     as_arrow = df.to_arrow()
 
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5], "y": [6, 7, 8, 9, 10]})
-    result = df.write_iceberg(simple_local_table)
+    result = df.write_iceberg(table)
     as_dict = result.to_pydict()
+    assert len(as_dict["operation"]) == num_partitions
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 5, as_dict["rows"]
-    read_back = daft.read_iceberg(simple_local_table)
+    read_back = daft.read_iceberg(table)
     assert as_arrow == read_back.to_arrow().sort_by("x")
 
 
@@ -243,107 +259,132 @@ def complex_table() -> tuple[pa.Table, Schema]:
 
 
 @pytest.mark.parametrize(
-    "partition_spec",
+    "partition_spec,num_partitions",
     [
-        pytest.param(UNPARTITIONED_PARTITION_SPEC, id="unpartitioned"),
+        pytest.param(UNPARTITIONED_PARTITION_SPEC, 1, id="unpartitioned"),
         pytest.param(
             PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="int")),
+            3,
             id="int_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int")),
+            2,
             id="int_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(2), name="int")),
+            2,
             id="int_truncate_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="float")),
+            3,
             id="float_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="string")),
+            3,
             id="string_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=BucketTransform(2), name="string")),
+            2,
             id="string_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=TruncateTransform(2), name="string")),
+            2,
             id="string_truncate_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="binary")),
+            3,
             id="binary_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=BucketTransform(2), name="binary")),
+            2,
             id="binary_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=TruncateTransform(2), name="binary")),
+            2,
             id="binary_truncate_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=5, field_id=1000, transform=IdentityTransform(), name="boolean")),
+            2,
             id="bool_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=IdentityTransform(), name="timestamp")),
+            3,
             id="datetime_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=BucketTransform(2), name="timestamp")),
+            1,
             id="datetime_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=YearTransform(), name="timestamp")),
+            1,
             id="datetime_year_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=MonthTransform(), name="timestamp")),
+            1,
             id="datetime_month_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=DayTransform(), name="timestamp")),
+            3,
             id="datetime_day_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=HourTransform(), name="timestamp")),
+            3,
             id="datetime_hour_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=IdentityTransform(), name="date")),
+            3,
             id="date_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=BucketTransform(2), name="date")),
+            2,
             id="date_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=YearTransform(), name="date")),
+            1,
             id="date_year_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=MonthTransform(), name="date")),
+            1,
             id="date_month_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=DayTransform(), name="date")),
+            3,
             id="date_day_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=IdentityTransform(), name="decimal")),
+            3,
             id="decimal_identity_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=BucketTransform(2), name="decimal")),
+            1,
             id="decimal_bucket_partitioned",
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=TruncateTransform(2), name="decimal")),
+            3,
             id="decimal_truncate_partitioned",
         ),
         pytest.param(
@@ -351,16 +392,18 @@ def complex_table() -> tuple[pa.Table, Schema]:
                 PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int"),
                 PartitionField(source_id=3, field_id=1000, transform=TruncateTransform(2), name="string"),
             ),
+            3,
             id="double_partitioned",
         ),
     ],
 )
-def test_complex_table_write_read(local_catalog, complex_table, partition_spec):
+def test_complex_table_write_read(local_catalog, complex_table, partition_spec, num_partitions):
     pa_table, schema = complex_table
     table = local_catalog.create_table("default.test", schema, partition_spec=partition_spec)
     df = daft.from_arrow(pa_table)
     result = df.write_iceberg(table)
     as_dict = result.to_pydict()
+    assert len(as_dict["operation"]) == num_partitions
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 3, as_dict["rows"]
     read_back = daft.read_iceberg(table)

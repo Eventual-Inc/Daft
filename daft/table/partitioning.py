@@ -14,6 +14,7 @@ def partition_strings_to_path(root_path: str, parts: Dict[str, str]):
 def partition_values_to_string(
     partition_values: MicroPartition, partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__"
 ) -> MicroPartition:
+    """Convert partition values to human-readable string representation, filling nulls with `partition_null_fallback`."""
     default_part = Series.from_pylist([partition_null_fallback])
     pkey_names = partition_values.column_names()
 
@@ -42,14 +43,23 @@ class PartitionedTable:
         else:
             self._partitions, self._partition_values = self.table.partition_by_value(partition_keys=self.partition_keys)
 
-    @property
     def partitions(self) -> List[MicroPartition]:
+        """
+        Returns a list of MicroPartitions representing the table partitioned by the partition keys.
+
+        If the table is not partitioned, returns the original table as the single element in the list.
+        """
         if self._partitions is None:
             self._create_partitions()
         return self._partitions  # type: ignore
 
-    @property
     def partition_values(self) -> Optional[MicroPartition]:
+        """
+        Returns the partition values, with each row corresponding to the partition at the same index in PartitionedTable.partitions().
+
+        If the table is not partitioned, returns None.
+
+        """
         if self._partition_values is None:
             self._create_partitions()
         return self._partition_values

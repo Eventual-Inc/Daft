@@ -401,10 +401,12 @@ def read_csv(
 
 
 def partitioned_table_to_hive_iter(partitioned: PartitionedTable, root_path: str) -> Iterator[tuple[pa.Table, str]]:
-    if partitioned.partition_values:
-        partition_strings = partition_values_to_string(partitioned.partition_values).to_pylist()
+    partition_values = partitioned.partition_values()
 
-        for part_table, part_strs in zip(partitioned.partitions, partition_strings):
+    if partition_values:
+        partition_strings = partition_values_to_string(partition_values).to_pylist()
+
+        for part_table, part_strs in zip(partitioned.partitions(), partition_strings):
             part_path = partition_strings_to_path(root_path, part_strs)
             arrow_table = part_table.to_arrow()
 
@@ -488,7 +490,7 @@ def write_tabular(
     # I kept this from our original code, but idk why it's the first column name -kevin
     path_key = schema.column_names()[0]
 
-    visitors = TabularWriteVisitors(partitioned.partition_values, path_key)
+    visitors = TabularWriteVisitors(partitioned.partition_values(), path_key)
 
     for i, (part_table, part_path) in enumerate(partitioned_table_to_hive_iter(partitioned, resolved_path)):
         size_bytes = part_table.nbytes

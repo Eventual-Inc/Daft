@@ -219,13 +219,13 @@ def partitioned_table_to_iceberg_iter(
 ) -> Iterator[Tuple["pa.Table", str, "IcebergRecord"]]:
     from pyiceberg.typedef import Record as IcebergRecord
 
-    if partitioned.partition_values:
-        partition_strings = partition_values_to_string(
-            partitioned.partition_values, partition_null_fallback="null"
-        ).to_pylist()
-        partition_values = partitioned.partition_values.to_pylist()
+    partition_values = partitioned.partition_values()
 
-        for table, part_vals, part_strs in zip(partitioned.partitions, partition_values, partition_strings):
+    if partition_values:
+        partition_strings = partition_values_to_string(partition_values, partition_null_fallback="null").to_pylist()
+        partition_values_list = partition_values.to_pylist()
+
+        for table, part_vals, part_strs in zip(partitioned.partitions(), partition_values_list, partition_strings):
             iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
             part_record = IcebergRecord(**iceberg_part_vals)
             part_path = partition_strings_to_path(root_path, part_strs)
