@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import math
 import os
 from datetime import date, datetime, time
@@ -15,8 +14,6 @@ from typing import (
     TypeVar,
     overload,
 )
-
-import pyarrow as pa
 
 import daft.daft as native
 from daft import context
@@ -38,11 +35,14 @@ from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
+from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    import builtins
+
     from daft.io import IOConfig
     from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to

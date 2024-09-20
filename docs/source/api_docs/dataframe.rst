@@ -58,6 +58,7 @@ Filtering Rows
     :toctree: doc_gen/dataframe_methods
 
     DataFrame.distinct
+    DataFrame.filter
     DataFrame.where
     DataFrame.limit
     DataFrame.sample

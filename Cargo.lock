@@ -1965,6 +1965,7 @@ dependencies = [
  "daft-scan",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "lazy_static",
  "log",
  "num-format",

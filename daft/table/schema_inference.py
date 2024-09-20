@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import pathlib
 
-import pyarrow.csv as pacsv
-import pyarrow.json as pajson
-import pyarrow.parquet as papq
-
 from daft.daft import (
     CsvParseOptions,
     JsonParseOptions,
@@ -14,6 +10,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pacsv, pajson, pq
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
@@ -137,7 +134,7 @@ def from_parquet(
         path = paths[0]
         f = fs.open_input_file(path)
 
-    pqf = papq.ParquetFile(f)
+    pqf = pq.ParquetFile(f)
     arrow_schema = pqf.metadata.schema.to_arrow_schema()
 
     return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])

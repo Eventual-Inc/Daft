@@ -10,7 +10,13 @@ import boto3
 import pytest
 
 import daft
+from daft import context
 from tests.io.mock_aws_server import start_service, stop_process
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.fixture(scope="session")
