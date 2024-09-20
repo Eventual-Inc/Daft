@@ -1,0 +1,13 @@
+extend = "../.ruff.toml"
+
+[lint]
+extend-select = [
+  "TID253",  # banned-module-level-imports, derived from flake8-tidy-imports
+  "TCH"  # flake8-type-checking
+]
+
+[lint.flake8-tidy-imports]
+# Ban certain modules from being imported at module level, instead requiring
+# that they're imported lazily (e.g., within a function definition,
+# with daft.lazy_import.LazyImport, or with TYPE_CHECKING).
+banned-module-level-imports = ["daft.unity_catalog", "fsspec", "numpy", "pandas", "PIL", "pyarrow", "ray", "xml"]

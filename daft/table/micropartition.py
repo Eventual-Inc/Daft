@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -26,14 +24,7 @@ from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pandas as pd
-
-
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
+    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 

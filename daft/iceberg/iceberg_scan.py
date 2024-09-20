@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
 from pyiceberg.io.pyarrow import schema_to_pyarrow
-from pyiceberg.partitioning import PartitionField as IcebergPartitionField
-from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.schema import visit
-from pyiceberg.table import Table
-from pyiceberg.typedef import Record
 
 import daft
 from daft.daft import (
@@ -23,9 +18,18 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from pyiceberg.partitioning import PartitionField as IcebergPartitionField
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+    from pyiceberg.table import Table
+    from pyiceberg.typedef import Record
 
 logger = logging.getLogger(__name__)
 

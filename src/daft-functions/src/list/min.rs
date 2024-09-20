@@ -1,17 +1,25 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ListMin {}
 
-pub(super) struct MinEvaluator {}
-
-impl FunctionEvaluator for MinEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "min"
+#[typetag::serde]
+impl ScalarUDF for ListMin {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn name(&self) -> &'static str {
+        "list_min"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?.to_exploded_field()?;
@@ -32,7 +40,7 @@ impl FunctionEvaluator for MinEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_min()?),
             _ => Err(DaftError::ValueError(format!(
@@ -41,4 +49,21 @@ impl FunctionEvaluator for MinEvaluator {
             ))),
         }
     }
+}
+
+pub fn list_min(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListMin {}, vec![expr]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "list_min")]
+pub fn py_list_min(expr: PyExpr) -> PyResult<PyExpr> {
+    Ok(list_min(expr.into()).into())
 }

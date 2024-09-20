@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from daft.execution.execution_step import PartitionTask
+if TYPE_CHECKING:
+    from daft.execution.execution_step import PartitionTask
 
 
 class ProgressBar:

@@ -4,29 +4,14 @@ import dataclasses
 import functools
 import inspect
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import Any, Callable, Union
 
 from daft.context import get_context
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType
+from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import PySeries, Series
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-_PYARROW_AVAILABLE = True
-try:
-    import pyarrow as pa
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
-if TYPE_CHECKING:
-    import numpy as np
-    import pyarrow as pa
 
 UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 
@@ -169,10 +154,10 @@ def run_udf(
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
-    elif _NUMPY_AVAILABLE and isinstance(results[0], np.ndarray):
+    elif np.module_available() and isinstance(results[0], np.ndarray):
         result_np = np.concatenate(results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
-    elif _PYARROW_AVAILABLE and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
+    elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
         result_pa = pa.concat_arrays(results)
         return Series.from_arrow(result_pa, name=name).cast(return_dtype)._series
     else:

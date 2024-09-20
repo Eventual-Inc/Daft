@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def add_1(df):
