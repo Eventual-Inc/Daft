@@ -6,7 +6,7 @@ use daft_dsl::{
     col,
     functions::{
         numeric::{ceil, floor},
-        utf8::{ilike, like},
+        utf8::{ilike, like, to_date, to_datetime},
     },
     has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
@@ -628,8 +628,18 @@ impl SQLPlanner {
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
             SQLExpr::Nested(_) => unsupported_sql_err!("NESTED"),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
-
-            SQLExpr::TypedString { .. } => unsupported_sql_err!("TYPED STRING"),
+            SQLExpr::TypedString { data_type, value } => match data_type {
+                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
+                sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
+                | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
+                    lit(value.as_str()),
+                    "%Y-%m-%d %H:%M:%S %z",
+                    None,
+                )),
+                dtype => {
+                    unsupported_sql_err!("TypedString with data type {:?}", dtype)
+                }
+            },
             SQLExpr::MapAccess { .. } => unsupported_sql_err!("MAP ACCESS"),
             SQLExpr::Function(func) => self.plan_function(func),
             SQLExpr::Case {
