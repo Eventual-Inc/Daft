@@ -1980,7 +1980,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
 
-    def concat(self, other: str) -> Expression:
+    def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together
 
         .. NOTE::
@@ -2012,7 +2012,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` concatenated with `other`
         """
         # Delegate to + operator implementation.
-        return Expression._from_pyexpr(self._expr) + other
+        other_expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr) + other_expr
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
