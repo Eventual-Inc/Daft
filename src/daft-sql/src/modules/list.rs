@@ -50,7 +50,9 @@ impl SQLFunction for SQLListChunk {
                     })?;
                 Ok(daft_functions::list::chunk(input, chunk_size))
             }
-            _ => unsupported_sql_err!("Expected 1 or 2 arguments"),
+            _ => unsupported_sql_err!(
+                "invalid arguments for list_chunk. Expected list_chunk(expr, chunk_size)"
+            ),
         }
     }
 }
@@ -81,7 +83,7 @@ impl SQLFunction for SQLListCount {
                         })?;
                 Ok(daft_functions::list::count(input, mode))
             }
-            _ => unsupported_sql_err!("Expected 1 or 2 arguments"),
+            _ => unsupported_sql_err!("invalid arguments for list_count. Expected either list_count(expr) or list_count(expr, mode)"),
         }
     }
 }
@@ -118,7 +120,9 @@ impl SQLFunction for SQLListJoin {
                 let separator = planner.plan_function_arg(separator)?;
                 Ok(daft_functions::list::join(input, separator))
             }
-            _ => unsupported_sql_err!("Expected 2 arguments"),
+            _ => unsupported_sql_err!(
+                "invalid arguments for list_join. Expected list_join(expr, separator)"
+            ),
         }
     }
 }
@@ -136,7 +140,7 @@ impl SQLFunction for SQLListMax {
                 let input = planner.plan_function_arg(input)?;
                 Ok(daft_functions::list::max(input))
             }
-            _ => unsupported_sql_err!("Expected 1 argument"),
+            _ => unsupported_sql_err!("invalid arguments for list_max. Expected list_max(expr)"),
         }
     }
 }
@@ -154,7 +158,7 @@ impl SQLFunction for SQLListMean {
                 let input = planner.plan_function_arg(input)?;
                 Ok(daft_functions::list::mean(input))
             }
-            _ => unsupported_sql_err!("Expected 1 argument"),
+            _ => unsupported_sql_err!("invalid arguments for list_mean. Expected list_mean(expr)"),
         }
     }
 }
@@ -172,7 +176,7 @@ impl SQLFunction for SQLListMin {
                 let input = planner.plan_function_arg(input)?;
                 Ok(daft_functions::list::min(input))
             }
-            _ => unsupported_sql_err!("Expected 1 argument"),
+            _ => unsupported_sql_err!("invalid arguments for list_min. Expected list_min(expr)"),
         }
     }
 }
@@ -190,7 +194,7 @@ impl SQLFunction for SQLListSum {
                 let input = planner.plan_function_arg(input)?;
                 Ok(daft_functions::list::sum(input))
             }
-            _ => unsupported_sql_err!("Expected 1 argument"),
+            _ => unsupported_sql_err!("invalid arguments for list_sum. Expected list_sum(expr)"),
         }
     }
 }
@@ -210,7 +214,9 @@ impl SQLFunction for SQLListSlice {
                 let end = planner.plan_function_arg(end)?;
                 Ok(daft_functions::list::slice(input, start, end))
             }
-            _ => unsupported_sql_err!("Expected [input, start, end] arguments"),
+            _ => unsupported_sql_err!(
+                "invalid arguments for list_slice. Expected list_slice(expr, start, end)"
+            ),
         }
     }
 }
@@ -247,7 +253,9 @@ impl SQLFunction for SQLListSort {
                 };
                 Ok(daft_functions::list::sort(input, Some(order)))
             }
-            _ => unsupported_sql_err!("invalid arguments for list_sort"),
+            _ => unsupported_sql_err!(
+                "invalid arguments for list_sort. Expected list_sort(expr, ASC|DESC)"
+            ),
         }
     }
 }
