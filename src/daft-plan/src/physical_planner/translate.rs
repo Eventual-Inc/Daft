@@ -1092,14 +1092,10 @@ mod tests {
         opts: RepartitionOptions,
     ) -> DaftResult<LogicalPlanBuilder> {
         match opts {
-            RepartitionOptions::Good(x) => {
-                node.hash_repartition(Some(dbg!(x)), vec![col("a"), col("b")])
-            }
-            RepartitionOptions::Bad(x) => {
-                node.hash_repartition(Some(dbg!(x)), vec![col("a"), col("c")])
-            }
+            RepartitionOptions::Good(x) => node.hash_repartition(Some(x), vec![col("a"), col("b")]),
+            RepartitionOptions::Bad(x) => node.hash_repartition(Some(x), vec![col("a"), col("c")]),
             RepartitionOptions::Reversed(x) => {
-                node.hash_repartition(Some(dbg!(x)), vec![col("b"), col("a")])
+                node.hash_repartition(Some(x), vec![col("b"), col("a")])
             }
         }
     }
@@ -1151,7 +1147,7 @@ mod tests {
             PhysicalPlan::HashJoin(HashJoin { left, right, .. }) => {
                 let left_works = match (
                     left.as_ref(),
-                    left_repartitions || left_partition_size > shuffle_join_default_partitions,
+                    left_repartitions || left_partition_size < shuffle_join_default_partitions,
                 ) {
                     (PhysicalPlan::ReduceMerge(_), true) => true,
                     (PhysicalPlan::Project(_), false) => true,
@@ -1159,7 +1155,7 @@ mod tests {
                 };
                 let right_works = match (
                     right.as_ref(),
-                    right_repartitions || right_partition_size > shuffle_join_default_partitions,
+                    right_repartitions || right_partition_size < shuffle_join_default_partitions,
                 ) {
                     (PhysicalPlan::ReduceMerge(_), true) => true,
                     (PhysicalPlan::Project(_), false) => true,
