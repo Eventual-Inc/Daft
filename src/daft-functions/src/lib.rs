@@ -5,7 +5,6 @@ pub mod float;
 pub mod hash;
 pub mod image;
 pub mod list;
-pub mod list_sort;
 pub mod minhash;
 pub mod numeric;
 pub mod to_struct;
@@ -29,10 +28,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         parent
     )?)?;
     parent.add_function(wrap_pyfunction_bound!(hash::python::hash, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        list_sort::python::list_sort,
-        parent
-    )?)?;
+
     parent.add_function(wrap_pyfunction_bound!(minhash::python::minhash, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(numeric::cbrt::python::cbrt, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(

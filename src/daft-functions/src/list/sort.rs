@@ -2,15 +2,15 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
+    lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct ListSortFunction {}
+pub struct ListSort {}
 
 #[typetag::serde]
-impl ScalarUDF for ListSortFunction {
+impl ScalarUDF for ListSort {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -51,18 +51,20 @@ impl ScalarUDF for ListSortFunction {
     }
 }
 
-pub fn list_sort(input: ExprRef, desc: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListSortFunction {}, vec![input, desc]).into()
+pub fn list_sort(input: ExprRef, desc: Option<ExprRef>) -> ExprRef {
+    let desc = desc.unwrap_or_else(|| lit(false));
+    ScalarFunction::new(ListSort {}, vec![input, desc]).into()
 }
 
 #[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
 
-    #[pyfunction]
-    pub fn list_sort(expr: PyExpr, desc: PyExpr) -> PyResult<PyExpr> {
-        let expr = super::list_sort(expr.into(), desc.into());
-        Ok(expr.into())
-    }
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "list_sort")]
+pub fn py_list_sort(expr: PyExpr, desc: PyExpr) -> PyResult<PyExpr> {
+    Ok(list_sort(expr.into(), Some(desc.into())).into())
 }
