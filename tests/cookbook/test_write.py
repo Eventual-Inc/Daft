@@ -122,8 +122,8 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
 @pytest.mark.parametrize(
     "exp,key,answer",
     [
-        (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket_10", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc_10", [0, 10, 20, 40]),
+        (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
+        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc", [0, 10, 20, 40]),
     ],
 )
 def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):

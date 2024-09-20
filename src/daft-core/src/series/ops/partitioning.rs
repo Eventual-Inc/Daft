@@ -104,10 +104,7 @@ impl Series {
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
-        Ok(
-            Int32Array::from((format!("{}_bucket_{}", self.name(), n).as_str(), array))
-                .into_series(),
-        )
+        Ok(Int32Array::from((format!("{}_bucket", self.name()).as_str(), array)).into_series())
     }
 
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
@@ -128,6 +125,6 @@ impl Series {
             ))),
         }?;
 
-        Ok(trunc.rename(format!("{}_trunc_{}", self.name(), w)))
+        Ok(trunc.rename(format!("{}_trunc", self.name())))
     }
 }

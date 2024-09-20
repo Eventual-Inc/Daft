@@ -68,36 +68,27 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
         "partitioning_iceberg_bucket"
     }
 
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        schema: &Schema,
-        expr: &FunctionExpr,
-    ) -> DaftResult<Field> {
-        let n = match expr {
-            FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)) => n,
-            _ => panic!("Expected PartitioningExpr::IcebergBucket Expr, got {expr}"),
-        };
-
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
-                Ok(field) => {
-                    let output_field =
-                        Field::new(format!("{}_bucket_{}", field.name, n), DataType::Int32);
-
-                    match field.dtype {
-                        DataType::Decimal128(_, _)
-                        | DataType::Date
-                        | DataType::Timestamp(..)
-                        | DataType::Utf8
-                        | DataType::Binary => Ok(output_field),
-                        v if v.is_integer() => Ok(output_field),
-                        _ => Err(DaftError::TypeError(format!(
-                            "Expected input to iceberg bucketing to be murmur3 hashable, got {}",
-                            field.dtype
-                        ))),
-                    }
-                }
+                Ok(field) => match field.dtype {
+                    DataType::Decimal128(_, _)
+                    | DataType::Date
+                    | DataType::Timestamp(..)
+                    | DataType::Utf8
+                    | DataType::Binary => Ok(Field::new(
+                        format!("{}_bucket", field.name),
+                        DataType::Int32,
+                    )),
+                    v if v.is_integer() => Ok(Field::new(
+                        format!("{}_bucket", field.name),
+                        DataType::Int32,
+                    )),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to iceberg bucketing to be murmur3 hashable, got {}",
+                        field.dtype
+                    ))),
+                },
                 Err(e) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(
@@ -130,33 +121,18 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         "partitioning_iceberg_truncate"
     }
 
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        schema: &Schema,
-        expr: &FunctionExpr,
-    ) -> DaftResult<Field> {
-        let w = match expr {
-            FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)) => w,
-            _ => panic!("Expected PartitioningExpr::IcebergTruncate Expr, got {expr}"),
-        };
-
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
-                Ok(field) => {
-                    let output_field =
-                        Field::new(format!("{}_trunc_{}", field.name, w), field.dtype.clone());
-
-                    match &field.dtype {
-                        DataType::Decimal128(_, _)
-                        | DataType::Utf8 | DataType::Binary => Ok(output_field),
-                        v if v.is_integer() => Ok(output_field),
-                        _ => Err(DaftError::TypeError(format!(
-                            "Expected input to IcebergTruncate to be an Integer, Utf8, Decimal, or Binary, got {}",
-                            field.dtype
-                        ))),
-                    }
-                }
+                Ok(field) => match &field.dtype {
+                    DataType::Decimal128(_, _)
+                    | DataType::Utf8 | DataType::Binary => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
+                    v if v.is_integer() => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to IcebergTruncate to be an Integer, Utf8, Decimal, or Binary, got {}",
+                        field.dtype
+                    ))),
+                },
                 Err(e) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(

@@ -86,29 +86,29 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         YearTransform,
     )
 
-    part_col = schema.find_field(field.source_id).name
+    part_col = col(schema.find_field(field.source_id).name)
 
     if isinstance(field.transform, IdentityTransform):
-        transform_expr = col(part_col)
+        transform_expr = part_col
     elif isinstance(field.transform, YearTransform):
-        transform_expr = col(part_col).partitioning.years()
+        transform_expr = part_col.partitioning.years()
     elif isinstance(field.transform, MonthTransform):
-        transform_expr = col(part_col).partitioning.months()
+        transform_expr = part_col.partitioning.months()
     elif isinstance(field.transform, DayTransform):
-        transform_expr = col(part_col).partitioning.days()
+        transform_expr = part_col.partitioning.days()
     elif isinstance(field.transform, HourTransform):
-        transform_expr = col(part_col).partitioning.hours()
+        transform_expr = part_col.partitioning.hours()
     elif isinstance(field.transform, BucketTransform):
-        transform_expr = col(part_col).partitioning.iceberg_bucket(field.transform.num_buckets)
+        transform_expr = part_col.partitioning.iceberg_bucket(field.transform.num_buckets)
     elif isinstance(field.transform, TruncateTransform):
-        transform_expr = col(part_col).partitioning.iceberg_truncate(field.transform.width)
+        transform_expr = part_col.partitioning.iceberg_truncate(field.transform.width)
     else:
         warnings.warn(f"{field.transform} not implemented, Please make an issue!")
-        transform_expr = col(part_col)
+        transform_expr = part_col
 
     # currently the partitioning expressions change the name of the column
     # so we need to alias it back to the original column name
-    return transform_expr.alias(part_col)
+    return transform_expr
 
 
 def to_partition_representation(value: Any):
