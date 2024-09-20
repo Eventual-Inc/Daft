@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Truncate {
-    interval: String,
+    pub(super) interval: String,
 }
 
 #[typetag::serde]
@@ -18,7 +18,7 @@ impl ScalarUDF for Truncate {
     }
 
     fn name(&self) -> &'static str {
-        stringify!($fn_name)
+        "truncate"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

@@ -1825,6 +1825,7 @@ dependencies = [
  "daft-image",
  "daft-io",
  "futures",
+ "paste",
  "pyo3",
  "serde",
  "snafu",
