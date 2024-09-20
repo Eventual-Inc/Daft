@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListCount {
-    mode: CountMode,
+    pub mode: CountMode,
 }
 
 #[typetag::serde]

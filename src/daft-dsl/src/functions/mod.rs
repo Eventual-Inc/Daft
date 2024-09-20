@@ -3,7 +3,6 @@ pub mod partitioning;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
-pub mod temporal;
 pub mod utf8;
 
 use std::{
@@ -18,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use self::{
     map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr,
-    temporal::TemporalExpr, utf8::Utf8Expr,
+    utf8::Utf8Expr,
 };
 use crate::{Expr, ExprRef, Operator};
 
@@ -28,7 +27,6 @@ use python::PythonUDF;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
     Utf8(Utf8Expr),
-    Temporal(TemporalExpr),
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
@@ -53,7 +51,6 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             Utf8(expr) => expr.get_evaluator(),
-            Temporal(expr) => expr.get_evaluator(),
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),

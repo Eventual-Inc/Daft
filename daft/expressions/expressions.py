@@ -1491,7 +1491,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a Date expression
         """
-        return Expression._from_pyexpr(self._expr.dt_date())
+        return Expression._from_pyexpr(native.dt_date(self._expr))
 
     def day(self) -> Expression:
         """Retrieves the day for a datetime column
@@ -1526,7 +1526,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_day())
+        return Expression._from_pyexpr(native.dt_day(self._expr))
 
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column
@@ -1561,7 +1561,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_hour())
+        return Expression._from_pyexpr(native.dt_hour(self._expr))
 
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column
@@ -1596,7 +1596,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the minute extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_minute())
+        return Expression._from_pyexpr(native.dt_minute(self._expr))
 
     def second(self) -> Expression:
         """Retrieves the second for a datetime column
@@ -1631,7 +1631,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the second extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_second())
+        return Expression._from_pyexpr(native.dt_second(self._expr))
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column
@@ -1666,7 +1666,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a Time expression
         """
-        return Expression._from_pyexpr(self._expr.dt_time())
+        return Expression._from_pyexpr(native.dt_time(self._expr))
 
     def month(self) -> Expression:
         """Retrieves the month for a datetime column
@@ -1699,7 +1699,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the month extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_month())
+        return Expression._from_pyexpr(native.dt_month(self._expr))
 
     def year(self) -> Expression:
         """Retrieves the year for a datetime column
@@ -1733,7 +1733,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the year extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_year())
+        return Expression._from_pyexpr(native.dt_year(self._expr))
 
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday
@@ -1766,7 +1766,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_day_of_week())
+        return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval
@@ -1804,7 +1804,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             Expression: a DateTime expression truncated to the specified interval
         """
         relative_to = Expression._to_expression(relative_to)
-        return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
+        return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
@@ -1980,7 +1980,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
 
-    def concat(self, other: str) -> Expression:
+    def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together
 
         .. NOTE::
@@ -2012,7 +2012,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` concatenated with `other`
         """
         # Delegate to + operator implementation.
-        return Expression._from_pyexpr(self._expr) + other
+        other_expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr) + other_expr
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
