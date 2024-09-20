@@ -94,7 +94,7 @@ impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
 
 impl<'a> From<GrowableFixedSizeBinary<'a>> for FixedSizeBinaryArray {
     fn from(val: GrowableFixedSizeBinary<'a>) -> Self {
-        FixedSizeBinaryArray::new(
+        Self::new(
             val.arrays[0].data_type().clone(),
             val.values.into(),
             val.validity.into(),

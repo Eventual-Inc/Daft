@@ -91,6 +91,6 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
 impl<'a> From<GrowableBoolean<'a>> for BooleanArray {
     fn from(val: GrowableBoolean<'a>) -> Self {
-        BooleanArray::new(val.data_type, val.values.into(), val.validity.into())
+        Self::new(val.data_type, val.values.into(), val.validity.into())
     }
 }

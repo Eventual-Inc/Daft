@@ -122,6 +122,6 @@ pub struct ArrowJsonColumn {
 
 impl From<serde_json::Error> for Error {
     fn from(error: serde_json::Error) -> Self {
-        Error::ExternalFormat(error.to_string())
+        Self::ExternalFormat(error.to_string())
     }
 }

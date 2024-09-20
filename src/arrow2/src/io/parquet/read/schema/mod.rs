@@ -29,7 +29,7 @@ pub struct SchemaInferenceOptions {
 
 impl Default for SchemaInferenceOptions {
     fn default() -> Self {
-        SchemaInferenceOptions {
+        Self {
             int96_coerce_to_timeunit: TimeUnit::Nanosecond,
         }
     }

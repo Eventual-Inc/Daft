@@ -41,10 +41,10 @@ impl Schema {
             }
         }
 
-        Ok(Schema { fields: map })
+        Ok(Self { fields: map })
     }
 
-    pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Schema> {
+    pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let mut fields = IndexMap::new();
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
         for (name, field) in self.fields.iter() {
@@ -53,11 +53,11 @@ impl Schema {
             }
         }
 
-        Ok(Schema { fields })
+        Ok(Self { fields })
     }
 
     pub fn empty() -> Self {
-        Schema {
+        Self {
             fields: indexmap::IndexMap::new(),
         }
     }
@@ -96,7 +96,7 @@ impl Schema {
         self.fields.is_empty()
     }
 
-    pub fn union(&self, other: &Schema) -> DaftResult<Schema> {
+    pub fn union(&self, other: &Self) -> DaftResult<Self> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         match self_keys.difference(&other_keys).count() {
@@ -105,7 +105,7 @@ impl Schema {
                 for (k, v) in self.fields.iter().chain(other.fields.iter()) {
                     fields.insert(k.clone(), v.clone());
                 }
-                Ok(Schema { fields })
+                Ok(Self { fields })
             }
             _ => Err(DaftError::ValueError(
                 "Cannot union two schemas with overlapping keys".to_string(),
@@ -113,7 +113,7 @@ impl Schema {
         }
     }
 
-    pub fn apply_hints(&self, hints: &Schema) -> DaftResult<Schema> {
+    pub fn apply_hints(&self, hints: &Self) -> DaftResult<Self> {
         let applied_fields = self
             .fields
             .iter()
@@ -123,7 +123,7 @@ impl Schema {
             })
             .collect::<IndexMap<String, Field>>();
 
-        Ok(Schema {
+        Ok(Self {
             fields: applied_fields,
         })
     }
@@ -238,7 +238,7 @@ impl Schema {
     }
 
     /// Returns a new schema with only the specified columns in the new schema
-    pub fn project<S: AsRef<str>>(self: Arc<Self>, columns: &[S]) -> DaftResult<Schema> {
+    pub fn project<S: AsRef<str>>(self: Arc<Self>, columns: &[S]) -> DaftResult<Self> {
         let new_fields = columns
             .iter()
             .map(|i| {

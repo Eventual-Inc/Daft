@@ -115,13 +115,9 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
 impl<T> DataArray<T>
 where
     T: DaftPhysicalType,
-    DataArray<T>: GrowableArray + IntoSeries,
+    Self: GrowableArray + IntoSeries,
 {
-    pub fn if_else(
-        &self,
-        other: &DataArray<T>,
-        predicate: &BooleanArray,
-    ) -> DaftResult<DataArray<T>> {
+    pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
         generic_if_else(
             predicate,
             self.name(),
@@ -131,7 +127,7 @@ where
             self.len(),
             other.len(),
         )?
-        .downcast::<DataArray<T>>()
+        .downcast::<Self>()
         .cloned()
     }
 }

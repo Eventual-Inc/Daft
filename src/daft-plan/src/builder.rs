@@ -53,8 +53,8 @@ impl LogicalPlanBuilder {
     }
 }
 
-impl From<&LogicalPlanBuilder> for LogicalPlanBuilder {
-    fn from(builder: &LogicalPlanBuilder) -> Self {
+impl From<&Self> for LogicalPlanBuilder {
+    fn from(builder: &Self) -> Self {
         Self {
             plan: builder.plan.clone(),
             config: builder.config.clone(),
@@ -105,7 +105,7 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
-        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None))
     }
 
     pub fn table_scan(
@@ -139,7 +139,7 @@ impl LogicalPlanBuilder {
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
-        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None))
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {

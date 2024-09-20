@@ -1604,7 +1604,7 @@ impl FixedSizeListArray {
                     )));
                 }
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                Ok(FixedSizeListArray::new(
+                Ok(Self::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
                     self.validity().cloned(),
@@ -1666,7 +1666,7 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::List(child_dtype) => Ok(ListArray::new(
+            DataType::List(child_dtype) => Ok(Self::new(
                 Field::new(self.name(), dtype.clone()),
                 self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
@@ -1786,7 +1786,7 @@ impl StructArray {
                         },
                     )
                     .collect::<DaftResult<Vec<Series>>>();
-                Ok(StructArray::new(
+                Ok(Self::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,
                     self.validity().cloned(),

@@ -237,26 +237,26 @@ impl<O: Offset> BinaryArray<O> {
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
                 // Safety: invariants are preserved
-                Left(bitmap) => Left(BinaryArray::new(
+                Left(bitmap) => Left(Self::new(
                     self.data_type,
                     self.offsets,
                     self.values,
                     Some(bitmap),
                 )),
                 Right(mutable_bitmap) => match (self.values.into_mut(), self.offsets.into_mut()) {
-                    (Left(values), Left(offsets)) => Left(BinaryArray::new(
+                    (Left(values), Left(offsets)) => Left(Self::new(
                         self.data_type,
                         offsets,
                         values,
                         Some(mutable_bitmap.into()),
                     )),
-                    (Left(values), Right(offsets)) => Left(BinaryArray::new(
+                    (Left(values), Right(offsets)) => Left(Self::new(
                         self.data_type,
                         offsets.into(),
                         values,
                         Some(mutable_bitmap.into()),
                     )),
-                    (Right(values), Left(offsets)) => Left(BinaryArray::new(
+                    (Right(values), Left(offsets)) => Left(Self::new(
                         self.data_type,
                         offsets,
                         values.into(),
@@ -276,15 +276,15 @@ impl<O: Offset> BinaryArray<O> {
         } else {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
-                    Left(BinaryArray::new(self.data_type, offsets, values, None))
+                    Left(Self::new(self.data_type, offsets, values, None))
                 }
-                (Left(values), Right(offsets)) => Left(BinaryArray::new(
+                (Left(values), Right(offsets)) => Left(Self::new(
                     self.data_type,
                     offsets.into(),
                     values,
                     None,
                 )),
-                (Right(values), Left(offsets)) => Left(BinaryArray::new(
+                (Right(values), Left(offsets)) => Left(Self::new(
                     self.data_type,
                     offsets,
                     values.into(),

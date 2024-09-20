@@ -9,7 +9,7 @@ use super::super::types::ParquetType;
 
 impl ParquetType {
     /// Method to convert from Thrift.
-    pub fn try_from_thrift(elements: &[SchemaElement]) -> Result<ParquetType> {
+    pub fn try_from_thrift(elements: &[SchemaElement]) -> Result<Self> {
         let mut index = 0;
         let mut schema_nodes = Vec::new();
         while index < elements.len() {

@@ -26,7 +26,7 @@ impl StorageConfig {
         // Grab an IOClient and Runtime
         // TODO: This should be cleaned up and hidden behind a better API from daft-io
         match self {
-            StorageConfig::Native(cfg) => {
+            Self::Native(cfg) => {
                 let multithreaded_io = cfg.multithreaded_io;
                 Ok((
                     get_runtime(multithreaded_io)?,
@@ -37,7 +37,7 @@ impl StorageConfig {
                 ))
             }
             #[cfg(feature = "python")]
-            StorageConfig::Python(cfg) => {
+            Self::Python(cfg) => {
                 let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
                 Ok((
                     get_runtime(multithreaded_io)?,

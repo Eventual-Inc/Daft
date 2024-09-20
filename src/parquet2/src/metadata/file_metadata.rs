@@ -143,7 +143,7 @@ impl FileMetaData {
             .column_orders
             .map(|orders| parse_column_orders(&orders, &schema_descr));
 
-        Ok(FileMetaData {
+        Ok(Self {
             version: metadata.version,
             num_rows: metadata.num_rows.try_into()?,
             created_by: metadata.created_by,

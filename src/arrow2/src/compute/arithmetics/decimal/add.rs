@@ -135,22 +135,22 @@ pub fn checked_add(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> Pr
 }
 
 // Implementation of ArrayAdd trait for PrimitiveArrays
-impl ArrayAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn add(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArrayAdd<Self> for PrimitiveArray<i128> {
+    fn add(&self, rhs: &Self) -> Self {
         add(self, rhs)
     }
 }
 
 // Implementation of ArrayCheckedAdd trait for PrimitiveArrays
-impl ArrayCheckedAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn checked_add(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArrayCheckedAdd<Self> for PrimitiveArray<i128> {
+    fn checked_add(&self, rhs: &Self) -> Self {
         checked_add(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingAdd trait for PrimitiveArrays
-impl ArraySaturatingAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn saturating_add(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArraySaturatingAdd<Self> for PrimitiveArray<i128> {
+    fn saturating_add(&self, rhs: &Self) -> Self {
         saturating_add(self, rhs)
     }
 }

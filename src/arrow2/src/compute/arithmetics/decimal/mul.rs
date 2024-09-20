@@ -205,22 +205,22 @@ pub fn checked_mul(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> Pr
 }
 
 // Implementation of ArrayMul trait for PrimitiveArrays
-impl ArrayMul<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn mul(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArrayMul<Self> for PrimitiveArray<i128> {
+    fn mul(&self, rhs: &Self) -> Self {
         mul(self, rhs)
     }
 }
 
 // Implementation of ArrayCheckedMul trait for PrimitiveArrays
-impl ArrayCheckedMul<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn checked_mul(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArrayCheckedMul<Self> for PrimitiveArray<i128> {
+    fn checked_mul(&self, rhs: &Self) -> Self {
         checked_mul(self, rhs)
     }
 }
 
 // Implementation of ArraySaturatingMul trait for PrimitiveArrays
-impl ArraySaturatingMul<PrimitiveArray<i128>> for PrimitiveArray<i128> {
-    fn saturating_mul(&self, rhs: &PrimitiveArray<i128>) -> Self {
+impl ArraySaturatingMul<Self> for PrimitiveArray<i128> {
+    fn saturating_mul(&self, rhs: &Self) -> Self {
         saturating_mul(self, rhs)
     }
 }

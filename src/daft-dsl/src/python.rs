@@ -878,13 +878,13 @@ impl_bincode_py_state_serialization!(PyExpr);
 
 impl From<ExprRef> for PyExpr {
     fn from(value: crate::ExprRef) -> Self {
-        PyExpr { expr: value }
+        Self { expr: value }
     }
 }
 
 impl From<Expr> for PyExpr {
     fn from(value: crate::Expr) -> Self {
-        PyExpr {
+        Self {
             expr: Arc::new(value),
         }
     }

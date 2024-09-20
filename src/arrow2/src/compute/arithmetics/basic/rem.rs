@@ -61,20 +61,20 @@ where
     binary_checked(lhs, rhs, lhs.data_type().clone(), op)
 }
 
-impl<T> ArrayRem<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayRem<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + Rem<Output = T>,
 {
-    fn rem(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn rem(&self, rhs: &Self) -> Self {
         rem(self, rhs)
     }
 }
 
-impl<T> ArrayCheckedRem<PrimitiveArray<T>> for PrimitiveArray<T>
+impl<T> ArrayCheckedRem<Self> for PrimitiveArray<T>
 where
     T: NativeArithmetics + CheckedRem<Output = T>,
 {
-    fn checked_rem(&self, rhs: &PrimitiveArray<T>) -> Self {
+    fn checked_rem(&self, rhs: &Self) -> Self {
         checked_rem(self, rhs)
     }
 }

@@ -38,7 +38,7 @@ pub(crate) struct Relation {
 
 impl Relation {
     pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
-        Relation { inner, name }
+        Self { inner, name }
     }
     pub(crate) fn schema(&self) -> SchemaRef {
         self.inner.schema()
@@ -52,7 +52,7 @@ pub struct SQLPlanner {
 
 impl Default for SQLPlanner {
     fn default() -> Self {
-        SQLPlanner {
+        Self {
             catalog: SQLCatalog::new(),
             current_relation: None,
         }
@@ -61,7 +61,7 @@ impl Default for SQLPlanner {
 
 impl SQLPlanner {
     pub fn new(context: SQLCatalog) -> Self {
-        SQLPlanner {
+        Self {
             catalog: context,
             current_relation: None,
         }

@@ -27,9 +27,9 @@ impl TryFrom<FieldRepetitionType> for Repetition {
 
     fn try_from(repetition: FieldRepetitionType) -> Result<Self, Self::Error> {
         Ok(match repetition {
-            FieldRepetitionType::REQUIRED => Repetition::Required,
-            FieldRepetitionType::OPTIONAL => Repetition::Optional,
-            FieldRepetitionType::REPEATED => Repetition::Repeated,
+            FieldRepetitionType::REQUIRED => Self::Required,
+            FieldRepetitionType::OPTIONAL => Self::Optional,
+            FieldRepetitionType::REPEATED => Self::Repeated,
             _ => return Err(Error::oos("Thrift out of range")),
         })
     }
@@ -38,9 +38,9 @@ impl TryFrom<FieldRepetitionType> for Repetition {
 impl From<Repetition> for FieldRepetitionType {
     fn from(repetition: Repetition) -> Self {
         match repetition {
-            Repetition::Required => FieldRepetitionType::REQUIRED,
-            Repetition::Optional => FieldRepetitionType::OPTIONAL,
-            Repetition::Repeated => FieldRepetitionType::REPEATED,
+            Repetition::Required => Self::REQUIRED,
+            Repetition::Optional => Self::OPTIONAL,
+            Repetition::Repeated => Self::REPEATED,
         }
     }
 }
@@ -62,14 +62,14 @@ impl TryFrom<CompressionCodec> for Compression {
 
     fn try_from(codec: CompressionCodec) -> Result<Self, Self::Error> {
         Ok(match codec {
-            CompressionCodec::UNCOMPRESSED => Compression::Uncompressed,
-            CompressionCodec::SNAPPY => Compression::Snappy,
-            CompressionCodec::GZIP => Compression::Gzip,
-            CompressionCodec::LZO => Compression::Lzo,
-            CompressionCodec::BROTLI => Compression::Brotli,
-            CompressionCodec::LZ4 => Compression::Lz4,
-            CompressionCodec::ZSTD => Compression::Zstd,
-            CompressionCodec::LZ4_RAW => Compression::Lz4Raw,
+            CompressionCodec::UNCOMPRESSED => Self::Uncompressed,
+            CompressionCodec::SNAPPY => Self::Snappy,
+            CompressionCodec::GZIP => Self::Gzip,
+            CompressionCodec::LZO => Self::Lzo,
+            CompressionCodec::BROTLI => Self::Brotli,
+            CompressionCodec::LZ4 => Self::Lz4,
+            CompressionCodec::ZSTD => Self::Zstd,
+            CompressionCodec::LZ4_RAW => Self::Lz4Raw,
             _ => return Err(Error::oos("Thrift out of range")),
         })
     }
@@ -78,14 +78,14 @@ impl TryFrom<CompressionCodec> for Compression {
 impl From<Compression> for CompressionCodec {
     fn from(codec: Compression) -> Self {
         match codec {
-            Compression::Uncompressed => CompressionCodec::UNCOMPRESSED,
-            Compression::Snappy => CompressionCodec::SNAPPY,
-            Compression::Gzip => CompressionCodec::GZIP,
-            Compression::Lzo => CompressionCodec::LZO,
-            Compression::Brotli => CompressionCodec::BROTLI,
-            Compression::Lz4 => CompressionCodec::LZ4,
-            Compression::Zstd => CompressionCodec::ZSTD,
-            Compression::Lz4Raw => CompressionCodec::LZ4_RAW,
+            Compression::Uncompressed => Self::UNCOMPRESSED,
+            Compression::Snappy => Self::SNAPPY,
+            Compression::Gzip => Self::GZIP,
+            Compression::Lzo => Self::LZO,
+            Compression::Brotli => Self::BROTLI,
+            Compression::Lz4 => Self::LZ4,
+            Compression::Zstd => Self::ZSTD,
+            Compression::Lz4Raw => Self::LZ4_RAW,
         }
     }
 }
@@ -108,14 +108,14 @@ pub enum CompressionOptions {
 impl From<CompressionOptions> for Compression {
     fn from(value: CompressionOptions) -> Self {
         match value {
-            CompressionOptions::Uncompressed => Compression::Uncompressed,
-            CompressionOptions::Snappy => Compression::Snappy,
-            CompressionOptions::Gzip(_) => Compression::Gzip,
-            CompressionOptions::Lzo => Compression::Lzo,
-            CompressionOptions::Brotli(_) => Compression::Brotli,
-            CompressionOptions::Lz4 => Compression::Lz4,
-            CompressionOptions::Zstd(_) => Compression::Zstd,
-            CompressionOptions::Lz4Raw => Compression::Lz4Raw,
+            CompressionOptions::Uncompressed => Self::Uncompressed,
+            CompressionOptions::Snappy => Self::Snappy,
+            CompressionOptions::Gzip(_) => Self::Gzip,
+            CompressionOptions::Lzo => Self::Lzo,
+            CompressionOptions::Brotli(_) => Self::Brotli,
+            CompressionOptions::Lz4 => Self::Lz4,
+            CompressionOptions::Zstd(_) => Self::Zstd,
+            CompressionOptions::Lz4Raw => Self::Lz4Raw,
         }
     }
 }
@@ -123,14 +123,14 @@ impl From<CompressionOptions> for Compression {
 impl From<CompressionOptions> for CompressionCodec {
     fn from(codec: CompressionOptions) -> Self {
         match codec {
-            CompressionOptions::Uncompressed => CompressionCodec::UNCOMPRESSED,
-            CompressionOptions::Snappy => CompressionCodec::SNAPPY,
-            CompressionOptions::Gzip(_) => CompressionCodec::GZIP,
-            CompressionOptions::Lzo => CompressionCodec::LZO,
-            CompressionOptions::Brotli(_) => CompressionCodec::BROTLI,
-            CompressionOptions::Lz4 => CompressionCodec::LZ4,
-            CompressionOptions::Zstd(_) => CompressionCodec::ZSTD,
-            CompressionOptions::Lz4Raw => CompressionCodec::LZ4_RAW,
+            CompressionOptions::Uncompressed => Self::UNCOMPRESSED,
+            CompressionOptions::Snappy => Self::SNAPPY,
+            CompressionOptions::Gzip(_) => Self::GZIP,
+            CompressionOptions::Lzo => Self::LZO,
+            CompressionOptions::Brotli(_) => Self::BROTLI,
+            CompressionOptions::Lz4 => Self::LZ4,
+            CompressionOptions::Zstd(_) => Self::ZSTD,
+            CompressionOptions::Lz4Raw => Self::LZ4_RAW,
         }
     }
 }
@@ -266,9 +266,9 @@ impl TryFrom<ParquetPageType> for PageType {
 
     fn try_from(type_: ParquetPageType) -> Result<Self, Self::Error> {
         Ok(match type_ {
-            ParquetPageType::DATA_PAGE => PageType::DataPage,
-            ParquetPageType::DATA_PAGE_V2 => PageType::DataPageV2,
-            ParquetPageType::DICTIONARY_PAGE => PageType::DictionaryPage,
+            ParquetPageType::DATA_PAGE => Self::DataPage,
+            ParquetPageType::DATA_PAGE_V2 => Self::DataPageV2,
+            ParquetPageType::DICTIONARY_PAGE => Self::DictionaryPage,
             _ => return Err(Error::oos("Thrift out of range")),
         })
     }
@@ -277,9 +277,9 @@ impl TryFrom<ParquetPageType> for PageType {
 impl From<PageType> for ParquetPageType {
     fn from(type_: PageType) -> Self {
         match type_ {
-            PageType::DataPage => ParquetPageType::DATA_PAGE,
-            PageType::DataPageV2 => ParquetPageType::DATA_PAGE_V2,
-            PageType::DictionaryPage => ParquetPageType::DICTIONARY_PAGE,
+            PageType::DataPage => Self::DATA_PAGE,
+            PageType::DataPageV2 => Self::DATA_PAGE_V2,
+            PageType::DictionaryPage => Self::DICTIONARY_PAGE,
         }
     }
 }
@@ -331,15 +331,15 @@ impl TryFrom<ParquetEncoding> for Encoding {
 
     fn try_from(encoding: ParquetEncoding) -> Result<Self, Self::Error> {
         Ok(match encoding {
-            ParquetEncoding::PLAIN => Encoding::Plain,
-            ParquetEncoding::PLAIN_DICTIONARY => Encoding::PlainDictionary,
-            ParquetEncoding::RLE => Encoding::Rle,
-            ParquetEncoding::BIT_PACKED => Encoding::BitPacked,
-            ParquetEncoding::DELTA_BINARY_PACKED => Encoding::DeltaBinaryPacked,
-            ParquetEncoding::DELTA_LENGTH_BYTE_ARRAY => Encoding::DeltaLengthByteArray,
-            ParquetEncoding::DELTA_BYTE_ARRAY => Encoding::DeltaByteArray,
-            ParquetEncoding::RLE_DICTIONARY => Encoding::RleDictionary,
-            ParquetEncoding::BYTE_STREAM_SPLIT => Encoding::ByteStreamSplit,
+            ParquetEncoding::PLAIN => Self::Plain,
+            ParquetEncoding::PLAIN_DICTIONARY => Self::PlainDictionary,
+            ParquetEncoding::RLE => Self::Rle,
+            ParquetEncoding::BIT_PACKED => Self::BitPacked,
+            ParquetEncoding::DELTA_BINARY_PACKED => Self::DeltaBinaryPacked,
+            ParquetEncoding::DELTA_LENGTH_BYTE_ARRAY => Self::DeltaLengthByteArray,
+            ParquetEncoding::DELTA_BYTE_ARRAY => Self::DeltaByteArray,
+            ParquetEncoding::RLE_DICTIONARY => Self::RleDictionary,
+            ParquetEncoding::BYTE_STREAM_SPLIT => Self::ByteStreamSplit,
             _ => return Err(Error::oos("Thrift out of range")),
         })
     }
@@ -348,15 +348,15 @@ impl TryFrom<ParquetEncoding> for Encoding {
 impl From<Encoding> for ParquetEncoding {
     fn from(encoding: Encoding) -> Self {
         match encoding {
-            Encoding::Plain => ParquetEncoding::PLAIN,
-            Encoding::PlainDictionary => ParquetEncoding::PLAIN_DICTIONARY,
-            Encoding::Rle => ParquetEncoding::RLE,
-            Encoding::BitPacked => ParquetEncoding::BIT_PACKED,
-            Encoding::DeltaBinaryPacked => ParquetEncoding::DELTA_BINARY_PACKED,
-            Encoding::DeltaLengthByteArray => ParquetEncoding::DELTA_LENGTH_BYTE_ARRAY,
-            Encoding::DeltaByteArray => ParquetEncoding::DELTA_BYTE_ARRAY,
-            Encoding::RleDictionary => ParquetEncoding::RLE_DICTIONARY,
-            Encoding::ByteStreamSplit => ParquetEncoding::BYTE_STREAM_SPLIT,
+            Encoding::Plain => Self::PLAIN,
+            Encoding::PlainDictionary => Self::PLAIN_DICTIONARY,
+            Encoding::Rle => Self::RLE,
+            Encoding::BitPacked => Self::BIT_PACKED,
+            Encoding::DeltaBinaryPacked => Self::DELTA_BINARY_PACKED,
+            Encoding::DeltaLengthByteArray => Self::DELTA_LENGTH_BYTE_ARRAY,
+            Encoding::DeltaByteArray => Self::DELTA_BYTE_ARRAY,
+            Encoding::RleDictionary => Self::RLE_DICTIONARY,
+            Encoding::ByteStreamSplit => Self::BYTE_STREAM_SPLIT,
         }
     }
 }
@@ -381,9 +381,9 @@ impl TryFrom<ParquetBoundaryOrder> for BoundaryOrder {
 
     fn try_from(encoding: ParquetBoundaryOrder) -> Result<Self, Self::Error> {
         Ok(match encoding {
-            ParquetBoundaryOrder::UNORDERED => BoundaryOrder::Unordered,
-            ParquetBoundaryOrder::ASCENDING => BoundaryOrder::Ascending,
-            ParquetBoundaryOrder::DESCENDING => BoundaryOrder::Descending,
+            ParquetBoundaryOrder::UNORDERED => Self::Unordered,
+            ParquetBoundaryOrder::ASCENDING => Self::Ascending,
+            ParquetBoundaryOrder::DESCENDING => Self::Descending,
             _ => return Err(Error::oos("BoundaryOrder Thrift value out of range")),
         })
     }
@@ -392,9 +392,9 @@ impl TryFrom<ParquetBoundaryOrder> for BoundaryOrder {
 impl From<BoundaryOrder> for ParquetBoundaryOrder {
     fn from(encoding: BoundaryOrder) -> Self {
         match encoding {
-            BoundaryOrder::Unordered => ParquetBoundaryOrder::UNORDERED,
-            BoundaryOrder::Ascending => ParquetBoundaryOrder::ASCENDING,
-            BoundaryOrder::Descending => ParquetBoundaryOrder::DESCENDING,
+            BoundaryOrder::Unordered => Self::UNORDERED,
+            BoundaryOrder::Ascending => Self::ASCENDING,
+            BoundaryOrder::Descending => Self::DESCENDING,
         }
     }
 }
@@ -443,9 +443,9 @@ pub enum TimeUnit {
 impl From<ParquetTimeUnit> for TimeUnit {
     fn from(encoding: ParquetTimeUnit) -> Self {
         match encoding {
-            ParquetTimeUnit::MILLIS(_) => TimeUnit::Milliseconds,
-            ParquetTimeUnit::MICROS(_) => TimeUnit::Microseconds,
-            ParquetTimeUnit::NANOS(_) => TimeUnit::Nanoseconds,
+            ParquetTimeUnit::MILLIS(_) => Self::Milliseconds,
+            ParquetTimeUnit::MICROS(_) => Self::Microseconds,
+            ParquetTimeUnit::NANOS(_) => Self::Nanoseconds,
         }
     }
 }
@@ -453,9 +453,9 @@ impl From<ParquetTimeUnit> for TimeUnit {
 impl From<TimeUnit> for ParquetTimeUnit {
     fn from(unit: TimeUnit) -> Self {
         match unit {
-            TimeUnit::Milliseconds => ParquetTimeUnit::MILLIS(Default::default()),
-            TimeUnit::Microseconds => ParquetTimeUnit::MICROS(Default::default()),
-            TimeUnit::Nanoseconds => ParquetTimeUnit::NANOS(Default::default()),
+            TimeUnit::Milliseconds => Self::MILLIS(Default::default()),
+            TimeUnit::Microseconds => Self::MICROS(Default::default()),
+            TimeUnit::Nanoseconds => Self::NANOS(Default::default()),
         }
     }
 }
@@ -503,8 +503,8 @@ pub enum GroupLogicalType {
 impl From<GroupLogicalType> for ParquetLogicalType {
     fn from(type_: GroupLogicalType) -> Self {
         match type_ {
-            GroupLogicalType::Map => ParquetLogicalType::MAP(Default::default()),
-            GroupLogicalType::List => ParquetLogicalType::LIST(Default::default()),
+            GroupLogicalType::Map => Self::MAP(Default::default()),
+            GroupLogicalType::List => Self::LIST(Default::default()),
         }
     }
 }
@@ -512,17 +512,17 @@ impl From<GroupLogicalType> for ParquetLogicalType {
 impl From<(i32, bool)> for IntegerType {
     fn from((bit_width, is_signed): (i32, bool)) -> Self {
         match (bit_width, is_signed) {
-            (8, true) => IntegerType::Int8,
-            (16, true) => IntegerType::Int16,
-            (32, true) => IntegerType::Int32,
-            (64, true) => IntegerType::Int64,
-            (8, false) => IntegerType::UInt8,
-            (16, false) => IntegerType::UInt16,
-            (32, false) => IntegerType::UInt32,
-            (64, false) => IntegerType::UInt64,
+            (8, true) => Self::Int8,
+            (16, true) => Self::Int16,
+            (32, true) => Self::Int32,
+            (64, true) => Self::Int64,
+            (8, false) => Self::UInt8,
+            (16, false) => Self::UInt16,
+            (32, false) => Self::UInt32,
+            (64, false) => Self::UInt64,
             // The above are the only possible annotations for parquet's int32. Anything else
             // is a deviation to the parquet specification and we ignore
-            _ => IntegerType::Int32,
+            _ => Self::Int32,
         }
     }
 }
@@ -547,28 +547,28 @@ impl TryFrom<ParquetLogicalType> for PrimitiveLogicalType {
 
     fn try_from(type_: ParquetLogicalType) -> Result<Self, Self::Error> {
         Ok(match type_ {
-            ParquetLogicalType::STRING(_) => PrimitiveLogicalType::String,
-            ParquetLogicalType::ENUM(_) => PrimitiveLogicalType::Enum,
-            ParquetLogicalType::DECIMAL(decimal) => PrimitiveLogicalType::Decimal(
+            ParquetLogicalType::STRING(_) => Self::String,
+            ParquetLogicalType::ENUM(_) => Self::Enum,
+            ParquetLogicalType::DECIMAL(decimal) => Self::Decimal(
                 decimal.precision.try_into()?,
                 decimal.scale.try_into()?,
             ),
-            ParquetLogicalType::DATE(_) => PrimitiveLogicalType::Date,
-            ParquetLogicalType::TIME(time) => PrimitiveLogicalType::Time {
+            ParquetLogicalType::DATE(_) => Self::Date,
+            ParquetLogicalType::TIME(time) => Self::Time {
                 unit: time.unit.into(),
                 is_adjusted_to_utc: time.is_adjusted_to_u_t_c,
             },
-            ParquetLogicalType::TIMESTAMP(time) => PrimitiveLogicalType::Timestamp {
+            ParquetLogicalType::TIMESTAMP(time) => Self::Timestamp {
                 unit: time.unit.into(),
                 is_adjusted_to_utc: time.is_adjusted_to_u_t_c,
             },
             ParquetLogicalType::INTEGER(int) => {
-                PrimitiveLogicalType::Integer((int.bit_width as i32, int.is_signed).into())
+                Self::Integer((int.bit_width as i32, int.is_signed).into())
             }
-            ParquetLogicalType::UNKNOWN(_) => PrimitiveLogicalType::Unknown,
-            ParquetLogicalType::JSON(_) => PrimitiveLogicalType::Json,
-            ParquetLogicalType::BSON(_) => PrimitiveLogicalType::Bson,
-            ParquetLogicalType::UUID(_) => PrimitiveLogicalType::Uuid,
+            ParquetLogicalType::UNKNOWN(_) => Self::Unknown,
+            ParquetLogicalType::JSON(_) => Self::Json,
+            ParquetLogicalType::BSON(_) => Self::Bson,
+            ParquetLogicalType::UUID(_) => Self::Uuid,
             _ => return Err(Error::oos("LogicalType value out of range")),
         })
     }
@@ -579,8 +579,8 @@ impl TryFrom<ParquetLogicalType> for GroupLogicalType {
 
     fn try_from(type_: ParquetLogicalType) -> Result<Self, Self::Error> {
         Ok(match type_ {
-            ParquetLogicalType::LIST(_) => GroupLogicalType::List,
-            ParquetLogicalType::MAP(_) => GroupLogicalType::Map,
+            ParquetLogicalType::LIST(_) => Self::List,
+            ParquetLogicalType::MAP(_) => Self::Map,
             _ => return Err(Error::oos("LogicalType value out of range")),
         })
     }
@@ -589,40 +589,40 @@ impl TryFrom<ParquetLogicalType> for GroupLogicalType {
 impl From<PrimitiveLogicalType> for ParquetLogicalType {
     fn from(type_: PrimitiveLogicalType) -> Self {
         match type_ {
-            PrimitiveLogicalType::String => ParquetLogicalType::STRING(Default::default()),
-            PrimitiveLogicalType::Enum => ParquetLogicalType::ENUM(Default::default()),
+            PrimitiveLogicalType::String => Self::STRING(Default::default()),
+            PrimitiveLogicalType::Enum => Self::ENUM(Default::default()),
             PrimitiveLogicalType::Decimal(precision, scale) => {
-                ParquetLogicalType::DECIMAL(DecimalType {
+                Self::DECIMAL(DecimalType {
                     precision: precision as i32,
                     scale: scale as i32,
                 })
             }
-            PrimitiveLogicalType::Date => ParquetLogicalType::DATE(Default::default()),
+            PrimitiveLogicalType::Date => Self::DATE(Default::default()),
             PrimitiveLogicalType::Time {
                 unit,
                 is_adjusted_to_utc,
-            } => ParquetLogicalType::TIME(TimeType {
+            } => Self::TIME(TimeType {
                 unit: unit.into(),
                 is_adjusted_to_u_t_c: is_adjusted_to_utc,
             }),
             PrimitiveLogicalType::Timestamp {
                 unit,
                 is_adjusted_to_utc,
-            } => ParquetLogicalType::TIMESTAMP(TimestampType {
+            } => Self::TIMESTAMP(TimestampType {
                 unit: unit.into(),
                 is_adjusted_to_u_t_c: is_adjusted_to_utc,
             }),
             PrimitiveLogicalType::Integer(integer) => {
                 let (bit_width, is_signed) = integer.into();
-                ParquetLogicalType::INTEGER(IntType {
+                Self::INTEGER(IntType {
                     bit_width: bit_width as i8,
                     is_signed,
                 })
             }
-            PrimitiveLogicalType::Unknown => ParquetLogicalType::UNKNOWN(Default::default()),
-            PrimitiveLogicalType::Json => ParquetLogicalType::JSON(Default::default()),
-            PrimitiveLogicalType::Bson => ParquetLogicalType::BSON(Default::default()),
-            PrimitiveLogicalType::Uuid => ParquetLogicalType::UUID(Default::default()),
+            PrimitiveLogicalType::Unknown => Self::UNKNOWN(Default::default()),
+            PrimitiveLogicalType::Json => Self::JSON(Default::default()),
+            PrimitiveLogicalType::Bson => Self::BSON(Default::default()),
+            PrimitiveLogicalType::Uuid => Self::UUID(Default::default()),
         }
     }
 }

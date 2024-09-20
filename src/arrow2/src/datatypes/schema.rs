@@ -41,7 +41,7 @@ impl Schema {
             })
             .collect();
 
-        Schema {
+        Self {
             fields,
             metadata: self.metadata,
         }

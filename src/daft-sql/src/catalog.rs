@@ -11,7 +11,7 @@ pub struct SQLCatalog {
 impl SQLCatalog {
     /// Create an empty catalog
     pub fn new() -> Self {
-        SQLCatalog {
+        Self {
             tables: HashMap::new(),
         }
     }

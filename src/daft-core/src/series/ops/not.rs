@@ -16,7 +16,7 @@ impl Not for &Series {
 }
 
 impl Not for Series {
-    type Output = DaftResult<Series>;
+    type Output = DaftResult<Self>;
     fn not(self) -> Self::Output {
         (&self).not()
     }

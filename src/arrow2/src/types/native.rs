@@ -338,7 +338,7 @@ pub struct f16(pub u16);
 
 impl PartialEq for f16 {
     #[inline]
-    fn eq(&self, other: &f16) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         if self.is_nan() || other.is_nan() {
             false
         } else {
@@ -350,7 +350,7 @@ impl PartialEq for f16 {
 // see https://github.com/starkat99/half-rs/blob/main/src/binary16.rs
 impl f16 {
     /// The difference between 1.0 and the next largest representable number.
-    pub const EPSILON: f16 = f16(0x1400u16);
+    pub const EPSILON: Self = Self(0x1400u16);
 
     #[inline]
     #[must_use]
@@ -360,8 +360,8 @@ impl f16 {
 
     /// Casts from u16.
     #[inline]
-    pub const fn from_bits(bits: u16) -> f16 {
-        f16(bits)
+    pub const fn from_bits(bits: u16) -> Self {
+        Self(bits)
     }
 
     /// Casts to u16.
@@ -430,7 +430,7 @@ impl f16 {
         if exp == 0x7F80_0000u32 {
             // Set mantissa MSB for NaN (and also keep shifted mantissa bits)
             let nan_bit = if man == 0 { 0 } else { 0x0200u32 };
-            return f16(((sign >> 16) | 0x7C00u32 | nan_bit | (man >> 13)) as u16);
+            return Self(((sign >> 16) | 0x7C00u32 | nan_bit | (man >> 13)) as u16);
         }
 
         // The number is normalized, start assembling half precision version
@@ -441,7 +441,7 @@ impl f16 {
 
         // Check for exponent overflow, return +infinity
         if half_exp >= 0x1F {
-            return f16((half_sign | 0x7C00u32) as u16);
+            return Self((half_sign | 0x7C00u32) as u16);
         }
 
         // Check for underflow
@@ -449,7 +449,7 @@ impl f16 {
             // Check mantissa for what we can do
             if 14 - half_exp > 24 {
                 // No rounding possibility, so this is a full underflow, return signed zero
-                return f16(half_sign as u16);
+                return Self(half_sign as u16);
             }
             // Don't forget about hidden leading mantissa bit when assembling mantissa
             let man = man | 0x0080_0000u32;
@@ -460,7 +460,7 @@ impl f16 {
                 half_man += 1;
             }
             // No exponent for subnormals
-            return f16((half_sign | half_man) as u16);
+            return Self((half_sign | half_man) as u16);
         }
 
         // Rebias the exponent
@@ -470,9 +470,9 @@ impl f16 {
         let round_bit = 0x0000_1000u32;
         if (man & round_bit) != 0 && (man & (3 * round_bit - 1)) != 0 {
             // Round it
-            f16(((half_sign | half_exp | half_man) + 1) as u16)
+            Self(((half_sign | half_exp | half_man) + 1) as u16)
         } else {
-            f16((half_sign | half_exp | half_man) as u16)
+            Self((half_sign | half_exp | half_man) as u16)
         }
     }
 }

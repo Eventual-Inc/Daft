@@ -163,7 +163,7 @@ struct DataTypePayload {
 
 impl DataTypePayload {
     pub fn new(datatype: &DataType) -> Self {
-        DataTypePayload {
+        Self {
             datatype: datatype.clone(),
             daft_version: common_version::VERSION.into(),
             daft_build_type: common_version::DAFT_BUILD_TYPE.into(),
@@ -173,48 +173,48 @@ impl DataTypePayload {
 const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
 
 impl DataType {
-    pub fn new_null() -> DataType {
-        DataType::Null
+    pub fn new_null() -> Self {
+        Self::Null
     }
 
-    pub fn new_list(datatype: DataType) -> DataType {
-        DataType::List(Box::new(datatype))
+    pub fn new_list(datatype: Self) -> Self {
+        Self::List(Box::new(datatype))
     }
 
-    pub fn new_fixed_size_list(datatype: DataType, size: usize) -> DataType {
-        DataType::FixedSizeList(Box::new(datatype), size)
+    pub fn new_fixed_size_list(datatype: Self, size: usize) -> Self {
+        Self::FixedSizeList(Box::new(datatype), size)
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
         match self {
-            DataType::Null => Ok(ArrowType::Null),
-            DataType::Boolean => Ok(ArrowType::Boolean),
-            DataType::Int8 => Ok(ArrowType::Int8),
-            DataType::Int16 => Ok(ArrowType::Int16),
-            DataType::Int32 => Ok(ArrowType::Int32),
-            DataType::Int64 => Ok(ArrowType::Int64),
+            Self::Null => Ok(ArrowType::Null),
+            Self::Boolean => Ok(ArrowType::Boolean),
+            Self::Int8 => Ok(ArrowType::Int8),
+            Self::Int16 => Ok(ArrowType::Int16),
+            Self::Int32 => Ok(ArrowType::Int32),
+            Self::Int64 => Ok(ArrowType::Int64),
             // Must maintain same default mapping as Arrow2, otherwise this will throw errors in
             // DataArray<Int128Type>::new() which makes strong assumptions about the arrow/Daft types
             // https://github.com/jorgecarleitao/arrow2/blob/b0734542c2fef5d2d0c7b6ffce5d094de371168a/src/datatypes/mod.rs#L493
-            DataType::Int128 => Ok(ArrowType::Decimal(32, 32)),
-            DataType::UInt8 => Ok(ArrowType::UInt8),
-            DataType::UInt16 => Ok(ArrowType::UInt16),
-            DataType::UInt32 => Ok(ArrowType::UInt32),
-            DataType::UInt64 => Ok(ArrowType::UInt64),
+            Self::Int128 => Ok(ArrowType::Decimal(32, 32)),
+            Self::UInt8 => Ok(ArrowType::UInt8),
+            Self::UInt16 => Ok(ArrowType::UInt16),
+            Self::UInt32 => Ok(ArrowType::UInt32),
+            Self::UInt64 => Ok(ArrowType::UInt64),
             // DataType::Float16 => Ok(ArrowType::Float16),
-            DataType::Float32 => Ok(ArrowType::Float32),
-            DataType::Float64 => Ok(ArrowType::Float64),
-            DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
-            DataType::Timestamp(unit, timezone) => {
+            Self::Float32 => Ok(ArrowType::Float32),
+            Self::Float64 => Ok(ArrowType::Float64),
+            Self::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
+            Self::Timestamp(unit, timezone) => {
                 Ok(ArrowType::Timestamp(unit.to_arrow(), timezone.clone()))
             }
-            DataType::Date => Ok(ArrowType::Date32),
-            DataType::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
-            DataType::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
-            DataType::Binary => Ok(ArrowType::LargeBinary),
-            DataType::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
-            DataType::Utf8 => Ok(ArrowType::LargeUtf8),
-            DataType::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
+            Self::Date => Ok(ArrowType::Date32),
+            Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
+            Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
+            Self::Binary => Ok(ArrowType::LargeBinary),
+            Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
+            Self::Utf8 => Ok(ArrowType::LargeUtf8),
+            Self::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
                 Box::new(arrow2::datatypes::Field::new(
                     "item",
                     child_dtype.to_arrow()?,
@@ -222,10 +222,10 @@ impl DataType {
                 )),
                 *size,
             )),
-            DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
+            Self::List(field) => Ok(ArrowType::LargeList(Box::new(
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
-            DataType::Map(field) => Ok(ArrowType::Map(
+            Self::Map(field) => Ok(ArrowType::Map(
                 Box::new(arrow2::datatypes::Field::new(
                     "item",
                     field.to_arrow()?,
@@ -233,25 +233,25 @@ impl DataType {
                 )),
                 false,
             )),
-            DataType::Struct(fields) => Ok({
+            Self::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
                     .map(|f| f.to_arrow())
                     .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?;
                 ArrowType::Struct(fields)
             }),
-            DataType::Extension(name, dtype, metadata) => Ok(ArrowType::Extension(
+            Self::Extension(name, dtype, metadata) => Ok(ArrowType::Extension(
                 name.clone(),
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            DataType::Embedding(..)
-            | DataType::Image(..)
-            | DataType::FixedShapeImage(..)
-            | DataType::Tensor(..)
-            | DataType::FixedShapeTensor(..) => {
+            Self::Embedding(..)
+            | Self::Image(..)
+            | Self::FixedShapeImage(..)
+            | Self::Tensor(..)
+            | Self::FixedShapeTensor(..) => {
                 let physical = Box::new(self.to_physical());
-                let logical_extension = DataType::Extension(
+                let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
                     physical,
                     Some(self.to_json()?),
@@ -259,16 +259,16 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             #[cfg(feature = "python")]
-            DataType::Python => Err(DaftError::TypeError(format!(
+            Self::Python => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
-            DataType::Unknown => Err(DaftError::TypeError(format!(
+            Self::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }
     }
 
-    pub fn to_physical(&self) -> DataType {
+    pub fn to_physical(&self) -> Self {
         use DataType::*;
         match self {
             Decimal128(..) => Int128,
@@ -283,7 +283,7 @@ impl DataType {
             Image(mode) => Struct(vec![
                 Field::new(
                     "data",
-                    List(Box::new(mode.map_or(DataType::UInt8, |m| m.get_dtype()))),
+                    List(Box::new(mode.map_or(Self::UInt8, |m| m.get_dtype()))),
                 ),
                 Field::new("channel", UInt16),
                 Field::new("height", UInt32),
@@ -296,7 +296,7 @@ impl DataType {
             ),
             Tensor(dtype) => Struct(vec![
                 Field::new("data", List(Box::new(*dtype.clone()))),
-                Field::new("shape", List(Box::new(DataType::UInt64))),
+                Field::new("shape", List(Box::new(Self::UInt64))),
             ]),
             FixedShapeTensor(dtype, shape) => FixedSizeList(
                 Box::new(*dtype.clone()),
@@ -310,13 +310,13 @@ impl DataType {
     }
 
     #[inline]
-    pub fn nested_dtype(&self) -> Option<&DataType> {
+    pub fn nested_dtype(&self) -> Option<&Self> {
         match self {
-            DataType::Map(dtype)
-            | DataType::List(dtype)
-            | DataType::FixedSizeList(dtype, _)
-            | DataType::FixedShapeTensor(dtype, _)
-            | DataType::Tensor(dtype) => Some(dtype),
+            Self::Map(dtype)
+            | Self::List(dtype)
+            | Self::FixedSizeList(dtype, _)
+            | Self::FixedShapeTensor(dtype, _)
+            | Self::Tensor(dtype) => Some(dtype),
             _ => None,
         }
     }
@@ -329,19 +329,19 @@ impl DataType {
     #[inline]
     pub fn is_numeric(&self) -> bool {
         match self {
-             DataType::Int8
-             | DataType::Int16
-             | DataType::Int32
-             | DataType::Int64
-             | DataType::Int128
-             | DataType::UInt8
-             | DataType::UInt16
-             | DataType::UInt32
-             | DataType::UInt64
+             Self::Int8
+             | Self::Int16
+             | Self::Int32
+             | Self::Int64
+             | Self::Int128
+             | Self::UInt8
+             | Self::UInt16
+             | Self::UInt32
+             | Self::UInt64
              // DataType::Float16
-             | DataType::Float32
-             | DataType::Float64 => true,
-             DataType::Extension(_, inner, _) => inner.is_numeric(),
+             | Self::Float32
+             | Self::Float64 => true,
+             Self::Extension(_, inner, _) => inner.is_numeric(),
              _ => false
          }
     }
@@ -349,9 +349,9 @@ impl DataType {
     #[inline]
     pub fn is_fixed_size_numeric(&self) -> bool {
         match self {
-            DataType::FixedSizeList(dtype, ..)
-            | DataType::Embedding(dtype, ..)
-            | DataType::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
+            Self::FixedSizeList(dtype, ..)
+            | Self::Embedding(dtype, ..)
+            | Self::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
             _ => false,
         }
     }
@@ -359,8 +359,8 @@ impl DataType {
     #[inline]
     pub fn fixed_size(&self) -> Option<usize> {
         match self {
-            DataType::FixedSizeList(_, size) => Some(*size),
-            DataType::Embedding(_, size) => Some(*size),
+            Self::FixedSizeList(_, size) => Some(*size),
+            Self::Embedding(_, size) => Some(*size),
             _ => None,
         }
     }
@@ -369,15 +369,15 @@ impl DataType {
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
-            DataType::Int8
-                | DataType::Int16
-                | DataType::Int32
-                | DataType::Int64
-                | DataType::Int128
-                | DataType::UInt8
-                | DataType::UInt16
-                | DataType::UInt32
-                | DataType::UInt64
+            Self::Int8
+                | Self::Int16
+                | Self::Int32
+                | Self::Int64
+                | Self::Int128
+                | Self::UInt8
+                | Self::UInt16
+                | Self::UInt32
+                | Self::UInt64
         )
     }
 
@@ -386,79 +386,79 @@ impl DataType {
         matches!(
             self,
             // DataType::Float16 |
-            DataType::Float32 | DataType::Float64
+            Self::Float32 | Self::Float64
         )
     }
 
     #[inline]
     pub fn is_temporal(&self) -> bool {
         match self {
-            DataType::Date | DataType::Timestamp(..) => true,
-            DataType::Extension(_, inner, _) => inner.is_temporal(),
+            Self::Date | Self::Timestamp(..) => true,
+            Self::Extension(_, inner, _) => inner.is_temporal(),
             _ => false,
         }
     }
 
     #[inline]
     pub fn is_tensor(&self) -> bool {
-        matches!(self, DataType::Tensor(..))
+        matches!(self, Self::Tensor(..))
     }
 
     #[inline]
     pub fn is_fixed_shape_tensor(&self) -> bool {
-        matches!(self, DataType::FixedShapeTensor(..))
+        matches!(self, Self::FixedShapeTensor(..))
     }
 
     #[inline]
     pub fn is_image(&self) -> bool {
-        matches!(self, DataType::Image(..))
+        matches!(self, Self::Image(..))
     }
 
     #[inline]
     pub fn is_fixed_shape_image(&self) -> bool {
-        matches!(self, DataType::FixedShapeImage(..))
+        matches!(self, Self::FixedShapeImage(..))
     }
 
     #[inline]
     pub fn is_map(&self) -> bool {
-        matches!(self, DataType::Map(..))
+        matches!(self, Self::Map(..))
     }
 
     #[inline]
     pub fn is_list(&self) -> bool {
-        matches!(self, DataType::List(..))
+        matches!(self, Self::List(..))
     }
 
     #[inline]
     pub fn is_string(&self) -> bool {
-        matches!(self, DataType::Utf8)
+        matches!(self, Self::Utf8)
     }
 
     #[inline]
     pub fn is_boolean(&self) -> bool {
-        matches!(self, DataType::Boolean)
+        matches!(self, Self::Boolean)
     }
 
     #[inline]
     pub fn is_null(&self) -> bool {
         match self {
-            DataType::Null => true,
-            DataType::Extension(_, inner, _) => inner.is_null(),
+            Self::Null => true,
+            Self::Extension(_, inner, _) => inner.is_null(),
             _ => false,
         }
     }
 
     #[inline]
     pub fn is_extension(&self) -> bool {
-        matches!(self, DataType::Extension(..))
+        matches!(self, Self::Extension(..))
     }
 
     #[inline]
     pub fn is_python(&self) -> bool {
         match self {
             #[cfg(feature = "python")]
-            DataType::Python => true,
-            DataType::Extension(_, inner, _) => inner.is_python(),
+            Self::Python => true,
+            Self::Extension(_, inner, _) => inner.is_python(),
             _ => false,
         }
     }
@@ -467,18 +467,18 @@ impl DataType {
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`
-            DataType::Int8 => DataType::Float32,
-            DataType::Int16 => DataType::Float32,
-            DataType::UInt8 => DataType::Float32,
-            DataType::UInt16 => DataType::Float32,
-            DataType::Float32 => DataType::Float32,
+            Self::Int8 => Self::Float32,
+            Self::Int16 => Self::Float32,
+            Self::UInt8 => Self::Float32,
+            Self::UInt16 => Self::Float32,
+            Self::Float32 => Self::Float32,
 
             // All numeric types that coerce to `f64`
-            DataType::Int32 => DataType::Float64,
-            DataType::Int64 => DataType::Float64,
-            DataType::UInt32 => DataType::Float64,
-            DataType::UInt64 => DataType::Float64,
-            DataType::Float64 => DataType::Float64,
+            Self::Int32 => Self::Float64,
+            Self::Int64 => Self::Float64,
+            Self::UInt32 => Self::Float64,
+            Self::UInt64 => Self::Float64,
+            Self::Float64 => Self::Float64,
 
             _ => {
                 return Err(DaftError::TypeError(format!(
@@ -495,33 +495,33 @@ impl DataType {
         const DEFAULT_LIST_LEN: f64 = 4.;
 
         let elem_size = match self.to_physical() {
-            DataType::Null => Some(0.),
-            DataType::Boolean => Some(0.125),
-            DataType::Int8 => Some(1.),
-            DataType::Int16 => Some(2.),
-            DataType::Int32 => Some(4.),
-            DataType::Int64 => Some(8.),
-            DataType::Int128 => Some(16.),
-            DataType::UInt8 => Some(1.),
-            DataType::UInt16 => Some(2.),
-            DataType::UInt32 => Some(4.),
-            DataType::UInt64 => Some(8.),
-            DataType::Float32 => Some(4.),
-            DataType::Float64 => Some(8.),
-            DataType::Utf8 => Some(VARIABLE_TYPE_SIZE),
-            DataType::Binary => Some(VARIABLE_TYPE_SIZE),
-            DataType::FixedSizeBinary(size) => Some(size as f64),
-            DataType::FixedSizeList(dtype, len) => {
+            Self::Null => Some(0.),
+            Self::Boolean => Some(0.125),
+            Self::Int8 => Some(1.),
+            Self::Int16 => Some(2.),
+            Self::Int32 => Some(4.),
+            Self::Int64 => Some(8.),
+            Self::Int128 => Some(16.),
+            Self::UInt8 => Some(1.),
+            Self::UInt16 => Some(2.),
+            Self::UInt32 => Some(4.),
+            Self::UInt64 => Some(8.),
+            Self::Float32 => Some(4.),
+            Self::Float64 => Some(8.),
+            Self::Utf8 => Some(VARIABLE_TYPE_SIZE),
+            Self::Binary => Some(VARIABLE_TYPE_SIZE),
+            Self::FixedSizeBinary(size) => Some(size as f64),
+            Self::FixedSizeList(dtype, len) => {
                 dtype.estimate_size_bytes().map(|b| b * (len as f64))
             }
-            DataType::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
-            DataType::Struct(fields) => Some(
+            Self::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
+            Self::Struct(fields) => Some(
                 fields
                     .iter()
                     .map(|f| f.dtype.estimate_size_bytes().unwrap_or(0f64))
                     .sum(),
             ),
-            DataType::Extension(_, dtype, _) => dtype.estimate_size_bytes(),
+            Self::Extension(_, dtype, _) => dtype.estimate_size_bytes(),
             _ => None,
         };
         // add bitmap
@@ -532,17 +532,17 @@ impl DataType {
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
-            DataType::Decimal128(..)
-                | DataType::Date
-                | DataType::Time(..)
-                | DataType::Timestamp(..)
-                | DataType::Duration(..)
-                | DataType::Embedding(..)
-                | DataType::Image(..)
-                | DataType::FixedShapeImage(..)
-                | DataType::Tensor(..)
-                | DataType::FixedShapeTensor(..)
-                | DataType::Map(..)
+            Self::Decimal128(..)
+                | Self::Date
+                | Self::Time(..)
+                | Self::Timestamp(..)
+                | Self::Duration(..)
+                | Self::Embedding(..)
+                | Self::Image(..)
+                | Self::FixedShapeImage(..)
+                | Self::Tensor(..)
+                | Self::FixedShapeTensor(..)
+                | Self::Map(..)
         )
     }
 
@@ -553,13 +553,10 @@ impl DataType {
 
     #[inline]
     pub fn is_nested(&self) -> bool {
-        let p: DataType = self.to_physical();
+        let p: Self = self.to_physical();
         matches!(
             p,
-            DataType::List(..)
-                | DataType::FixedSizeList(..)
-                | DataType::Struct(..)
-                | DataType::Map(..)
+            Self::List(..) | Self::FixedSizeList(..) | Self::Struct(..) | Self::Map(..)
         )
     }
 
@@ -577,42 +574,40 @@ impl DataType {
 impl From<&ArrowType> for DataType {
     fn from(item: &ArrowType) -> Self {
         match item {
-            ArrowType::Null => DataType::Null,
-            ArrowType::Boolean => DataType::Boolean,
-            ArrowType::Int8 => DataType::Int8,
-            ArrowType::Int16 => DataType::Int16,
-            ArrowType::Int32 => DataType::Int32,
-            ArrowType::Int64 => DataType::Int64,
-            ArrowType::UInt8 => DataType::UInt8,
-            ArrowType::UInt16 => DataType::UInt16,
-            ArrowType::UInt32 => DataType::UInt32,
-            ArrowType::UInt64 => DataType::UInt64,
+            ArrowType::Null => Self::Null,
+            ArrowType::Boolean => Self::Boolean,
+            ArrowType::Int8 => Self::Int8,
+            ArrowType::Int16 => Self::Int16,
+            ArrowType::Int32 => Self::Int32,
+            ArrowType::Int64 => Self::Int64,
+            ArrowType::UInt8 => Self::UInt8,
+            ArrowType::UInt16 => Self::UInt16,
+            ArrowType::UInt32 => Self::UInt32,
+            ArrowType::UInt64 => Self::UInt64,
             // ArrowType::Float16 => DataType::Float16,
-            ArrowType::Float32 => DataType::Float32,
-            ArrowType::Float64 => DataType::Float64,
-            ArrowType::Timestamp(unit, timezone) => {
-                DataType::Timestamp(unit.into(), timezone.clone())
-            }
-            ArrowType::Date32 => DataType::Date,
-            ArrowType::Date64 => DataType::Timestamp(TimeUnit::Milliseconds, None),
+            ArrowType::Float32 => Self::Float32,
+            ArrowType::Float64 => Self::Float64,
+            ArrowType::Timestamp(unit, timezone) => Self::Timestamp(unit.into(), timezone.clone()),
+            ArrowType::Date32 => Self::Date,
+            ArrowType::Date64 => Self::Timestamp(TimeUnit::Milliseconds, None),
             ArrowType::Time32(timeunit) | ArrowType::Time64(timeunit) => {
-                DataType::Time(timeunit.into())
+                Self::Time(timeunit.into())
             }
-            ArrowType::Duration(timeunit) => DataType::Duration(timeunit.into()),
-            ArrowType::FixedSizeBinary(size) => DataType::FixedSizeBinary(*size),
-            ArrowType::Binary | ArrowType::LargeBinary => DataType::Binary,
-            ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
-            ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
+            ArrowType::Duration(timeunit) => Self::Duration(timeunit.into()),
+            ArrowType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size),
+            ArrowType::Binary | ArrowType::LargeBinary => Self::Binary,
+            ArrowType::Utf8 | ArrowType::LargeUtf8 => Self::Utf8,
+            ArrowType::Decimal(precision, scale) => Self::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
-                DataType::List(Box::new(field.as_ref().data_type().into()))
+                Self::List(Box::new(field.as_ref().data_type().into()))
             }
             ArrowType::FixedSizeList(field, size) => {
-                DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
+                Self::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
-            ArrowType::Map(field, ..) => DataType::Map(Box::new(field.as_ref().data_type().into())),
+            ArrowType::Map(field, ..) => Self::Map(Box::new(field.as_ref().data_type().into())),
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
-                DataType::Struct(fields)
+                Self::Struct(fields)
             }
             ArrowType::Extension(name, dtype, metadata) => {
                 if name == DAFT_SUPER_EXTENSION_NAME {
@@ -622,7 +617,7 @@ impl From<&ArrowType> for DataType {
                         }
                     }
                 }
-                DataType::Extension(
+                Self::Extension(
                     name.clone(),
                     Box::new(dtype.as_ref().into()),
                     metadata.clone(),
@@ -639,9 +634,9 @@ impl From<&ImageMode> for DataType {
         use ImageMode::*;
 
         match mode {
-            L16 | LA16 | RGB16 | RGBA16 => DataType::UInt16,
-            RGB32F | RGBA32F => DataType::Float32,
-            _ => DataType::UInt8,
+            L16 | LA16 | RGB16 | RGBA16 => Self::UInt16,
+            RGB32F | RGBA32F => Self::Float32,
+            _ => Self::UInt8,
         }
     }
 }

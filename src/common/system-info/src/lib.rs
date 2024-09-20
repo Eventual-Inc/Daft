@@ -9,7 +9,7 @@ pub struct SystemInfo {
 
 impl Default for SystemInfo {
     fn default() -> Self {
-        SystemInfo {
+        Self {
             info: sysinfo::System::new_with_specifics(
                 RefreshKind::new()
                     .with_cpu(CpuRefreshKind::everything())

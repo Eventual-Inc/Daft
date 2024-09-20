@@ -106,8 +106,8 @@ pub trait Unpackable: Copy + Sized + Default {
 }
 
 impl Unpackable for u8 {
-    type Packed = [u8; 8];
-    type Unpacked = [u8; 8];
+    type Packed = [Self; 8];
+    type Unpacked = [Self; 8];
 
     #[inline]
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
@@ -122,7 +122,7 @@ impl Unpackable for u8 {
 
 impl Unpackable for u16 {
     type Packed = [u8; 16 * 2];
-    type Unpacked = [u16; 16];
+    type Unpacked = [Self; 16];
 
     #[inline]
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
@@ -137,7 +137,7 @@ impl Unpackable for u16 {
 
 impl Unpackable for u32 {
     type Packed = [u8; 32 * 4];
-    type Unpacked = [u32; 32];
+    type Unpacked = [Self; 32];
 
     #[inline]
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
@@ -152,7 +152,7 @@ impl Unpackable for u32 {
 
 impl Unpackable for u64 {
     type Packed = [u8; 64 * 64];
-    type Unpacked = [u64; 64];
+    type Unpacked = [Self; 64];
 
     #[inline]
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {

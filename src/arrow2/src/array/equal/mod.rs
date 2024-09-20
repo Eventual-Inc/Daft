@@ -34,7 +34,7 @@ impl PartialEq<dyn Array> for Box<dyn Array + '_> {
     }
 }
 
-impl PartialEq<NullArray> for NullArray {
+impl PartialEq<Self> for NullArray {
     fn eq(&self, other: &Self) -> bool {
         null::equal(self, other)
     }
@@ -58,13 +58,13 @@ impl<T: NativeType> PartialEq<PrimitiveArray<T>> for &dyn Array {
     }
 }
 
-impl<T: NativeType> PartialEq<PrimitiveArray<T>> for PrimitiveArray<T> {
+impl<T: NativeType> PartialEq<Self> for PrimitiveArray<T> {
     fn eq(&self, other: &Self) -> bool {
         primitive::equal::<T>(self, other)
     }
 }
 
-impl PartialEq<BooleanArray> for BooleanArray {
+impl PartialEq<Self> for BooleanArray {
     fn eq(&self, other: &Self) -> bool {
         equal(self, other)
     }
@@ -76,7 +76,7 @@ impl PartialEq<&dyn Array> for BooleanArray {
     }
 }
 
-impl<O: Offset> PartialEq<Utf8Array<O>> for Utf8Array<O> {
+impl<O: Offset> PartialEq<Self> for Utf8Array<O> {
     fn eq(&self, other: &Self) -> bool {
         utf8::equal(self, other)
     }
@@ -94,7 +94,7 @@ impl<O: Offset> PartialEq<Utf8Array<O>> for &dyn Array {
     }
 }
 
-impl<O: Offset> PartialEq<BinaryArray<O>> for BinaryArray<O> {
+impl<O: Offset> PartialEq<Self> for BinaryArray<O> {
     fn eq(&self, other: &Self) -> bool {
         binary::equal(self, other)
     }
@@ -112,7 +112,7 @@ impl<O: Offset> PartialEq<BinaryArray<O>> for &dyn Array {
     }
 }
 
-impl PartialEq<FixedSizeBinaryArray> for FixedSizeBinaryArray {
+impl PartialEq<Self> for FixedSizeBinaryArray {
     fn eq(&self, other: &Self) -> bool {
         fixed_size_binary::equal(self, other)
     }
@@ -124,7 +124,7 @@ impl PartialEq<&dyn Array> for FixedSizeBinaryArray {
     }
 }
 
-impl<O: Offset> PartialEq<ListArray<O>> for ListArray<O> {
+impl<O: Offset> PartialEq<Self> for ListArray<O> {
     fn eq(&self, other: &Self) -> bool {
         list::equal(self, other)
     }
@@ -136,7 +136,7 @@ impl<O: Offset> PartialEq<&dyn Array> for ListArray<O> {
     }
 }
 
-impl PartialEq<FixedSizeListArray> for FixedSizeListArray {
+impl PartialEq<Self> for FixedSizeListArray {
     fn eq(&self, other: &Self) -> bool {
         fixed_size_list::equal(self, other)
     }
@@ -148,7 +148,7 @@ impl PartialEq<&dyn Array> for FixedSizeListArray {
     }
 }
 
-impl PartialEq<StructArray> for StructArray {
+impl PartialEq<Self> for StructArray {
     fn eq(&self, other: &Self) -> bool {
         struct_::equal(self, other)
     }
@@ -160,7 +160,7 @@ impl PartialEq<&dyn Array> for StructArray {
     }
 }
 
-impl<K: DictionaryKey> PartialEq<DictionaryArray<K>> for DictionaryArray<K> {
+impl<K: DictionaryKey> PartialEq<Self> for DictionaryArray<K> {
     fn eq(&self, other: &Self) -> bool {
         dictionary::equal(self, other)
     }
@@ -172,7 +172,7 @@ impl<K: DictionaryKey> PartialEq<&dyn Array> for DictionaryArray<K> {
     }
 }
 
-impl PartialEq<UnionArray> for UnionArray {
+impl PartialEq<Self> for UnionArray {
     fn eq(&self, other: &Self) -> bool {
         union::equal(self, other)
     }
@@ -184,7 +184,7 @@ impl PartialEq<&dyn Array> for UnionArray {
     }
 }
 
-impl PartialEq<MapArray> for MapArray {
+impl PartialEq<Self> for MapArray {
     fn eq(&self, other: &Self) -> bool {
         map::equal(self, other)
     }

@@ -14,7 +14,7 @@ macro_rules! call_inner {
     };
 }
 
-impl DaftCompare<&Series> for Series {
+impl DaftCompare<&Self> for Series {
     type Output = DaftResult<BooleanArray>;
 
     call_inner!(equal);
@@ -25,8 +25,8 @@ impl DaftCompare<&Series> for Series {
     call_inner!(gte);
 }
 
-impl DaftLogical<&Series> for Series {
-    type Output = DaftResult<Series>;
+impl DaftLogical<&Self> for Series {
+    type Output = DaftResult<Self>;
 
     call_inner!(and);
     call_inner!(or);

@@ -34,7 +34,7 @@ impl PyCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
-        PyCatalog {
+        Self {
             catalog: SQLCatalog::new(),
         }
     }

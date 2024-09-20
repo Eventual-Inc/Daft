@@ -222,6 +222,9 @@ version = "0.11.0"
 features = ["derive", "rc"]
 version = "1.0.200"
 
+[workspace.lints.clippy]
+use-self = "deny"
+
 [workspace.package]
 edition = "2021"
 version = "0.3.0-dev0"

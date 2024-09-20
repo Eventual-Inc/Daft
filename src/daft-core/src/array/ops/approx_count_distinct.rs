@@ -10,7 +10,7 @@ use crate::{
 };
 
 impl DaftApproxCountDistinctAggable for UInt64Array {
-    type Output = DaftResult<UInt64Array>;
+    type Output = DaftResult<Self>;
 
     fn approx_count_distinct(&self) -> Self::Output {
         let mut set = HashSet::with_capacity_and_hasher(self.len(), IdentityBuildHasher::default());

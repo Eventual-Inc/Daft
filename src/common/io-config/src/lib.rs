@@ -73,12 +73,12 @@ impl<'de> Deserialize<'de> for ObfuscatedString {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(ObfuscatedString(s.into()))
+        Ok(Self(s.into()))
     }
 }
 
 impl From<String> for ObfuscatedString {
     fn from(value: String) -> Self {
-        ObfuscatedString(value.into())
+        Self(value.into())
     }
 }

@@ -62,16 +62,16 @@ impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
         use Error::*;
         match err {
-            Base64Decode { .. } => DaftError::ValueError(err.to_string()),
-            RankNumberParse { .. } => DaftError::ValueError(err.to_string()),
-            InvalidUtf8Sequence { .. } => DaftError::ValueError(err.to_string()),
-            InvalidTokenLine { .. } => DaftError::ValueError(err.to_string()),
-            EmptyTokenFile {} => DaftError::ValueError(err.to_string()),
-            BPECreation { .. } => DaftError::ComputeError(err.to_string()),
-            BadToken { .. } => DaftError::ValueError(err.to_string()),
-            Decode { .. } => DaftError::ComputeError(err.to_string()),
-            MissingPattern {} => DaftError::ValueError(err.to_string()),
-            UnsupportedSpecialTokens { .. } => DaftError::ValueError(err.to_string()),
+            Base64Decode { .. } => Self::ValueError(err.to_string()),
+            RankNumberParse { .. } => Self::ValueError(err.to_string()),
+            InvalidUtf8Sequence { .. } => Self::ValueError(err.to_string()),
+            InvalidTokenLine { .. } => Self::ValueError(err.to_string()),
+            EmptyTokenFile {} => Self::ValueError(err.to_string()),
+            BPECreation { .. } => Self::ComputeError(err.to_string()),
+            BadToken { .. } => Self::ValueError(err.to_string()),
+            Decode { .. } => Self::ComputeError(err.to_string()),
+            MissingPattern {} => Self::ValueError(err.to_string()),
+            UnsupportedSpecialTokens { .. } => Self::ValueError(err.to_string()),
         }
     }
 }
