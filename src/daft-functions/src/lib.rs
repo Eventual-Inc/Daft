@@ -7,6 +7,7 @@ pub mod image;
 pub mod list;
 pub mod minhash;
 pub mod numeric;
+pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 pub mod uri;
@@ -47,6 +48,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(uri::python::url_upload, parent)?)?;
     image::register_modules(parent)?;
     float::register_modules(parent)?;
+    temporal::register_modules(parent)?;
     list::register_modules(parent)?;
     Ok(())
 }
