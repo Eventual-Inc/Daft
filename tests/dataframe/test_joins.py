@@ -1079,7 +1079,7 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     )
 
 
-# the partition size should be the min(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
+# the partition size should be the max(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
 @pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
 def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitions):
     if shuffle_join_default_partitions is None:
@@ -1103,24 +1103,24 @@ def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitio
 
             actual = df_left.join(df_right, on="group", how="inner", strategy="hash").collect()
             n_partitions = actual.num_partitions()
-            expected_n_partitions = min(min_partitions, max(left_partition_size, right_partition_size))
+            expected_n_partitions = max(min_partitions, left_partition_size, right_partition_size)
             assert n_partitions == expected_n_partitions
 
 
-def test_join_right_larger_than_cfg():
-    shuffle_join_default_partitions = 200
+def test_join_right_single_partition():
+    shuffle_join_default_partitions = 16
     df_left = daft.from_pydict({"group": [i for i in range(300)], "value": [i for i in range(300)]}).repartition(
         300, "group"
     )
 
     df_right = daft.from_pydict({"group": [i for i in range(100)], "value": [i for i in range(100)]}).repartition(
-        100, "group"
+        1, "group"
     )
 
     with daft.execution_config_ctx(shuffle_join_default_partitions=shuffle_join_default_partitions):
         actual = df_left.join(df_right, on="group", how="inner", strategy="hash").collect()
         n_partitions = actual.num_partitions()
-        assert n_partitions == shuffle_join_default_partitions
+        assert n_partitions == 300
 
 
 def test_join_right_smaller_than_cfg():
@@ -1136,7 +1136,7 @@ def test_join_right_smaller_than_cfg():
     with daft.execution_config_ctx(shuffle_join_default_partitions=shuffle_join_default_partitions):
         actual = df_left.join(df_right, on="group", how="inner", strategy="hash").collect()
         n_partitions = actual.num_partitions()
-        assert n_partitions == 199
+        assert n_partitions == 200
 
 
 # for sort_merge, the result partitions should always be max(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))

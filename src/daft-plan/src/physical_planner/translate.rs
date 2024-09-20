@@ -638,7 +638,7 @@ pub(super) fn translate_single_logical_node(
                         }
                         (_, _, a, b) => max(a, b),
                     };
-                    let num_partitions = min(num_partitions, cfg.shuffle_join_default_partitions);
+                    let num_partitions = max(num_partitions, cfg.shuffle_join_default_partitions);
 
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
