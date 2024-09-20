@@ -339,7 +339,7 @@ pub fn physical_plan_to_pipeline(
                 _ => unreachable!("Unsupported file format"),
             };
             let write_sink = PhysicalWriteSink::new(
-                file_info.clone(),
+                file_info,
                 inflation_factor,
                 target_file_size,
                 cfg.parquet_target_row_group_size,

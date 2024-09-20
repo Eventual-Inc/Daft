@@ -75,7 +75,7 @@ impl SizedDataWriter {
     }
 
     fn write(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
-        let size = data.size_bytes().unwrap().unwrap();
+        let size = data.size_bytes()?.unwrap();
         self.writer.write(data)?;
         if self.written_bytes_so_far + size >= self.size {
             let file_path = self.writer.close()?;
@@ -96,12 +96,9 @@ impl SizedDataWriter {
 
     fn finalize(&mut self) -> DaftResult<Vec<Option<String>>> {
         if let Some(file_path) = self.writer.close()? {
-            let mut written_files = self.written_files.clone();
-            written_files.push(Some(file_path));
-            Ok(written_files.clone())
-        } else {
-            Ok(self.written_files.clone())
+            self.written_files.push(Some(file_path));
         }
+        Ok(self.written_files.clone())
     }
 }
 
@@ -339,7 +336,7 @@ enum WriteExecutor {
 
 impl WriteExecutor {
     fn new(
-        file_info: OutputFileInfo,
+        file_info: &OutputFileInfo,
         inflation_factor: f64,
         target_file_size: usize,
         target_row_group_size: usize,
@@ -359,12 +356,12 @@ impl WriteExecutor {
         };
         match file_info.partition_cols {
             Some(_) => Ok(Self::Partitioned(PartitionedWriteExecutor::new(
-                &file_info,
+                file_info,
                 target_in_memory_file_size,
                 target_in_memory_chunk_size,
             )?)),
             None => Ok(Self::Unpartitioned(UnpartitionedWriteExecutor::new(
-                &file_info,
+                file_info,
                 target_in_memory_file_size,
                 target_in_memory_chunk_size,
             )?)),
@@ -395,7 +392,7 @@ pub(crate) struct PhysicalWriteSink {
 
 impl PhysicalWriteSink {
     pub(crate) fn new(
-        file_info: OutputFileInfo,
+        file_info: &OutputFileInfo,
         inflation_factor: f64,
         target_file_size: usize,
         target_row_group_size: usize,

@@ -40,7 +40,7 @@ impl SizeBasedBuffer {
 
         while remaining > 0 {
             let part = self.buffer.pop_front().expect("Buffer should not be empty");
-            let part_size = part.size_bytes().unwrap().unwrap();
+            let part_size = part.size_bytes()?.unwrap();
             if part_size <= remaining {
                 remaining -= part_size;
                 to_concat.push(part);
