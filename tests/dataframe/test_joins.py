@@ -1082,6 +1082,7 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
 # the partition size should be the max(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
 @pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
 def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitions):
+    skip_invalid_join_strategies("hash", "inner")
     if shuffle_join_default_partitions is None:
         min_partitions = get_context().daft_execution_config.shuffle_join_default_partitions
     else:
@@ -1108,6 +1109,7 @@ def test_join_result_partitions_smaller_than_input(shuffle_join_default_partitio
 
 
 def test_join_right_single_partition():
+    skip_invalid_join_strategies("hash", "inner")
     shuffle_join_default_partitions = 16
     df_left = daft.from_pydict({"group": [i for i in range(300)], "value": [i for i in range(300)]}).repartition(
         300, "group"
@@ -1124,6 +1126,7 @@ def test_join_right_single_partition():
 
 
 def test_join_right_smaller_than_cfg():
+    skip_invalid_join_strategies("hash", "inner")
     shuffle_join_default_partitions = 200
     df_left = daft.from_pydict({"group": [i for i in range(199)], "value": [i for i in range(199)]}).repartition(
         199, "group"
@@ -1142,6 +1145,8 @@ def test_join_right_smaller_than_cfg():
 # for sort_merge, the result partitions should always be max(shuffle_join_default_partitions, max(left_partition_size, right_partition_size))
 @pytest.mark.parametrize("shuffle_join_default_partitions", [None, 20])
 def test_join_result_partitions_for_sortmerge(shuffle_join_default_partitions):
+    skip_invalid_join_strategies("sort_merge", "inner")
+
     if shuffle_join_default_partitions is None:
         min_partitions = get_context().daft_execution_config.shuffle_join_default_partitions
     else:
