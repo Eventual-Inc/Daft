@@ -1,13 +1,15 @@
 use common_error::DaftResult;
 use daft_schema::dtype::DataType;
 
+#[cfg(feature = "python")]
+use crate::series::utils::python_fn::run_python_binary_bool_operator;
 use crate::{
     array::ops::DaftLogical,
     datatypes::InferDataType,
+    prelude::BooleanArray,
     series::{utils::cast::cast_downcast_op, IntoSeries, Series},
     with_match_integer_daft_types,
 };
-
 macro_rules! binary_op_not_implemented {
     ($self:expr, $rhs:expr, $op:ident) => {{
         let left_dtype = $self.data_type();
@@ -23,16 +25,20 @@ impl DaftLogical<&Series> for Series {
     type Output = DaftResult<Series>;
 
     fn and(&self, rhs: &Series) -> Self::Output {
-        let output_type = InferDataType::from(self.data_type())
+        let lhs = self;
+        let output_type = InferDataType::from(lhs.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
         match &output_type {
-            DataType::Boolean => {
-                todo!("boolean happy path")
-            }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                todo!("python happy path")
-            }
+            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
+                #[cfg(feature = "python")]
+                (DataType::Python, _) | (_, DataType::Python) => {
+                    run_python_binary_bool_operator(lhs, rhs, "and_")
+                }
+                _ => Ok(
+                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, and)?
+                        .into_series(),
+                ),
+            },
             output_type if output_type.is_integer() => {
                 with_match_integer_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(
@@ -44,21 +50,26 @@ impl DaftLogical<&Series> for Series {
                     )?.into_series())
                 })
             }
+
             _ => binary_op_not_implemented!(self, rhs, and),
         }
     }
 
     fn or(&self, rhs: &Series) -> Self::Output {
+        let lhs = self;
         let output_type = InferDataType::from(self.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
         match &output_type {
-            DataType::Boolean => {
-                todo!("boolean happy path")
-            }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                todo!("python happy path")
-            }
+            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
+                #[cfg(feature = "python")]
+                (DataType::Python, _) | (_, DataType::Python) => {
+                    run_python_binary_bool_operator(lhs, rhs, "or_")
+                }
+                _ => Ok(
+                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, or)?
+                        .into_series(),
+                ),
+            },
             output_type if output_type.is_integer() => {
                 with_match_integer_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(
@@ -75,16 +86,20 @@ impl DaftLogical<&Series> for Series {
     }
 
     fn xor(&self, rhs: &Series) -> Self::Output {
+        let lhs = self;
         let output_type = InferDataType::from(self.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
         match &output_type {
-            DataType::Boolean => {
-                todo!("boolean happy path")
-            }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                todo!("python happy path")
-            }
+            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
+                #[cfg(feature = "python")]
+                (DataType::Python, _) | (_, DataType::Python) => {
+                    run_python_binary_bool_operator(lhs, rhs, "xor")
+                }
+                _ => Ok(
+                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, xor)?
+                        .into_series(),
+                ),
+            },
             output_type if output_type.is_integer() => {
                 with_match_integer_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(
