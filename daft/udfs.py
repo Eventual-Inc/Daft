@@ -242,6 +242,41 @@ class StatelessUDF:
         functools.update_wrapper(self, self.func)
 
     def __call__(self, *args, **kwargs) -> Expression:
+        """Call the UDF using some input Expressions, producing a new Expression that can be used by a DataFrame.
+        Args:
+            *args: Positional arguments to be passed to the UDF. These can be either Expressions or Python values.
+            **kwargs: Keyword arguments to be passed to the UDF. These can be either Expressions or Python values.
+
+        Returns:
+            Expression: A new Expression representing the UDF call, which can be used in DataFrame operations.
+
+        .. NOTE::
+            When passing arguments to the UDF, you can use a mix of Expressions (e.g., df["column"]) and Python values.
+            Expressions will be evaluated for each row, while Python values will be passed as-is to the UDF.
+
+        Example:
+            >>> import daft
+            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            ... def multiply_and_add(x: daft.Series, y: float, z: float):
+            ...     return x * y + z
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> df = df.with_column("result", multiply_and_add(df["x"], 2.0, z=1.5))
+            >>> df.show()
+            ╭───────┬────────╮
+            │ x     ┆ result │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ Float64│
+            ╞═══════╪════════╡
+            │ 1     ┆ 3.5    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5.5    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 7.5    │
+            ╰───────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
         bound_args = BoundUDFArgs(self._bind_func(*args, **kwargs))
         expressions = list(bound_args.expressions().values())
         return Expression.stateless_udf(
@@ -304,7 +339,39 @@ class StatelessUDF:
 
 @dataclasses.dataclass
 class StatefulUDF:
-    """A StatefulUDF is produced by calling `@udf` over a Python class: it can be further parametrized at runtime with custom concurrency, resources, and init args"""
+    """A StatefulUDF is produced by calling `@udf` over a Python class, allowing for maintaining state between calls: it can be further parametrized at runtime with custom concurrency, resources, and init args.
+
+    Example of a Stateful UDF:
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.string())
+        ... class MyStatefulUDF:
+        ...     def __init__(self, prefix: str = "Hello"):
+        ...         self.prefix = prefix
+        ...
+        ...     def __call__(self, name: daft.Series) -> list:
+        ...         return [f"{self.prefix}, {n}!" for n in name.to_pylist()]
+        >>>
+        >>> df = daft.from_pydict({"name": ["Alice", "Bob", "Charlie"]})
+        >>> df = df.with_column("greeting", MyStatefulUDF()(df["name"]))
+        >>> df.show()
+        ╭─────────┬──────────────────╮
+        │ name    ┆ greeting         │
+        │ ---     ┆ ---              │
+        │ Utf8    ┆ Utf8             │
+        ╞═════════╪══════════════════╡
+        │ Alice   ┆ Hello, Alice!    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob     ┆ Hello, Bob!      │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Charlie ┆ Hello, Charlie!  │
+        ╰─────────┴──────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    The state (in this case, the prefix) is maintained across calls to the UDF. Most commonly, this state is
+    used for things such as ML models which should be downloaded and loaded into memory once for multiple
+    invocations.
+    """
 
     common_args: CommonUDFArgs
     name: str
@@ -322,6 +389,46 @@ class StatefulUDF:
         functools.update_wrapper(self, self.cls)
 
     def __call__(self, *args, **kwargs) -> Expression:
+        """Call the UDF using some input Expressions, producing a new Expression that can be used by a DataFrame.
+        Args:
+            *args: Positional arguments to be passed to the UDF. These can be either Expressions or Python values.
+            **kwargs: Keyword arguments to be passed to the UDF. These can be either Expressions or Python values.
+
+        Returns:
+            Expression: A new Expression representing the UDF call, which can be used in DataFrame operations.
+
+        .. NOTE::
+            When passing arguments to the UDF, you can use a mix of Expressions (e.g., df["column"]) and Python values.
+            Expressions will be evaluated for each row, while Python values will be passed as-is to the UDF.
+
+        Example:
+            >>> import daft
+            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            ... class MultiplyAndAdd:
+            ...     def __init__(self, multiplier: float = 2.0):
+            ...         self.multiplier = multiplier
+            ...
+            ...     def __call__(self, x: daft.Series, z: float) -> list:
+            ...         return [val * self.multiplier + z for val in x.to_pylist()]
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> udf = MultiplyAndAdd().with_concurrency(2)
+            >>> df = df.with_column("result", udf(df["x"], z=1.5))
+            >>> df.show()
+            ╭───────┬────────╮
+            │ x     ┆ result │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ Float64│
+            ╞═══════╪════════╡
+            │ 1     ┆ 3.5    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5.5    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 7.5    │
+            ╰───────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
         # Validate that the UDF has a concurrency set, if running with actor pool projections
         if get_context().daft_planning_config.enable_actor_pool_projections:
             if self.concurrency is None:
