@@ -13,6 +13,7 @@ use daft_dsl::{
 };
 use itertools::Itertools;
 use snafu::ResultExt;
+use uuid::Uuid;
 
 use crate::{
     logical_ops::Project,
@@ -54,10 +55,11 @@ impl Join {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
+        let (unique_left_on, unique_right_on) = Self::rename_join_keys(left_on, right_on);
         let (left_on, left_fields) =
-            resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
+            resolve_exprs(unique_left_on, &left.schema(), false).context(CreationSnafu)?;
         let (right_on, right_fields) =
-            resolve_exprs(right_on, &right.schema(), false).context(CreationSnafu)?;
+            resolve_exprs(unique_right_on, &right.schema(), false).context(CreationSnafu)?;
 
         for (on_exprs, on_fields) in [(&left_on, left_fields), (&right_on, right_fields)] {
             let on_schema = Schema::new(on_fields).context(CreationSnafu)?;
@@ -165,6 +167,26 @@ impl Join {
                 output_schema,
             })
         }
+    }
+
+    fn rename_join_keys(
+        left_exprs: Vec<Arc<Expr>>,
+        right_exprs: Vec<Arc<Expr>>,
+    ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
+        left_exprs
+            .into_iter()
+            .zip(right_exprs)
+            .map(|(left_expr, right_expr)| {
+                if left_expr != right_expr {
+                    let unique_id = Uuid::new_v4().to_string();
+                    let renamed_left_expr = left_expr.alias(unique_id.clone());
+                    let renamed_right_expr = right_expr.alias(unique_id);
+                    (renamed_left_expr, renamed_right_expr)
+                } else {
+                    (left_expr, right_expr)
+                }
+            })
+            .unzip()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
