@@ -210,7 +210,13 @@ def actor_pool_project(
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     stage_id = next(stage_id_counter)
-    actor_pool_name = f"ActorPool_stage{stage_id}"
+
+    from daft.daft import extract_partial_stateful_udf_py
+
+    stateful_udf_names = "-".join(
+        name for expr in projection for name in extract_partial_stateful_udf_py(expr._expr).keys()
+    )
+    actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
 
     # Keep track of materializations of the children tasks
     #

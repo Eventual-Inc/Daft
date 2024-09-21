@@ -982,8 +982,8 @@ class RayRoundRobinActorPool:
 
     def setup(self) -> None:
         self._actors = [
-            DaftRayActor.remote(self._execution_config, self._projection)  # type: ignore
-            for _ in range(self._num_actors)
+            DaftRayActor.options(name=f"rank={rank}-{self._id}").remote(self._execution_config, self._projection)  # type: ignore
+            for rank in range(self._num_actors)
         ]
 
     def teardown(self):
