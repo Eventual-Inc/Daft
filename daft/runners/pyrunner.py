@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
+from multiprocessing import Queue
 from typing import TYPE_CHECKING, Iterator
 
 from daft.context import get_context
@@ -124,7 +126,27 @@ class PyActorPool:
         self._projection = projection
 
     @staticmethod
-    def initialize_actor_global_state(uninitialized_projection: ExpressionsProjection):
+    def initialize_actor_global_state(
+        rank_queue: Queue, uninitialized_projection: ExpressionsProjection, resource_request: ResourceRequest
+    ):
+        # Get worker rank and perform any rank-specific initializations
+        #
+        # TODO: We should figure out how to handle multiple StatefulUDFs in the same plan... Probably need to provide an initial
+        # offset from which to select CUDA devices when we create these actor pools.
+        worker_rank = rank_queue.get(block=True, timeout=1)
+        num_gpus = resource_request.num_gpus
+        if num_gpus is not None:
+            if not num_gpus.is_integer():
+                raise RuntimeError(
+                    f"PyRunner only supports assigning whole GPUs to each UDF actor. Expected integer, received: {num_gpus}"
+                )
+            device_ids = (str(i) for i in range(num_gpus * worker_rank, num_gpus * (worker_rank + 1)))
+            os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(device_ids)
+            logger.info(
+                "Worker rank {} Setting CUDA_VISIBLE_DEVICES={}", worker_rank, os.environ["CUDA_VISIBLE_DEVICES"]
+            )
+
+        # Perform any required UDF initializations
         from daft.daft import extract_partial_stateful_udf_py
 
         if PyActorPool.initialized_stateful_udfs_process_singleton is not None:
@@ -197,8 +219,15 @@ class PyActorPool:
         self._executor = None
 
     def setup(self) -> None:
+        # Hydrate a queue of ranks to disseminate to workers
+        rank_queue: Queue[int] = Queue()
+        for rank in range(self._num_actors):
+            rank_queue.put(rank)
+
         self._executor = futures.ProcessPoolExecutor(
-            self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
+            self._num_actors,
+            initializer=PyActorPool.initialize_actor_global_state,
+            initargs=(rank_queue, self._projection, self._resource_request),
         )
 
 
