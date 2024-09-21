@@ -14,13 +14,13 @@ For more details, please consult the :doc:`UDF User Guide <../user_guide/daft_in
 
 .. currentmodule:: daft
 
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/udfs
-
+.. autofunction::
     udf
 
-.. toctree::
+.. autoclass:: daft.udfs.StatelessUDF
+   :members:
+   :special-members: __call__
 
-    doc_manual/stateful_udf
-    doc_manual/stateless_udf
+.. autoclass:: daft.udfs.StatefulUDF
+   :members:
+   :special-members: __call__

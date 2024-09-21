@@ -343,6 +343,7 @@ class StatefulUDF:
 
     Example of a Stateful UDF:
         >>> import daft
+        >>>
         >>> @daft.udf(return_dtype=daft.DataType.string())
         ... class MyStatefulUdf:
         ...     def __init__(self, prefix: str = "Goodbye"):
@@ -405,6 +406,7 @@ class StatefulUDF:
 
         Example:
             >>> import daft
+            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... class MultiplyAndAdd:
             ...     def __init__(self, multiplier: float = 2.0):
