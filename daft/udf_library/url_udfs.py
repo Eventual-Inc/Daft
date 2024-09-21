@@ -8,7 +8,7 @@ from typing import Literal
 from daft import filesystem
 from daft.datatype import DataType
 from daft.series import Series
-from daft.udf import udf
+from daft.udfs import udf
 
 thread_local = threading.local()
 

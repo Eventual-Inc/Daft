@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.udf import UserProvidedPythonFunction
+    from daft.udfs import UserProvidedPythonFunction
 
 logger = logging.getLogger(__name__)
 
