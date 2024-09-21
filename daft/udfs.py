@@ -258,22 +258,22 @@ class StatelessUDF:
             >>> import daft
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def multiply_and_add(x: daft.Series, y: float, z: float):
-            ...     return x * y + z
+            ...     return x.to_arrow().to_numpy() * y + z
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> df = df.with_column("result", multiply_and_add(df["x"], 2.0, z=1.5))
             >>> df.show()
-            ╭───────┬────────╮
-            │ x     ┆ result │
-            │ ---   ┆ ---    │
-            │ Int64 ┆ Float64│
-            ╞═══════╪════════╡
-            │ 1     ┆ 3.5    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5.5    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 3     ┆ 7.5    │
-            ╰───────┴────────╯
+            ╭───────┬─────────╮
+            │ x     ┆ result  │
+            │ ---   ┆ ---     │
+            │ Int64 ┆ Float64 │
+            ╞═══════╪═════════╡
+            │ 1     ┆ 3.5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5.5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 7.5     │
+            ╰───────┴─────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -344,27 +344,29 @@ class StatefulUDF:
     Example of a Stateful UDF:
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.string())
-        ... class MyStatefulUDF:
-        ...     def __init__(self, prefix: str = "Hello"):
+        ... class MyStatefulUdf:
+        ...     def __init__(self, prefix: str = "Goodbye"):
         ...         self.prefix = prefix
         ...
         ...     def __call__(self, name: daft.Series) -> list:
         ...         return [f"{self.prefix}, {n}!" for n in name.to_pylist()]
         >>>
+        >>> MyHelloStatefulUdf = MyStatefulUdf.with_init_args(prefix="Hello")
+        >>>
         >>> df = daft.from_pydict({"name": ["Alice", "Bob", "Charlie"]})
-        >>> df = df.with_column("greeting", MyStatefulUDF()(df["name"]))
+        >>> df = df.with_column("greeting", MyHelloStatefulUdf(df["name"]))
         >>> df.show()
-        ╭─────────┬──────────────────╮
-        │ name    ┆ greeting         │
-        │ ---     ┆ ---              │
-        │ Utf8    ┆ Utf8             │
-        ╞═════════╪══════════════════╡
-        │ Alice   ┆ Hello, Alice!    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Bob     ┆ Hello, Bob!      │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Charlie ┆ Hello, Charlie!  │
-        ╰─────────┴──────────────────╯
+        ╭─────────┬─────────────────╮
+        │ name    ┆ greeting        │
+        │ ---     ┆ ---             │
+        │ Utf8    ┆ Utf8            │
+        ╞═════════╪═════════════════╡
+        │ Alice   ┆ Hello, Alice!   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob     ┆ Hello, Bob!     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Charlie ┆ Hello, Charlie! │
+        ╰─────────┴─────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -412,20 +414,19 @@ class StatefulUDF:
             ...         return [val * self.multiplier + z for val in x.to_pylist()]
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
-            >>> udf = MultiplyAndAdd().with_concurrency(2)
-            >>> df = df.with_column("result", udf(df["x"], z=1.5))
+            >>> df = df.with_column("result", MultiplyAndAdd(df["x"], z=1.5))
             >>> df.show()
-            ╭───────┬────────╮
-            │ x     ┆ result │
-            │ ---   ┆ ---    │
-            │ Int64 ┆ Float64│
-            ╞═══════╪════════╡
-            │ 1     ┆ 3.5    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ 5.5    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 3     ┆ 7.5    │
-            ╰───────┴────────╯
+            ╭───────┬─────────╮
+            │ x     ┆ result  │
+            │ ---   ┆ ---     │
+            │ Int64 ┆ Float64 │
+            ╞═══════╪═════════╡
+            │ 1     ┆ 3.5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5.5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 7.5     │
+            ╰───────┴─────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """

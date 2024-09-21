@@ -3066,10 +3066,13 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft, statistics
+            >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
+            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮
