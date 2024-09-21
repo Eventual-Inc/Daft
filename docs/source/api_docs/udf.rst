@@ -14,8 +14,14 @@ For more details, please consult the :doc:`UDF User Guide <../user_guide/daft_in
 
 .. currentmodule:: daft
 
+Creating UDFs
+=============
+
 .. autofunction::
     udf
+
+Using UDFs
+==========
 
 .. autoclass:: daft.udfs.StatelessUDF
    :members:
