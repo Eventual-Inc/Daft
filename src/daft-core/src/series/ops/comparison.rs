@@ -8,7 +8,7 @@ use crate::series::utils::python_fn::run_python_binary_bool_operator;
 use crate::{
     array::ops::DaftCompare,
     datatypes::{BooleanArray, InferDataType},
-    series::Series,
+    series::{utils::cast::cast_downcast_op, Series},
     with_match_comparable_daft_types,
 };
 
@@ -55,16 +55,6 @@ macro_rules! impl_compare_method {
             }
         }
     };
-}
-
-macro_rules! cast_downcast_op {
-    ($lhs:expr, $rhs:expr, $ty_expr:expr, $ty_type:ty, $op:ident) => {{
-        let lhs = $lhs.cast($ty_expr)?;
-        let rhs = $rhs.cast($ty_expr)?;
-        let lhs = lhs.downcast::<$ty_type>()?;
-        let rhs = rhs.downcast::<$ty_type>()?;
-        lhs.$op(rhs)
-    }};
 }
 
 impl DaftCompare<&Series> for Series {
