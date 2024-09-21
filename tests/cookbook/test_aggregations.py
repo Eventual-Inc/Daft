@@ -8,7 +8,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.udf import udf
+from daft.udfs import udf
 from tests.conftest import assert_df_equals
 
 
