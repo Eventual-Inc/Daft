@@ -479,6 +479,12 @@ class DataType:
     def _is_fixed_shape_tensor_type(self) -> builtins.bool:
         return self._dtype.is_fixed_shape_tensor()
 
+    def _is_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_sparse_tensor()
+
+    def _is_fixed_shape_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_fixed_shape_sparse_tensor()
+
     def _is_image_type(self) -> builtins.bool:
         return self._dtype.is_image()
 

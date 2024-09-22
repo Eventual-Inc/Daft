@@ -104,6 +104,8 @@ class Table:
             if field.dtype == DataType.python()
             or field.dtype._is_tensor_type()
             or field.dtype._is_fixed_shape_tensor_type()
+            or field.dtype._is_sparse_tensor_type()
+            or field.dtype._is_fixed_shape_sparse_tensor_type()
         ]
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()

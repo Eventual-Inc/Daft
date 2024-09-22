@@ -18,7 +18,11 @@ impl TensorArray {
 mod tests {
     use std::vec;
 
-    use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
+    use crate::{
+        array::prelude::*,
+        datatypes::prelude::*,
+        series::{IntoSeries, Series},
+    };
     use common_error::DaftResult;
 
     #[test]
@@ -72,6 +76,23 @@ mod tests {
         let tensor_array =
             TensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
         let sparse_tensor_dtype = DataType::SparseTensor(Box::new(DataType::Int64));
+        let sparse_tensor_array = tensor_array.cast(&sparse_tensor_dtype)?;
+        let roundtrip_tensor = sparse_tensor_array.cast(&dtype)?;
+        assert!(tensor_array.to_arrow().eq(&roundtrip_tensor.to_arrow()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_shape_tensor_to_fixed_shape_sparse_roundtrip() -> DaftResult<()> {
+        let raw_validity = vec![true, false, true];
+        let validity = arrow2::bitmap::Bitmap::from(raw_validity.as_slice());
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
+        let flat_child = Int64Array::from(("foo", (0..9).collect::<Vec<i64>>()));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(validity.clone()));
+        let dtype = DataType::FixedShapeTensor(Box::new(DataType::Int64), vec![3]);
+        let tensor_array = FixedShapeTensorArray::new(Field::new("data", dtype.clone()), arr);
+        let sparse_tensor_dtype =
+            DataType::FixedShapeSparseTensor(Box::new(DataType::Int64), vec![3]);
         let sparse_tensor_array = tensor_array.cast(&sparse_tensor_dtype)?;
         let roundtrip_tensor = sparse_tensor_array.cast(&dtype)?;
         assert!(tensor_array.to_arrow().eq(&roundtrip_tensor.to_arrow()));

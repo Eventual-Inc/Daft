@@ -366,6 +366,14 @@ impl PyDataType {
         Ok(self.dtype.is_fixed_shape_tensor())
     }
 
+    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_sparse_tensor())
+    }
+
+    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_sparse_tensor())
+    }
+
     pub fn is_map(&self) -> PyResult<bool> {
         Ok(self.dtype.is_map())
     }

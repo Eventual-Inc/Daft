@@ -1794,16 +1794,20 @@ impl FixedShapeSparseTensorArray {
                         tensor_shape,
                     )));
                 }
+                let n_values = size * non_zero_values_array.len();
                 let item = cast_sparse_to_dense_for_inner_dtype(
                     inner_dtype,
-                    size,
+                    n_values,
                     non_zero_indices_array,
                     non_zero_values_array,
                     &Offsets::try_from_iter(repeat(target_size).take(self.len()))?,
                 )?;
                 let validity = non_zero_values_array.validity();
                 let physical = FixedSizeListArray::new(
-                    Field::new(self.name(), inner_dtype.as_ref().clone()),
+                    Field::new(
+                        self.name(),
+                        DataType::FixedSizeList(Box::new(inner_dtype.as_ref().clone()), size),
+                    ),
                     Series::try_from(("item", item))?,
                     validity.cloned(),
                 );

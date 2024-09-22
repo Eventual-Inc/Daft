@@ -429,6 +429,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_sparse_tensor(&self) -> bool {
+        matches!(self, DataType::SparseTensor(..))
+    }
+
+    #[inline]
     pub fn is_fixed_shape_tensor(&self) -> bool {
         matches!(self, DataType::FixedShapeTensor(..))
     }
