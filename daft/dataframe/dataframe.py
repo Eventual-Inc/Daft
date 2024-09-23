@@ -766,6 +766,7 @@ class DataFrame:
     def write_deltalake(
         self,
         table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable"],
+        partition_cols: Optional[List[str]] = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
         name: Optional[str] = None,
@@ -783,6 +784,7 @@ class DataFrame:
 
         Args:
             table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            partition_cols (List[str], optional): How to subpartition each partition further. Expected to match the Delta Lake table's partitioning scheme if the table exists. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
             name (str, optional): User-provided identifier for this table.
@@ -802,10 +804,7 @@ class DataFrame:
         import deltalake
         import pyarrow as pa
         from deltalake.schema import _convert_pa_schema_to_delta
-        from deltalake.writer import (
-            try_get_deltatable,
-            write_deltalake_pyarrow,
-        )
+        from deltalake.writer import AddAction, try_get_deltatable, write_deltalake_pyarrow
         from packaging.version import parse
 
         from daft import from_pydict
@@ -861,6 +860,13 @@ class DataFrame:
         delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
+            if partition_cols and partition_cols != table.metadata().partition_columns:
+                raise ValueError(
+                    f"Partition columns should be {table.metadata().partition_columns} but is {partition_cols}"
+                )
+            else:
+                partition_cols = table.metadata().partition_columns
+
             table.update_incremental()
 
             table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
@@ -884,42 +890,48 @@ class DataFrame:
         else:
             version = 0
 
+        cols: Optional[List[Expression]] = None
+        if partition_cols is not None:
+            for c in partition_cols:
+                if self.schema()[c].dtype == DataType.binary():
+                    raise NotImplementedError("Binary partition columns are not yet supported")
+
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+
         builder = self._builder.write_deltalake(
             table_uri,
             mode,
             version,
             large_dtypes,
             io_config=io_config,
+            partition_cols=cols,
         )
         write_df = DataFrame(builder)
         write_df.collect()
 
         write_result = write_df.to_pydict()
-        assert "data_file" in write_result
-        data_files = write_result["data_file"]
-        add_action = []
+        assert "add_action" in write_result
+        add_actions: List[AddAction] = write_result["add_action"]
 
         operations = []
         paths = []
         rows = []
         sizes = []
 
-        for data_file in data_files:
-            stats = json.loads(data_file.stats)
+        for add_action in add_actions:
+            stats = json.loads(add_action.stats)
             operations.append("ADD")
-            paths.append(data_file.path)
+            paths.append(add_action.path)
             rows.append(stats["numRecords"])
-            sizes.append(data_file.size)
-
-            add_action.append(data_file)
+            sizes.append(add_action.size)
 
         if table is None:
             write_deltalake_pyarrow(
                 table_uri,
                 delta_schema,
-                add_action,
+                add_actions,
                 mode,
-                [],
+                partition_cols or [],
                 name,
                 description,
                 configuration,
@@ -936,7 +948,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
-            table._table.create_write_transaction(add_action, mode, [], delta_schema, None, custom_metadata)
+            table._table.create_write_transaction(
+                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+            )
             table.update_incremental()
 
         with_operations = from_pydict(

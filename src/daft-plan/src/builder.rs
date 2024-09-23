@@ -432,6 +432,7 @@ impl LogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        partition_cols: Option<Vec<ExprRef>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
         use crate::sink_info::DeltaLakeCatalogInfo;
@@ -441,6 +442,7 @@ impl LogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                partition_cols,
                 io_config,
             }),
             catalog_columns: columns_name,
@@ -752,6 +754,7 @@ impl PyLogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        partition_cols: Option<Vec<PyExpr>>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         Ok(self
@@ -762,6 +765,7 @@ impl PyLogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                partition_cols.map(pyexprs_to_exprs),
                 io_config.map(|cfg| cfg.config),
             )?
             .into())

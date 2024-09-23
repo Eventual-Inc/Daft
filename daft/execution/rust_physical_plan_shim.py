@@ -363,13 +363,20 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    if partition_cols is not None:
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
+    else:
+        expr_projection = None
+
     return physical_plan.deltalake_write(
         input,
         path,
         large_dtypes,
         version,
+        expr_projection,
         io_config,
     )
 

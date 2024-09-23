@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::resolve_exprs;
+use daft_dsl::{resolve_exprs, ExprRef};
 
-#[cfg(feature = "python")]
-use crate::sink_info::CatalogType;
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
+#[cfg(feature = "python")]
+use crate::{
+    sink_info::{CatalogInfo, CatalogType},
+    DeltaLakeCatalogInfo,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -21,6 +24,19 @@ impl Sink {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
         let schema = input.schema();
 
+        fn resolve_partition_cols(
+            partition_cols: &Option<Vec<ExprRef>>,
+            schema: &Schema,
+        ) -> DaftResult<Option<Vec<ExprRef>>> {
+            partition_cols
+                .clone()
+                .map(|cols| {
+                    resolve_exprs(cols, schema, false).map(|(resolved_cols, _)| resolved_cols)
+                })
+                .transpose()
+        }
+
+        // replace partition columns with resolved columns
         let sink_info = match sink_info.as_ref() {
             SinkInfo::OutputFileInfo(OutputFileInfo {
                 root_dir,
@@ -28,24 +44,38 @@ impl Sink {
                 partition_cols,
                 compression,
                 io_config,
-            }) => {
-                let resolved_partition_cols = partition_cols
-                    .clone()
-                    .map(|cols| {
-                        resolve_exprs(cols, &schema, false).map(|(resolved_cols, _)| resolved_cols)
-                    })
-                    .transpose()?;
-
-                Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
-                    root_dir: root_dir.clone(),
-                    file_format: *file_format,
-                    partition_cols: resolved_partition_cols,
-                    compression: compression.clone(),
-                    io_config: io_config.clone(),
-                }))
-            }
+            }) => Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
+                root_dir: root_dir.clone(),
+                file_format: *file_format,
+                partition_cols: resolve_partition_cols(partition_cols, &schema)?,
+                compression: compression.clone(),
+                io_config: io_config.clone(),
+            })),
             #[cfg(feature = "python")]
-            SinkInfo::CatalogInfo(_) => sink_info,
+            SinkInfo::CatalogInfo(CatalogInfo {
+                catalog,
+                catalog_columns,
+            }) => match catalog {
+                CatalogType::Iceberg(_) | CatalogType::Lance(_) => sink_info,
+                CatalogType::DeltaLake(DeltaLakeCatalogInfo {
+                    path,
+                    mode,
+                    version,
+                    large_dtypes,
+                    partition_cols,
+                    io_config,
+                }) => Arc::new(SinkInfo::CatalogInfo(CatalogInfo {
+                    catalog: CatalogType::DeltaLake(DeltaLakeCatalogInfo {
+                        path: path.clone(),
+                        mode: mode.clone(),
+                        version: *version,
+                        large_dtypes: *large_dtypes,
+                        partition_cols: resolve_partition_cols(partition_cols, &schema)?,
+                        io_config: io_config.clone(),
+                    }),
+                    catalog_columns: catalog_columns.clone(),
+                })),
+            },
         };
 
         let fields = match sink_info.as_ref() {
@@ -67,7 +97,7 @@ impl Sink {
                             Field::new("data_file", DataType::Python),
                         ]
                     }
-                    CatalogType::DeltaLake(_) => vec![Field::new("data_file", DataType::Python)],
+                    CatalogType::DeltaLake(_) => vec![Field::new("add_action", DataType::Python)],
                     CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
             }

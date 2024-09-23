@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import decimal
 import sys
 
 import pyarrow as pa
@@ -180,3 +182,61 @@ def test_deltalake_write_ignore(tmp_path):
     expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
     assert df1.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df1.to_arrow()
+
+
+@pytest.mark.parametrize(
+    "partition_cols,num_partitions",
+    [
+        (["int"], 2),
+        (["float"], 2),
+        (["str"], 2),
+        pytest.param(["bin"], 2, marks=pytest.mark.xfail(reason="Binary partitioning is not yet supported")),
+        (["bool"], 2),
+        (["datetime"], 2),
+        (["date"], 2),
+        (["decimal"], 2),
+        (["int", "float"], 3),
+    ],
+)
+def test_deltalake_write_partitioned(tmp_path, partition_cols, num_partitions):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    df = daft.from_pydict(
+        {
+            "int": [1, 1, 2],
+            "float": [1.1, 2.2, 2.2],
+            "str": ["foo", "foo", "bar"],
+            "bin": [b"foo", b"foo", b"bar"],
+            "bool": [True, True, False],
+            "datetime": [
+                datetime.datetime(2024, 2, 10),
+                datetime.datetime(2024, 2, 10),
+                datetime.datetime(2024, 2, 11),
+            ],
+            "date": [datetime.date(2024, 2, 10), datetime.date(2024, 2, 10), datetime.date(2024, 2, 11)],
+            "decimal": pa.array(
+                [
+                    decimal.Decimal("1111.111"),
+                    decimal.Decimal("1111.111"),
+                    decimal.Decimal("2222.222"),
+                ],
+                type=pa.decimal128(7, 3),
+            ),
+        }
+    )
+    result = df.write_deltalake(str(path), partition_cols=partition_cols)
+    result = result.to_pydict()
+    assert len(result["operation"]) == num_partitions
+    assert all(op == "ADD" for op in result["operation"])
+    assert sum(result["rows"]) == len(df)
+
+    read_table = daft.read_deltalake(str(path))
+    assert read_table.schema() == df.schema()
+
+    read_delta = deltalake.DeltaTable(str(path))
+    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    assert df.schema() == expected_schema
+    sort_order = [("int", "ascending"), ("float", "ascending")]
+    assert read_delta.to_pyarrow_table().cast(expected_schema.to_pyarrow_schema()).sort_by(
+        sort_order
+    ) == df.to_arrow().sort_by(sort_order)
