@@ -1390,6 +1390,14 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.
             )
             self._actors[node_id] = actor
 
+    def teardown(self) -> None:
+        for actor in self._actors.values():
+            ray.kill(actor)
+        for pg in self._placement_groups.values():
+            ray.util.remove_placement_group(pg)
+        self._actors.clear()
+        self._placement_groups.clear()
+
     def ingest(self, data: Iterator[RayShuffleData]) -> list[ray.ObjectRef[None]]:
         """Receive some data
 
@@ -1470,3 +1478,19 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.
 
         # After all actors are exhausted, we're done
         return
+
+
+class RayShuffleServiceFactory:
+    @contextlib.contextmanager
+    def shuffle_service_context(
+        self,
+        num_partitions: int,
+        columns: list[str],
+    ) -> Iterator[RayPerNodeActorShuffleService]:
+        from daft.execution.physical_plan_shuffles import HashPartitioningSpec
+
+        shuffle_service = RayPerNodeActorShuffleService(
+            HashPartitioningSpec(type_="hash", num_partitions=num_partitions, columns=columns)
+        )
+        yield shuffle_service
+        shuffle_service.teardown()

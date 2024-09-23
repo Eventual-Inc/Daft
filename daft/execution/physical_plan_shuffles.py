@@ -67,6 +67,8 @@ class ShuffleServiceInterface(Protocol[ShuffleData, IngestResult]):
     See BigQuery/Dremel video from CMU: https://www.youtube.com/watch?v=JxeITDS-xh0&ab_channel=CMUDatabaseGroup
     """
 
+    def teardown(self) -> None: ...
+
     ###
     # INGESTION:
     # These endpoints allow the ShuffleService to ingest data from the previous stage of the query
@@ -92,7 +94,7 @@ class ShuffleServiceInterface(Protocol[ShuffleData, IngestResult]):
     # These endpoints allow clients to request data from the ShuffleService
     ###
 
-    def read(self, request: PartitionRequest, max_num_rows: int) -> Iterator[ShuffleData]:
+    def read(self, request: PartitionRequest, max_size_bytes: int) -> Iterator[ShuffleData]:
         """Retrieves ShuffleData from the shuffle service for the specified partition.
 
         This returns an iterator of ShuffleData

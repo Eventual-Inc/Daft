@@ -361,6 +361,12 @@ class PyRunner(Runner[MicroPartition]):
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
+    @contextlib.contextmanager
+    def shuffle_service_context(
+        self,
+    ) -> Iterator[str]:
+        raise NotImplementedError("shuffle_service_context not yet implemented in PyRunner")
+
     def _physical_plan_to_partitions(
         self,
         execution_id: str,

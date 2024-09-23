@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import contextlib
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Generic, Iterator
+from typing import TYPE_CHECKING, Generic, Iterator, TypeVar
 
+from daft.execution.physical_plan_shuffles import ShuffleServiceInterface
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionCacheEntry,
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner_io import RunnerIO
     from daft.table import MicroPartition
+
+
+ShuffleServiceImpl = TypeVar("ShuffleServiceImpl", bound=ShuffleServiceInterface)
 
 
 class Runner(Generic[PartitionT]):
