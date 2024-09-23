@@ -7,6 +7,8 @@ use std::{
 use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
 use common_error::DaftResult;
 use daft_core::prelude::*;
+#[cfg(feature = "python")]
+use daft_core::python::PyTimeUnit;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
@@ -22,18 +24,47 @@ use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
+#[cfg(feature = "python")]
+#[derive(Default, Clone)]
+pub struct ParquetSchemaInferenceOptionsBuilder {
+    pub coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+    pub coerce_string_to_binary: Option<bool>,
+}
+
+#[cfg(feature = "python")]
+impl ParquetSchemaInferenceOptionsBuilder {
+    pub fn build(self) -> ParquetSchemaInferenceOptions {
+        self.into()
+    }
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
+    pub coerce_string_to_binary: bool,
+}
+
+#[cfg(feature = "python")]
+impl From<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOptions {
+    fn from(builder: ParquetSchemaInferenceOptionsBuilder) -> Self {
+        let coerce_int96_timestamp_unit = builder
+            .coerce_int96_timestamp_unit
+            .map_or(TimeUnit::Nanoseconds, |time_unit| time_unit.into());
+        let coerce_string_to_binary = builder.coerce_string_to_binary.unwrap_or(false);
+        Self {
+            coerce_int96_timestamp_unit,
+            coerce_string_to_binary,
+        }
+    }
 }
 
 impl ParquetSchemaInferenceOptions {
     pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
-        let default: ParquetSchemaInferenceOptions = Default::default();
         let coerce_int96_timestamp_unit =
-            coerce_int96_timestamp_unit.unwrap_or(default.coerce_int96_timestamp_unit);
+            coerce_int96_timestamp_unit.unwrap_or(TimeUnit::Nanoseconds);
         ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit,
+            ..Default::default()
         }
     }
 }
@@ -42,6 +73,7 @@ impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
         ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
+            coerce_string_to_binary: false,
         }
     }
 }
