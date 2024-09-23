@@ -1384,9 +1384,9 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.O
             ray.get(pg.ready())
             self._placement_groups[node_id] = pg
         for node_id, pg in self._placement_groups.items():
-            actor = ShuffleServiceActor.options(placement_group=pg, placement_group_bundle_index=0).remote(  # type: ignore
-                self._output_partitioning_spec
-            )
+            actor = ShuffleServiceActor.options(  # type: ignore
+                num_cpus=0.01, placement_group=pg, placement_group_bundle_index=0
+            ).remote(self._output_partitioning_spec)
             self._actors[node_id] = actor
 
     def teardown(self) -> None:
