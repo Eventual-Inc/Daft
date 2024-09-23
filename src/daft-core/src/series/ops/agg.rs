@@ -1,13 +1,17 @@
-use crate::array::ops::DaftHllMergeAggable;
-use crate::array::ListArray;
-use crate::count_mode::CountMode;
-use crate::series::IntoSeries;
-use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 use logical::Decimal128Array;
 
-use crate::datatypes::*;
+use crate::{
+    array::{
+        ops::{DaftHllMergeAggable, GroupIndices},
+        ListArray,
+    },
+    count_mode::CountMode,
+    datatypes::*,
+    series::{IntoSeries, Series},
+    with_match_physical_daft_types,
+};
 
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Series> {
@@ -22,8 +26,7 @@ impl Series {
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftSumAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftSumAggable, datatypes::DataType::*};
 
         match self.data_type() {
             // intX -> int64 (in line with numpy)
@@ -92,8 +95,7 @@ impl Series {
     }
 
     pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftApproxSketchAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftApproxSketchAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and compute approx_sketch.
         match self.data_type() {
@@ -118,8 +120,7 @@ impl Series {
     }
 
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftMergeSketchAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftMergeSketchAggable, datatypes::DataType::*};
 
         match self.data_type() {
             Struct(_) => match groups {
@@ -148,8 +149,7 @@ impl Series {
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftMeanAggable;
-        use crate::datatypes::DataType::*;
+        use crate::{array::ops::DaftMeanAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and use f64 mean kernel.
         match self.data_type() {

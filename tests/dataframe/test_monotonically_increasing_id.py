@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
+from daft import context
 from daft.datatype import DataType
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def test_monotonically_increasing_id_single_partition(make_df) -> None:

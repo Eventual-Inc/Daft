@@ -2,12 +2,10 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
 use num_traits::Pow;
-
 use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
@@ -440,10 +438,11 @@ fn next_line_position(input: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow2::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     };
+
+    use super::*;
 
     #[test]
     fn test_infer_schema() {

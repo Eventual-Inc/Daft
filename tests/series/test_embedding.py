@@ -5,8 +5,10 @@ import copy
 import numpy as np
 import pandas as pd
 
-from daft.datatype import DaftExtension, DataType
+from daft.datatype import DataType, get_super_ext_type
 from daft.series import Series
+
+DaftExtension = get_super_ext_type()
 
 
 def test_embedding_arrow_round_trip():

@@ -1,9 +1,10 @@
+use common_error::DaftResult;
+
 use crate::{
     array::DataArray,
     datatypes::{DaftArrowBackedType, UInt64Array},
     kernels::search_sorted,
 };
-use common_error::DaftResult;
 
 impl<T> DataArray<T>
 where

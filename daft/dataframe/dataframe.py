@@ -647,12 +647,12 @@ class DataFrame:
             DataFrame: The operations that occurred with this write.
         """
 
-        if len(table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned Iceberg tables")
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
@@ -683,11 +683,17 @@ class DataFrame:
         else:
             deleted_files = []
 
+        schema = table.schema()
+        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+
         for data_file in data_files:
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
             data_file = pf.file
@@ -695,6 +701,9 @@ class DataFrame:
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
             from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
@@ -735,19 +744,23 @@ class DataFrame:
 
             merge.commit()
 
+        with_operations = {
+            "operation": pa.array(operations, type=pa.string()),
+            "rows": pa.array(rows, type=pa.int64()),
+            "file_size": pa.array(size, type=pa.int64()),
+            "file_name": pa.array([fp for fp in path], type=pa.string()),
+        }
+
+        if partitioning:
+            with_operations["partitioning"] = pa.StructArray.from_arrays(
+                partitioning.values(), names=partitioning.keys()
+            )
+
         from daft import from_pydict
 
-        with_operations = from_pydict(
-            {
-                "operation": pa.array(operations, type=pa.string()),
-                "rows": pa.array(rows, type=pa.int64()),
-                "file_size": pa.array(size, type=pa.int64()),
-                "file_name": pa.array([os.path.basename(fp) for fp in path], type=pa.string()),
-            }
-        )
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return with_operations
+        return from_pydict(with_operations)
 
     @DataframePublicAPI
     def write_deltalake(
@@ -1309,6 +1322,23 @@ class DataFrame:
         """
         builder = self._builder.exclude(list(names))
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth:`.where(predicate) <DataFrame.where>`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
 
     @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
@@ -2541,6 +2571,27 @@ class DataFrame:
         result = self._result
         assert result is not None
         return result.to_pydict()
+
+    @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+        .. WARNING::
+
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        return list(self.iter_rows())
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":

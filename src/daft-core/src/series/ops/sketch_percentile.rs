@@ -1,6 +1,6 @@
+use common_error::{DaftError, DaftResult};
+
 use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
 
 impl Series {
     pub fn sketch_percentile(

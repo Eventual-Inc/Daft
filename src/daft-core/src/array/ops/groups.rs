@@ -1,8 +1,13 @@
-use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::{
+    collections::hash_map::Entry::{Occupied, Vacant},
+    hash::Hash,
+};
 
 use arrow2::array::Array;
+use common_error::DaftResult;
 use fnv::FnvHashMap;
 
+use super::{as_arrow::AsArrow, IntoGroups};
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -10,11 +15,6 @@ use crate::{
         Float32Array, Float64Array, NullArray, Utf8Array,
     },
 };
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, IntoGroups};
-
-use std::hash::Hash;
 
 /// Given a list of values, return a `(Vec<u64>, Vec<Vec<u64>>)`.
 /// The sub-vector in the first part of the tuple contains the indices of the unique values.

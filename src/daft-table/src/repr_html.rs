@@ -1,5 +1,4 @@
-use daft_core::datatypes::ExtensionArray;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
 
 pub fn html_value(s: &Series, idx: usize) -> String {
     match s.data_type() {

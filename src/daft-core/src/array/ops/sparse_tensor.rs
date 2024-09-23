@@ -1,5 +1,7 @@
-use crate::array::ListArray;
-use crate::datatypes::logical::{FixedShapeSparseTensorArray, SparseTensorArray};
+use crate::{
+    array::ListArray,
+    datatypes::logical::{FixedShapeSparseTensorArray, SparseTensorArray},
+};
 
 impl SparseTensorArray {
     pub fn values_array(&self) -> &ListArray {
@@ -39,8 +41,9 @@ impl FixedShapeSparseTensorArray {
 mod tests {
     use std::vec;
 
-    use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
     use common_error::DaftResult;
+
+    use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
 
     #[test]
     fn test_sparse_tensor_to_fixed_shape_sparse_tensor_roundtrip() -> DaftResult<()> {

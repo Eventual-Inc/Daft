@@ -2,31 +2,25 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::DaftResult;
 
-use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeSparseTensorArray,
-    FixedShapeTensorArray, ImageArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
-};
-use crate::datatypes::InferDataType;
-use crate::datatypes::{
-    BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
-};
+use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{
         ops::{DaftCompare, DaftLogical},
         FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::DataType,
     datatypes::{
-        logical::{Decimal128Array, MapArray},
-        Field, FixedSizeBinaryArray, Int128Array,
+        logical::{
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+        },
+        BinaryArray, BooleanArray, DataType, ExtensionArray, Field, FixedSizeBinaryArray,
+        Float32Array, Float64Array, InferDataType, Int128Array, Int16Array, Int32Array, Int64Array,
+        Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_integer_daft_types, with_match_numeric_daft_types,
 };
-
-use super::{ArrayWrapper, IntoSeries, Series};
-
 #[cfg(feature = "python")]
 use crate::{datatypes::PythonArray, series::ops::py_binary_op_utilfn};
 

@@ -1,13 +1,12 @@
-use crate::array::prelude::*;
-use crate::datatypes::prelude::*;
+use std::sync::Arc;
 
 use super::{ArrayWrapper, IntoSeries, Series};
-use crate::array::ops::GroupIndices;
-use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::series::DaftResult;
-use crate::series::SeriesLike;
-use crate::with_match_integer_daft_types;
-use std::sync::Arc;
+use crate::{
+    array::{ops::GroupIndices, prelude::*},
+    datatypes::prelude::*,
+    series::{array_impl::binary_ops::SeriesBinaryOps, DaftResult, SeriesLike},
+    with_match_integer_daft_types,
+};
 
 impl<L> IntoSeries for LogicalArray<L>
 where

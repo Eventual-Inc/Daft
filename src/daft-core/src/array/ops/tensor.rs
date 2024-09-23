@@ -18,12 +18,9 @@ impl TensorArray {
 mod tests {
     use std::vec;
 
-    use crate::{
-        array::prelude::*,
-        datatypes::prelude::*,
-        series::{IntoSeries, Series},
-    };
     use common_error::DaftResult;
+
+    use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
 
     #[test]
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {

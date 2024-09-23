@@ -1,5 +1,9 @@
 use arrow2::array;
 
+#[cfg(feature = "python")]
+use crate::array::pseudo_arrow::PseudoArrowArray;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     array::DataArray,
     datatypes::{
@@ -7,11 +11,6 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, NullArray, Utf8Array,
     },
 };
-
-#[cfg(feature = "python")]
-use crate::array::pseudo_arrow::PseudoArrowArray;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 
 pub trait AsArrow {
     type Output;

@@ -34,8 +34,7 @@ impl RuntimeStats {
         emitted: bool,
         cpu_time: bool,
     ) -> Result<(), fmt::Error> {
-        use num_format::Locale;
-        use num_format::ToFormattedString;
+        use num_format::{Locale, ToFormattedString};
         if received {
             writeln!(
                 w,

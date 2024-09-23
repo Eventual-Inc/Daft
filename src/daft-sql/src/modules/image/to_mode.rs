@@ -1,11 +1,11 @@
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
 
 pub struct SQLImageToMode;
 

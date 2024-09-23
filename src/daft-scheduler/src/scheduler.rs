@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
-
+use daft_dsl::ExprRef;
+use daft_plan::{
+    logical_to_physical, physical_ops::*, InMemoryInfo, PhysicalPlan, PhysicalPlanRef,
+    QueryStageOutput,
+};
+#[cfg(feature = "python")]
+use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -19,15 +25,6 @@ use {
     pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
 };
-
-use daft_dsl::ExprRef;
-use daft_plan::InMemoryInfo;
-use std::sync::Arc;
-
-use daft_plan::physical_ops::*;
-
-#[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -133,6 +130,11 @@ impl PartitionIterator {
     }
 }
 
+#[cfg(feature = "python")]
+fn exprs_to_pyexprs(exprs: &[ExprRef]) -> Vec<PyExpr> {
+    exprs.iter().map(|e| e.clone().into()).collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn tabular_write(
@@ -145,11 +147,6 @@ fn tabular_write(
     partition_cols: &Option<Vec<ExprRef>>,
     io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
-    let part_cols = partition_cols.as_ref().map(|cols| {
-        cols.iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<PyExpr>>()
-    });
     let py_iter = py
         .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_file"))?
@@ -159,7 +156,7 @@ fn tabular_write(
             PySchema::from(schema.clone()),
             root_dir,
             compression.clone(),
-            part_cols,
+            partition_cols.as_ref().map(|cols| exprs_to_pyexprs(cols)),
             io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
@@ -184,7 +181,7 @@ fn iceberg_write(
             &iceberg_info.table_location,
             &iceberg_info.iceberg_schema,
             &iceberg_info.iceberg_properties,
-            iceberg_info.spec_id,
+            &iceberg_info.partition_spec,
             iceberg_info
                 .io_config
                 .as_ref()

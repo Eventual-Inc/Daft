@@ -249,9 +249,8 @@ mod test {
 
     use daft_core::prelude::*;
 
-    use crate::column_stats::TruthValue;
-
     use super::ColumnRangeStatistics;
+    use crate::column_stats::TruthValue;
 
     #[test]
     fn test_equal() -> crate::Result<()> {

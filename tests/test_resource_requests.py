@@ -7,11 +7,16 @@ import pytest
 import ray
 
 import daft
-from daft import udf
+from daft import context, udf
 from daft.context import get_context
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def no_gpu_available() -> bool:

@@ -4,14 +4,12 @@ use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
 use daft_minhash::load_simd;
 
+use super::{as_arrow::AsArrow, DaftMinHash};
 use crate::{
     array::FixedSizeListArray,
-    datatypes::DataType,
-    datatypes::{Field, Utf8Array},
+    datatypes::{DataType, Field, Utf8Array},
     series::Series,
 };
-
-use super::{as_arrow::AsArrow, DaftMinHash};
 
 impl DaftMinHash for Utf8Array {
     type Output = DaftResult<FixedSizeListArray>;

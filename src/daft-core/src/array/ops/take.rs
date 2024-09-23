@@ -1,12 +1,14 @@
-use crate::{
-    array::growable::{Growable, GrowableArray},
-    array::prelude::*,
-    datatypes::prelude::*,
-};
 use arrow2::types::Index;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+use crate::{
+    array::{
+        growable::{Growable, GrowableArray},
+        prelude::*,
+    },
+    datatypes::prelude::*,
+};
 
 impl<T> DataArray<T>
 where
@@ -111,11 +113,10 @@ impl crate::datatypes::PythonArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-        use crate::datatypes::PythonType;
-
         use arrow2::array::Array;
         use pyo3::prelude::*;
+
+        use crate::{array::pseudo_arrow::PseudoArrowArray, datatypes::PythonType};
 
         let indices = idx.as_arrow();
 

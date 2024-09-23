@@ -1758,7 +1758,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
- "async-compression",
  "async-stream",
  "common-error",
  "common-py-serde",
@@ -1777,7 +1776,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-util",
- "url",
 ]
 
 [[package]]
@@ -1827,6 +1825,7 @@ dependencies = [
  "daft-image",
  "daft-io",
  "futures",
+ "paste",
  "pyo3",
  "serde",
  "snafu",
@@ -1967,6 +1966,7 @@ dependencies = [
  "daft-scan",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "lazy_static",
  "log",
  "num-format",

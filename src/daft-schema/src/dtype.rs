@@ -1,13 +1,11 @@
 use std::fmt::Write;
 
 use arrow2::datatypes::DataType as ArrowType;
+use common_error::{DaftError, DaftResult};
 use derive_more::Display;
+use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
-
-use common_error::{DaftError, DaftResult};
-
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {

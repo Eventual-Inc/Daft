@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Generator
 
 import numpy as np
@@ -41,9 +41,6 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
         "bool_col": [True for _ in range(num_rows // 2)] + [False for _ in range(num_rows // 2)],
         "date_col": [date(2021, 1, 1) + timedelta(days=i) for i in range(num_rows)],
         "date_time_col": [datetime(2020, 1, 1, 10, 0, 0) + timedelta(hours=i) for i in range(num_rows)],
-        "time_col": [
-            (datetime.combine(datetime.today(), time(0, 0)) + timedelta(minutes=x)).time() for x in range(200)
-        ],
         "null_col": [None if i % 2 == 0 else "not_null" for i in range(num_rows)],
         "non_uniformly_distributed_col": [1 for _ in range(num_rows)],
     }

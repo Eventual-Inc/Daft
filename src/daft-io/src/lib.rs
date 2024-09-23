@@ -21,31 +21,28 @@ use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
-pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-pub use object_io::FileMetadata;
-pub use object_io::GetResult;
-use object_io::StreamingRetryParams;
-#[cfg(feature = "python")]
-pub use python::register_modules;
-pub use stats::{IOStatsContext, IOStatsRef};
-use tokio::runtime::RuntimeFlavor;
-use tokio::task::JoinHandle;
-
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range};
-
-use futures::stream::BoxStream;
-
-use snafu::Snafu;
-use url::ParseError;
-
-use snafu::prelude::*;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    future::Future,
+    hash::Hash,
+    ops::Range,
+    panic::AssertUnwindSafe,
+    sync::{Arc, OnceLock},
+};
 
 use common_error::{DaftError, DaftResult};
+pub use common_io_config::{AzureConfig, IOConfig, S3Config};
+use futures::stream::BoxStream;
+use object_io::StreamingRetryParams;
+pub use object_io::{FileMetadata, GetResult};
+#[cfg(feature = "python")]
+pub use python::register_modules;
 use s3_like::S3LikeSource;
+use snafu::{prelude::*, Snafu};
+pub use stats::{IOStatsContext, IOStatsRef};
+use tokio::{runtime::RuntimeFlavor, task::JoinHandle};
+use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 

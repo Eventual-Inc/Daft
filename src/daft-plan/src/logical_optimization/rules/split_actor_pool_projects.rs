@@ -12,12 +12,11 @@ use daft_dsl::{
 };
 use itertools::Itertools;
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{ActorPoolProject, Project},
     LogicalPlan,
 };
-
-use super::OptimizerRule;
 
 #[derive(Default, Debug)]
 pub struct SplitActorPoolProjects {}
@@ -514,12 +513,10 @@ fn has_stateful_udf(e: &ExprRef) -> bool {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use test_log::test;
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
     use daft_core::prelude::*;
-
     use daft_dsl::{
         col,
         functions::{
@@ -528,7 +525,9 @@ mod tests {
         },
         Expr, ExprRef,
     };
+    use test_log::test;
 
+    use super::SplitActorPoolProjects;
     use crate::{
         logical_ops::{ActorPoolProject, Project},
         logical_optimization::{
@@ -537,8 +536,6 @@ mod tests {
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
-
-    use super::SplitActorPoolProjects;
 
     /// Helper that creates an optimizer with the SplitExprByStatefulUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with

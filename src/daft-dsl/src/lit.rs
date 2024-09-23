@@ -1,5 +1,9 @@
-use crate::expr::Expr;
-use crate::ExprRef;
+use std::{
+    fmt::{Display, Formatter, Result},
+    hash::{Hash, Hasher},
+    io::{self, Write},
+    sync::Arc,
+};
 
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
@@ -11,15 +15,10 @@ use daft_core::{
     },
 };
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
-use std::sync::Arc;
-use std::{
-    fmt::{Display, Formatter, Result},
-    hash::{Hash, Hasher},
-};
 
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
+use crate::{expr::Expr, ExprRef};
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -369,8 +368,7 @@ pub fn null_lit() -> ExprRef {
 /// Convert a slice of literals to a series.
 /// This function will return an error if the literals are not all the same type
 pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
-    use daft_core::datatypes::*;
-    use daft_core::series::IntoSeries;
+    use daft_core::{datatypes::*, series::IntoSeries};
 
     let dtype = values[0].get_type();
 

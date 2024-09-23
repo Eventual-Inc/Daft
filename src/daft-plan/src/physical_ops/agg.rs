@@ -1,8 +1,8 @@
 use daft_dsl::{AggExpr, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{impl_default_tree_display, physical_plan::PhysicalPlanRef};
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Aggregate {

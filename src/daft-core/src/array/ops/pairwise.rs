@@ -1,10 +1,10 @@
+use common_error::DaftResult;
+
+use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{BooleanArray, DaftNumericType, NullArray, UInt64Type, Utf8Array},
 };
-use common_error::DaftResult;
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where

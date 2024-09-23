@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import builtins
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
+from daft.dependencies import pa
 
 if TYPE_CHECKING:
+    import builtins
+
     import numpy as np
 
 
@@ -531,25 +531,40 @@ class DataType:
         return self._dtype.__hash__()
 
 
-class DaftExtension(pa.ExtensionType):
-    def __init__(self, dtype, metadata=b""):
-        # attributes need to be set first before calling
-        # super init (as that calls serialize)
-        self._metadata = metadata
-        super().__init__(dtype, "daft.super_extension")
-
-    def __reduce__(self):
-        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
-
-    def __arrow_ext_serialize__(self):
-        return self._metadata
-
-    @classmethod
-    def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return cls(storage_type, serialized)
+_EXT_TYPE_REGISTERED = False
+_STATIC_DAFT_EXTENSION = None
 
 
-pa.register_extension_type(DaftExtension(pa.null()))
-import atexit
+def _ensure_registered_super_ext_type():
+    global _EXT_TYPE_REGISTERED
+    global _STATIC_DAFT_EXTENSION
+    if not _EXT_TYPE_REGISTERED:
 
-atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        class DaftExtension(pa.ExtensionType):
+            def __init__(self, dtype, metadata=b""):
+                # attributes need to be set first before calling
+                # super init (as that calls serialize)
+                self._metadata = metadata
+                super().__init__(dtype, "daft.super_extension")
+
+            def __reduce__(self):
+                return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+
+            def __arrow_ext_serialize__(self):
+                return self._metadata
+
+            @classmethod
+            def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                return cls(storage_type, serialized)
+
+        _STATIC_DAFT_EXTENSION = DaftExtension
+        pa.register_extension_type(DaftExtension(pa.null()))
+        import atexit
+
+        atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        _EXT_TYPE_REGISTERED = True
+
+
+def get_super_ext_type():
+    _ensure_registered_super_ext_type()
+    return _STATIC_DAFT_EXTENSION

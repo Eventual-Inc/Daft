@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import contextlib
 from abc import abstractmethod
-from typing import Generic, Iterator
+from typing import TYPE_CHECKING, Generic, Iterator
 
-from daft.daft import ResourceRequest
-from daft.expressions import ExpressionsProjection
-from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionCacheEntry,
@@ -14,8 +11,13 @@ from daft.runners.partitioning import (
     PartitionSetCache,
     PartitionT,
 )
-from daft.runners.runner_io import RunnerIO
-from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft.daft import ResourceRequest
+    from daft.expressions import ExpressionsProjection
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.runner_io import RunnerIO
+    from daft.table import MicroPartition
 
 
 class Runner(Generic[PartitionT]):

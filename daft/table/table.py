@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.arrow_utils import ensure_table
 from daft.daft import (
     CsvConvertOptions,
@@ -25,22 +23,13 @@ from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
+from daft.dependencies import pa, pd
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
 if TYPE_CHECKING:
-    import pandas as pd
-    import pyarrow as pa
-
     from daft.io import IOConfig
-
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +115,7 @@ class Table:
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> Table:
-        if not _PANDAS_AVAILABLE:
+        if not pd.module_available():
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         assert isinstance(pd_df, pd.DataFrame)
         try:
@@ -192,7 +181,7 @@ class Table:
     ) -> pd.DataFrame:
         from packaging.version import parse
 
-        if not _PANDAS_AVAILABLE:
+        if not pd.module_available():
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
         python_fields = set()

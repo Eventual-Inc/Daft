@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -16,13 +15,17 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.datatype import DataType
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
-from daft.logical.schema import Schema
-from daft.sql.sql_connection import SQLConnection
 from daft.table import Table
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.datatype import DataType
+    from daft.logical.schema import Schema
+    from daft.sql.sql_connection import SQLConnection
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +142,8 @@ class SQLScanOperator(ScanOperator):
         return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:
-        pa_table = self.conn.read(self.sql, projection=["COUNT(*)"])
+        num_rows_sql = self.conn.construct_sql_query(self.sql, projection=["COUNT(*)"])
+        pa_table = self.conn.execute_sql_query(num_rows_sql)
 
         if pa_table.num_rows != 1:
             raise RuntimeError(
@@ -156,13 +160,14 @@ class SQLScanOperator(ScanOperator):
         try:
             # Try to get percentiles using percentile_cont
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
-            pa_table = self.conn.read(
+            percentile_sql = self.conn.construct_sql_query(
                 self.sql,
                 projection=[
                     f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
                 ],
             )
+            pa_table = self.conn.execute_sql_query(percentile_sql)
             return pa_table, PartitionBoundStrategy.PERCENTILE
 
         except RuntimeError as e:
@@ -172,13 +177,11 @@ class SQLScanOperator(ScanOperator):
                 e,
             )
 
-            pa_table = self.conn.read(
-                self.sql,
-                projection=[
-                    f"MIN({self._partition_col}) AS min",
-                    f"MAX({self._partition_col}) AS max",
-                ],
+            min_max_sql = self.conn.construct_sql_query(
+                self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
             )
+            pa_table = self.conn.execute_sql_query(min_max_sql)
+
             return pa_table, PartitionBoundStrategy.MIN_MAX
 
     def _get_partition_bounds_and_strategy(self, num_scan_tasks: int) -> tuple[list[Any], PartitionBoundStrategy]:

@@ -3,17 +3,18 @@ use std::{borrow::Cow, sync::Arc};
 use arrow2::offset::OffsetsBuffer;
 use serde::{de::Visitor, Deserializer};
 
-use crate::datatypes::*;
-
 use crate::{
     array::{
         ops::{as_arrow::AsArrow, full::FullNull},
         ListArray, StructArray,
     },
-    datatypes::logical::{
-        DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-        SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+    datatypes::{
+        logical::{
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+        },
+        *,
     },
     series::{IntoSeries, Series},
     with_match_daft_types,

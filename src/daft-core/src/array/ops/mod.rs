@@ -58,12 +58,10 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
+use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
-
 pub use utf8::{PadPlacement, Utf8NormalizeOptions};
-
-use common_error::DaftResult;
 
 use crate::count_mode::CountMode;
 

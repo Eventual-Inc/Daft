@@ -69,9 +69,10 @@ pub fn from_arrow2(
 
 #[cfg(test)]
 mod tests {
-    use crate::{from_arrow2, into_arrow2};
     use common_error::DaftResult;
     use sketches_ddsketch::{Config, DDSketch};
+
+    use crate::{from_arrow2, into_arrow2};
 
     #[test]
     fn test_roundtrip_single() -> DaftResult<()> {

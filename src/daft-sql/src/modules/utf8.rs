@@ -3,12 +3,11 @@ use daft_dsl::{
     ExprRef, LiteralValue,
 };
 
+use super::SQLModule;
 use crate::{
     ensure, error::SQLPlannerResult, functions::SQLFunction, invalid_operation_err,
     unsupported_sql_err,
 };
-
-use super::SQLModule;
 
 pub struct SQLModuleUtf8;
 

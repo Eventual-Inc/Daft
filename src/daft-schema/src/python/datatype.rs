@@ -1,15 +1,10 @@
-use crate::dtype::DataType;
-use crate::field::Field;
-use crate::image_mode::ImageMode;
-
 use common_arrow_ffi as ffi;
-
 use common_py_serde::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
 use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
-use crate::time_unit::TimeUnit;
+use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 #[pyclass]
 #[derive(Clone)]
@@ -59,9 +54,10 @@ impl PyTimeUnit {
         }
     }
     pub fn __hash__(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
-        use std::hash::Hasher;
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
         let mut hasher = DefaultHasher::new();
         self.timeunit.hash(&mut hasher);
         hasher.finish()
@@ -413,9 +409,10 @@ impl PyDataType {
     }
 
     pub fn __hash__(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
-        use std::hash::Hasher;
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
         let mut hasher = DefaultHasher::new();
         self.dtype.hash(&mut hasher);
         hasher.finish()
