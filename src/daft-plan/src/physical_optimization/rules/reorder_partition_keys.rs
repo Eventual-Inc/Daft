@@ -4,7 +4,10 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 
 use crate::{
     partitioning::HashClusteringConfig,
-    physical_ops::{Aggregate, Explode, FanoutByHash, HashJoin, Project, Unpivot},
+    physical_ops::{
+        Aggregate, ExchangeOp, ExchangeOpStrategy, Explode, FanoutByHash, HashJoin, Project,
+        Unpivot,
+    },
     physical_optimization::{plan_context::PlanContext, rules::PhysicalOptimizerRule},
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
@@ -127,6 +130,13 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                         input: input.clone(),
                         aggregations: aggregations.clone(),
                         groupby: c.context.clone(),
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
+                PhysicalPlan::ExchangeOp(ExchangeOp{input, strategy: ExchangeOpStrategy::FullyMaterializing { .. }}) => {
+                    let new_plan = PhysicalPlan::ExchangeOp(ExchangeOp {
+                        input: input.clone(),
+                        strategy: ExchangeOpStrategy::FullyMaterializing { target_spec: new_spec.into() }
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }

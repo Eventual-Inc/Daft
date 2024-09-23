@@ -57,7 +57,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.daft import FileFormat, IOConfig, JoinType, PyExpr
     from daft.logical.schema import Schema
 
 
@@ -1613,6 +1613,12 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
             step = step.add_instruction(instruction)
         yield step
         seed += 1
+
+
+def fully_materializing_exchange_op(
+    child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
+    raise NotImplementedError("TODO: Request for a ShuffleService and perform a fully materializing shuffle")
 
 
 def _best_effort_next_step(

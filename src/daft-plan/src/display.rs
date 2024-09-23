@@ -56,6 +56,7 @@ impl TreeDisplay for crate::physical_plan::PhysicalPlan {
             Self::DeltaLakeWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]
             Self::LanceWrite(write) => write.display_as(level),
+            Self::ExchangeOp(exchange_op) => exchange_op.display_as(level),
         }
     }
 
