@@ -2171,6 +2171,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-json",
  "daft-plan",
  "once_cell",
  "pyo3",
