@@ -71,6 +71,8 @@ class SQLScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         total_rows, total_size, num_scan_tasks = self._get_size_estimates()
+        if num_scan_tasks == 0:
+            return iter(())
         if num_scan_tasks == 1 or self._partition_col is None:
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
@@ -136,6 +138,7 @@ class SQLScanOperator(ScanOperator):
             if self._num_partitions is None
             else self._num_partitions
         )
+        num_scan_tasks = min(num_scan_tasks, total_rows)
         return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:
