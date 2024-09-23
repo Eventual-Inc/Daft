@@ -31,16 +31,6 @@ impl SQLFunction for PartitioningExpr {
         args: &[sqlparser::ast::FunctionArg],
         planner: &crate::planner::SQLPlanner,
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
-        fn partitioning_helper<F: FnOnce(daft_dsl::ExprRef) -> daft_dsl::ExprRef>(
-            args: &[sqlparser::ast::FunctionArg],
-            planner: &crate::planner::SQLPlanner,
-            method_name: &str,
-            f: F,
-        ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
-            ensure!(args.len() == 1, "{} takes exactly 1 argument", method_name);
-            let args = planner.plan_function_arg(&args[0])?;
-            Ok(f(args))
-        }
         match self {
             PartitioningExpr::Years => {
                 partitioning_helper(args, planner, "years", partitioning::years)
@@ -55,6 +45,7 @@ impl SQLFunction for PartitioningExpr {
                 partitioning_helper(args, planner, "hours", partitioning::hours)
             }
             PartitioningExpr::IcebergBucket(_) => {
+                ensure!(args.len() == 2, "iceberg_bucket takes exactly 2 arguments");
                 let input = planner.plan_function_arg(&args[0])?;
                 let n = planner
                     .plan_function_arg(&args[1])?
@@ -78,6 +69,10 @@ impl SQLFunction for PartitioningExpr {
                 Ok(partitioning::iceberg_bucket(input, n))
             }
             PartitioningExpr::IcebergTruncate(_) => {
+                ensure!(
+                    args.len() == 2,
+                    "iceberg_truncate takes exactly 2 arguments"
+                );
                 let input = planner.plan_function_arg(&args[0])?;
                 let w = planner
                     .plan_function_arg(&args[1])?
@@ -93,4 +88,15 @@ impl SQLFunction for PartitioningExpr {
             }
         }
     }
+}
+
+fn partitioning_helper<F: FnOnce(daft_dsl::ExprRef) -> daft_dsl::ExprRef>(
+    args: &[sqlparser::ast::FunctionArg],
+    planner: &crate::planner::SQLPlanner,
+    method_name: &str,
+    f: F,
+) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+    ensure!(args.len() == 1, "{} takes exactly 1 argument", method_name);
+    let args = planner.plan_function_arg(&args[0])?;
+    Ok(f(args))
 }
