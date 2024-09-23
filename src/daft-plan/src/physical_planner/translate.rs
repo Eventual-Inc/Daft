@@ -319,16 +319,31 @@ pub(super) fn translate_single_logical_node(
                         ))
                         .arced()
                     } else {
-                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            first_stage_agg,
-                            min(
-                                num_input_partitions,
-                                cfg.shuffle_aggregation_default_partitions,
-                            ),
-                            groupby.clone(),
-                        ))
-                        .arced();
-                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
+                        // let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                        //     first_stage_agg,
+                        //     min(
+                        //         num_input_partitions,
+                        //         cfg.shuffle_aggregation_default_partitions,
+                        //     ),
+                        //     groupby.clone(),
+                        // ))
+                        // .arced();
+                        // PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
+                        PhysicalPlan::ExchangeOp(ExchangeOp {
+                            input: first_stage_agg,
+                            strategy: ExchangeOpStrategy::FullyMaterializing {
+                                target_spec: Arc::new(ClusteringSpec::Hash(
+                                    HashClusteringConfig::new(
+                                        min(
+                                            num_input_partitions,
+                                            cfg.shuffle_aggregation_default_partitions,
+                                        ),
+                                        groupby.clone(),
+                                    ),
+                                )),
+                            },
+                        })
+                        .into()
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
