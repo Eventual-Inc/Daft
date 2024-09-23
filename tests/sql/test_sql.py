@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import daft
+from daft.exceptions import DaftCoreException
 from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
 
@@ -149,3 +150,52 @@ def test_sql_count_star():
     actual = df2.collect().to_pydict()
     expected = df.agg(daft.col("b").count()).collect().to_pydict()
     assert actual == expected
+
+
+GLOBAL_DF = daft.from_pydict({"n": [1, 2, 3]})
+
+
+def test_sql_function_sees_caller_tables():
+    # sees the globals
+    df = daft.sql("SELECT * FROM GLOBAL_DF")
+    assert df.collect().to_pydict() == GLOBAL_DF.collect().to_pydict()
+    # sees the locals
+    df_copy = daft.sql("SELECT * FROM df")
+    assert df.collect().to_pydict() == df_copy.collect().to_pydict()
+
+
+def test_sql_function_locals_shadow_globals():
+    GLOBAL_DF = None  # noqa: F841
+    with pytest.raises(Exception, match="Table not found"):
+        daft.sql("SELECT * FROM GLOBAL_DF")
+
+
+def test_sql_function_globals_are_added_to_catalog():
+    df = daft.from_pydict({"n": [1], "x": [2]})
+    res = daft.sql("SELECT * FROM GLOBAL_DF g JOIN df d USING (n)", catalog=SQLCatalog({"df": df}))
+    joined = GLOBAL_DF.join(df, on="n")
+    assert res.collect().to_pydict() == joined.collect().to_pydict()
+
+
+def test_sql_function_catalog_is_final():
+    df = daft.from_pydict({"a": [1]})
+    # sanity check to ensure validity of below test
+    assert df.collect().to_pydict() != GLOBAL_DF.collect().to_pydict()
+    res = daft.sql("SELECT * FROM GLOBAL_DF", catalog=SQLCatalog({"GLOBAL_DF": df}))
+    assert res.collect().to_pydict() == df.collect().to_pydict()
+
+
+def test_sql_function_register_globals():
+    with pytest.raises(Exception, match="Table not found"):
+        daft.sql("SELECT * FROM GLOBAL_DF", SQLCatalog({}), register_globals=False)
+
+
+def test_sql_function_requires_catalog_or_globals():
+    with pytest.raises(Exception, match="Must supply a catalog"):
+        daft.sql("SELECT * FROM GLOBAL_DF", register_globals=False)
+
+
+def test_sql_function_raises_when_cant_get_frame(monkeypatch):
+    monkeypatch.setattr("inspect.currentframe", lambda: None)
+    with pytest.raises(DaftCoreException, match="Cannot get caller environment"):
+        daft.sql("SELECT * FROM df")
