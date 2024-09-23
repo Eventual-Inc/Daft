@@ -213,8 +213,7 @@ pub(super) fn translate_single_logical_node(
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    // TODO: YOLOSWAG make this the new exchange op, if we're serious about this we can flip a envvar flag
-                    //
+                    // YOLOSWAG: use the new exchange op instead
                     // let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     //     input_physical,
                     //     num_partitions,

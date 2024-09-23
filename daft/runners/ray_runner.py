@@ -1260,7 +1260,6 @@ class PartitionMetadataAccessor:
 # ShuffleService
 ###
 
-from typing import Type
 
 from daft.execution.physical_plan_shuffles import (
     HashPartitionRequest,
@@ -1269,7 +1268,7 @@ from daft.execution.physical_plan_shuffles import (
     ShuffleServiceInterface,
 )
 
-RayShuffleData = Type[ray.ObjectRef[MicroPartition]]
+ray.ObjectRef = ray.ObjectRef
 
 
 @ray.remote
@@ -1352,7 +1351,7 @@ class ShuffleServiceActor:
                 self._partitioned_data_buffer[partition_request].append(partition)
 
 
-class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.ObjectRef[None]]):
+class RayPerNodeActorShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.ObjectRef]):
     """A ShuffleService implementation in Ray that utilizes Ray Actors on each node to perform a shuffle
 
     This is nice because it lets us `.ingest` data into each node's Actor before actually performing the shuffle,
@@ -1398,7 +1397,7 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.
         self._actors.clear()
         self._placement_groups.clear()
 
-    def ingest(self, data: Iterator[RayShuffleData]) -> list[ray.ObjectRef[None]]:
+    def ingest(self, data: Iterator[ray.ObjectRef]) -> list[ray.ObjectRef[None]]:
         """Receive some data
 
         NOTE: This will throw an error if called after `.close_ingest` has been called.
@@ -1432,7 +1431,7 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.
         """Query whether or not the previous stage has completed ingestion"""
         return self._input_stage_completed
 
-    def read(self, request: PartitionRequest, chunk_size_bytes: int) -> Iterator[RayShuffleData]:
+    def read(self, request: PartitionRequest, chunk_size_bytes: int) -> Iterator[ray.ObjectRef]:
         """Retrieves ShuffleData from the shuffle service for the specified partition.
 
         NOTE: This will throw an error if called before `set_output_partitioning` is called.
@@ -1458,7 +1457,7 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[RayShuffleData, ray.
                 f"Requested bucket {hash_request.bucket} is out of range for {hash_spec.num_partitions} partitions"
             )
 
-        # Iterate through all actors and yield RayShuffleData
+        # Iterate through all actors and yield ray.ObjectRef
         for actor in self._actors.values():
             while True:
                 # Request data from the actor
