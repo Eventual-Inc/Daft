@@ -1163,7 +1163,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1187,7 +1187,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })

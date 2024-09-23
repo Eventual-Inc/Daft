@@ -7,24 +7,27 @@ use parquet2::schema::{
     Repetition,
 };
 
-use crate::datatypes::{DataType, Field, IntervalUnit, TimeUnit};
-use crate::io::parquet::read::schema::SchemaInferenceOptions;
+use crate::{
+    datatypes::{DataType, Field, IntervalUnit, TimeUnit},
+    io::parquet::read::schema::SchemaInferenceOptions,
+};
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
 #[allow(dead_code)]
 pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
-    parquet_to_arrow_schema_with_options(fields, &None)
+    parquet_to_arrow_schema_with_options(fields, None)
 }
 
 /// Like [`parquet_to_arrow_schema`] but with configurable options which affect the behavior of schema inference
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
-    options: &Option<SchemaInferenceOptions>,
+    options: Option<SchemaInferenceOptions>,
 ) -> Vec<Field> {
+    let options = options.unwrap_or_default();
     fields
         .iter()
-        .filter_map(|f| to_field(f, options.as_ref().unwrap_or(&Default::default())))
+        .filter_map(|f| to_field(f, &options))
         .collect::<Vec<_>>()
 }
 
@@ -145,9 +148,16 @@ fn from_int64(
 fn from_byte_array(
     logical_type: &Option<PrimitiveLogicalType>,
     converted_type: &Option<PrimitiveConvertedType>,
+    options: &SchemaInferenceOptions,
 ) -> DataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => DataType::Utf8,
+        (Some(PrimitiveLogicalType::String), _) => {
+            if options.string_coerce_to_binary {
+                DataType::Binary
+            } else {
+                DataType::Utf8
+            }
+        }
         (Some(PrimitiveLogicalType::Json), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Bson), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Enum), _) => DataType::Binary,
@@ -219,9 +229,11 @@ fn to_primitive_type_inner(
         PhysicalType::Int96 => DataType::Timestamp(options.int96_coerce_to_timeunit, None),
         PhysicalType::Float => DataType::Float32,
         PhysicalType::Double => DataType::Float64,
-        PhysicalType::ByteArray => {
-            from_byte_array(&primitive_type.logical_type, &primitive_type.converted_type)
-        }
+        PhysicalType::ByteArray => from_byte_array(
+            &primitive_type.logical_type,
+            &primitive_type.converted_type,
+            options,
+        ),
         PhysicalType::FixedLenByteArray(length) => from_fixed_len_byte_array(
             length,
             primitive_type.logical_type,
@@ -440,7 +452,6 @@ mod tests {
     use parquet2::metadata::SchemaDescriptor;
 
     use super::*;
-
     use crate::error::Result;
 
     #[test]
@@ -1123,8 +1134,9 @@ mod tests {
             let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
             let fields = parquet_to_arrow_schema_with_options(
                 parquet_schema.fields(),
-                &Some(SchemaInferenceOptions {
+                Some(SchemaInferenceOptions {
                     int96_coerce_to_timeunit: tu,
+                    ..Default::default()
                 }),
             );
             assert_eq!(arrow_fields, fields);

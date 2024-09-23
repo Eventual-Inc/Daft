@@ -84,6 +84,7 @@ impl From<ParquetSchemaInferenceOptions>
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         arrow2::io::parquet::read::schema::SchemaInferenceOptions {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+            string_coerce_to_binary: value.coerce_string_to_binary,
         }
     }
 }
@@ -502,7 +503,7 @@ async fn read_parquet_single_into_arrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize)> {
+) -> DaftResult<ParquetPyarrowChunk> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
@@ -921,8 +922,7 @@ pub fn read_parquet_schema(
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     let metadata = builder.metadata;
-    let arrow_schema =
-        infer_schema_with_options(&metadata, &Some(schema_inference_options.into()))?;
+    let arrow_schema = infer_schema_with_options(&metadata, Some(schema_inference_options.into()))?;
     let schema = Schema::try_from(&arrow_schema)?;
     Ok((schema, metadata))
 }
